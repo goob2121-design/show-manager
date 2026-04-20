@@ -24,3 +24,187 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  :root {
+    --background: #ffffff;
+    --foreground: #000000;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-shell {
+    max-width: none !important;
+    width: 100% !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+  }
+
+  .print-copy-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #000000;
+  }
+
+  .print-copy-header h1 {
+    margin: 0.25rem 0;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #000000;
+  }
+
+  .print-copy-header p {
+    margin: 0;
+    color: #000000;
+  }
+
+  .print-copy-mode {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .print-setlist-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: #000000;
+  }
+
+  .print-song-item {
+    break-inside: avoid;
+    border: none;
+    page-break-inside: avoid;
+  }
+
+  .print-song-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .print-song-number {
+    flex: 0 0 auto;
+    font-weight: 800;
+    color: #000000;
+  }
+
+  .print-song-body {
+    flex: 1 1 auto;
+  }
+
+  .print-song-headline {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .print-song-title,
+  .print-song-key,
+  .print-song-artist,
+  .print-song-notes {
+    color: #000000;
+  }
+
+  .print-song-support {
+    margin-top: 0.45rem;
+  }
+
+  .print-mode-stage .print-song-item {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+  }
+
+  .print-mode-stage .print-song-number,
+  .print-mode-stage .print-song-title,
+  .print-mode-stage .print-song-key {
+    font-size: 1.7rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .print-mode-stage .print-song-headline {
+    align-items: center;
+  }
+
+  .print-mode-stage .print-song-support {
+    margin-top: 0.55rem;
+    padding-left: 0.25rem;
+  }
+
+  .print-mode-stage .print-song-artist {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .print-mode-band .print-song-item {
+    margin-bottom: 1.35rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .print-mode-band .print-song-number,
+  .print-mode-band .print-song-title,
+  .print-mode-band .print-song-key {
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+
+  .print-mode-band .print-song-artist {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .print-mode-band .print-song-notes {
+    margin: 0.25rem 0 0;
+    font-size: 0.9rem;
+  }
+
+  .print-mode-standard .print-song-item {
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .print-mode-standard .print-song-number,
+  .print-mode-standard .print-song-title,
+  .print-mode-standard .print-song-key {
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  .print-mode-standard .print-song-artist {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  .print-mode-standard .print-song-notes {
+    margin: 0.2rem 0 0;
+    font-size: 0.9rem;
+  }
+}
