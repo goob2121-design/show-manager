@@ -1500,9 +1500,17 @@ export function ShowPage({
     }
 
     const title = formState.title.trim();
-    const artist = formState.artist.trim() || defaultSingerName;
+    const artist =
+      viewMode === "guest"
+        ? guestSingerName || defaultSingerName
+        : formState.artist.trim() || defaultSingerName;
 
     if (!title) {
+      return;
+    }
+
+    if (viewMode === "guest" && !guestSingerName) {
+      setActionError("Add your name in Artist Info first so guest song requests can use the correct singer.");
       return;
     }
 
@@ -1521,7 +1529,8 @@ export function ShowPage({
           notes: formState.notes.trim() || null,
           lyrics: formState.lyrics.trim() || null,
           submitted_by_role: viewMode,
-          submitted_by_name: formState.submittedByName.trim() || null,
+          submitted_by_name:
+            viewMode === "guest" ? guestSingerName || null : formState.submittedByName.trim() || null,
         })
         .select("*")
         .single();
@@ -2579,6 +2588,14 @@ export function ShowPage({
     : [];
 
   const guestMessage = show?.guest_message?.trim() ?? "";
+  const guestSingerName =
+    viewMode === "guest"
+      ? guestProfileFormState.name.trim() ||
+        guestProfiles
+          .map((profile) => profile.name?.trim() ?? "")
+          .find(Boolean) ||
+        ""
+      : "";
 
   const bandShowInfoItems: ShowInfoItem[] = show
     ? [
@@ -4501,7 +4518,7 @@ export function ShowPage({
               className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
               onSubmit={handleSubmit}
             >
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className={`grid gap-4 ${viewMode === "guest" ? "" : "sm:grid-cols-2"}`}>
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                   Song Title
                   <input
@@ -4515,18 +4532,26 @@ export function ShowPage({
                   />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Who's Singing
-                  <input
-                    type="text"
-                    name="artist"
-                    value={formState.artist}
-                    onChange={handleChange}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder="Leave blank to use CMMS Band"
-                  />
-                </label>
+                {viewMode !== "guest" ? (
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Who's Singing
+                    <input
+                      type="text"
+                      name="artist"
+                      value={formState.artist}
+                      onChange={handleChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Leave blank to use CMMS Band"
+                    />
+                  </label>
+                ) : null}
               </div>
+
+              {viewMode === "guest" ? (
+                <p className="text-sm text-stone-600">
+                  Who&apos;s Singing will be set automatically from your Artist Info name.
+                </p>
+              ) : null}
 
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                 Key
