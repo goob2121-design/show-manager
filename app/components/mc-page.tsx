@@ -79,6 +79,7 @@ const setSectionTitles: Record<SetSection, string> = {
   set2: "Set 2",
   encore: "Encore",
 };
+const defaultSingerName = "CMMS Band";
 
 function normalizeSetSection(value: string | null | undefined): SetSection {
   if (value === "set2" || value === "encore") {
@@ -282,7 +283,7 @@ export function buildMcRunSections(
       const blocks: McPerformanceBlock[] = [];
 
       songs.forEach((song) => {
-        const performer = song.artist?.trim() || "Unknown performer";
+        const performer = song.artist?.trim() || defaultSingerName;
         const previousBlock = blocks[blocks.length - 1];
 
         if (previousBlock && previousBlock.performer === performer) {

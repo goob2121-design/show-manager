@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import type { ChangeEvent, FormEvent } from "react";
+import { Fragment } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import {
@@ -102,6 +103,40 @@ const initialShowDetailsFormState: ShowDetailsFormState = {
   announcements: "",
   guestMessage: "",
 };
+
+const defaultSingerName = "CMMS Band";
+const urlPattern = /(https?:\/\/[^\s]+)/g;
+const urlOnlyPattern = /^https?:\/\/[^\s]+$/;
+
+function getDisplaySingerName(value: string | null | undefined) {
+  return value?.trim() || defaultSingerName;
+}
+
+function renderTextWithLinks(text: string | null | undefined): ReactNode {
+  const value = text ?? "";
+
+  return value.split(urlPattern).map((part, index) => {
+    if (!part) {
+      return null;
+    }
+
+    if (urlOnlyPattern.test(part)) {
+      return (
+        <a
+          key={`${part}-${index}`}
+          href={part}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-emerald-700 underline"
+        >
+          {part}
+        </a>
+      );
+    }
+
+    return <Fragment key={`${part}-${index}`}>{part}</Fragment>;
+  });
+}
 
 type ShowInfoItem = {
   label: string;
@@ -1465,9 +1500,9 @@ export function ShowPage({
     }
 
     const title = formState.title.trim();
-    const artist = formState.artist.trim();
+    const artist = formState.artist.trim() || defaultSingerName;
 
-    if (!title || !artist) {
+    if (!title) {
       return;
     }
 
@@ -2030,10 +2065,10 @@ export function ShowPage({
     }
 
     const title = poolSongEditFormState.title.trim();
-    const artist = poolSongEditFormState.artist.trim();
+    const artist = poolSongEditFormState.artist.trim() || defaultSingerName;
 
-    if (!title || !artist) {
-      setActionError("Song title and artist are required.");
+    if (!title) {
+      setActionError("Song title is required.");
       return;
     }
 
@@ -2117,10 +2152,10 @@ export function ShowPage({
     }
 
     const title = librarySongEditFormState.title.trim();
-    const artist = librarySongEditFormState.artist.trim();
+    const artist = librarySongEditFormState.artist.trim() || defaultSingerName;
 
-    if (!title || !artist) {
-      setActionError("Song title and artist are required.");
+    if (!title) {
+      setActionError("Song title is required.");
       return;
     }
 
@@ -2458,10 +2493,10 @@ export function ShowPage({
     }
 
     const title = setlistSongEditFormState.title.trim();
-    const artist = setlistSongEditFormState.artist.trim();
+    const artist = setlistSongEditFormState.artist.trim() || defaultSingerName;
 
-    if (!title || !artist) {
-      setActionError("Song title and artist are required.");
+    if (!title) {
+      setActionError("Song title is required.");
       return;
     }
 
@@ -3931,11 +3966,13 @@ export function ShowPage({
                         <li key={song.id} className="pl-1">
                           <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
                             <p className="text-base font-medium text-stone-900 sm:text-lg">
-                              {song.title} - {song.artist || "Unknown artist"}
+                              {song.title} - {getDisplaySingerName(song.artist)}
                               {song.song_key ? ` (${song.song_key})` : ""}
                             </p>
                             {song.notes ? (
-                              <p className="mt-2 text-sm text-stone-600">{song.notes}</p>
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-600">
+                                {renderTextWithLinks(song.notes)}
+                              </p>
                             ) : null}
 
                             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
@@ -3973,14 +4010,14 @@ export function ShowPage({
                                     />
                                   </label>
                                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    Artist / Singer
+                                    Who's Singing
                                     <input
                                       type="text"
                                       name="artist"
                                       value={setlistSongEditFormState.artist}
                                       onChange={handleSetlistSongEditChange}
                                       className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      required
+                                      placeholder="Leave blank to use CMMS Band"
                                     />
                                   </label>
                                 </div>
@@ -4148,11 +4185,11 @@ export function ShowPage({
                                 ) : null}
                               </div>
 
-                              {printMode !== "stage" || song.artist ? (
+                              {printMode !== "stage" || getDisplaySingerName(song.artist) ? (
                                 <div className="print-song-support">
-                                  {song.artist ? (
-                                    <p className="print-song-artist">{song.artist}</p>
-                                  ) : null}
+                                  <p className="print-song-artist">
+                                    {getDisplaySingerName(song.artist)}
+                                  </p>
                                   {printMode !== "stage" && song.notes ? (
                                     <p className="print-song-notes">{song.notes}</p>
                                   ) : null}
@@ -4466,18 +4503,6 @@ export function ShowPage({
             >
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Your Name (optional)
-                  <input
-                    type="text"
-                    name="submittedByName"
-                    value={formState.submittedByName}
-                    onChange={handleChange}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder={viewMode === "guest" ? "Guest performer name" : "Band member name"}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                   Song Title
                   <input
                     type="text"
@@ -4491,15 +4516,14 @@ export function ShowPage({
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Artist / Singer
+                  Who's Singing
                   <input
                     type="text"
                     name="artist"
                     value={formState.artist}
                     onChange={handleChange}
                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder="Enter artist or singer"
-                    required
+                    placeholder="Leave blank to use CMMS Band"
                   />
                 </label>
               </div>
@@ -4586,14 +4610,14 @@ export function ShowPage({
                           />
                         </label>
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Artist / Singer
+                          Who's Singing
                           <input
                             type="text"
                             name="artist"
                             value={poolSongEditFormState.artist}
                             onChange={handlePoolSongEditChange}
                             className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            required
+                            placeholder="Leave blank to use CMMS Band"
                           />
                         </label>
                       </div>
@@ -4652,27 +4676,22 @@ export function ShowPage({
                     </div>
                   ) : (
                     <>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="flex flex-col gap-1">
-                          <h3 className="text-base font-semibold text-stone-900">
-                            {song.title}
-                          </h3>
-                          <p className="text-sm text-stone-700">
-                            {song.artist || "Unknown artist"}
-                          </p>
-                        </div>
-                        <span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
-                          Submitted By: {formatSubmittedByRole(song.submitted_by_role)}
-                        </span>
+                      <div className="flex flex-col gap-1">
+                        <h3 className="text-base font-semibold text-stone-900">
+                          {song.title}
+                        </h3>
+                        <p className="text-sm text-stone-700">
+                          {getDisplaySingerName(song.artist)}
+                        </p>
                       </div>
 
                       <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
                         {song.song_key ? <p>Key: {song.song_key}</p> : null}
-                        {song.notes ? <p>Notes: {song.notes}</p> : null}
-                        <p className="text-xs text-stone-500">
-                          Submitted by: {formatSubmittedByRole(song.submitted_by_role)}
-                          {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
-                        </p>
+                        {song.notes ? (
+                          <p className="whitespace-pre-wrap">
+                            Notes: {renderTextWithLinks(song.notes)}
+                          </p>
+                        ) : null}
                       </div>
 
                       {song.lyrics ? (
@@ -4783,15 +4802,15 @@ export function ShowPage({
                             />
                           </label>
                           <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Artist / Singer
-                            <input
-                              type="text"
-                              name="artist"
-                              value={librarySongEditFormState.artist}
-                              onChange={handleLibrarySongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              required
-                            />
+                            Who's Singing
+                              <input
+                                type="text"
+                                name="artist"
+                                value={librarySongEditFormState.artist}
+                                onChange={handleLibrarySongEditChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Leave blank to use CMMS Band"
+                              />
                           </label>
                         </div>
 
@@ -4853,7 +4872,7 @@ export function ShowPage({
                           <div className="flex flex-col gap-1">
                             <h3 className="text-base font-semibold text-stone-900">{song.title}</h3>
                             <p className="text-sm text-stone-700">
-                              {song.artist || "Unknown artist"}
+                              {getDisplaySingerName(song.artist)}
                             </p>
                           </div>
                           <span className="w-fit rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
@@ -4863,7 +4882,11 @@ export function ShowPage({
 
                         <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
                           {song.song_key ? <p>Key: {song.song_key}</p> : null}
-                          {song.notes ? <p>Notes: {song.notes}</p> : null}
+                          {song.notes ? (
+                            <p className="whitespace-pre-wrap">
+                              Notes: {renderTextWithLinks(song.notes)}
+                            </p>
+                          ) : null}
                           {song.lyrics ? (
                             <p className="text-xs text-stone-500">Lyrics available in library</p>
                           ) : null}
