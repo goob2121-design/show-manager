@@ -37,6 +37,7 @@ import type {
 
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab = "setlist" | "songs" | "guests" | "sponsors" | "mc-builder" | "show-details";
+type BandTab = "setlist" | "songs";
 type SetlistSectionConfig = {
   key: SetSection;
   title: string;
@@ -50,6 +51,11 @@ const adminTabItems: Array<{ key: AdminTab; label: string }> = [
   { key: "sponsors", label: "Sponsors" },
   { key: "mc-builder", label: "MC Builder" },
   { key: "show-details", label: "Show Details" },
+];
+
+const bandTabItems: Array<{ key: BandTab; label: string }> = [
+  { key: "setlist", label: "Setlist" },
+  { key: "songs", label: "Songs" },
 ];
 
 const setlistSectionOrder: SetSection[] = ["set1", "set2", "encore"];
@@ -680,6 +686,7 @@ export function ShowPage({
 }: ShowPageProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(initialRole);
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>("setlist");
+  const [activeBandTab, setActiveBandTab] = useState<BandTab>("setlist");
   const [printMode, setPrintMode] = useState<PrintMode>("standard");
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [setlist, setSetlist] = useState<SetlistSong[]>([]);
@@ -760,9 +767,18 @@ export function ShowPage({
   const portalLabel = getPortalLabel(viewMode);
   const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band";
   const isAdminView = viewMode === "admin";
+  const isBandView = viewMode === "band";
   const shouldShowAdminSongSubmission =
     isAdminView && (activeAdminTab === "setlist" || activeAdminTab === "songs");
-  const shouldShowSongSubmissionForm = !isAdminView || shouldShowAdminSongSubmission;
+  const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
+  const shouldShowSongSubmissionForm = isAdminView
+    ? shouldShowAdminSongSubmission
+    : isBandView
+      ? shouldShowBandSongTools
+      : true;
+  const shouldShowSetlistSection = isAdminView
+    ? activeAdminTab === "setlist"
+    : !isBandView || activeBandTab === "setlist";
   const setlistSections = getRenderableSetlistSections(setlist);
   const visibleSongPool =
     viewMode === "guest"
@@ -967,6 +983,10 @@ export function ShowPage({
   useEffect(() => {
     if (viewMode === "admin") {
       setActiveAdminTab("setlist");
+    }
+
+    if (viewMode === "band") {
+      setActiveBandTab("setlist");
     }
   }, [viewMode]);
 
@@ -2550,6 +2570,8 @@ export function ShowPage({
 
   const activeAdminTabLabel =
     adminTabItems.find((tab) => tab.key === activeAdminTab)?.label ?? "Setlist";
+  const activeBandTabLabel =
+    bandTabItems.find((tab) => tab.key === activeBandTab)?.label ?? "Setlist";
 
   if (isLoading) {
     return (
@@ -2717,6 +2739,44 @@ export function ShowPage({
           </section>
         ) : null}
 
+        {isBandView ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Band Sections</h2>
+              <p className="text-sm text-stone-600">
+                Start with the show-day setlist, or switch to song collaboration tools when needed.
+              </p>
+            </div>
+
+            <div
+              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2"
+              role="tablist"
+              aria-label="Band portal sections"
+            >
+              {bandTabItems.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeBandTab === tab.key}
+                  onClick={() => setActiveBandTab(tab.key)}
+                  className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                    activeBandTab === tab.key
+                      ? "bg-emerald-700 text-white shadow-sm"
+                      : "bg-white text-stone-700 hover:bg-stone-50"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+              Active section: <span className="font-semibold text-emerald-700">{activeBandTabLabel}</span>
+            </div>
+          </section>
+        ) : null}
+
         {viewMode === "guest" && guestMessage ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
@@ -2742,7 +2802,7 @@ export function ShowPage({
           />
         ) : null}
 
-        {viewMode === "band" ? (
+        {viewMode === "band" && activeBandTab === "setlist" ? (
           <ShowInfoCard
             title="Band Itinerary"
             subtitle="Show details, timing, and logistics for the band."
@@ -3815,7 +3875,7 @@ export function ShowPage({
           </section>
         ) : null}
 
-        {viewMode !== "admin" || activeAdminTab === "setlist" ? (
+        {shouldShowSetlistSection ? (
         <section className="flex flex-col gap-4">
           <div className="print-hidden flex flex-col gap-1">
             <h2 className="text-xl font-semibold">Setlist</h2>
@@ -4491,7 +4551,7 @@ export function ShowPage({
           </section>
         ) : null}
 
-        {viewMode === "band" || (isAdminView && activeAdminTab === "songs") ? (
+        {shouldShowBandSongTools || (isAdminView && activeAdminTab === "songs") ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Song Pool</h2>
@@ -4688,7 +4748,7 @@ export function ShowPage({
           </section>
         ) : null}
 
-        {viewMode === "band" || (isAdminView && activeAdminTab === "songs") ? (
+        {shouldShowBandSongTools || (isAdminView && activeAdminTab === "songs") ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Song Library</h2>
