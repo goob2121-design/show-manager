@@ -56,6 +56,9 @@ create table if not exists public.pending_submissions (
   created_at timestamptz not null default now()
 );
 
+alter table public.pending_submissions
+  add column if not exists submitted_by_name text;
+
 create table if not exists public.guest_profiles (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,

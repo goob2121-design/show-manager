@@ -31,6 +31,7 @@ const setlistSectionConfigs: SetlistSectionConfig[] = [
 ];
 
 const initialFormState: SongFormState = {
+  submittedByName: "",
   title: "",
   artist: "",
   key: "",
@@ -153,6 +154,46 @@ function normalizeGuestProfileName(name: string) {
 function normalizeOptionalField(value: string) {
   const trimmedValue = value.trim();
   return trimmedValue ? trimmedValue : null;
+}
+
+function normalizeSubmittedByRole(value: string | null | undefined): "guest" | "band" | "admin" {
+  if (value === "band" || value === "admin") {
+    return value;
+  }
+
+  if (value === "Band") {
+    return "band";
+  }
+
+  if (value === "Admin") {
+    return "admin";
+  }
+
+  return "guest";
+}
+
+function normalizePendingSubmission(
+  submission: PendingSubmission & { submitted_by_name?: string | null },
+): PendingSubmission {
+  return {
+    ...submission,
+    submitted_by_role: normalizeSubmittedByRole(submission.submitted_by_role),
+    submitted_by_name: submission.submitted_by_name ?? null,
+  };
+}
+
+function formatSubmittedByRole(role: PendingSubmission["submitted_by_role"]) {
+  const normalizedRole = normalizeSubmittedByRole(role);
+
+  if (normalizedRole === "admin") {
+    return "Admin";
+  }
+
+  if (normalizedRole === "band") {
+    return "Band";
+  }
+
+  return "Guest";
 }
 
 function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
@@ -288,6 +329,10 @@ export function ShowPage({
   const portalLabel = getPortalLabel(viewMode);
   const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band";
   const setlistSections = getRenderableSetlistSections(setlist);
+  const visibleSongPool =
+    viewMode === "guest"
+      ? []
+      : pendingSongs;
 
   function handlePrint(nextPrintMode: PrintMode) {
     setPrintMode(nextPrintMode);
@@ -371,7 +416,12 @@ export function ShowPage({
             ),
           ),
         );
-        setPendingSongs(pendingRows ?? []);
+        setPendingSongs(
+          (pendingRows ?? []).map(
+            (submission: PendingSubmission & { submitted_by_name?: string | null }) =>
+              normalizePendingSubmission(submission),
+          ),
+        );
         setGuestProfiles(guestProfileRows ?? []);
       } catch (error) {
         setErrorMessage(getErrorMessage(error));
@@ -515,7 +565,8 @@ export function ShowPage({
           song_key: formState.key.trim() || null,
           notes: formState.notes.trim() || null,
           lyrics: formState.lyrics.trim() || null,
-          submitted_by_role: viewMode === "guest" ? "Guest" : "Band",
+          submitted_by_role: viewMode,
+          submitted_by_name: formState.submittedByName.trim() || null,
         })
         .select("*")
         .single();
@@ -524,7 +575,7 @@ export function ShowPage({
         throw error;
       }
 
-      setPendingSongs((currentSongs) => [...currentSongs, data]);
+      setPendingSongs((currentSongs) => [...currentSongs, normalizePendingSubmission(data)]);
       setFormState(initialFormState);
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -648,30 +699,33 @@ export function ShowPage({
     }
   }
 
-  async function handleAddToSetlist(songToApprove: PendingSubmission) {
+  async function handleAddPoolSongToSection(
+    songToPlace: PendingSubmission,
+    section: SetSection,
+  ) {
     if (!show) {
       setActionError("The show is not loaded yet.");
       return;
     }
 
     setActionError(null);
-    setActivePendingActionId(songToApprove.id);
+    setActivePendingActionId(songToPlace.id);
 
     try {
       const supabase = createClient();
-      const nextPosition = getNextPositionForSection(setlist, "set1");
+      const nextPosition = getNextPositionForSection(setlist, section);
 
       const { data: insertedSong, error: insertError } = await supabase
         .from("setlist_songs")
         .insert({
           show_id: show.id,
           position: nextPosition,
-          set_section: "set1",
-          title: songToApprove.title,
-          artist: songToApprove.artist,
-          song_key: songToApprove.song_key,
-          notes: songToApprove.notes,
-          lyrics: songToApprove.lyrics,
+          set_section: section,
+          title: songToPlace.title,
+          artist: songToPlace.artist,
+          song_key: songToPlace.song_key,
+          notes: songToPlace.notes,
+          lyrics: songToPlace.lyrics,
         })
         .select("*")
         .single();
@@ -683,7 +737,7 @@ export function ShowPage({
       const { error: deleteError } = await supabase
         .from("pending_submissions")
         .delete()
-        .eq("id", songToApprove.id);
+        .eq("id", songToPlace.id);
 
       if (deleteError) {
         throw deleteError;
@@ -693,7 +747,7 @@ export function ShowPage({
         sortSetlistSongs([...currentSongs, normalizeSetlistSong(insertedSong)]),
       );
       setPendingSongs((currentSongs) =>
-        currentSongs.filter((song) => song.id !== songToApprove.id),
+        currentSongs.filter((song) => song.id !== songToPlace.id),
       );
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -703,7 +757,7 @@ export function ShowPage({
     }
   }
 
-  async function handleRemovePendingSong(songId: string) {
+  async function handleDeleteFromSongPool(songId: string) {
     setActionError(null);
     setActivePendingActionId(songId);
 
@@ -1495,7 +1549,7 @@ export function ShowPage({
 
           {setlist.length === 0 ? (
             <div className="print-hidden rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-              No setlist songs yet. Approve a pending submission to get started.
+              No setlist songs yet. Add a song from the pool to get started.
             </div>
           ) : (
             <div className="print-hidden flex flex-col gap-6">
@@ -1980,9 +2034,9 @@ export function ShowPage({
         {viewMode === "admin" ? (
           <section className="print-hidden flex flex-col gap-3 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Admin Review</h2>
+              <h2 className="text-xl font-semibold">Setlist Builder</h2>
               <p className="text-sm text-stone-600">
-                Review pending songs below and curate the official setlist.
+                Place songs from the pool into the official setlist when you are ready.
               </p>
             </div>
           </section>
@@ -1991,7 +2045,7 @@ export function ShowPage({
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">{formHeading}</h2>
               <p className="text-sm text-stone-600">
-                Add a song request or suggestion to the shared pending list.
+                Add a song request or suggestion to the shared song pool.
               </p>
             </div>
 
@@ -2000,6 +2054,18 @@ export function ShowPage({
               onSubmit={handleSubmit}
             >
               <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Your Name (optional)
+                  <input
+                    type="text"
+                    name="submittedByName"
+                    value={formState.submittedByName}
+                    onChange={handleChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder={viewMode === "guest" ? "Guest performer name" : "Band member name"}
+                  />
+                </label>
+
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                   Song Title
                   <input
@@ -2074,21 +2140,22 @@ export function ShowPage({
           </section>
         )}
 
-        <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">Pending Songs</h2>
-            <p className="text-sm text-stone-600">
-              Shared submissions from guests and band members.
-            </p>
-          </div>
-
-          {pendingSongs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-              No pending songs yet. Submit one above to get started.
+        {viewMode !== "guest" ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Song Pool</h2>
+              <p className="text-sm text-stone-600">
+                Shared submissions from guests, band members, and admins for this show.
+              </p>
             </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pendingSongs.map((song) => (
+
+            {visibleSongPool.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                No songs in the pool yet. Submit one above to get started.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {visibleSongPool.map((song) => (
                 <article
                   key={song.id}
                   className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
@@ -2103,13 +2170,17 @@ export function ShowPage({
                       </p>
                     </div>
                     <span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
-                      Submitted By: {song.submitted_by_role}
+                      Submitted By: {formatSubmittedByRole(song.submitted_by_role)}
                     </span>
                   </div>
 
                   <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
                     {song.song_key ? <p>Key: {song.song_key}</p> : null}
                     {song.notes ? <p>Notes: {song.notes}</p> : null}
+                    <p className="text-xs text-stone-500">
+                      Submitted by: {formatSubmittedByRole(song.submitted_by_role)}
+                      {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
+                    </p>
                   </div>
 
                   {song.lyrics ? (
@@ -2119,30 +2190,52 @@ export function ShowPage({
                   ) : null}
 
                   {viewMode === "admin" ? (
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={() => handleAddToSetlist(song)}
-                        disabled={activePendingActionId === song.id}
-                        className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                      >
-                        Add to Setlist
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemovePendingSong(song.id)}
-                        disabled={activePendingActionId === song.id}
-                        className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Remove
-                      </button>
+                    <div className="mt-4 flex flex-col gap-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleAddPoolSongToSection(song, "set1")}
+                          disabled={activePendingActionId === song.id}
+                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                        >
+                          Add to Set 1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddPoolSongToSection(song, "set2")}
+                          disabled={activePendingActionId === song.id}
+                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Add to Set 2
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddPoolSongToSection(song, "encore")}
+                          disabled={activePendingActionId === song.id}
+                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Add to Encore
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFromSongPool(song.id)}
+                          disabled={activePendingActionId === song.id}
+                          className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                        >
+                          Delete from Pool
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                 </article>
-              ))}
-            </div>
-          )}
-        </section>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
       </section>
     </main>
   );

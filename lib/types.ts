@@ -1,5 +1,5 @@
 export type ViewMode = "guest" | "band" | "admin";
-export type SubmittedByRole = "Guest" | "Band";
+export type SubmittedByRole = "guest" | "band" | "admin";
 export type SetSection = "set1" | "set2" | "encore";
 
 export type ShowRecord = {
@@ -47,6 +47,7 @@ export type PendingSubmission = {
   notes: string | null;
   lyrics: string | null;
   submitted_by_role: SubmittedByRole | string;
+  submitted_by_name: string | null;
   created_at: string;
 };
 
@@ -67,6 +68,7 @@ export type GuestProfile = {
 };
 
 export type SongFormState = {
+  submittedByName: string;
   title: string;
   artist: string;
   key: string;
