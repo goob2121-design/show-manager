@@ -11,8 +11,12 @@ import type {
   GuestProfileFormState,
   PendingSubmission,
   SetSection,
+  ShowSponsor,
   SetlistSong,
+  SponsorLibraryEntry,
+  SponsorLibraryFormState,
   SongLibrarySong,
+  ShowSponsorAssignmentFormState,
   ShowDetailsFormState,
   ShowRecord,
   SongFormState,
@@ -77,6 +81,28 @@ type ShowInfoItem = {
   href?: string;
 };
 
+type SongEditFormState = {
+  title: string;
+  artist: string;
+  key: string;
+  notes: string;
+  lyrics: string;
+};
+
+const initialSponsorLibraryFormState: SponsorLibraryFormState = {
+  name: "",
+  shortMessage: "",
+  fullMessage: "",
+  website: "",
+};
+
+const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
+  sponsorId: "",
+  placementType: "",
+  linkedPerformer: "",
+  customNote: "",
+};
+
 function formatShowDate(showDate: string | null) {
   if (!showDate) {
     return "Date TBD";
@@ -115,6 +141,40 @@ function sortSetlistSongs(songs: SetlistSong[]) {
   });
 }
 
+function buildSongEditFormState(song: {
+  title: string;
+  artist: string | null;
+  song_key: string | null;
+  notes: string | null;
+  lyrics: string | null;
+}): SongEditFormState {
+  return {
+    title: song.title,
+    artist: song.artist ?? "",
+    key: song.song_key ?? "",
+    notes: song.notes ?? "",
+    lyrics: song.lyrics ?? "",
+  };
+}
+
+function buildSponsorLibraryFormState(sponsor: SponsorLibraryEntry): SponsorLibraryFormState {
+  return {
+    name: sponsor.name,
+    shortMessage: sponsor.short_message ?? "",
+    fullMessage: sponsor.full_message ?? "",
+    website: sponsor.website ?? "",
+  };
+}
+
+function buildShowSponsorAssignmentFormState(sponsor: ShowSponsor): ShowSponsorAssignmentFormState {
+  return {
+    sponsorId: sponsor.sponsor_id ?? "",
+    placementType: sponsor.placement_type ?? "",
+    linkedPerformer: sponsor.linked_performer ?? "",
+    customNote: sponsor.custom_note ?? "",
+  };
+}
+
 function normalizeSetSection(value: string | null | undefined): SetSection {
   if (value === "set2" || value === "encore") {
     return value;
@@ -127,6 +187,7 @@ function normalizeSetlistSong(song: SetlistSong & { set_section?: string | null 
   return {
     ...song,
     set_section: normalizeSetSection(song.set_section),
+    source_role: song.source_role ? normalizeSubmittedByRole(song.source_role) : null,
   };
 }
 
@@ -175,6 +236,14 @@ function normalizeSubmittedByRole(value: string | null | undefined): "guest" | "
   return "guest";
 }
 
+function canBandEditSharedSong(role: string | null | undefined) {
+  if (!role) {
+    return true;
+  }
+
+  return normalizeSubmittedByRole(role) !== "guest";
+}
+
 function normalizePendingSubmission(
   submission: PendingSubmission & { submitted_by_name?: string | null },
 ): PendingSubmission {
@@ -208,12 +277,69 @@ function normalizeSongLibrarySong(
   };
 }
 
+function normalizeSponsorLibraryEntry(
+  sponsor: SponsorLibraryEntry & { website?: string | null },
+): SponsorLibraryEntry {
+  return {
+    ...sponsor,
+    website: sponsor.website ?? null,
+  };
+}
+
+function normalizeShowSponsor(
+  sponsor: ShowSponsor & {
+    sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
+  },
+): ShowSponsor {
+  const relatedSponsor = Array.isArray(sponsor.sponsor) ? sponsor.sponsor[0] : sponsor.sponsor;
+
+  return {
+    ...sponsor,
+    sponsor: relatedSponsor ? normalizeSponsorLibraryEntry(relatedSponsor) : null,
+  };
+}
+
+function mergeShowSponsorsWithLibrary(
+  showSponsors: ShowSponsor[],
+  sponsorLibrary: SponsorLibraryEntry[],
+) {
+  const sponsorLookup = sponsorLibrary.reduce<Record<string, SponsorLibraryEntry>>((lookup, sponsor) => {
+    lookup[sponsor.id] = sponsor;
+    return lookup;
+  }, {});
+
+  return showSponsors.map((sponsor) =>
+    normalizeShowSponsor({
+      ...sponsor,
+      sponsor: sponsor.sponsor_id ? sponsorLookup[sponsor.sponsor_id] ?? null : null,
+    }),
+  );
+}
+
+function attachSponsorToShowAssignment(
+  sponsor: ShowSponsor,
+  sponsorLibrary: SponsorLibraryEntry[],
+) {
+  return normalizeShowSponsor({
+    ...sponsor,
+    sponsor: sponsor.sponsor_id
+      ? sponsorLibrary.find((librarySponsor) => librarySponsor.id === sponsor.sponsor_id) ?? null
+      : null,
+  });
+}
+
 function formatLibrarySourceRole(role: SongLibrarySong["source_role"]) {
   if (!role) {
     return "Unknown";
   }
 
   return formatSubmittedByRole(role);
+}
+
+function getNextSponsorPlacementOrder(sponsors: ShowSponsor[]) {
+  return sponsors.length > 0
+    ? Math.max(...sponsors.map((sponsor) => sponsor.placement_order)) + 1
+    : 1;
 }
 
 function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
@@ -331,9 +457,44 @@ export function ShowPage({
   const [guestProfiles, setGuestProfiles] = useState<GuestProfile[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
   const [songLibrary, setSongLibrary] = useState<SongLibrarySong[]>([]);
+  const [sponsorLibrary, setSponsorLibrary] = useState<SponsorLibraryEntry[]>([]);
+  const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
   const [openLyricsSongId, setOpenLyricsSongId] = useState<string | null>(null);
-  const [editingLyricsSongId, setEditingLyricsSongId] = useState<string | null>(null);
-  const [lyricsDraft, setLyricsDraft] = useState("");
+  const [editingPoolSongId, setEditingPoolSongId] = useState<string | null>(null);
+  const [editingSetlistSongId, setEditingSetlistSongId] = useState<string | null>(null);
+  const [editingLibrarySongId, setEditingLibrarySongId] = useState<string | null>(null);
+  const [editingSponsorLibraryId, setEditingSponsorLibraryId] = useState<string | null>(null);
+  const [editingShowSponsorId, setEditingShowSponsorId] = useState<string | null>(null);
+  const [poolSongEditFormState, setPoolSongEditFormState] = useState<SongEditFormState>({
+    title: "",
+    artist: "",
+    key: "",
+    notes: "",
+    lyrics: "",
+  });
+  const [setlistSongEditFormState, setSetlistSongEditFormState] = useState<SongEditFormState>({
+    title: "",
+    artist: "",
+    key: "",
+    notes: "",
+    lyrics: "",
+  });
+  const [librarySongEditFormState, setLibrarySongEditFormState] = useState<SongEditFormState>({
+    title: "",
+    artist: "",
+    key: "",
+    notes: "",
+    lyrics: "",
+  });
+  const [sponsorLibraryFormState, setSponsorLibraryFormState] = useState<SponsorLibraryFormState>(
+    initialSponsorLibraryFormState,
+  );
+  const [newSponsorLibraryFormState, setNewSponsorLibraryFormState] =
+    useState<SponsorLibraryFormState>(initialSponsorLibraryFormState);
+  const [showSponsorAssignmentFormState, setShowSponsorAssignmentFormState] =
+    useState<ShowSponsorAssignmentFormState>(initialShowSponsorAssignmentFormState);
+  const [editingShowSponsorFormState, setEditingShowSponsorFormState] =
+    useState<ShowSponsorAssignmentFormState>(initialShowSponsorAssignmentFormState);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -344,6 +505,7 @@ export function ShowPage({
   const [showDetailsError, setShowDetailsError] = useState<string | null>(null);
   const [activePendingActionId, setActivePendingActionId] = useState<string | null>(null);
   const [activeSetlistActionId, setActiveSetlistActionId] = useState<string | null>(null);
+  const [activeSponsorActionId, setActiveSponsorActionId] = useState<string | null>(null);
 
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
@@ -354,6 +516,30 @@ export function ShowPage({
     viewMode === "guest"
       ? []
       : pendingSongs;
+
+  function canEditPoolSong(song: PendingSubmission) {
+    if (viewMode === "admin") {
+      return true;
+    }
+
+    return viewMode === "band" && canBandEditSharedSong(song.submitted_by_role);
+  }
+
+  function canEditSetlistSong(song: SetlistSong) {
+    if (viewMode === "admin") {
+      return true;
+    }
+
+    return viewMode === "band" && canBandEditSharedSong(song.source_role);
+  }
+
+  function canEditLibrarySong(song: SongLibrarySong) {
+    if (viewMode === "admin") {
+      return true;
+    }
+
+    return viewMode === "band" && canBandEditSharedSong(song.source_role);
+  }
 
   function handlePrint(nextPrintMode: PrintMode) {
     setPrintMode(nextPrintMode);
@@ -389,6 +575,8 @@ export function ShowPage({
           setSetlist([]);
           setPendingSongs([]);
           setSongLibrary([]);
+          setSponsorLibrary([]);
+          setShowSponsors([]);
           setGuestProfiles([]);
           setErrorMessage("Show not found");
           return;
@@ -400,6 +588,8 @@ export function ShowPage({
           { data: setlistRows, error: setlistError },
           { data: pendingRows, error: pendingError },
           { data: libraryRows, error: libraryError },
+          { data: sponsorLibraryRows, error: sponsorLibraryError },
+          { data: showSponsorRows, error: showSponsorError },
           { data: guestProfileRows, error: guestProfilesError },
         ] =
           await Promise.all([
@@ -419,6 +609,16 @@ export function ShowPage({
               .order("title", { ascending: true })
               .order("artist", { ascending: true, nullsFirst: false }),
             supabase
+              .from("sponsor_library")
+              .select("*")
+              .order("name", { ascending: true }),
+            supabase
+              .from("show_sponsors")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("placement_order", { ascending: true })
+              .order("created_at", { ascending: true }),
+            supabase
               .from("guest_profiles")
               .select("*")
               .eq("show_id", showRecord.id)
@@ -435,6 +635,14 @@ export function ShowPage({
 
         if (libraryError) {
           throw libraryError;
+        }
+
+        if (sponsorLibraryError) {
+          throw sponsorLibraryError;
+        }
+
+        if (showSponsorError) {
+          throw showSponsorError;
         }
 
         if (guestProfilesError) {
@@ -459,6 +667,13 @@ export function ShowPage({
             (song: SongLibrarySong & { source_role?: string | null }) =>
               normalizeSongLibrarySong(song),
           ),
+        );
+        const normalizedSponsorLibrary = (sponsorLibraryRows ?? []).map(
+          (sponsor: SponsorLibraryEntry) => normalizeSponsorLibraryEntry(sponsor),
+        );
+        setSponsorLibrary(normalizedSponsorLibrary);
+        setShowSponsors(
+          mergeShowSponsorsWithLibrary((showSponsorRows ?? []) as ShowSponsor[], normalizedSponsorLibrary),
         );
         setGuestProfiles(guestProfileRows ?? []);
       } catch (error) {
@@ -521,6 +736,363 @@ export function ShowPage({
   function handleGuestPhotoChange(event: ChangeEvent<HTMLInputElement>) {
     const nextFile = event.target.files?.[0] ?? null;
     setGuestPhotoFile(nextFile);
+  }
+
+  function handleSponsorLibraryChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    mode: "new" | "edit",
+  ) {
+    const { name, value } = event.target;
+    const setState = mode === "edit" ? setSponsorLibraryFormState : setNewSponsorLibraryFormState;
+
+    setState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function handleShowSponsorAssignmentChange(
+    event: ChangeEvent<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>,
+    mode: "new" | "edit",
+  ) {
+    const { name, value } = event.target;
+    const setState =
+      mode === "edit" ? setEditingShowSponsorFormState : setShowSponsorAssignmentFormState;
+
+    setState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function startEditingSponsorLibraryEntry(sponsorId: string) {
+    const sponsorToEdit = sponsorLibrary.find((sponsor) => sponsor.id === sponsorId);
+
+    if (!sponsorToEdit) {
+      return;
+    }
+
+    setEditingSponsorLibraryId(sponsorId);
+    setSponsorLibraryFormState(buildSponsorLibraryFormState(sponsorToEdit));
+  }
+
+  function cancelEditingSponsorLibraryEntry() {
+    setEditingSponsorLibraryId(null);
+    setSponsorLibraryFormState(initialSponsorLibraryFormState);
+  }
+
+  async function handleCreateSponsorLibraryEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const name = newSponsorLibraryFormState.name.trim();
+
+    if (!name) {
+      setActionError("Sponsor name is required.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId("new-library");
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("sponsor_library")
+        .insert({
+          name,
+          short_message: normalizeOptionalField(newSponsorLibraryFormState.shortMessage),
+          full_message: normalizeOptionalField(newSponsorLibraryFormState.fullMessage),
+          website: normalizeOptionalField(newSponsorLibraryFormState.website),
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setSponsorLibrary((currentSponsors) =>
+        [...currentSponsors, normalizeSponsorLibraryEntry(data)].sort((sponsorA, sponsorB) =>
+          sponsorA.name.localeCompare(sponsorB.name),
+        ),
+      );
+      setNewSponsorLibraryFormState(initialSponsorLibraryFormState);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleSaveSponsorLibraryEntry(sponsorId: string) {
+    const name = sponsorLibraryFormState.name.trim();
+
+    if (!name) {
+      setActionError("Sponsor name is required.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`library-${sponsorId}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("sponsor_library")
+        .update({
+          name,
+          short_message: normalizeOptionalField(sponsorLibraryFormState.shortMessage),
+          full_message: normalizeOptionalField(sponsorLibraryFormState.fullMessage),
+          website: normalizeOptionalField(sponsorLibraryFormState.website),
+        })
+        .eq("id", sponsorId)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const normalizedSponsor = normalizeSponsorLibraryEntry(data);
+
+      setSponsorLibrary((currentSponsors) =>
+        currentSponsors
+          .map((sponsor) => (sponsor.id === sponsorId ? normalizedSponsor : sponsor))
+          .sort((sponsorA, sponsorB) => sponsorA.name.localeCompare(sponsorB.name)),
+      );
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((sponsor) =>
+          sponsor.sponsor_id === sponsorId
+            ? { ...sponsor, sponsor: normalizedSponsor }
+            : sponsor,
+        ),
+      );
+      cancelEditingSponsorLibraryEntry();
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleAssignSponsorToShow(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    const sponsorId = showSponsorAssignmentFormState.sponsorId;
+    const sponsorRecord = sponsorLibrary.find((sponsor) => sponsor.id === sponsorId);
+
+    if (!sponsorRecord) {
+      setActionError("Choose a sponsor from the library first.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId("assign-show");
+
+    try {
+      const supabase = createClient();
+      const placementOrder = Number(getNextSponsorPlacementOrder(showSponsors));
+
+      if (!Number.isInteger(placementOrder) || placementOrder < 1) {
+        throw new Error("Could not determine a valid sponsor placement order.");
+      }
+
+      const payload = {
+        show_id: show.id,
+        sponsor_id: sponsorId,
+        placement_order: placementOrder,
+        placement_type: normalizeOptionalField(showSponsorAssignmentFormState.placementType),
+        linked_performer: normalizeOptionalField(showSponsorAssignmentFormState.linkedPerformer),
+        custom_note: normalizeOptionalField(showSponsorAssignmentFormState.customNote),
+      };
+
+      const { data, error } = await supabase
+        .from("show_sponsors")
+        .insert(payload)
+        .select("id, show_id, sponsor_id, placement_order, placement_type, linked_performer, custom_note, created_at")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setShowSponsors((currentSponsors) => [
+        ...currentSponsors,
+        attachSponsorToShowAssignment(data as ShowSponsor, sponsorLibrary),
+      ]);
+      setShowSponsorAssignmentFormState(initialShowSponsorAssignmentFormState);
+    } catch (error) {
+      console.error("Failed to insert show sponsor", error);
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  function startEditingShowSponsor(sponsorId: string) {
+    const sponsorToEdit = showSponsors.find((sponsor) => sponsor.id === sponsorId);
+
+    if (!sponsorToEdit) {
+      return;
+    }
+
+    setEditingShowSponsorId(sponsorId);
+    setEditingShowSponsorFormState(buildShowSponsorAssignmentFormState(sponsorToEdit));
+  }
+
+  function cancelEditingShowSponsor() {
+    setEditingShowSponsorId(null);
+    setEditingShowSponsorFormState(initialShowSponsorAssignmentFormState);
+  }
+
+  async function handleSaveShowSponsor(sponsorId: string) {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`show-${sponsorId}`);
+
+    try {
+      const supabase = createClient();
+      const payload = {
+        placement_type: normalizeOptionalField(editingShowSponsorFormState.placementType),
+        linked_performer: normalizeOptionalField(editingShowSponsorFormState.linkedPerformer),
+        custom_note: normalizeOptionalField(editingShowSponsorFormState.customNote),
+      };
+
+      const { data, error } = await supabase
+        .from("show_sponsors")
+        .update(payload)
+        .eq("id", sponsorId)
+        .eq("show_id", show.id)
+        .select("id, show_id, sponsor_id, placement_order, placement_type, linked_performer, custom_note, created_at")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((sponsor) =>
+          sponsor.id === sponsorId
+            ? attachSponsorToShowAssignment(data as ShowSponsor, sponsorLibrary)
+            : sponsor,
+        ),
+      );
+      cancelEditingShowSponsor();
+    } catch (error) {
+      console.error("Failed to update show sponsor", error);
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleMoveShowSponsor(sponsorId: string, direction: "up" | "down") {
+    const sponsorToMove = showSponsors.find((sponsor) => sponsor.id === sponsorId);
+
+    if (!sponsorToMove) {
+      return;
+    }
+
+    const sponsorIndex = showSponsors.findIndex((sponsor) => sponsor.id === sponsorId);
+    const targetIndex = direction === "up" ? sponsorIndex - 1 : sponsorIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= showSponsors.length) {
+      return;
+    }
+
+    const targetSponsor = showSponsors[targetIndex];
+
+    if (!targetSponsor) {
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`show-${sponsorId}`);
+
+    try {
+      const supabase = createClient();
+      const { error: firstError } = await supabase
+        .from("show_sponsors")
+        .update({ placement_order: targetSponsor.placement_order })
+        .eq("id", sponsorId);
+
+      if (firstError) {
+        throw firstError;
+      }
+
+      const { error: secondError } = await supabase
+        .from("show_sponsors")
+        .update({ placement_order: sponsorToMove.placement_order })
+        .eq("id", targetSponsor.id);
+
+      if (secondError) {
+        throw secondError;
+      }
+
+      setShowSponsors((currentSponsors) =>
+        [...currentSponsors]
+          .map((sponsor) => {
+            if (sponsor.id === sponsorId) {
+              return { ...sponsor, placement_order: targetSponsor.placement_order };
+            }
+
+            if (sponsor.id === targetSponsor.id) {
+              return { ...sponsor, placement_order: sponsorToMove.placement_order };
+            }
+
+            return sponsor;
+          })
+          .sort((sponsorA, sponsorB) => sponsorA.placement_order - sponsorB.placement_order),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleRemoveShowSponsor(sponsorId: string) {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`show-${sponsorId}`);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("show_sponsors")
+        .delete()
+        .eq("id", sponsorId)
+        .eq("show_id", show.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.filter((sponsor) => sponsor.id !== sponsorId),
+      );
+
+      if (editingShowSponsorId === sponsorId) {
+        cancelEditingShowSponsor();
+      }
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
   }
 
   async function handleShowDetailsSubmit(event: FormEvent<HTMLFormElement>) {
@@ -804,6 +1376,7 @@ export function ShowPage({
           show_id: show.id,
           position: nextPosition,
           set_section: section,
+          source_role: normalizeSubmittedByRole(songToPlace.submitted_by_role),
           title: songToPlace.title,
           artist: songToPlace.artist,
           song_key: songToPlace.song_key,
@@ -860,6 +1433,184 @@ export function ShowPage({
     }
   }
 
+  function handlePoolSongEditChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) {
+    const { name, value } = event.target;
+
+    setPoolSongEditFormState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function handleStartEditingPoolSong(songId: string) {
+    const songToEdit = pendingSongs.find((song) => song.id === songId);
+
+    if (!songToEdit || !canEditPoolSong(songToEdit)) {
+      return;
+    }
+
+    setEditingPoolSongId(songId);
+    setPoolSongEditFormState(buildSongEditFormState(songToEdit));
+  }
+
+  function handleCancelPoolSongEdit() {
+    setEditingPoolSongId(null);
+    setPoolSongEditFormState({
+      title: "",
+      artist: "",
+      key: "",
+      notes: "",
+      lyrics: "",
+    });
+  }
+
+  async function handleSavePoolSong(songId: string) {
+    const songToUpdate = pendingSongs.find((song) => song.id === songId);
+
+    if (!songToUpdate || !canEditPoolSong(songToUpdate)) {
+      return;
+    }
+
+    const title = poolSongEditFormState.title.trim();
+    const artist = poolSongEditFormState.artist.trim();
+
+    if (!title || !artist) {
+      setActionError("Song title and artist are required.");
+      return;
+    }
+
+    setActionError(null);
+    setActivePendingActionId(songId);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("pending_submissions")
+        .update({
+          title,
+          artist,
+          song_key: normalizeOptionalField(poolSongEditFormState.key),
+          notes: normalizeOptionalField(poolSongEditFormState.notes),
+          lyrics: normalizeOptionalField(poolSongEditFormState.lyrics),
+        })
+        .eq("id", songId)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPendingSongs((currentSongs) =>
+        currentSongs.map((song) =>
+          song.id === songId
+            ? normalizePendingSubmission(
+                data as PendingSubmission & { submitted_by_name?: string | null },
+              )
+            : song,
+        ),
+      );
+      handleCancelPoolSongEdit();
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActivePendingActionId(null);
+    }
+  }
+
+  function handleLibrarySongEditChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) {
+    const { name, value } = event.target;
+
+    setLibrarySongEditFormState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function handleStartEditingLibrarySong(songId: string) {
+    const songToEdit = songLibrary.find((song) => song.id === songId);
+
+    if (!songToEdit || !canEditLibrarySong(songToEdit)) {
+      return;
+    }
+
+    setEditingLibrarySongId(songId);
+    setLibrarySongEditFormState(buildSongEditFormState(songToEdit));
+  }
+
+  function handleCancelLibrarySongEdit() {
+    setEditingLibrarySongId(null);
+    setLibrarySongEditFormState({
+      title: "",
+      artist: "",
+      key: "",
+      notes: "",
+      lyrics: "",
+    });
+  }
+
+  async function handleSaveLibrarySong(songId: string) {
+    const songToUpdate = songLibrary.find((song) => song.id === songId);
+
+    if (!songToUpdate || !canEditLibrarySong(songToUpdate)) {
+      return;
+    }
+
+    const title = librarySongEditFormState.title.trim();
+    const artist = librarySongEditFormState.artist.trim();
+
+    if (!title || !artist) {
+      setActionError("Song title and artist are required.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSetlistActionId(songId);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("song_library")
+        .update({
+          title,
+          artist,
+          song_key: normalizeOptionalField(librarySongEditFormState.key),
+          notes: normalizeOptionalField(librarySongEditFormState.notes),
+          lyrics: normalizeOptionalField(librarySongEditFormState.lyrics),
+        })
+        .eq("id", songId)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setSongLibrary((currentSongs) =>
+        currentSongs
+          .map((song) => (song.id === songId ? normalizeSongLibrarySong(data) : song))
+          .sort((songA, songB) => {
+            const titleComparison = songA.title.localeCompare(songB.title);
+
+            if (titleComparison !== 0) {
+              return titleComparison;
+            }
+
+            return (songA.artist ?? "").localeCompare(songB.artist ?? "");
+          }),
+      );
+      handleCancelLibrarySongEdit();
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSetlistActionId(null);
+    }
+  }
+
   async function handleAddLibrarySongToSection(songToPlace: SongLibrarySong, section: SetSection) {
     if (!show) {
       setActionError("The show is not loaded yet.");
@@ -879,6 +1630,7 @@ export function ShowPage({
           show_id: show.id,
           position: nextPosition,
           set_section: section,
+          source_role: songToPlace.source_role ?? "band",
           title: songToPlace.title,
           artist: songToPlace.artist,
           song_key: songToPlace.song_key,
@@ -1103,7 +1855,7 @@ export function ShowPage({
       setOpenLyricsSongId((currentSongId) =>
         currentSongId === songToRemove.id ? null : currentSongId,
       );
-      setEditingLyricsSongId((currentSongId) =>
+      setEditingSetlistSongId((currentSongId) =>
         currentSongId === songToRemove.id ? null : currentSongId,
       );
     } catch (error) {
@@ -1119,18 +1871,41 @@ export function ShowPage({
     );
   }
 
-  function handleStartEditingLyrics(songId: string) {
+  function handleSetlistSongEditChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) {
+    const { name, value } = event.target;
+
+    setSetlistSongEditFormState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function handleStartEditingSetlistSong(songId: string) {
     const songToEdit = setlist.find((song) => song.id === songId);
 
-    setEditingLyricsSongId(songId);
-    setLyricsDraft(songToEdit?.lyrics ?? "");
+    if (!songToEdit || !canEditSetlistSong(songToEdit)) {
+      return;
+    }
+
+    setEditingSetlistSongId(songId);
+    setSetlistSongEditFormState(buildSongEditFormState(songToEdit));
     setOpenLyricsSongId(songId);
   }
 
-  async function handleSaveLyrics(songId: string) {
+  async function handleSaveSetlistSong(songId: string) {
     const songToUpdate = setlist.find((song) => song.id === songId);
 
-    if (!songToUpdate) {
+    if (!songToUpdate || !canEditSetlistSong(songToUpdate)) {
+      return;
+    }
+
+    const title = setlistSongEditFormState.title.trim();
+    const artist = setlistSongEditFormState.artist.trim();
+
+    if (!title || !artist) {
+      setActionError("Song title and artist are required.");
       return;
     }
 
@@ -1141,7 +1916,13 @@ export function ShowPage({
       const supabase = createClient();
       const { error } = await supabase
         .from("setlist_songs")
-        .update({ lyrics: lyricsDraft })
+        .update({
+          title,
+          artist,
+          song_key: normalizeOptionalField(setlistSongEditFormState.key),
+          notes: normalizeOptionalField(setlistSongEditFormState.notes),
+          lyrics: normalizeOptionalField(setlistSongEditFormState.lyrics),
+        })
         .eq("id", songToUpdate.id);
 
       if (error) {
@@ -1150,11 +1931,20 @@ export function ShowPage({
 
       setSetlist((currentSetlist) =>
         currentSetlist.map((song) =>
-          song.id === songToUpdate.id ? { ...song, lyrics: lyricsDraft } : song,
+          song.id === songToUpdate.id
+            ? {
+                ...song,
+                title,
+                artist,
+                song_key: normalizeOptionalField(setlistSongEditFormState.key),
+                notes: normalizeOptionalField(setlistSongEditFormState.notes),
+                lyrics: normalizeOptionalField(setlistSongEditFormState.lyrics),
+              }
+            : song,
         ),
       );
 
-      setEditingLyricsSongId(null);
+      setEditingSetlistSongId(null);
       setOpenLyricsSongId(songId);
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -1163,9 +1953,15 @@ export function ShowPage({
     }
   }
 
-  function handleCancelLyricsEdit() {
-    setEditingLyricsSongId(null);
-    setLyricsDraft("");
+  function handleCancelSetlistSongEdit() {
+    setEditingSetlistSongId(null);
+    setSetlistSongEditFormState({
+      title: "",
+      artist: "",
+      key: "",
+      notes: "",
+      lyrics: "",
+    });
   }
 
   const guestShowInfoItems: ShowInfoItem[] = show
@@ -1651,6 +2447,439 @@ export function ShowPage({
           </section>
         ) : null}
 
+        {viewMode === "admin" ? (
+          <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Sponsor Management</h2>
+              <p className="text-sm text-stone-600">
+                Store sponsors once, then assign and order them for this show.
+              </p>
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
+              <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Sponsor Library</h3>
+                  <p className="text-sm text-stone-600">
+                    Reusable sponsors available across all shows.
+                  </p>
+                </div>
+
+                <form className="grid gap-4" onSubmit={handleCreateSponsorLibraryEntry}>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Sponsor Name
+                    <input
+                      type="text"
+                      name="name"
+                      value={newSponsorLibraryFormState.name}
+                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Business or organization name"
+                      required
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Short Message
+                    <textarea
+                      name="shortMessage"
+                      value={newSponsorLibraryFormState.shortMessage}
+                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Short sponsor thank-you or mention"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Full Message
+                    <textarea
+                      name="fullMessage"
+                      value={newSponsorLibraryFormState.fullMessage}
+                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                      className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Longer sponsor read for MC or printed packet"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Website
+                    <input
+                      type="url"
+                      name="website"
+                      value={newSponsorLibraryFormState.website}
+                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="https://example.com"
+                    />
+                  </label>
+
+                  <div className="flex justify-start">
+                    <button
+                      type="submit"
+                      disabled={activeSponsorActionId === "new-library"}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {activeSponsorActionId === "new-library"
+                        ? "Adding Sponsor..."
+                        : "Add to Sponsor Library"}
+                    </button>
+                  </div>
+                </form>
+
+                {sponsorLibrary.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
+                    No reusable sponsors saved yet.
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {sponsorLibrary.map((sponsor) => (
+                      <article
+                        key={sponsor.id}
+                        className="rounded-2xl border border-stone-200 bg-white p-4"
+                      >
+                        {editingSponsorLibraryId === sponsor.id ? (
+                          <div className="grid gap-4">
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Sponsor Name
+                              <input
+                                type="text"
+                                name="name"
+                                value={sponsorLibraryFormState.name}
+                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                required
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Short Message
+                              <textarea
+                                name="shortMessage"
+                                value={sponsorLibraryFormState.shortMessage}
+                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Full Message
+                              <textarea
+                                name="fullMessage"
+                                value={sponsorLibraryFormState.fullMessage}
+                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                                className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Website
+                              <input
+                                type="url"
+                                name="website"
+                                value={sponsorLibraryFormState.website}
+                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveSponsorLibraryEntry(sponsor.id)}
+                                disabled={activeSponsorActionId === `library-${sponsor.id}`}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                Save Sponsor
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingSponsorLibraryEntry}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex flex-col gap-1">
+                                <h4 className="text-base font-semibold text-stone-900">
+                                  {sponsor.name}
+                                </h4>
+                                {sponsor.website ? (
+                                  <a
+                                    href={sponsor.website}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm font-medium text-emerald-700 underline"
+                                  >
+                                    {sponsor.website}
+                                  </a>
+                                ) : null}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => startEditingSponsorLibraryEntry(sponsor.id)}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Edit Sponsor
+                              </button>
+                            </div>
+
+                            <div className="mt-3 grid gap-3 text-sm text-stone-600">
+                              {sponsor.short_message ? <p>Short: {sponsor.short_message}</p> : null}
+                              {sponsor.full_message ? <p>Full: {sponsor.full_message}</p> : null}
+                            </div>
+                          </>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Sponsors for This Show</h3>
+                  <p className="text-sm text-stone-600">
+                    Assign reusable sponsors, then order and place them for this event.
+                  </p>
+                </div>
+
+                <form className="grid gap-4" onSubmit={handleAssignSponsorToShow}>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Sponsor from Library
+                    <select
+                      name="sponsorId"
+                      value={showSponsorAssignmentFormState.sponsorId}
+                      onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      required
+                    >
+                      <option value="">Choose a sponsor</option>
+                      {sponsorLibrary.map((sponsor) => (
+                        <option key={sponsor.id} value={sponsor.id}>
+                          {sponsor.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Placement Type
+                      <select
+                        name="placementType"
+                        value={showSponsorAssignmentFormState.placementType}
+                        onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Flexible / not set</option>
+                        <option value="opening">Opening</option>
+                        <option value="changeover">Changeover</option>
+                        <option value="intermission">Intermission</option>
+                        <option value="closing">Closing</option>
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Linked Performer
+                      <input
+                        type="text"
+                        name="linkedPerformer"
+                        value={showSponsorAssignmentFormState.linkedPerformer}
+                        onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Optional performer or segment"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Custom Note
+                    <textarea
+                      name="customNote"
+                      value={showSponsorAssignmentFormState.customNote}
+                      onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Notes for this specific show placement"
+                    />
+                  </label>
+
+                  <div className="flex justify-start">
+                    <button
+                      type="submit"
+                      disabled={activeSponsorActionId === "assign-show"}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {activeSponsorActionId === "assign-show"
+                        ? "Assigning Sponsor..."
+                        : "Add Sponsor to This Show"}
+                    </button>
+                  </div>
+                </form>
+
+                {showSponsors.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
+                    No sponsors assigned to this show yet.
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {showSponsors.map((sponsor, sponsorIndex) => (
+                      <article
+                        key={sponsor.id}
+                        className="rounded-2xl border border-stone-200 bg-white p-4"
+                      >
+                        {editingShowSponsorId === sponsor.id ? (
+                          <div className="grid gap-4">
+                            <p className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              {sponsor.sponsor?.name ?? "Assigned sponsor"}
+                            </p>
+
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Placement Type
+                                <select
+                                  name="placementType"
+                                  value={editingShowSponsorFormState.placementType}
+                                  onChange={(event) =>
+                                    handleShowSponsorAssignmentChange(event, "edit")
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                >
+                                  <option value="">Flexible / not set</option>
+                                  <option value="opening">Opening</option>
+                                  <option value="changeover">Changeover</option>
+                                  <option value="intermission">Intermission</option>
+                                  <option value="closing">Closing</option>
+                                </select>
+                              </label>
+
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Linked Performer
+                                <input
+                                  type="text"
+                                  name="linkedPerformer"
+                                  value={editingShowSponsorFormState.linkedPerformer}
+                                  onChange={(event) =>
+                                    handleShowSponsorAssignmentChange(event, "edit")
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                />
+                              </label>
+                            </div>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Custom Note
+                              <textarea
+                                name="customNote"
+                                value={editingShowSponsorFormState.customNote}
+                                onChange={(event) =>
+                                  handleShowSponsorAssignmentChange(event, "edit")
+                                }
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveShowSponsor(sponsor.id)}
+                                disabled={activeSponsorActionId === `show-${sponsor.id}`}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                Save Placement
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingShowSponsor}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="text-base font-semibold text-stone-900">
+                                    {sponsor.sponsor?.name ?? "Assigned sponsor"}
+                                  </h4>
+                                  <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                                    Slot {sponsor.placement_order}
+                                  </span>
+                                  {sponsor.placement_type ? (
+                                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
+                                      {sponsor.placement_type}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {sponsor.linked_performer ? (
+                                  <p className="text-sm text-stone-600">
+                                    Linked performer: {sponsor.linked_performer}
+                                  </p>
+                                ) : null}
+                                {sponsor.custom_note ? (
+                                  <p className="text-sm text-stone-600">
+                                    Note: {sponsor.custom_note}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveShowSponsor(sponsor.id, "up")}
+                                  disabled={
+                                    sponsorIndex === 0 || activeSponsorActionId === `show-${sponsor.id}`
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Move Up
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveShowSponsor(sponsor.id, "down")}
+                                  disabled={
+                                    sponsorIndex === showSponsors.length - 1 ||
+                                    activeSponsorActionId === `show-${sponsor.id}`
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Move Down
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingShowSponsor(sponsor.id)}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Edit Placement
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveShowSponsor(sponsor.id)}
+                                  disabled={activeSponsorActionId === `show-${sponsor.id}`}
+                                  className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                >
+                                  Remove from Show
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </section>
+        ) : null}
+
         <section className="flex flex-col gap-4">
           <div className="print-hidden flex flex-col gap-1">
             <h2 className="text-xl font-semibold">Setlist</h2>
@@ -1722,24 +2951,73 @@ export function ShowPage({
                                 {openLyricsSongId === song.id ? "Hide Lyrics" : "Show Lyrics"}
                               </button>
 
-                              {viewMode === "admin" ? (
+                              {canEditSetlistSong(song) ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleStartEditingLyrics(song.id)}
+                                  onClick={() => handleStartEditingSetlistSong(song.id)}
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                                 >
-                                  Edit Lyrics
+                                  Edit Song
                                 </button>
                               ) : null}
                             </div>
 
-                            {editingLyricsSongId === song.id ? (
+                            {editingSetlistSongId === song.id ? (
                               <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
-                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Song Title
+                                    <input
+                                      type="text"
+                                      name="title"
+                                      value={setlistSongEditFormState.title}
+                                      onChange={handleSetlistSongEditChange}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      required
+                                    />
+                                  </label>
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Artist / Singer
+                                    <input
+                                      type="text"
+                                      name="artist"
+                                      value={setlistSongEditFormState.artist}
+                                      onChange={handleSetlistSongEditChange}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      required
+                                    />
+                                  </label>
+                                </div>
+
+                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Key
+                                  <input
+                                    type="text"
+                                    name="key"
+                                    value={setlistSongEditFormState.key}
+                                    onChange={handleSetlistSongEditChange}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder="Optional key"
+                                  />
+                                </label>
+
+                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Notes
+                                  <textarea
+                                    name="notes"
+                                    value={setlistSongEditFormState.notes}
+                                    onChange={handleSetlistSongEditChange}
+                                    className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder="Optional notes"
+                                  />
+                                </label>
+
+                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
                                   Lyrics
                                   <textarea
-                                    value={lyricsDraft}
-                                    onChange={(event) => setLyricsDraft(event.target.value)}
+                                    name="lyrics"
+                                    value={setlistSongEditFormState.lyrics}
+                                    onChange={handleSetlistSongEditChange}
                                     className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                                     placeholder="Add lyrics for this song"
                                   />
@@ -1748,15 +3026,15 @@ export function ShowPage({
                                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                                   <button
                                     type="button"
-                                    onClick={() => handleSaveLyrics(song.id)}
+                                    onClick={() => handleSaveSetlistSong(song.id)}
                                     disabled={activeSetlistActionId === song.id}
                                     className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                                   >
-                                    Save Lyrics
+                                    Save Song
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={handleCancelLyricsEdit}
+                                    onClick={handleCancelSetlistSongEdit}
                                     className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                                   >
                                     Cancel
@@ -2294,76 +3572,176 @@ export function ShowPage({
                   key={song.id}
                   className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
                 >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex flex-col gap-1">
-                      <h3 className="text-base font-semibold text-stone-900">
-                        {song.title}
-                      </h3>
-                      <p className="text-sm text-stone-700">
-                        {song.artist || "Unknown artist"}
-                      </p>
-                    </div>
-                    <span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
-                      Submitted By: {formatSubmittedByRole(song.submitted_by_role)}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
-                    {song.song_key ? <p>Key: {song.song_key}</p> : null}
-                    {song.notes ? <p>Notes: {song.notes}</p> : null}
-                    <p className="text-xs text-stone-500">
-                      Submitted by: {formatSubmittedByRole(song.submitted_by_role)}
-                      {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
-                    </p>
-                  </div>
-
-                  {song.lyrics ? (
-                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                      Lyrics included
-                    </p>
-                  ) : null}
-
-                  {viewMode === "admin" ? (
-                    <div className="mt-4 flex flex-col gap-3">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => handleAddPoolSongToSection(song, "set1")}
-                          disabled={activePendingActionId === song.id}
-                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                        >
-                          Add to Set 1
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddPoolSongToSection(song, "set2")}
-                          disabled={activePendingActionId === song.id}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Add to Set 2
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddPoolSongToSection(song, "encore")}
-                          disabled={activePendingActionId === song.id}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Add to Encore
-                        </button>
+                  {editingPoolSongId === song.id ? (
+                    <div className="grid gap-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Song Title
+                          <input
+                            type="text"
+                            name="title"
+                            value={poolSongEditFormState.title}
+                            onChange={handlePoolSongEditChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            required
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Artist / Singer
+                          <input
+                            type="text"
+                            name="artist"
+                            value={poolSongEditFormState.artist}
+                            onChange={handlePoolSongEditChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            required
+                          />
+                        </label>
                       </div>
+
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Key
+                        <input
+                          type="text"
+                          name="key"
+                          value={poolSongEditFormState.key}
+                          onChange={handlePoolSongEditChange}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Optional key"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Notes
+                        <textarea
+                          name="notes"
+                          value={poolSongEditFormState.notes}
+                          onChange={handlePoolSongEditChange}
+                          className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Optional notes"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Lyrics
+                        <textarea
+                          name="lyrics"
+                          value={poolSongEditFormState.lyrics}
+                          onChange={handlePoolSongEditChange}
+                          className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Lyrics, chorus, or cue"
+                        />
+                      </label>
 
                       <div className="flex flex-col gap-3 sm:flex-row">
                         <button
                           type="button"
-                          onClick={() => handleDeleteFromSongPool(song.id)}
+                          onClick={() => handleSavePoolSong(song.id)}
                           disabled={activePendingActionId === song.id}
-                          className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                         >
-                          Delete from Pool
+                          Save Song
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelPoolSongEdit}
+                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Cancel
                         </button>
                       </div>
                     </div>
-                  ) : null}
+                  ) : (
+                    <>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex flex-col gap-1">
+                          <h3 className="text-base font-semibold text-stone-900">
+                            {song.title}
+                          </h3>
+                          <p className="text-sm text-stone-700">
+                            {song.artist || "Unknown artist"}
+                          </p>
+                        </div>
+                        <span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
+                          Submitted By: {formatSubmittedByRole(song.submitted_by_role)}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
+                        {song.song_key ? <p>Key: {song.song_key}</p> : null}
+                        {song.notes ? <p>Notes: {song.notes}</p> : null}
+                        <p className="text-xs text-stone-500">
+                          Submitted by: {formatSubmittedByRole(song.submitted_by_role)}
+                          {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
+                        </p>
+                      </div>
+
+                      {song.lyrics ? (
+                        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                          Lyrics included
+                        </p>
+                      ) : null}
+
+                      {canEditPoolSong(song) || viewMode === "admin" ? (
+                        <div className="mt-4 flex flex-col gap-3">
+                          {canEditPoolSong(song) ? (
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditingPoolSong(song.id)}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Edit Song
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {viewMode === "admin" ? (
+                            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => handleAddPoolSongToSection(song, "set1")}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                Add to Set 1
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAddPoolSongToSection(song, "set2")}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Add to Set 2
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAddPoolSongToSection(song, "encore")}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Add to Encore
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {viewMode === "admin" ? (
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFromSongPool(song.id)}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                              >
+                                Delete from Pool
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </article>
                 ))}
               </div>
@@ -2391,54 +3769,154 @@ export function ShowPage({
                     key={song.id}
                     className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
                   >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="flex flex-col gap-1">
-                        <h3 className="text-base font-semibold text-stone-900">{song.title}</h3>
-                        <p className="text-sm text-stone-700">
-                          {song.artist || "Unknown artist"}
-                        </p>
-                      </div>
-                      <span className="w-fit rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
-                        Source: {formatLibrarySourceRole(song.source_role)}
-                      </span>
-                    </div>
+                    {editingLibrarySongId === song.id ? (
+                      <div className="grid gap-4">
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Song Title
+                            <input
+                              type="text"
+                              name="title"
+                              value={librarySongEditFormState.title}
+                              onChange={handleLibrarySongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              required
+                            />
+                          </label>
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Artist / Singer
+                            <input
+                              type="text"
+                              name="artist"
+                              value={librarySongEditFormState.artist}
+                              onChange={handleLibrarySongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              required
+                            />
+                          </label>
+                        </div>
 
-                    <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
-                      {song.song_key ? <p>Key: {song.song_key}</p> : null}
-                      {song.notes ? <p>Notes: {song.notes}</p> : null}
-                      {song.lyrics ? (
-                        <p className="text-xs text-stone-500">Lyrics available in library</p>
-                      ) : null}
-                    </div>
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Key
+                          <input
+                            type="text"
+                            name="key"
+                            value={librarySongEditFormState.key}
+                            onChange={handleLibrarySongEditChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Optional key"
+                          />
+                        </label>
 
-                    {viewMode === "admin" ? (
-                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => handleAddLibrarySongToSection(song, "set1")}
-                          disabled={activeSetlistActionId === song.id}
-                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                        >
-                          Add to Set 1
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddLibrarySongToSection(song, "set2")}
-                          disabled={activeSetlistActionId === song.id}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Add to Set 2
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddLibrarySongToSection(song, "encore")}
-                          disabled={activeSetlistActionId === song.id}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Add to Encore
-                        </button>
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Notes
+                          <textarea
+                            name="notes"
+                            value={librarySongEditFormState.notes}
+                            onChange={handleLibrarySongEditChange}
+                            className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Optional notes"
+                          />
+                        </label>
+
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Lyrics
+                          <textarea
+                            name="lyrics"
+                            value={librarySongEditFormState.lyrics}
+                            onChange={handleLibrarySongEditChange}
+                            className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Lyrics, chorus, or cue"
+                          />
+                        </label>
+
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveLibrarySong(song.id)}
+                            disabled={activeSetlistActionId === song.id}
+                            className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                          >
+                            Save Song
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelLibrarySongEdit}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                    ) : null}
+                    ) : (
+                      <>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex flex-col gap-1">
+                            <h3 className="text-base font-semibold text-stone-900">{song.title}</h3>
+                            <p className="text-sm text-stone-700">
+                              {song.artist || "Unknown artist"}
+                            </p>
+                          </div>
+                          <span className="w-fit rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                            Source: {formatLibrarySourceRole(song.source_role)}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
+                          {song.song_key ? <p>Key: {song.song_key}</p> : null}
+                          {song.notes ? <p>Notes: {song.notes}</p> : null}
+                          {song.lyrics ? (
+                            <p className="text-xs text-stone-500">Lyrics available in library</p>
+                          ) : null}
+                        </div>
+
+                        {canEditLibrarySong(song) || viewMode === "admin" ? (
+                          <div className="mt-4 flex flex-col gap-3">
+                            {canEditLibrarySong(song) ? (
+                              <div className="flex flex-col gap-3 sm:flex-row">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditingLibrarySong(song.id)}
+                                  disabled={activeSetlistActionId === song.id}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Edit Song
+                                </button>
+                              </div>
+                            ) : null}
+
+                            {viewMode === "admin" ? (
+                              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddLibrarySongToSection(song, "set1")}
+                                  disabled={activeSetlistActionId === song.id}
+                                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                >
+                                  Add to Set 1
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddLibrarySongToSection(song, "set2")}
+                                  disabled={activeSetlistActionId === song.id}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Add to Set 2
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddLibrarySongToSection(song, "encore")}
+                                  disabled={activeSetlistActionId === song.id}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Add to Encore
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </article>
                 ))}
               </div>

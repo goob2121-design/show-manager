@@ -6,12 +6,13 @@ import { getAdminAccessStorageKey } from "@/app/components/admin-gate";
 
 type AdminQuickNavProps = {
   slug: string;
-  currentView: "admin" | "band" | "guest";
+  currentView: "admin" | "band" | "guest" | "mc";
 };
 
 const quickNavLinks = [
   { key: "dashboard", label: "Dashboard", href: "/shows" },
   { key: "admin", label: "Admin", href: (slug: string) => `/admin/${slug}` },
+  { key: "mc", label: "MC", href: (slug: string) => `/mc/${slug}` },
   { key: "band", label: "Band", href: (slug: string) => `/band/${slug}` },
   { key: "guest", label: "Guest", href: (slug: string) => `/guest/${slug}` },
 ] as const;

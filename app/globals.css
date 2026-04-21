@@ -218,6 +218,12 @@ html.dark select {
     list-style: none;
   }
 
+  .mc-section,
+  .mc-run-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   .print-song-item {
     break-inside: avoid;
     border: none;

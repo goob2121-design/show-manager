@@ -22,6 +22,9 @@ export type ShowRecord = {
   load_in_notes: string | null;
   announcements: string | null;
   guest_message: string | null;
+  opening_script: string | null;
+  intermission_script: string | null;
+  closing_script: string | null;
   created_at: string;
 };
 
@@ -30,6 +33,7 @@ export type SetlistSong = {
   show_id: string;
   position: number;
   set_section: SetSection;
+  source_role: SubmittedByRole | string | null;
   title: string;
   artist: string | null;
   song_key: string | null;
@@ -75,6 +79,51 @@ export type SongLibrarySong = {
   notes: string | null;
   lyrics: string | null;
   source_role: SubmittedByRole | string | null;
+  created_at: string;
+};
+
+export type SponsorLibraryEntry = {
+  id: string;
+  name: string;
+  short_message: string | null;
+  full_message: string | null;
+  website: string | null;
+  created_at: string;
+};
+
+export type ShowSponsor = {
+  id: string;
+  show_id: string;
+  sponsor_id: string | null;
+  placement_order: number;
+  placement_type: string | null;
+  linked_performer: string | null;
+  custom_note: string | null;
+  created_at: string;
+  sponsor?: SponsorLibraryEntry | null;
+};
+
+export type SponsorLibraryFormState = {
+  name: string;
+  shortMessage: string;
+  fullMessage: string;
+  website: string;
+};
+
+export type ShowSponsorAssignmentFormState = {
+  sponsorId: string;
+  placementType: string;
+  linkedPerformer: string;
+  customNote: string;
+};
+
+export type McBlockNote = {
+  id: string;
+  show_id: string;
+  anchor_song_id: string;
+  intro_note: string | null;
+  sponsor_mention: string | null;
+  transition_note: string | null;
   created_at: string;
 };
 

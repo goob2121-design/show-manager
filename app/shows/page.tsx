@@ -241,7 +241,7 @@ export default function ShowsDashboardPage() {
     });
   }
 
-  async function handleCopyLink(slug: string, role: "guest" | "band" | "admin") {
+  async function handleCopyLink(slug: string, role: "guest" | "band" | "admin" | "mc") {
     const routePath = `/${role}/${slug}`;
     const absoluteUrl =
       typeof window === "undefined" ? routePath : `${window.location.origin}${routePath}`;
@@ -421,6 +421,9 @@ export default function ShowsDashboardPage() {
           load_in_notes: sourceShow.load_in_notes,
           announcements: sourceShow.announcements,
           guest_message: sourceShow.guest_message,
+          opening_script: sourceShow.opening_script,
+          intermission_script: sourceShow.intermission_script,
+          closing_script: sourceShow.closing_script,
           is_archived: false,
         })
         .select("*")
@@ -451,6 +454,7 @@ export default function ShowsDashboardPage() {
             show_id: createdShow.id,
             position: song.position,
             set_section: song.set_section ?? "set1",
+            source_role: song.source_role ?? null,
             title: song.title,
             artist: song.artist,
             song_key: song.song_key,
@@ -509,7 +513,7 @@ export default function ShowsDashboardPage() {
             <ThemeToggle />
           </div>
           <p className="text-base text-stone-600">
-            Create a new event, then open the Guest, Band, or Admin portal for that show.
+            Create a new event, then open the Guest, Band, MC, or Admin portal for that show.
           </p>
         </header>
 
@@ -827,6 +831,12 @@ export default function ShowsDashboardPage() {
                                     Band Portal
                                   </Link>
                                   <Link
+                                    href={`/mc/${show.slug}`}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    MC Portal
+                                  </Link>
+                                  <Link
                                     href={`/admin/${show.slug}`}
                                     className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
                                   >
@@ -861,6 +871,15 @@ export default function ShowsDashboardPage() {
                                     {copiedLinkKey === `admin-${show.slug}`
                                       ? "Copied!"
                                       : "Copy Admin Link"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyLink(show.slug, "mc")}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    {copiedLinkKey === `mc-${show.slug}`
+                                      ? "Copied!"
+                                      : "Copy MC Link"}
                                   </button>
                                 </div>
 
@@ -1108,6 +1127,12 @@ export default function ShowsDashboardPage() {
                                       className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                                     >
                                       Band Portal
+                                    </Link>
+                                    <Link
+                                      href={`/mc/${show.slug}`}
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      MC Portal
                                     </Link>
                                     <Link
                                       href={`/admin/${show.slug}`}
