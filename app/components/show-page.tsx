@@ -2522,24 +2522,24 @@ export function ShowPage({
 
   const guestShowInfoItems: ShowInfoItem[] = show
     ? [
-        { label: "Show Name", value: show.name },
-        { label: "Show Date", value: formatShowDate(show.show_date) },
-        { label: "Venue", value: show.venue ?? "" },
-        { label: "Venue Address", value: show.venue_address ?? "" },
+        { label: "Show Name", value: show?.name ?? "" },
+        { label: "Show Date", value: formatShowDate(show?.show_date ?? null) },
+        { label: "Venue", value: show?.venue ?? "" },
+        { label: "Venue Address", value: show?.venue_address ?? "" },
         {
           label: "Directions",
-          value: show.directions_url ?? "",
-          href: show.directions_url ?? undefined,
+          value: show?.directions_url ?? "",
+          href: show?.directions_url ?? undefined,
         },
-        { label: "Guest Arrival Time", value: show.guest_arrival_time ?? "" },
-        { label: "Call Time", value: show.call_time ?? "" },
-        { label: "Soundcheck Time", value: show.soundcheck_time ?? "" },
-        { label: "Show Start Time", value: show.show_start_time ?? "" },
-        { label: "Contact Name", value: show.contact_name ?? "" },
-        { label: "Contact Phone", value: show.contact_phone ?? "" },
-        { label: "Parking Notes", value: show.parking_notes ?? "" },
-        { label: "Load-In Notes", value: show.load_in_notes ?? "" },
-        { label: "Announcements", value: show.announcements ?? "" },
+        { label: "Guest Arrival Time", value: show?.guest_arrival_time ?? "" },
+        { label: "Call Time", value: show?.call_time ?? "" },
+        { label: "Soundcheck Time", value: show?.soundcheck_time ?? "" },
+        { label: "Show Start Time", value: show?.show_start_time ?? "" },
+        { label: "Contact Name", value: show?.contact_name ?? "" },
+        { label: "Contact Phone", value: show?.contact_phone ?? "" },
+        { label: "Parking Notes", value: show?.parking_notes ?? "" },
+        { label: "Load-In Notes", value: show?.load_in_notes ?? "" },
+        { label: "Announcements", value: show?.announcements ?? "" },
       ]
     : [];
 
@@ -2547,24 +2547,24 @@ export function ShowPage({
 
   const bandShowInfoItems: ShowInfoItem[] = show
     ? [
-        { label: "Show Name", value: show.name },
-        { label: "Show Date", value: formatShowDate(show.show_date) },
-        { label: "Venue", value: show.venue ?? "" },
-        { label: "Venue Address", value: show.venue_address ?? "" },
+        { label: "Show Name", value: show?.name ?? "" },
+        { label: "Show Date", value: formatShowDate(show?.show_date ?? null) },
+        { label: "Venue", value: show?.venue ?? "" },
+        { label: "Venue Address", value: show?.venue_address ?? "" },
         {
           label: "Directions",
-          value: show.directions_url ?? "",
-          href: show.directions_url ?? undefined,
+          value: show?.directions_url ?? "",
+          href: show?.directions_url ?? undefined,
         },
-        { label: "Band Arrival Time", value: show.band_arrival_time ?? "" },
-        { label: "Soundcheck Time", value: show.soundcheck_time ?? "" },
-        { label: "Call Time", value: show.call_time ?? "" },
-        { label: "Show Start Time", value: show.show_start_time ?? "" },
-        { label: "Contact Name", value: show.contact_name ?? "" },
-        { label: "Contact Phone", value: show.contact_phone ?? "" },
-        { label: "Parking Notes", value: show.parking_notes ?? "" },
-        { label: "Load-In Notes", value: show.load_in_notes ?? "" },
-        { label: "Announcements", value: show.announcements ?? "" },
+        { label: "Band Arrival Time", value: show?.band_arrival_time ?? "" },
+        { label: "Soundcheck Time", value: show?.soundcheck_time ?? "" },
+        { label: "Call Time", value: show?.call_time ?? "" },
+        { label: "Show Start Time", value: show?.show_start_time ?? "" },
+        { label: "Contact Name", value: show?.contact_name ?? "" },
+        { label: "Contact Phone", value: show?.contact_phone ?? "" },
+        { label: "Parking Notes", value: show?.parking_notes ?? "" },
+        { label: "Load-In Notes", value: show?.load_in_notes ?? "" },
+        { label: "Announcements", value: show?.announcements ?? "" },
       ]
     : [];
 
