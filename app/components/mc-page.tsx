@@ -212,6 +212,42 @@ export function getGuestIntroText(profile: GuestProfile | null) {
   return null;
 }
 
+function getTrimmedValue(value: string | null | undefined) {
+  return value?.trim() ?? "";
+}
+
+function getPerformerSummary(block: McPerformanceBlock) {
+  return block.songs
+    .map((song) => (song.song_key ? `${song.title} (${song.song_key})` : song.title))
+    .join(", ");
+}
+
+function getSectionPacketTitle(section: SetSection) {
+  switch (section) {
+    case "set1":
+      return "First Half";
+    case "set2":
+      return "Second Half";
+    case "encore":
+      return "Encore";
+    default:
+      return "Run Sheet";
+  }
+}
+
+function getSectionPacketSubtitle(section: SetSection) {
+  switch (section) {
+    case "set1":
+      return "SET 1";
+    case "set2":
+      return "SET 2";
+    case "encore":
+      return "ENCORE";
+    default:
+      return "RUN SHEET";
+  }
+}
+
 export function buildScriptFormState(show: ShowRecord | null): ScriptFormState {
   return {
     openingScript: show?.opening_script ?? "",
@@ -673,6 +709,59 @@ export function McPage({
     runSheetData.closing.length > 0 ||
     runSheetData.flexible.length > 0;
 
+  const performerPacketEntries = useMemo(() => {
+    const entries = runSections.flatMap((section) =>
+      section.blocks.map((block) => ({
+        performer: block.performer,
+        section: section.title,
+        songs: getPerformerSummary(block),
+        guestIntro: getGuestIntroText(block.guestProfile),
+        hometown: getTrimmedValue(block.guestProfile?.hometown),
+        instruments: getTrimmedValue(block.guestProfile?.instruments),
+        note: block.note,
+      })),
+    );
+
+    return entries.filter(
+      (entry, index, allEntries) =>
+        allEntries.findIndex((candidate) => candidate.performer === entry.performer) === index,
+    );
+  }, [runSections]);
+
+  const sponsorSummaryNames = sponsors
+    .map((sponsor) => sponsor.sponsor?.name?.trim() ?? "")
+    .filter(Boolean);
+  const sponsorPageEntries = sponsors.filter(
+    (sponsor, index, allSponsors) =>
+      allSponsors.findIndex((candidate) => candidate.id === sponsor.id) === index,
+  );
+  const overviewScheduleItems = [
+    { label: "First Half", value: runSections.find((section) => section.key === "set1") ? "Set 1 run sheet ready" : "" },
+    {
+      label: "Intermission",
+      value: hasIntermissionSection ? "Intermission break and sponsor/script section included" : "",
+    },
+    { label: "Second Half", value: runSections.find((section) => section.key === "set2") ? "Set 2 run sheet ready" : "" },
+    { label: "Encore", value: runSections.find((section) => section.key === "encore") ? "Encore section included" : "" },
+  ].filter((item) => item.value);
+  const overviewInfoItems = [
+    { label: "Venue", value: getTrimmedValue(show.venue) },
+    { label: "Address", value: getTrimmedValue(show.venue_address) },
+    { label: "Show Start", value: getTrimmedValue(show.show_start_time) },
+    { label: "Call Time", value: getTrimmedValue(show.call_time) },
+    { label: "Band Arrival", value: getTrimmedValue(show.band_arrival_time) },
+    { label: "Guest Arrival", value: getTrimmedValue(show.guest_arrival_time) },
+    { label: "Soundcheck", value: getTrimmedValue(show.soundcheck_time) },
+    { label: "Contact", value: getTrimmedValue(show.contact_name) },
+    { label: "Phone", value: getTrimmedValue(show.contact_phone) },
+    { label: "Directions", value: getTrimmedValue(show.directions_url) },
+  ].filter((item) => item.value);
+  const overviewReminderItems = [
+    { label: "Announcements", value: getTrimmedValue(show.announcements) },
+    { label: "Parking", value: getTrimmedValue(show.parking_notes) },
+    { label: "Load-In", value: getTrimmedValue(show.load_in_notes) },
+  ].filter((item) => item.value);
+
   if (!show) {
     return (
       <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
@@ -730,13 +819,6 @@ export function McPage({
           </div>
         </header>
 
-        <header className="print-only print-copy-header">
-          <p className="print-copy-mode">MC Packet</p>
-          <h1>{show.name}</h1>
-          <p>{formatShowDate(show.show_date)}</p>
-          {show.venue ? <p>{show.venue}</p> : null}
-        </header>
-
         <section className="print-hidden mc-section flex flex-col gap-4">
           <div className="flex flex-col gap-1">
             <h2 className="text-xl font-semibold">Show Overview</h2>
@@ -778,7 +860,7 @@ export function McPage({
           </div>
         </section>
 
-        <section className="mc-section flex flex-col gap-5 border-t border-stone-200 pt-6">
+        <section className="print-hidden mc-section flex flex-col gap-5 border-t border-stone-200 pt-6">
           <div className="flex flex-col gap-1">
             <h2 className="text-xl font-semibold">Live Run Sheet</h2>
             <p className="text-sm text-stone-600">
@@ -888,6 +970,620 @@ export function McPage({
             ) : null}
           </div>
         </section>
+
+        <div className="print-only mc-print-packet">
+          <section className="mc-print-page">
+            <header className="mc-print-page-header">
+              <p className="mc-print-kicker">MC Packet</p>
+              <h1>{show.name}</h1>
+              <p>{formatShowDate(show.show_date)}</p>
+            </header>
+
+            <div className="mc-print-stack">
+              <section className="mc-print-panel">
+                <div className="mc-print-panel-heading">
+                  <p className="mc-print-eyebrow">Page 1</p>
+                  <h2>Show Overview</h2>
+                </div>
+
+                {overviewScheduleItems.length > 0 ? (
+                  <div className="mc-print-subsection">
+                    <h3>Show Schedule</h3>
+                    <div className="mc-print-grid">
+                      {overviewScheduleItems.map((item) => (
+                        <div key={item.label} className="mc-print-detail">
+                          <p className="mc-print-detail-label">{item.label}</p>
+                          <p>{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {overviewInfoItems.length > 0 ? (
+                  <div className="mc-print-subsection">
+                    <h3>Show Info</h3>
+                    <div className="mc-print-grid">
+                      {overviewInfoItems.map((item) => (
+                        <div key={item.label} className="mc-print-detail">
+                          <p className="mc-print-detail-label">{item.label}</p>
+                          <p className="whitespace-pre-wrap">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {performerPacketEntries.length > 0 ? (
+                  <div className="mc-print-subsection">
+                    <h3>Performers</h3>
+                    <ul className="mc-print-list">
+                      {performerPacketEntries.map((entry) => (
+                        <li key={entry.performer}>
+                          <span className="font-semibold">{entry.performer}</span>
+                          {entry.section ? ` - ${entry.section}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {sponsorSummaryNames.length > 0 ? (
+                  <div className="mc-print-subsection">
+                    <h3>Sponsors</h3>
+                    <ul className="mc-print-list">
+                      {sponsorSummaryNames.map((name) => (
+                        <li key={name}>{name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {overviewReminderItems.length > 0 ? (
+                  <div className="mc-print-subsection">
+                    <h3>MC Reminders</h3>
+                    <div className="mc-print-note-stack">
+                      {overviewReminderItems.map((item) => (
+                        <div key={item.label} className="mc-print-note-card">
+                          <p className="mc-print-detail-label">{item.label}</p>
+                          <p className="whitespace-pre-wrap">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {!overviewScheduleItems.length &&
+                !overviewInfoItems.length &&
+                !performerPacketEntries.length &&
+                !sponsorSummaryNames.length &&
+                !overviewReminderItems.length ? (
+                  <p className="mc-print-empty">No show overview details have been added yet.</p>
+                ) : null}
+              </section>
+            </div>
+          </section>
+
+          {runSheetData.sectionItems.map((section) => (
+            <section key={`print-${section.key}`} className="mc-print-page">
+              <header className="mc-print-page-header">
+                <p className="mc-print-kicker">{getSectionPacketSubtitle(section.key)}</p>
+                <h1>{getSectionPacketTitle(section.key)}</h1>
+                <p>{show.name}</p>
+              </header>
+
+              <div className="mc-print-stack">
+                {section.key === "set1" && scriptFormState.openingScript.trim() ? (
+                  <section className="mc-print-panel">
+                    <div className="mc-print-panel-heading">
+                      <h2>Opening Script</h2>
+                    </div>
+                    <p className="mc-print-script">{scriptFormState.openingScript.trim()}</p>
+                  </section>
+                ) : null}
+
+                {section.key === "set2" && scriptFormState.intermissionScript.trim() ? (
+                  <section className="mc-print-panel">
+                    <div className="mc-print-panel-heading">
+                      <h2>Welcome Back / Intermission Return</h2>
+                    </div>
+                    <p className="mc-print-script">{scriptFormState.intermissionScript.trim()}</p>
+                  </section>
+                ) : null}
+
+                <section className="mc-print-panel">
+                  <div className="mc-print-panel-heading">
+                    <h2>{section.title} Run Sheet</h2>
+                  </div>
+
+                  <div className="mc-print-flow">
+                    {section.items.map((item) => {
+                      if (item.kind === "sponsor") {
+                        return (
+                          <article key={item.id} className="mc-print-flow-card mc-print-flow-card-sponsor">
+                            <p className="mc-print-flow-type">Sponsor Read</p>
+                            <h3>{item.sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
+                            <p className="mc-print-flow-body whitespace-pre-wrap">
+                              {getSponsorReadText(item.sponsor)}
+                            </p>
+                            {item.sponsor.custom_note?.trim() ? (
+                              <p className="mc-print-flow-note">
+                                MC note: {item.sponsor.custom_note.trim()}
+                              </p>
+                            ) : null}
+                          </article>
+                        );
+                      }
+
+                      const blockDraft = blockNoteDrafts[item.block.anchorSongId] ?? {
+                        introNote: "",
+                        sponsorMention: "",
+                        transitionNote: "",
+                      };
+                      const guestIntroText = getGuestIntroText(item.block.guestProfile);
+
+                      return (
+                        <article key={item.id} className="mc-print-flow-card">
+                          <div className="mc-print-song-list">
+                            {item.block.songs.map((song) => (
+                              <div key={song.id} className="mc-print-song-entry">
+                                <h3 className="mc-print-song-line">
+                                  {item.block.performer} - {song.title}
+                                  {song.song_key ? ` (${song.song_key})` : ""}
+                                </h3>
+                                {song.notes?.trim() ? (
+                                  <p className="mc-print-song-note whitespace-pre-wrap">
+                                    {song.notes.trim()}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+
+                          {item.upNext ? (
+                            <p className="mc-print-flow-upnext">
+                              Up next: {item.upNext.performer}
+                            </p>
+                          ) : null}
+
+                          {blockDraft.introNote.trim() ? (
+                            <p className="mc-print-flow-note whitespace-pre-wrap">
+                              Intro: {blockDraft.introNote.trim()}
+                            </p>
+                          ) : null}
+
+                          {guestIntroText ? (
+                            <p className="mc-print-flow-note whitespace-pre-wrap">
+                              Guest intro: {guestIntroText}
+                            </p>
+                          ) : null}
+
+                          {blockDraft.sponsorMention.trim() ? (
+                            <p className="mc-print-flow-note whitespace-pre-wrap">
+                              Sponsor mention: {blockDraft.sponsorMention.trim()}
+                            </p>
+                          ) : null}
+
+                          {blockDraft.transitionNote.trim() ? (
+                            <p className="mc-print-flow-note whitespace-pre-wrap">
+                              Transition: {blockDraft.transitionNote.trim()}
+                            </p>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {section.key === "set1" &&
+                (runSheetData.beforeIntermission.length > 0 ||
+                  scriptFormState.intermissionScript.trim()) ? (
+                  <section className="mc-print-panel">
+                    <div className="mc-print-panel-heading">
+                      <h2>Intermission Setup</h2>
+                    </div>
+
+                    <div className="mc-print-note-stack">
+                      {runSheetData.beforeIntermission.map((sponsor) => (
+                        <div key={`before-int-${sponsor.id}`} className="mc-print-note-card mc-print-flow-card-sponsor">
+                          <p className="mc-print-flow-type">Sponsor Read</p>
+                          <h3>{sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
+                          <p className="mc-print-flow-body whitespace-pre-wrap">
+                            {getSponsorReadText(sponsor)}
+                          </p>
+                        </div>
+                      ))}
+
+                      {scriptFormState.intermissionScript.trim() ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Intermission Script</p>
+                          <p className="whitespace-pre-wrap">
+                            {scriptFormState.intermissionScript.trim()}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
+
+                {section.key === "set2" &&
+                (runSheetData.afterIntermission.length > 0 ||
+                  runSheetData.closing.length > 0 ||
+                  scriptFormState.closingScript.trim()) ? (
+                  <section className="mc-print-panel">
+                    <div className="mc-print-panel-heading">
+                      <h2>Ending Notes</h2>
+                    </div>
+
+                    <div className="mc-print-note-stack">
+                      {runSheetData.afterIntermission.map((sponsor) => (
+                        <div key={`after-int-${sponsor.id}`} className="mc-print-note-card mc-print-flow-card-sponsor">
+                          <p className="mc-print-flow-type">Sponsor Read</p>
+                          <h3>{sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
+                          <p className="mc-print-flow-body whitespace-pre-wrap">
+                            {getSponsorReadText(sponsor)}
+                          </p>
+                        </div>
+                      ))}
+
+                      {runSheetData.closing.map((sponsor) => (
+                        <div key={`closing-${sponsor.id}`} className="mc-print-note-card mc-print-flow-card-sponsor">
+                          <p className="mc-print-flow-type">Closing Sponsor</p>
+                          <h3>{sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
+                          <p className="mc-print-flow-body whitespace-pre-wrap">
+                            {getSponsorReadText(sponsor)}
+                          </p>
+                        </div>
+                      ))}
+
+                      {scriptFormState.closingScript.trim() ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Closing Script</p>
+                          <p className="whitespace-pre-wrap">{scriptFormState.closingScript.trim()}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            </section>
+          ))}
+
+          <section className="mc-print-page">
+            <header className="mc-print-page-header">
+              <p className="mc-print-kicker">Page 4</p>
+              <h1>Sponsors</h1>
+              <p>{show.name}</p>
+            </header>
+
+            <div className="mc-print-stack">
+              {sponsorSummaryNames.length > 0 ? (
+                <section className="mc-print-panel">
+                  <div className="mc-print-panel-heading">
+                    <h2>Sponsor Summary</h2>
+                  </div>
+                  <p className="mc-print-script">{sponsorSummaryNames.join(", ")}</p>
+                </section>
+              ) : null}
+
+              <section className="mc-print-panel">
+                <div className="mc-print-panel-heading">
+                  <h2>Sponsor Reads</h2>
+                </div>
+
+                {sponsorPageEntries.length === 0 ? (
+                  <p className="mc-print-empty">No sponsor reads have been assigned yet.</p>
+                ) : (
+                  <div className="mc-print-note-stack">
+                    {sponsorPageEntries.map((sponsor) => (
+                      <article key={sponsor.id} className="mc-print-note-card">
+                        <h3>{sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
+                        <p className="mc-print-script whitespace-pre-wrap">
+                          {getSponsorReadText(sponsor)}
+                        </p>
+                        {sponsor.custom_note?.trim() ? (
+                          <p className="mc-print-flow-note whitespace-pre-wrap">
+                            MC note: {sponsor.custom_note.trim()}
+                          </p>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </section>
+
+          {performerPacketEntries.map((entry) => (
+            <section key={`intro-${entry.performer}`} className="mc-print-page">
+              <header className="mc-print-page-header">
+                <p className="mc-print-kicker">Performer Intro</p>
+                <h1>{entry.performer}</h1>
+                <p>{show.name}</p>
+              </header>
+
+              <div className="mc-print-stack">
+                <section className="mc-print-panel">
+                  <div className="mc-print-panel-heading">
+                    <h2>Intro Notes</h2>
+                  </div>
+
+                  <div className="mc-print-note-stack">
+                    {entry.guestIntro ? (
+                      <div className="mc-print-note-card">
+                        <p className="mc-print-detail-label">Bio / Intro</p>
+                        <p className="whitespace-pre-wrap">{entry.guestIntro}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.hometown ? (
+                      <div className="mc-print-note-card">
+                        <p className="mc-print-detail-label">Hometown</p>
+                        <p>{entry.hometown}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.instruments ? (
+                      <div className="mc-print-note-card">
+                        <p className="mc-print-detail-label">Instruments</p>
+                        <p>{entry.instruments}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.note?.intro_note?.trim() ? (
+                      <div className="mc-print-note-card">
+                        <p className="mc-print-detail-label">MC Intro Note</p>
+                        <p className="whitespace-pre-wrap">{entry.note.intro_note.trim()}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.note?.transition_note?.trim() ? (
+                      <div className="mc-print-note-card">
+                        <p className="mc-print-detail-label">Transition Note</p>
+                        <p className="whitespace-pre-wrap">{entry.note.transition_note.trim()}</p>
+                      </div>
+                    ) : null}
+
+                    {!entry.guestIntro &&
+                    !entry.hometown &&
+                    !entry.instruments &&
+                    !entry.note?.intro_note?.trim() &&
+                    !entry.note?.transition_note?.trim() ? (
+                      <p className="mc-print-empty">No intro notes have been added for this performer yet.</p>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="mc-print-panel">
+                  <div className="mc-print-panel-heading">
+                    <h2>Scheduled Songs</h2>
+                  </div>
+                  <p className="mc-print-script">{entry.songs || "No songs listed yet."}</p>
+                </section>
+              </div>
+            </section>
+          ))}
+
+          <section className="mc-print-page">
+            <header className="mc-print-page-header">
+              <p className="mc-print-kicker">Final Page</p>
+              <h1>MC Scripts</h1>
+              <p>{show.name}</p>
+            </header>
+
+            <div className="mc-print-stack">
+              <section className="mc-print-panel">
+                <div className="mc-print-panel-heading">
+                  <h2>Opening Welcome</h2>
+                </div>
+                <p className="mc-print-script">
+                  {scriptFormState.openingScript.trim() || "No opening script added yet."}
+                </p>
+              </section>
+
+              <section className="mc-print-panel">
+                <div className="mc-print-panel-heading">
+                  <h2>After Intermission / Welcome Back</h2>
+                </div>
+                <p className="mc-print-script">
+                  {scriptFormState.intermissionScript.trim() || "No intermission script added yet."}
+                </p>
+              </section>
+
+              <section className="mc-print-panel">
+                <div className="mc-print-panel-heading">
+                  <h2>Closing Script</h2>
+                </div>
+                <p className="mc-print-script">
+                  {scriptFormState.closingScript.trim() || "No closing script added yet."}
+                </p>
+              </section>
+            </div>
+          </section>
+        </div>
+
+        <style jsx>{`
+          @media print {
+            .mc-print-packet {
+              display: block;
+            }
+
+            .mc-print-page {
+              break-before: page;
+              page-break-before: always;
+              padding: 0;
+            }
+
+            .mc-print-page:first-child {
+              break-before: auto;
+              page-break-before: auto;
+            }
+
+            .mc-print-page-header {
+              border-bottom: 2px solid #111827;
+              margin-bottom: 20px;
+              padding-bottom: 14px;
+            }
+
+            .mc-print-kicker {
+              font-size: 11px;
+              font-weight: 700;
+              letter-spacing: 0.22em;
+              margin: 0 0 8px;
+              text-transform: uppercase;
+            }
+
+            .mc-print-page-header h1 {
+              font-size: 28px;
+              font-weight: 700;
+              line-height: 1.2;
+              margin: 0;
+            }
+
+            .mc-print-page-header p {
+              font-size: 13px;
+              margin: 6px 0 0;
+            }
+
+            .mc-print-stack {
+              display: flex;
+              flex-direction: column;
+              gap: 14px;
+            }
+
+            .mc-print-panel,
+            .mc-print-note-card,
+            .mc-print-flow-card {
+              background: #fff;
+              border: 1px solid #d6d3d1;
+              border-radius: 0;
+              color: #111827;
+            }
+
+            .mc-print-panel {
+              padding: 14px 16px;
+            }
+
+            .mc-print-panel-heading {
+              margin-bottom: 10px;
+            }
+
+            .mc-print-panel-heading h2 {
+              font-size: 20px;
+              font-weight: 700;
+              margin: 0;
+            }
+
+            .mc-print-eyebrow,
+            .mc-print-detail-label,
+            .mc-print-flow-type {
+              font-size: 10px;
+              font-weight: 700;
+              letter-spacing: 0.16em;
+              text-transform: uppercase;
+            }
+
+            .mc-print-subsection + .mc-print-subsection {
+              margin-top: 18px;
+              padding-top: 16px;
+              border-top: 1px solid #d6d3d1;
+            }
+
+            .mc-print-subsection h3,
+            .mc-print-note-card h3,
+            .mc-print-flow-card h3 {
+              font-size: 15px;
+              font-weight: 700;
+              margin: 0 0 8px;
+            }
+
+            .mc-print-grid {
+              display: grid;
+              gap: 12px;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .mc-print-detail p:last-child,
+            .mc-print-note-card p:last-child {
+              margin: 4px 0 0;
+            }
+
+            .mc-print-list {
+              margin: 0;
+              padding-left: 18px;
+            }
+
+            .mc-print-list li + li {
+              margin-top: 6px;
+            }
+
+            .mc-print-note-stack,
+            .mc-print-flow {
+              display: flex;
+              flex-direction: column;
+              gap: 9px;
+            }
+
+            .mc-print-note-card,
+            .mc-print-flow-card {
+              padding: 10px 12px;
+            }
+
+            .mc-print-flow-card-sponsor {
+              border-left: 5px solid #92400e;
+            }
+
+            .mc-print-song-list {
+              display: flex;
+              flex-direction: column;
+              gap: 5px;
+            }
+
+            .mc-print-song-entry {
+              display: flex;
+              flex-direction: column;
+              gap: 1px;
+            }
+
+            .mc-print-song-line {
+              font-size: 15px;
+              font-weight: 700;
+              line-height: 1.35;
+              margin: 0;
+            }
+
+            .mc-print-song-note {
+              font-size: 11px;
+              line-height: 1.35;
+              margin: 0;
+              padding-left: 10px;
+            }
+
+            .mc-print-flow-body,
+            .mc-print-script {
+              font-size: 13px;
+              line-height: 1.5;
+              margin: 0;
+              white-space: pre-wrap;
+            }
+
+            .mc-print-flow-note,
+            .mc-print-flow-upnext {
+              font-size: 12px;
+              line-height: 1.45;
+              margin: 4px 0 0;
+            }
+
+            .mc-print-flow-upnext {
+              font-weight: 700;
+            }
+
+            .mc-print-empty {
+              font-size: 13px;
+              margin: 0;
+            }
+          }
+        `}</style>
       </section>
     </main>
   );

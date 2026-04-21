@@ -16,15 +16,13 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof document === "undefined") {
-      return "light";
-    }
-
-    return getThemeFromDocument();
-  });
+  const [mounted, setMounted] = useState(false);
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
+    setMounted(true);
+    setTheme(getThemeFromDocument());
+
     const handleThemeChange = () => {
       setTheme(getThemeFromDocument());
     };
@@ -44,14 +42,16 @@ export function ThemeToggle() {
     window.dispatchEvent(new Event("cmms-theme-change"));
   }
 
+  const nextThemeLabel = mounted ? (theme === "dark" ? "light" : "dark") : null;
+
   return (
     <button
       type="button"
       onClick={handleToggle}
       className="rounded-full border border-stone-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 transition hover:bg-stone-100 dark:border-stone-600 dark:bg-slate-900 dark:text-stone-100 dark:hover:bg-slate-800"
-      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      aria-label={mounted ? `Switch to ${nextThemeLabel} mode` : "Toggle theme"}
     >
-      {theme === "dark" ? "Light Mode" : "Dark Mode"}
+      {mounted ? `${nextThemeLabel === "light" ? "Light" : "Dark"} Mode` : "Theme"}
     </button>
   );
 }
