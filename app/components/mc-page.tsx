@@ -745,21 +745,21 @@ export function McPage({
     { label: "Encore", value: runSections.find((section) => section.key === "encore") ? "Encore section included" : "" },
   ].filter((item) => item.value);
   const overviewInfoItems = [
-    { label: "Venue", value: getTrimmedValue(show.venue) },
-    { label: "Address", value: getTrimmedValue(show.venue_address) },
-    { label: "Show Start", value: getTrimmedValue(show.show_start_time) },
-    { label: "Call Time", value: getTrimmedValue(show.call_time) },
-    { label: "Band Arrival", value: getTrimmedValue(show.band_arrival_time) },
-    { label: "Guest Arrival", value: getTrimmedValue(show.guest_arrival_time) },
-    { label: "Soundcheck", value: getTrimmedValue(show.soundcheck_time) },
-    { label: "Contact", value: getTrimmedValue(show.contact_name) },
-    { label: "Phone", value: getTrimmedValue(show.contact_phone) },
-    { label: "Directions", value: getTrimmedValue(show.directions_url) },
+    { label: "Venue", value: getTrimmedValue(show?.venue) },
+    { label: "Address", value: getTrimmedValue(show?.venue_address) },
+    { label: "Show Start", value: getTrimmedValue(show?.show_start_time) },
+    { label: "Call Time", value: getTrimmedValue(show?.call_time) },
+    { label: "Band Arrival", value: getTrimmedValue(show?.band_arrival_time) },
+    { label: "Guest Arrival", value: getTrimmedValue(show?.guest_arrival_time) },
+    { label: "Soundcheck", value: getTrimmedValue(show?.soundcheck_time) },
+    { label: "Contact", value: getTrimmedValue(show?.contact_name) },
+    { label: "Phone", value: getTrimmedValue(show?.contact_phone) },
+    { label: "Directions", value: getTrimmedValue(show?.directions_url) },
   ].filter((item) => item.value);
   const overviewReminderItems = [
-    { label: "Announcements", value: getTrimmedValue(show.announcements) },
-    { label: "Parking", value: getTrimmedValue(show.parking_notes) },
-    { label: "Load-In", value: getTrimmedValue(show.load_in_notes) },
+    { label: "Announcements", value: getTrimmedValue(show?.announcements) },
+    { label: "Parking", value: getTrimmedValue(show?.parking_notes) },
+    { label: "Load-In", value: getTrimmedValue(show?.load_in_notes) },
   ].filter((item) => item.value);
 
   if (!show) {
