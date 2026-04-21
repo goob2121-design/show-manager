@@ -711,15 +711,17 @@ export function McPage({
 
   const performerPacketEntries = useMemo(() => {
     const entries = runSections.flatMap((section) =>
-      section.blocks.map((block) => ({
-        performer: block.performer,
-        section: section.title,
-        songs: getPerformerSummary(block),
-        guestIntro: getGuestIntroText(block.guestProfile),
-        hometown: getTrimmedValue(block.guestProfile?.hometown),
-        instruments: getTrimmedValue(block.guestProfile?.instruments),
-        note: block.note,
-      })),
+      section.blocks
+        .filter((block) => block.guestProfile)
+        .map((block) => ({
+          performer: block.performer,
+          section: section.title,
+          songs: getPerformerSummary(block),
+          guestIntro: getGuestIntroText(block.guestProfile),
+          hometown: getTrimmedValue(block.guestProfile?.hometown),
+          instruments: getTrimmedValue(block.guestProfile?.instruments),
+          note: block.note,
+        })),
     );
 
     return entries.filter(
@@ -972,7 +974,7 @@ export function McPage({
         </section>
 
         <div className="print-only mc-print-packet">
-          <section className="mc-print-page">
+          <section className="mc-print-page mc-print-page-forced">
             <header className="mc-print-page-header">
               <p className="mc-print-kicker">MC Packet</p>
               <h1>{show.name}</h1>
@@ -1065,7 +1067,7 @@ export function McPage({
           </section>
 
           {runSheetData.sectionItems.map((section) => (
-            <section key={`print-${section.key}`} className="mc-print-page">
+            <section key={`print-${section.key}`} className="mc-print-page mc-print-page-set">
               <header className="mc-print-page-header">
                 <p className="mc-print-kicker">{getSectionPacketSubtitle(section.key)}</p>
                 <h1>{getSectionPacketTitle(section.key)}</h1>
@@ -1091,16 +1093,19 @@ export function McPage({
                   </section>
                 ) : null}
 
-                <section className="mc-print-panel">
+                <section className="mc-print-panel mc-print-set-panel">
                   <div className="mc-print-panel-heading">
                     <h2>{section.title} Run Sheet</h2>
                   </div>
 
-                  <div className="mc-print-flow">
+                  <div className="mc-print-flow mc-print-set-flow">
                     {section.items.map((item) => {
                       if (item.kind === "sponsor") {
                         return (
-                          <article key={item.id} className="mc-print-flow-card mc-print-flow-card-sponsor">
+                          <article
+                            key={item.id}
+                            className="mc-print-flow-card mc-print-flow-card-sponsor mc-print-flow-card-compact"
+                          >
                             <p className="mc-print-flow-type">Sponsor Read</p>
                             <h3>{item.sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
                             <p className="mc-print-flow-body whitespace-pre-wrap">
@@ -1123,7 +1128,10 @@ export function McPage({
                       const guestIntroText = getGuestIntroText(item.block.guestProfile);
 
                       return (
-                        <article key={item.id} className="mc-print-flow-card">
+                        <article
+                          key={item.id}
+                          className="mc-print-flow-card mc-print-flow-card-compact"
+                        >
                           <div className="mc-print-song-list">
                             {item.block.songs.map((song) => (
                               <div key={song.id} className="mc-print-song-entry">
@@ -1249,7 +1257,7 @@ export function McPage({
             </section>
           ))}
 
-          <section className="mc-print-page">
+          <section className="mc-print-page mc-print-page-forced">
             <header className="mc-print-page-header">
               <p className="mc-print-kicker">Page 4</p>
               <h1>Sponsors</h1>
@@ -1294,77 +1302,77 @@ export function McPage({
             </div>
           </section>
 
-          {performerPacketEntries.map((entry) => (
-            <section key={`intro-${entry.performer}`} className="mc-print-page">
+          {performerPacketEntries.length > 0 ? (
+            <section className="mc-print-page">
               <header className="mc-print-page-header">
-                <p className="mc-print-kicker">Performer Intro</p>
-                <h1>{entry.performer}</h1>
+                <p className="mc-print-kicker">Performer Intros</p>
+                <h1>Performer Notes</h1>
                 <p>{show.name}</p>
               </header>
 
-              <div className="mc-print-stack">
-                <section className="mc-print-panel">
-                  <div className="mc-print-panel-heading">
-                    <h2>Intro Notes</h2>
-                  </div>
+              <div className="mc-print-stack mc-print-intro-stack">
+                {performerPacketEntries.map((entry) => (
+                  <section key={`intro-${entry.performer}`} className="mc-print-panel mc-print-intro-panel">
+                    <div className="mc-print-panel-heading">
+                      <h2>{entry.performer}</h2>
+                    </div>
 
-                  <div className="mc-print-note-stack">
-                    {entry.guestIntro ? (
+                    <div className="mc-print-note-stack mc-print-intro-notes">
+                      {entry.guestIntro ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Bio / Intro</p>
+                          <p className="whitespace-pre-wrap">{entry.guestIntro}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.hometown ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Hometown</p>
+                          <p>{entry.hometown}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.instruments ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Instruments</p>
+                          <p>{entry.instruments}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.note?.intro_note?.trim() ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">MC Intro Note</p>
+                          <p className="whitespace-pre-wrap">{entry.note.intro_note.trim()}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.note?.transition_note?.trim() ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Transition Note</p>
+                          <p className="whitespace-pre-wrap">{entry.note.transition_note.trim()}</p>
+                        </div>
+                      ) : null}
+
                       <div className="mc-print-note-card">
-                        <p className="mc-print-detail-label">Bio / Intro</p>
-                        <p className="whitespace-pre-wrap">{entry.guestIntro}</p>
+                        <p className="mc-print-detail-label">Scheduled Songs</p>
+                        <p>{entry.songs || "No songs listed yet."}</p>
                       </div>
-                    ) : null}
 
-                    {entry.hometown ? (
-                      <div className="mc-print-note-card">
-                        <p className="mc-print-detail-label">Hometown</p>
-                        <p>{entry.hometown}</p>
-                      </div>
-                    ) : null}
-
-                    {entry.instruments ? (
-                      <div className="mc-print-note-card">
-                        <p className="mc-print-detail-label">Instruments</p>
-                        <p>{entry.instruments}</p>
-                      </div>
-                    ) : null}
-
-                    {entry.note?.intro_note?.trim() ? (
-                      <div className="mc-print-note-card">
-                        <p className="mc-print-detail-label">MC Intro Note</p>
-                        <p className="whitespace-pre-wrap">{entry.note.intro_note.trim()}</p>
-                      </div>
-                    ) : null}
-
-                    {entry.note?.transition_note?.trim() ? (
-                      <div className="mc-print-note-card">
-                        <p className="mc-print-detail-label">Transition Note</p>
-                        <p className="whitespace-pre-wrap">{entry.note.transition_note.trim()}</p>
-                      </div>
-                    ) : null}
-
-                    {!entry.guestIntro &&
-                    !entry.hometown &&
-                    !entry.instruments &&
-                    !entry.note?.intro_note?.trim() &&
-                    !entry.note?.transition_note?.trim() ? (
-                      <p className="mc-print-empty">No intro notes have been added for this performer yet.</p>
-                    ) : null}
-                  </div>
-                </section>
-
-                <section className="mc-print-panel">
-                  <div className="mc-print-panel-heading">
-                    <h2>Scheduled Songs</h2>
-                  </div>
-                  <p className="mc-print-script">{entry.songs || "No songs listed yet."}</p>
-                </section>
+                      {!entry.guestIntro &&
+                      !entry.hometown &&
+                      !entry.instruments &&
+                      !entry.note?.intro_note?.trim() &&
+                      !entry.note?.transition_note?.trim() ? (
+                        <p className="mc-print-empty">No intro notes have been added for this performer yet.</p>
+                      ) : null}
+                    </div>
+                  </section>
+                ))}
               </div>
             </section>
-          ))}
+          ) : null}
 
-          <section className="mc-print-page">
+          <section className="mc-print-page mc-print-page-forced">
             <header className="mc-print-page-header">
               <p className="mc-print-kicker">Final Page</p>
               <h1>MC Scripts</h1>
@@ -1409,9 +1417,13 @@ export function McPage({
             }
 
             .mc-print-page {
+              padding: 0;
+            }
+
+            .mc-print-page-forced,
+            .mc-print-page-set {
               break-before: page;
               page-break-before: always;
-              padding: 0;
             }
 
             .mc-print-page:first-child {
@@ -1451,6 +1463,14 @@ export function McPage({
               gap: 14px;
             }
 
+            .mc-print-intro-stack {
+              gap: 10px;
+            }
+
+            .mc-print-page-set .mc-print-stack {
+              gap: 10px;
+            }
+
             .mc-print-panel,
             .mc-print-note-card,
             .mc-print-flow-card {
@@ -1464,8 +1484,20 @@ export function McPage({
               padding: 14px 16px;
             }
 
+            .mc-print-intro-panel {
+              padding: 10px 12px;
+            }
+
+            .mc-print-set-panel {
+              padding: 10px 12px;
+            }
+
             .mc-print-panel-heading {
               margin-bottom: 10px;
+            }
+
+            .mc-print-page-set .mc-print-panel-heading {
+              margin-bottom: 7px;
             }
 
             .mc-print-panel-heading h2 {
@@ -1524,9 +1556,27 @@ export function McPage({
               gap: 9px;
             }
 
+            .mc-print-intro-notes {
+              gap: 6px;
+            }
+
+            .mc-print-set-flow {
+              gap: 6px;
+            }
+
             .mc-print-note-card,
             .mc-print-flow-card {
               padding: 10px 12px;
+            }
+
+            .mc-print-flow-card-compact,
+            .mc-print-song-entry {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+
+            .mc-print-flow-card-compact {
+              padding: 8px 10px;
             }
 
             .mc-print-flow-card-sponsor {
@@ -1536,7 +1586,7 @@ export function McPage({
             .mc-print-song-list {
               display: flex;
               flex-direction: column;
-              gap: 5px;
+              gap: 4px;
             }
 
             .mc-print-song-entry {
@@ -1571,7 +1621,7 @@ export function McPage({
             .mc-print-flow-upnext {
               font-size: 12px;
               line-height: 1.45;
-              margin: 4px 0 0;
+              margin: 3px 0 0;
             }
 
             .mc-print-flow-upnext {
