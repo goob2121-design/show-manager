@@ -26,6 +26,9 @@ alter table public.shows
 alter table public.shows
   add column if not exists guest_message text;
 
+alter table public.shows
+  add column if not exists is_archived boolean default false;
+
 create table if not exists public.setlist_songs (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,
@@ -37,6 +40,9 @@ create table if not exists public.setlist_songs (
   lyrics text,
   created_at timestamptz not null default now()
 );
+
+alter table public.setlist_songs
+  add column if not exists set_section text;
 
 create table if not exists public.pending_submissions (
   id uuid primary key default gen_random_uuid(),

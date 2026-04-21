@@ -92,6 +92,29 @@ body {
     color: #000000;
   }
 
+  .print-set-section {
+    break-inside: avoid;
+    margin-bottom: 1.75rem;
+    page-break-inside: avoid;
+  }
+
+  .print-set-section-title {
+    margin: 0 0 0.85rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid #000000;
+    font-size: 1.2rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #000000;
+  }
+
+  .print-set-section-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
   .print-song-item {
     break-inside: avoid;
     border: none;

@@ -8,6 +8,7 @@ import type {
   GuestProfile,
   GuestProfileFormState,
   PendingSubmission,
+  SetSection,
   SetlistSong,
   ShowDetailsFormState,
   ShowRecord,
@@ -16,6 +17,18 @@ import type {
 } from "@/lib/types";
 
 type PrintMode = "stage" | "band" | "standard";
+type SetlistSectionConfig = {
+  key: SetSection;
+  title: string;
+  optional?: boolean;
+};
+
+const setlistSectionOrder: SetSection[] = ["set1", "set2", "encore"];
+const setlistSectionConfigs: SetlistSectionConfig[] = [
+  { key: "set1", title: "Set 1" },
+  { key: "set2", title: "Set 2" },
+  { key: "encore", title: "Encore", optional: true },
+];
 
 const initialFormState: SongFormState = {
   title: "",
@@ -82,7 +95,55 @@ function getErrorMessage(error: unknown) {
 }
 
 function sortSetlistSongs(songs: SetlistSong[]) {
-  return [...songs].sort((songA, songB) => songA.position - songB.position);
+  return [...songs].sort((songA, songB) => {
+    const sectionDifference =
+      setlistSectionOrder.indexOf(songA.set_section) - setlistSectionOrder.indexOf(songB.set_section);
+
+    if (sectionDifference !== 0) {
+      return sectionDifference;
+    }
+
+    if (songA.position !== songB.position) {
+      return songA.position - songB.position;
+    }
+
+    return songA.created_at.localeCompare(songB.created_at);
+  });
+}
+
+function normalizeSetSection(value: string | null | undefined): SetSection {
+  if (value === "set2" || value === "encore") {
+    return value;
+  }
+
+  return "set1";
+}
+
+function normalizeSetlistSong(song: SetlistSong & { set_section?: string | null }): SetlistSong {
+  return {
+    ...song,
+    set_section: normalizeSetSection(song.set_section),
+  };
+}
+
+function getSongsInSection(songs: SetlistSong[], section: SetSection) {
+  return songs.filter((song) => song.set_section === section);
+}
+
+function getNextPositionForSection(songs: SetlistSong[], section: SetSection) {
+  const songsInSection = getSongsInSection(songs, section);
+  return songsInSection.length > 0
+    ? Math.max(...songsInSection.map((song) => song.position)) + 1
+    : 1;
+}
+
+function getRenderableSetlistSections(songs: SetlistSong[]) {
+  return setlistSectionConfigs
+    .map((section) => ({
+      ...section,
+      songs: getSongsInSection(songs, section.key),
+    }))
+    .filter((section) => !section.optional || section.songs.length > 0);
 }
 
 function normalizeGuestProfileName(name: string) {
@@ -208,8 +269,8 @@ export function ShowPage({
   const [guestPhotoFile, setGuestPhotoFile] = useState<File | null>(null);
   const [guestProfiles, setGuestProfiles] = useState<GuestProfile[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
-  const [openLyricsIndex, setOpenLyricsIndex] = useState<number | null>(null);
-  const [editingLyricsIndex, setEditingLyricsIndex] = useState<number | null>(null);
+  const [openLyricsSongId, setOpenLyricsSongId] = useState<string | null>(null);
+  const [editingLyricsSongId, setEditingLyricsSongId] = useState<string | null>(null);
   const [lyricsDraft, setLyricsDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -226,6 +287,7 @@ export function ShowPage({
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
   const portalLabel = getPortalLabel(viewMode);
   const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band";
+  const setlistSections = getRenderableSetlistSections(setlist);
 
   function handlePrint(nextPrintMode: PrintMode) {
     setPrintMode(nextPrintMode);
@@ -302,7 +364,13 @@ export function ShowPage({
           throw guestProfilesError;
         }
 
-        setSetlist(setlistRows ?? []);
+        setSetlist(
+          sortSetlistSongs(
+            (setlistRows ?? []).map((song: SetlistSong & { set_section?: string | null }) =>
+              normalizeSetlistSong(song),
+            ),
+          ),
+        );
         setPendingSongs(pendingRows ?? []);
         setGuestProfiles(guestProfileRows ?? []);
       } catch (error) {
@@ -591,14 +659,14 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
-      const nextPosition =
-        setlist.length > 0 ? Math.max(...setlist.map((song) => song.position)) + 1 : 1;
+      const nextPosition = getNextPositionForSection(setlist, "set1");
 
       const { data: insertedSong, error: insertError } = await supabase
         .from("setlist_songs")
         .insert({
           show_id: show.id,
           position: nextPosition,
+          set_section: "set1",
           title: songToApprove.title,
           artist: songToApprove.artist,
           song_key: songToApprove.song_key,
@@ -621,7 +689,9 @@ export function ShowPage({
         throw deleteError;
       }
 
-      setSetlist((currentSongs) => sortSetlistSongs([...currentSongs, insertedSong]));
+      setSetlist((currentSongs) =>
+        sortSetlistSongs([...currentSongs, normalizeSetlistSong(insertedSong)]),
+      );
       setPendingSongs((currentSongs) =>
         currentSongs.filter((song) => song.id !== songToApprove.id),
       );
@@ -653,15 +723,23 @@ export function ShowPage({
     }
   }
 
-  async function handleMoveSongUp(songIndex: number) {
-    if (songIndex === 0) {
+  async function handleMoveSongUp(songId: string) {
+    const songToMove = setlist.find((song) => song.id === songId);
+
+    if (!songToMove) {
       return;
     }
 
-    const songToMove = setlist[songIndex];
-    const songAbove = setlist[songIndex - 1];
+    const sectionSongs = getSongsInSection(setlist, songToMove.set_section);
+    const songIndex = sectionSongs.findIndex((song) => song.id === songId);
 
-    if (!songToMove || !songAbove) {
+    if (songIndex <= 0) {
+      return;
+    }
+
+    const songAbove = sectionSongs[songIndex - 1];
+
+    if (!songAbove) {
       return;
     }
 
@@ -689,35 +767,20 @@ export function ShowPage({
       }
 
       setSetlist((currentSetlist) => {
-        const nextSetlist = [...currentSetlist];
-        const currentSong = nextSetlist[songIndex];
-        const previousSong = nextSetlist[songIndex - 1];
+        return sortSetlistSongs(
+          currentSetlist.map((song) => {
+            if (song.id === songToMove.id) {
+              return { ...song, position: songAbove.position };
+            }
 
-        if (!currentSong || !previousSong) {
-          return currentSetlist;
-        }
+            if (song.id === songAbove.id) {
+              return { ...song, position: songToMove.position };
+            }
 
-        nextSetlist[songIndex] = { ...previousSong, position: currentSong.position };
-        nextSetlist[songIndex - 1] = { ...currentSong, position: previousSong.position };
-
-        return sortSetlistSongs(nextSetlist);
+            return song;
+          }),
+        );
       });
-
-      setOpenLyricsIndex((currentIndex) =>
-        currentIndex === songIndex
-          ? songIndex - 1
-          : currentIndex === songIndex - 1
-            ? songIndex
-            : currentIndex,
-      );
-
-      setEditingLyricsIndex((currentIndex) =>
-        currentIndex === songIndex
-          ? songIndex - 1
-          : currentIndex === songIndex - 1
-            ? songIndex
-            : currentIndex,
-      );
     } catch (error) {
       setActionError(getErrorMessage(error));
       await loadShowData(false);
@@ -726,15 +789,23 @@ export function ShowPage({
     }
   }
 
-  async function handleMoveSongDown(songIndex: number) {
-    if (songIndex === setlist.length - 1) {
+  async function handleMoveSongDown(songId: string) {
+    const songToMove = setlist.find((song) => song.id === songId);
+
+    if (!songToMove) {
       return;
     }
 
-    const songToMove = setlist[songIndex];
-    const songBelow = setlist[songIndex + 1];
+    const sectionSongs = getSongsInSection(setlist, songToMove.set_section);
+    const songIndex = sectionSongs.findIndex((song) => song.id === songId);
 
-    if (!songToMove || !songBelow) {
+    if (songIndex === -1 || songIndex >= sectionSongs.length - 1) {
+      return;
+    }
+
+    const songBelow = sectionSongs[songIndex + 1];
+
+    if (!songBelow) {
       return;
     }
 
@@ -762,34 +833,63 @@ export function ShowPage({
       }
 
       setSetlist((currentSetlist) => {
-        const nextSetlist = [...currentSetlist];
-        const currentSong = nextSetlist[songIndex];
-        const nextSong = nextSetlist[songIndex + 1];
+        return sortSetlistSongs(
+          currentSetlist.map((song) => {
+            if (song.id === songToMove.id) {
+              return { ...song, position: songBelow.position };
+            }
 
-        if (!currentSong || !nextSong) {
-          return currentSetlist;
-        }
+            if (song.id === songBelow.id) {
+              return { ...song, position: songToMove.position };
+            }
 
-        nextSetlist[songIndex] = { ...nextSong, position: currentSong.position };
-        nextSetlist[songIndex + 1] = { ...currentSong, position: nextSong.position };
-
-        return sortSetlistSongs(nextSetlist);
+            return song;
+          }),
+        );
       });
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+      await loadShowData(false);
+    } finally {
+      setActiveSetlistActionId(null);
+    }
+  }
 
-      setOpenLyricsIndex((currentIndex) =>
-        currentIndex === songIndex
-          ? songIndex + 1
-          : currentIndex === songIndex + 1
-            ? songIndex
-            : currentIndex,
-      );
+  async function handleMoveSongToSection(songId: string, nextSection: SetSection) {
+    const songToMove = setlist.find((song) => song.id === songId);
 
-      setEditingLyricsIndex((currentIndex) =>
-        currentIndex === songIndex
-          ? songIndex + 1
-          : currentIndex === songIndex + 1
-            ? songIndex
-            : currentIndex,
+    if (!songToMove) {
+      return;
+    }
+
+    if (songToMove.set_section === nextSection) {
+      return;
+    }
+
+    setActionError(null);
+    setActiveSetlistActionId(songToMove.id);
+
+    try {
+      const supabase = createClient();
+      const nextPosition = getNextPositionForSection(setlist, nextSection);
+
+      const { error } = await supabase
+        .from("setlist_songs")
+        .update({ set_section: nextSection, position: nextPosition })
+        .eq("id", songToMove.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setSetlist((currentSetlist) =>
+        sortSetlistSongs(
+          currentSetlist.map((song) =>
+            song.id === songToMove.id
+              ? { ...song, set_section: nextSection, position: nextPosition }
+              : song,
+          ),
+        ),
       );
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -799,8 +899,8 @@ export function ShowPage({
     }
   }
 
-  async function handleRemoveFromSetlist(songIndex: number) {
-    const songToRemove = setlist[songIndex];
+  async function handleRemoveFromSetlist(songId: string) {
+    const songToRemove = setlist.find((song) => song.id === songId);
 
     if (!songToRemove) {
       return;
@@ -820,25 +920,11 @@ export function ShowPage({
       setSetlist((currentSetlist) =>
         currentSetlist.filter((song) => song.id !== songToRemove.id),
       );
-
-      setOpenLyricsIndex((currentIndex) =>
-        currentIndex === null
-          ? currentIndex
-          : currentIndex === songIndex
-            ? null
-            : currentIndex > songIndex
-              ? currentIndex - 1
-              : currentIndex,
+      setOpenLyricsSongId((currentSongId) =>
+        currentSongId === songToRemove.id ? null : currentSongId,
       );
-
-      setEditingLyricsIndex((currentIndex) =>
-        currentIndex === null
-          ? currentIndex
-          : currentIndex === songIndex
-            ? null
-            : currentIndex > songIndex
-              ? currentIndex - 1
-              : currentIndex,
+      setEditingLyricsSongId((currentSongId) =>
+        currentSongId === songToRemove.id ? null : currentSongId,
       );
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -847,20 +933,22 @@ export function ShowPage({
     }
   }
 
-  function handleToggleLyrics(songIndex: number) {
-    setOpenLyricsIndex((currentIndex) =>
-      currentIndex === songIndex ? null : songIndex,
+  function handleToggleLyrics(songId: string) {
+    setOpenLyricsSongId((currentSongId) =>
+      currentSongId === songId ? null : songId,
     );
   }
 
-  function handleStartEditingLyrics(songIndex: number) {
-    setEditingLyricsIndex(songIndex);
-    setLyricsDraft(setlist[songIndex]?.lyrics ?? "");
-    setOpenLyricsIndex(songIndex);
+  function handleStartEditingLyrics(songId: string) {
+    const songToEdit = setlist.find((song) => song.id === songId);
+
+    setEditingLyricsSongId(songId);
+    setLyricsDraft(songToEdit?.lyrics ?? "");
+    setOpenLyricsSongId(songId);
   }
 
-  async function handleSaveLyrics(songIndex: number) {
-    const songToUpdate = setlist[songIndex];
+  async function handleSaveLyrics(songId: string) {
+    const songToUpdate = setlist.find((song) => song.id === songId);
 
     if (!songToUpdate) {
       return;
@@ -881,13 +969,13 @@ export function ShowPage({
       }
 
       setSetlist((currentSetlist) =>
-        currentSetlist.map((song, index) =>
-          index === songIndex ? { ...song, lyrics: lyricsDraft } : song,
+        currentSetlist.map((song) =>
+          song.id === songToUpdate.id ? { ...song, lyrics: lyricsDraft } : song,
         ),
       );
 
-      setEditingLyricsIndex(null);
-      setOpenLyricsIndex(songIndex);
+      setEditingLyricsSongId(null);
+      setOpenLyricsSongId(songId);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -896,7 +984,7 @@ export function ShowPage({
   }
 
   function handleCancelLyricsEdit() {
-    setEditingLyricsIndex(null);
+    setEditingLyricsSongId(null);
     setLyricsDraft("");
   }
 
@@ -1410,113 +1498,168 @@ export function ShowPage({
               No setlist songs yet. Approve a pending submission to get started.
             </div>
           ) : (
-            <ol className="print-hidden flex list-decimal flex-col gap-4 pl-6">
-              {setlist.map((song, index) => (
-                <li key={song.id} className="pl-1">
-                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
-                    <p className="text-base font-medium text-stone-900 sm:text-lg">
-                      {song.title} - {song.artist || "Unknown artist"}
-                      {song.song_key ? ` (${song.song_key})` : ""}
+            <div className="print-hidden flex flex-col gap-6">
+              {setlistSections.map((section) => (
+                <section key={section.key} className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-lg font-semibold text-stone-900">{section.title}</h3>
+                    <p className="text-sm text-stone-600">
+                      {section.songs.length} {section.songs.length === 1 ? "song" : "songs"}
                     </p>
-                    {song.notes ? (
-                      <p className="mt-2 text-sm text-stone-600">{song.notes}</p>
-                    ) : null}
-
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleLyrics(index)}
-                        className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        {openLyricsIndex === index ? "Hide Lyrics" : "Show Lyrics"}
-                      </button>
-
-                      {viewMode === "admin" ? (
-                        <button
-                          type="button"
-                          onClick={() => handleStartEditingLyrics(index)}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                        >
-                          Edit Lyrics
-                        </button>
-                      ) : null}
-                    </div>
-
-                    {editingLyricsIndex === index ? (
-                      <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Lyrics
-                          <textarea
-                            value={lyricsDraft}
-                            onChange={(event) => setLyricsDraft(event.target.value)}
-                            className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Add lyrics for this song"
-                          />
-                        </label>
-
-                        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                          <button
-                            type="button"
-                            onClick={() => handleSaveLyrics(index)}
-                            disabled={activeSetlistActionId === song.id}
-                            className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                          >
-                            Save Lyrics
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCancelLyricsEdit}
-                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {openLyricsIndex === index ? (
-                      <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-4 py-4">
-                        <p className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">
-                          Lyrics
-                        </p>
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-stone-700">
-                          {song.lyrics || "No lyrics added yet"}
-                        </p>
-                      </div>
-                    ) : null}
-
-                    {viewMode === "admin" ? (
-                      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                        <button
-                          type="button"
-                          onClick={() => handleMoveSongUp(index)}
-                          disabled={activeSetlistActionId === song.id}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Move Up
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleMoveSongDown(index)}
-                          disabled={activeSetlistActionId === song.id}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Move Down
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFromSetlist(index)}
-                          disabled={activeSetlistActionId === song.id}
-                          className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
-                </li>
+
+                  {section.songs.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+                      No songs assigned to {section.title} yet.
+                    </div>
+                  ) : (
+                    <ol className="flex list-decimal flex-col gap-4 pl-6">
+                      {section.songs.map((song) => (
+                        <li key={song.id} className="pl-1">
+                          <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                            <p className="text-base font-medium text-stone-900 sm:text-lg">
+                              {song.title} - {song.artist || "Unknown artist"}
+                              {song.song_key ? ` (${song.song_key})` : ""}
+                            </p>
+                            {song.notes ? (
+                              <p className="mt-2 text-sm text-stone-600">{song.notes}</p>
+                            ) : null}
+
+                            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleLyrics(song.id)}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                {openLyricsSongId === song.id ? "Hide Lyrics" : "Show Lyrics"}
+                              </button>
+
+                              {viewMode === "admin" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditingLyrics(song.id)}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Edit Lyrics
+                                </button>
+                              ) : null}
+                            </div>
+
+                            {editingLyricsSongId === song.id ? (
+                              <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Lyrics
+                                  <textarea
+                                    value={lyricsDraft}
+                                    onChange={(event) => setLyricsDraft(event.target.value)}
+                                    className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder="Add lyrics for this song"
+                                  />
+                                </label>
+
+                                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveLyrics(song.id)}
+                                    disabled={activeSetlistActionId === song.id}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    Save Lyrics
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelLyricsEdit}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {openLyricsSongId === song.id ? (
+                              <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-4 py-4">
+                                <p className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                  Lyrics
+                                </p>
+                                <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                                  {song.lyrics || "No lyrics added yet"}
+                                </p>
+                              </div>
+                            ) : null}
+
+                            {viewMode === "admin" ? (
+                              <div className="mt-4 flex flex-col gap-3">
+                                <div className="flex flex-col gap-3 sm:flex-row">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSongUp(song.id)}
+                                    disabled={activeSetlistActionId === song.id}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move Up
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSongDown(song.id)}
+                                    disabled={activeSetlistActionId === song.id}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move Down
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveFromSetlist(song.id)}
+                                    disabled={activeSetlistActionId === song.id}
+                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+
+                                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSongToSection(song.id, "set1")}
+                                    disabled={
+                                      activeSetlistActionId === song.id || song.set_section === "set1"
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move to Set 1
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSongToSection(song.id, "set2")}
+                                    disabled={
+                                      activeSetlistActionId === song.id || song.set_section === "set2"
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move to Set 2
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSongToSection(song.id, "encore")}
+                                    disabled={
+                                      activeSetlistActionId === song.id ||
+                                      song.set_section === "encore"
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move to Encore
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
               ))}
-            </ol>
+            </div>
           )}
 
           {setlist.length > 0 ? (
@@ -1526,34 +1669,41 @@ export function ShowPage({
                 <p>{formatShowDate(show.show_date)}</p>
               </header>
 
-              <ol className={`print-setlist-list print-mode-${printMode}`}>
-                {setlist.map((song, index) => (
-                  <li key={`print-${song.id}`} className="print-song-item">
-                    <div className="print-song-main">
-                      <span className="print-song-number">{index + 1}.</span>
-                      <div className="print-song-body">
-                        <div className="print-song-headline">
-                          <span className="print-song-title">{song.title}</span>
-                          {song.song_key ? (
-                            <span className="print-song-key">{song.song_key}</span>
-                          ) : null}
-                        </div>
+              <div className={`print-setlist-list print-mode-${printMode}`}>
+                {setlistSections.map((section) => (
+                  <section key={`print-${section.key}`} className="print-set-section">
+                    <h2 className="print-set-section-title">{section.title}</h2>
+                    <ol className="print-set-section-list">
+                      {section.songs.map((song, index) => (
+                        <li key={`print-${song.id}`} className="print-song-item">
+                          <div className="print-song-main">
+                            <span className="print-song-number">{index + 1}.</span>
+                            <div className="print-song-body">
+                              <div className="print-song-headline">
+                                <span className="print-song-title">{song.title}</span>
+                                {song.song_key ? (
+                                  <span className="print-song-key">{song.song_key}</span>
+                                ) : null}
+                              </div>
 
-                        {printMode !== "stage" || song.artist ? (
-                          <div className="print-song-support">
-                            {song.artist ? (
-                              <p className="print-song-artist">{song.artist}</p>
-                            ) : null}
-                            {printMode !== "stage" && song.notes ? (
-                              <p className="print-song-notes">{song.notes}</p>
-                            ) : null}
+                              {printMode !== "stage" || song.artist ? (
+                                <div className="print-song-support">
+                                  {song.artist ? (
+                                    <p className="print-song-artist">{song.artist}</p>
+                                  ) : null}
+                                  {printMode !== "stage" && song.notes ? (
+                                    <p className="print-song-notes">{song.notes}</p>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </li>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
                 ))}
-              </ol>
+              </div>
             </div>
           ) : null}
         </section>

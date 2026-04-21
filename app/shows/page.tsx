@@ -50,6 +50,15 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function buildShowFormState(show: Pick<ShowRecord, "name" | "show_date" | "venue" | "slug">) {
+  return {
+    name: show.name,
+    showDate: show.show_date ?? "",
+    venue: show.venue ?? "",
+    slug: show.slug,
+  };
+}
+
 export default function ShowsDashboardPage() {
   const [shows, setShows] = useState<ShowRecord[]>([]);
   const [formState, setFormState] = useState<ShowFormState>(initialFormState);
@@ -58,6 +67,13 @@ export default function ShowsDashboardPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
   const [showLogo, setShowLogo] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
+  const [editingShowId, setEditingShowId] = useState<string | null>(null);
+  const [editFormState, setEditFormState] = useState<ShowFormState>(initialFormState);
+  const [activeShowActionId, setActiveShowActionId] = useState<string | null>(null);
+
+  const activeShows = shows.filter((show) => !show.is_archived);
+  const archivedShows = shows.filter((show) => show.is_archived);
 
   const loadShows = useCallback(async () => {
     setIsLoading(true);
@@ -87,15 +103,29 @@ export default function ShowsDashboardPage() {
     void loadShows();
   }, [loadShows]);
 
-  function handleChange(event: ChangeEvent<HTMLInputElement>) {
+  function handleChange(
+    event: ChangeEvent<HTMLInputElement>,
+    options?: {
+      mode?: "create" | "edit";
+      preserveManualSlug?: boolean;
+    },
+  ) {
     const { name, value } = event.target;
+    const mode = options?.mode ?? "create";
+    const preserveManualSlug = options?.preserveManualSlug ?? false;
+    const setState = mode === "edit" ? setEditFormState : setFormState;
 
-    setFormState((currentState) => {
+    setState((currentState) => {
       if (name === "name") {
         return {
           ...currentState,
           name: value,
-          slug: currentState.slug ? currentState.slug : slugify(value),
+          slug:
+            preserveManualSlug && currentState.slug
+              ? currentState.slug
+              : currentState.slug
+                ? currentState.slug
+                : slugify(value),
         };
       }
 
@@ -111,6 +141,45 @@ export default function ShowsDashboardPage() {
         [name]: value,
       };
     });
+  }
+
+  function startEditingShow(show: ShowRecord) {
+    setEditingShowId(show.id);
+    setEditFormState(buildShowFormState(show));
+    setErrorMessage(null);
+  }
+
+  function cancelEditingShow() {
+    setEditingShowId(null);
+    setEditFormState(initialFormState);
+  }
+
+  function validateShowValues({
+    name,
+    slug,
+    existingShowId,
+  }: {
+    name: string;
+    slug: string;
+    existingShowId?: string;
+  }) {
+    if (!name) {
+      return "Show name is required.";
+    }
+
+    if (!slug) {
+      return "Slug is required.";
+    }
+
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      return "Slug must be URL-friendly and use lowercase letters, numbers, and hyphens only.";
+    }
+
+    if (shows.some((show) => show.slug === slug && show.id !== existingShowId)) {
+      return "A show with that slug already exists.";
+    }
+
+    return null;
   }
 
   async function handleCopyLink(slug: string, role: "guest" | "band" | "admin") {
@@ -136,26 +205,10 @@ export default function ShowsDashboardPage() {
 
     const name = formState.name.trim();
     const slug = slugify(formState.slug);
+    const validationError = validateShowValues({ name, slug });
 
-    if (!name) {
-      setErrorMessage("Show name is required.");
-      return;
-    }
-
-    if (!slug) {
-      setErrorMessage("Slug is required.");
-      return;
-    }
-
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-      setErrorMessage(
-        "Slug must be URL-friendly and use lowercase letters, numbers, and hyphens only.",
-      );
-      return;
-    }
-
-    if (shows.some((show) => show.slug === slug)) {
-      setErrorMessage("A show with that slug already exists.");
+    if (validationError) {
+      setErrorMessage(validationError);
       return;
     }
 
@@ -184,6 +237,81 @@ export default function ShowsDashboardPage() {
       setErrorMessage(getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleSaveShow(event: FormEvent<HTMLFormElement>, showId: string) {
+    event.preventDefault();
+
+    const name = editFormState.name.trim();
+    const slug = slugify(editFormState.slug);
+    const validationError = validateShowValues({ name, slug, existingShowId: showId });
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    setErrorMessage(null);
+    setActiveShowActionId(showId);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("shows")
+        .update({
+          name,
+          slug,
+          show_date: editFormState.showDate || null,
+          venue: editFormState.venue.trim() || null,
+        })
+        .eq("id", showId)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setShows((currentShows) =>
+        currentShows.map((show) => (show.id === showId ? data : show)),
+      );
+      cancelEditingShow();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveShowActionId(null);
+    }
+  }
+
+  async function handleSetArchived(showId: string, nextArchivedValue: boolean) {
+    setErrorMessage(null);
+    setActiveShowActionId(showId);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("shows")
+        .update({ is_archived: nextArchivedValue })
+        .eq("id", showId)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setShows((currentShows) =>
+        currentShows.map((show) => (show.id === showId ? data : show)),
+      );
+
+      if (editingShowId === showId) {
+        cancelEditingShow();
+      }
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveShowActionId(null);
     }
   }
 
@@ -296,87 +424,389 @@ export default function ShowsDashboardPage() {
           </section>
 
           <section className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Shows</h2>
-              <p className="text-sm text-stone-600">
-                Open or share the right portal link for each event.
-              </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Shows</h2>
+                <p className="text-sm text-stone-600">
+                  Open portals, fix show details, or archive older shows safely.
+                </p>
+              </div>
+
+              <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm font-medium text-stone-700">
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(event) => setShowArchived(event.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span>Show Archived</span>
+              </label>
             </div>
 
             {isLoading ? (
               <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600">
                 Loading shows...
               </div>
-            ) : shows.length === 0 ? (
+            ) : activeShows.length === 0 && (!showArchived || archivedShows.length === 0) ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
                 No shows created yet.
               </div>
             ) : (
-              <div className="grid gap-4">
-                {shows.map((show) => (
-                  <article
-                    key={show.id}
-                    className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-                  >
-                    <div className="flex flex-col gap-2">
-                      <h3 className="text-lg font-semibold text-stone-900">{show.name}</h3>
-                      <div className="grid gap-1 text-sm text-stone-600">
-                        <p>Date: {formatShowDate(show.show_date)}</p>
-                        {show.venue ? <p>Venue: {show.venue}</p> : null}
-                        <p>Slug: {show.slug}</p>
+              <div className="grid gap-6">
+                <section className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-lg font-semibold text-stone-900">Active Shows</h3>
+                    <p className="text-sm text-stone-600">
+                      Shows visible in the normal dashboard list.
+                    </p>
+                  </div>
+
+                  {activeShows.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                      No active shows right now.
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {activeShows.map((show) => {
+                        const isEditing = editingShowId === show.id;
+
+                        return (
+                          <article
+                            key={show.id}
+                            className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+                          >
+                            {isEditing ? (
+                              <form
+                                className="grid gap-4"
+                                onSubmit={(event) => handleSaveShow(event, show.id)}
+                              >
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Show Name
+                                    <input
+                                      type="text"
+                                      name="name"
+                                      value={editFormState.name}
+                                      onChange={(event) =>
+                                        handleChange(event, {
+                                          mode: "edit",
+                                          preserveManualSlug: true,
+                                        })
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      required
+                                    />
+                                  </label>
+
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Show Date
+                                    <input
+                                      type="date"
+                                      name="showDate"
+                                      value={editFormState.showDate}
+                                      onChange={(event) => handleChange(event, { mode: "edit" })}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Venue
+                                    <input
+                                      type="text"
+                                      name="venue"
+                                      value={editFormState.venue}
+                                      onChange={(event) => handleChange(event, { mode: "edit" })}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    />
+                                  </label>
+
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Slug
+                                    <input
+                                      type="text"
+                                      name="slug"
+                                      value={editFormState.slug}
+                                      onChange={(event) => handleChange(event, { mode: "edit" })}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      required
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="flex flex-col gap-3 sm:flex-row">
+                                  <button
+                                    type="submit"
+                                    disabled={activeShowActionId === show.id}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    Save Changes
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingShow}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
+                            ) : (
+                              <>
+                                <div className="flex flex-col gap-2">
+                                  <h4 className="text-lg font-semibold text-stone-900">
+                                    {show.name}
+                                  </h4>
+                                  <div className="grid gap-1 text-sm text-stone-600">
+                                    <p>Date: {formatShowDate(show.show_date)}</p>
+                                    {show.venue ? <p>Venue: {show.venue}</p> : null}
+                                    <p>Slug: {show.slug}</p>
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 flex flex-wrap gap-3">
+                                  <Link
+                                    href={`/guest/${show.slug}`}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Guest Portal
+                                  </Link>
+                                  <Link
+                                    href={`/band/${show.slug}`}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Band Portal
+                                  </Link>
+                                  <Link
+                                    href={`/admin/${show.slug}`}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                                  >
+                                    Admin Portal
+                                  </Link>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyLink(show.slug, "guest")}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    {copiedLinkKey === `guest-${show.slug}`
+                                      ? "Copied!"
+                                      : "Copy Guest Link"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyLink(show.slug, "band")}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    {copiedLinkKey === `band-${show.slug}`
+                                      ? "Copied!"
+                                      : "Copy Band Link"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyLink(show.slug, "admin")}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    {copiedLinkKey === `admin-${show.slug}`
+                                      ? "Copied!"
+                                      : "Copy Admin Link"}
+                                  </button>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-3 border-t border-stone-200 pt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingShow(show)}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Edit Show
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetArchived(show.id, true)}
+                                    disabled={activeShowActionId === show.id}
+                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                  >
+                                    Archive Show
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                {showArchived ? (
+                  <section className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-lg font-semibold text-stone-900">Archived Shows</h3>
+                      <p className="text-sm text-stone-600">
+                        Hidden from the normal list but still restorable and accessible by link.
+                      </p>
+                    </div>
+
+                    {archivedShows.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                        No archived shows yet.
                       </div>
-                    </div>
+                    ) : (
+                      <div className="grid gap-4">
+                        {archivedShows.map((show) => {
+                          const isEditing = editingShowId === show.id;
 
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <Link
-                        href={`/guest/${show.slug}`}
-                        className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Guest Portal
-                      </Link>
-                      <Link
-                        href={`/band/${show.slug}`}
-                        className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Band Portal
-                      </Link>
-                      <Link
-                        href={`/admin/${show.slug}`}
-                        className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                      >
-                        Admin Portal
-                      </Link>
-                    </div>
+                          return (
+                            <article
+                              key={show.id}
+                              className="rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5"
+                            >
+                              {isEditing ? (
+                                <form
+                                  className="grid gap-4"
+                                  onSubmit={(event) => handleSaveShow(event, show.id)}
+                                >
+                                  <div className="grid gap-4 sm:grid-cols-2">
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      Show Name
+                                      <input
+                                        type="text"
+                                        name="name"
+                                        value={editFormState.name}
+                                        onChange={(event) =>
+                                          handleChange(event, {
+                                            mode: "edit",
+                                            preserveManualSlug: true,
+                                          })
+                                        }
+                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        required
+                                      />
+                                    </label>
 
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink(show.slug, "guest")}
-                        className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        {copiedLinkKey === `guest-${show.slug}`
-                          ? "Copied!"
-                          : "Copy Guest Link"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink(show.slug, "band")}
-                        className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        {copiedLinkKey === `band-${show.slug}` ? "Copied!" : "Copy Band Link"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink(show.slug, "admin")}
-                        className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        {copiedLinkKey === `admin-${show.slug}`
-                          ? "Copied!"
-                          : "Copy Admin Link"}
-                      </button>
-                    </div>
-                  </article>
-                ))}
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      Show Date
+                                      <input
+                                        type="date"
+                                        name="showDate"
+                                        value={editFormState.showDate}
+                                        onChange={(event) => handleChange(event, { mode: "edit" })}
+                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      />
+                                    </label>
+                                  </div>
+
+                                  <div className="grid gap-4 sm:grid-cols-2">
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      Venue
+                                      <input
+                                        type="text"
+                                        name="venue"
+                                        value={editFormState.venue}
+                                        onChange={(event) => handleChange(event, { mode: "edit" })}
+                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      />
+                                    </label>
+
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      Slug
+                                      <input
+                                        type="text"
+                                        name="slug"
+                                        value={editFormState.slug}
+                                        onChange={(event) => handleChange(event, { mode: "edit" })}
+                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        required
+                                      />
+                                    </label>
+                                  </div>
+
+                                  <div className="flex flex-col gap-3 sm:flex-row">
+                                    <button
+                                      type="submit"
+                                      disabled={activeShowActionId === show.id}
+                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                    >
+                                      Save Changes
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelEditingShow}
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <>
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <h4 className="text-lg font-semibold text-stone-900">
+                                        {show.name}
+                                      </h4>
+                                      <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
+                                        Archived
+                                      </span>
+                                    </div>
+                                    <div className="grid gap-1 text-sm text-stone-600">
+                                      <p>Date: {formatShowDate(show.show_date)}</p>
+                                      {show.venue ? <p>Venue: {show.venue}</p> : null}
+                                      <p>Slug: {show.slug}</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-4 flex flex-wrap gap-3">
+                                    <Link
+                                      href={`/guest/${show.slug}`}
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Guest Portal
+                                    </Link>
+                                    <Link
+                                      href={`/band/${show.slug}`}
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Band Portal
+                                    </Link>
+                                    <Link
+                                      href={`/admin/${show.slug}`}
+                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                                    >
+                                      Admin Portal
+                                    </Link>
+                                  </div>
+
+                                  <div className="mt-3 flex flex-wrap gap-3 border-t border-amber-300 pt-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditingShow(show)}
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Edit Show
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSetArchived(show.id, false)}
+                                      disabled={activeShowActionId === show.id}
+                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                    >
+                                      Restore Show
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                ) : null}
               </div>
             )}
           </section>

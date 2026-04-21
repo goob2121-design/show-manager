@@ -1,5 +1,6 @@
 export type ViewMode = "guest" | "band" | "admin";
 export type SubmittedByRole = "Guest" | "Band";
+export type SetSection = "set1" | "set2" | "encore";
 
 export type ShowRecord = {
   id: string;
@@ -7,6 +8,7 @@ export type ShowRecord = {
   name: string;
   show_date: string | null;
   venue: string | null;
+  is_archived: boolean;
   venue_address: string | null;
   directions_url: string | null;
   call_time: string | null;
@@ -27,6 +29,7 @@ export type SetlistSong = {
   id: string;
   show_id: string;
   position: number;
+  set_section: SetSection;
   title: string;
   artist: string | null;
   song_key: string | null;
