@@ -1,4 +1,3 @@
-import { AdminGate } from "@/app/components/admin-gate";
 import { McPage } from "@/app/components/mc-page";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type {
@@ -122,15 +121,13 @@ export default async function McShowPage({
   const data = await loadMcPageData(slug);
 
   return (
-    <AdminGate slug={slug}>
-      <McPage
-        showSlug={slug}
-        initialShow={data.show}
-        initialSetlist={data.setlist}
-        initialGuestProfiles={data.guestProfiles}
-        initialSponsors={data.sponsors}
-        initialBlockNotes={data.blockNotes}
-      />
-    </AdminGate>
+    <McPage
+      showSlug={slug}
+      initialShow={data.show}
+      initialSetlist={data.setlist}
+      initialGuestProfiles={data.guestProfiles}
+      initialSponsors={data.sponsors}
+      initialBlockNotes={data.blockNotes}
+    />
   );
 }

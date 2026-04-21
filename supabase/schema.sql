@@ -107,6 +107,7 @@ create table if not exists public.show_sponsors (
   sponsor_id uuid references public.sponsor_library(id) on delete cascade,
   placement_order integer not null default 1,
   placement_type text,
+  mc_anchor_song_id uuid references public.setlist_songs(id) on delete set null,
   linked_performer text,
   custom_note text,
   created_at timestamptz not null default now()
@@ -116,6 +117,7 @@ alter table public.show_sponsors
   add column if not exists sponsor_id uuid references public.sponsor_library(id) on delete cascade,
   add column if not exists placement_order integer not null default 1,
   add column if not exists placement_type text,
+  add column if not exists mc_anchor_song_id uuid references public.setlist_songs(id) on delete set null,
   add column if not exists linked_performer text,
   add column if not exists custom_note text,
   add column if not exists name text,
@@ -167,6 +169,9 @@ create index if not exists show_sponsors_show_id_created_at_idx
 
 create index if not exists show_sponsors_show_id_order_idx
   on public.show_sponsors(show_id, placement_order);
+
+create index if not exists show_sponsors_mc_anchor_song_idx
+  on public.show_sponsors(mc_anchor_song_id);
 
 create index if not exists sponsor_library_name_idx
   on public.sponsor_library(lower(name));

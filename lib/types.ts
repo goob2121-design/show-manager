@@ -97,6 +97,7 @@ export type ShowSponsor = {
   sponsor_id: string | null;
   placement_order: number;
   placement_type: string | null;
+  mc_anchor_song_id: string | null;
   linked_performer: string | null;
   custom_note: string | null;
   created_at: string;
