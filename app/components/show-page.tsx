@@ -760,6 +760,9 @@ export function ShowPage({
   const portalLabel = getPortalLabel(viewMode);
   const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band";
   const isAdminView = viewMode === "admin";
+  const shouldShowAdminSongSubmission =
+    isAdminView && (activeAdminTab === "setlist" || activeAdminTab === "songs");
+  const shouldShowSongSubmissionForm = !isAdminView || shouldShowAdminSongSubmission;
   const setlistSections = getRenderableSetlistSections(setlist);
   const visibleSongPool =
     viewMode === "guest"
@@ -4386,7 +4389,9 @@ export function ShowPage({
               </p>
             </div>
           </section>
-        ) : (
+        ) : null}
+
+        {shouldShowSongSubmissionForm ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">{formHeading}</h2>
@@ -4484,7 +4489,7 @@ export function ShowPage({
               </div>
             </form>
           </section>
-        )}
+        ) : null}
 
         {viewMode === "band" || (isAdminView && activeAdminTab === "songs") ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
