@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
+import { ThemeToggle } from "@/app/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import type { SetlistSong, ShowRecord } from "@/lib/types";
 
@@ -480,28 +481,32 @@ export default function ShowsDashboardPage() {
     >
       <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
         <section className="mx-auto flex w-full max-w-5xl flex-col gap-8 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-        <header className="flex flex-col gap-2 border-b border-stone-200 pb-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            {showLogo ? (
-              <Image
-                src="/cmms-logo.png"
-                alt="CMMS logo"
-                width={72}
-                height={72}
-                className="h-14 w-auto rounded-lg object-contain"
-                onError={() => setShowLogo(false)}
-                priority
-              />
-            ) : null}
+        <header className="flex flex-col gap-4 border-b border-stone-200 pb-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              {showLogo ? (
+                <Image
+                  src="/cmms-logo.png"
+                  alt="CMMS logo"
+                  width={72}
+                  height={72}
+                  className="h-14 w-auto rounded-lg object-contain"
+                  onError={() => setShowLogo(false)}
+                  priority
+                />
+              ) : null}
 
-            <div className="flex flex-col gap-2">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                CMMS Portal
-              </p>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Show Manager
-              </h1>
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                  CMMS Portal
+                </p>
+                <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                  Show Manager
+                </h1>
+              </div>
             </div>
+
+            <ThemeToggle />
           </div>
           <p className="text-base text-stone-600">
             Create a new event, then open the Guest, Band, or Admin portal for that show.

@@ -3,7 +3,9 @@
 import Image from "next/image";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
+import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { createClient } from "@/lib/supabase/client";
+import { ThemeToggle } from "@/app/components/theme-toggle";
 import type {
   GuestProfile,
   GuestProfileFormState,
@@ -1242,27 +1244,35 @@ export function ShowPage({
       className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6"
     >
       <section className="mx-auto flex w-full max-w-3xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
-        <header className="print-hidden flex flex-col gap-2 border-b border-stone-200 pb-6">
-          {shouldShowPortalLogo ? (
-            <div className="mb-2">
-              <Image
-                src="/cmms-logo.png"
-                alt="CMMS logo"
-                width={180}
-                height={64}
-                priority
-                className="h-auto w-full max-w-[140px] sm:max-w-[180px]"
-              />
+        <AdminQuickNav slug={showSlug} currentView={viewMode} />
+
+        <header className="print-hidden flex flex-col gap-4 border-b border-stone-200 pb-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-2">
+              {shouldShowPortalLogo ? (
+                <div className="mb-2">
+                  <Image
+                    src="/cmms-logo.png"
+                    alt="CMMS logo"
+                    width={180}
+                    height={64}
+                    priority
+                    className="h-auto w-full max-w-[140px] sm:max-w-[180px]"
+                  />
+                </div>
+              ) : null}
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                Live Music Show Manager
+              </p>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-500">
+                {portalLabel}
+              </p>
+              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{show.name}</h1>
+              <p className="text-base text-stone-600">{formatShowDate(show.show_date)}</p>
             </div>
-          ) : null}
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
-            Live Music Show Manager
-          </p>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-500">
-            {portalLabel}
-          </p>
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{show.name}</h1>
-          <p className="text-base text-stone-600">{formatShowDate(show.show_date)}</p>
+
+            <ThemeToggle />
+          </div>
         </header>
 
         {errorMessage ? (
