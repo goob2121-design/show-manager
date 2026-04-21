@@ -67,6 +67,17 @@ export type GuestProfile = {
   created_at: string;
 };
 
+export type SongLibrarySong = {
+  id: string;
+  title: string;
+  artist: string | null;
+  song_key: string | null;
+  notes: string | null;
+  lyrics: string | null;
+  source_role: SubmittedByRole | string | null;
+  created_at: string;
+};
+
 export type SongFormState = {
   submittedByName: string;
   title: string;

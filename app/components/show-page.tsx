@@ -10,6 +10,7 @@ import type {
   PendingSubmission,
   SetSection,
   SetlistSong,
+  SongLibrarySong,
   ShowDetailsFormState,
   ShowRecord,
   SongFormState,
@@ -196,6 +197,23 @@ function formatSubmittedByRole(role: PendingSubmission["submitted_by_role"]) {
   return "Guest";
 }
 
+function normalizeSongLibrarySong(
+  song: SongLibrarySong & { source_role?: string | null },
+): SongLibrarySong {
+  return {
+    ...song,
+    source_role: song.source_role ? normalizeSubmittedByRole(song.source_role) : null,
+  };
+}
+
+function formatLibrarySourceRole(role: SongLibrarySong["source_role"]) {
+  if (!role) {
+    return "Unknown";
+  }
+
+  return formatSubmittedByRole(role);
+}
+
 function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
   return {
     venue: show.venue ?? "",
@@ -310,6 +328,7 @@ export function ShowPage({
   const [guestPhotoFile, setGuestPhotoFile] = useState<File | null>(null);
   const [guestProfiles, setGuestProfiles] = useState<GuestProfile[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
+  const [songLibrary, setSongLibrary] = useState<SongLibrarySong[]>([]);
   const [openLyricsSongId, setOpenLyricsSongId] = useState<string | null>(null);
   const [editingLyricsSongId, setEditingLyricsSongId] = useState<string | null>(null);
   const [lyricsDraft, setLyricsDraft] = useState("");
@@ -367,6 +386,7 @@ export function ShowPage({
           setShow(null);
           setSetlist([]);
           setPendingSongs([]);
+          setSongLibrary([]);
           setGuestProfiles([]);
           setErrorMessage("Show not found");
           return;
@@ -377,6 +397,7 @@ export function ShowPage({
         const [
           { data: setlistRows, error: setlistError },
           { data: pendingRows, error: pendingError },
+          { data: libraryRows, error: libraryError },
           { data: guestProfileRows, error: guestProfilesError },
         ] =
           await Promise.all([
@@ -391,6 +412,11 @@ export function ShowPage({
               .eq("show_id", showRecord.id)
               .order("created_at", { ascending: true }),
             supabase
+              .from("song_library")
+              .select("*")
+              .order("title", { ascending: true })
+              .order("artist", { ascending: true, nullsFirst: false }),
+            supabase
               .from("guest_profiles")
               .select("*")
               .eq("show_id", showRecord.id)
@@ -403,6 +429,10 @@ export function ShowPage({
 
         if (pendingError) {
           throw pendingError;
+        }
+
+        if (libraryError) {
+          throw libraryError;
         }
 
         if (guestProfilesError) {
@@ -420,6 +450,12 @@ export function ShowPage({
           (pendingRows ?? []).map(
             (submission: PendingSubmission & { submitted_by_name?: string | null }) =>
               normalizePendingSubmission(submission),
+          ),
+        );
+        setSongLibrary(
+          (libraryRows ?? []).map(
+            (song: SongLibrarySong & { source_role?: string | null }) =>
+              normalizeSongLibrarySong(song),
           ),
         );
         setGuestProfiles(guestProfileRows ?? []);
@@ -573,6 +609,51 @@ export function ShowPage({
 
       if (error) {
         throw error;
+      }
+
+      const normalizedSubmittedByRole = normalizeSubmittedByRole(viewMode);
+
+      if (normalizedSubmittedByRole === "band" || normalizedSubmittedByRole === "admin") {
+        const normalizedTitle = title.toLowerCase();
+        const normalizedArtist = artist.toLowerCase();
+
+        const existingLibrarySong = songLibrary.find((song) => {
+          const libraryTitle = song.title.trim().toLowerCase();
+          const libraryArtist = (song.artist ?? "").trim().toLowerCase();
+
+          return libraryTitle === normalizedTitle && libraryArtist === normalizedArtist;
+        });
+
+        if (!existingLibrarySong) {
+          const { data: insertedLibrarySong, error: libraryInsertError } = await supabase
+            .from("song_library")
+            .insert({
+              title,
+              artist,
+              song_key: formState.key.trim() || null,
+              notes: formState.notes.trim() || null,
+              lyrics: formState.lyrics.trim() || null,
+              source_role: normalizedSubmittedByRole,
+            })
+            .select("*")
+            .single();
+
+          if (libraryInsertError) {
+            throw libraryInsertError;
+          }
+
+          setSongLibrary((currentSongs) =>
+            [...currentSongs, normalizeSongLibrarySong(insertedLibrarySong)].sort((songA, songB) => {
+              const titleComparison = songA.title.localeCompare(songB.title);
+
+              if (titleComparison !== 0) {
+                return titleComparison;
+              }
+
+              return (songA.artist ?? "").localeCompare(songB.artist ?? "");
+            }),
+          );
+        }
       }
 
       setPendingSongs((currentSongs) => [...currentSongs, normalizePendingSubmission(data)]);
@@ -774,6 +855,49 @@ export function ShowPage({
       setActionError(getErrorMessage(error));
     } finally {
       setActivePendingActionId(null);
+    }
+  }
+
+  async function handleAddLibrarySongToSection(songToPlace: SongLibrarySong, section: SetSection) {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSetlistActionId(songToPlace.id);
+
+    try {
+      const supabase = createClient();
+      const nextPosition = getNextPositionForSection(setlist, section);
+
+      const { data: insertedSong, error } = await supabase
+        .from("setlist_songs")
+        .insert({
+          show_id: show.id,
+          position: nextPosition,
+          set_section: section,
+          title: songToPlace.title,
+          artist: songToPlace.artist,
+          song_key: songToPlace.song_key,
+          notes: songToPlace.notes,
+          lyrics: songToPlace.lyrics,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setSetlist((currentSongs) =>
+        sortSetlistSongs([...currentSongs, normalizeSetlistSong(insertedSong)]),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+      await loadShowData(false);
+    } finally {
+      setActiveSetlistActionId(null);
     }
   }
 
@@ -2231,6 +2355,81 @@ export function ShowPage({
                     </div>
                   ) : null}
                 </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {viewMode !== "guest" ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Song Library</h2>
+              <p className="text-sm text-stone-600">
+                Reusable songs collected from past band and admin submissions.
+              </p>
+            </div>
+
+            {songLibrary.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                No reusable songs saved yet. Band and admin submissions will build the library over time.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {songLibrary.map((song) => (
+                  <article
+                    key={song.id}
+                    className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex flex-col gap-1">
+                        <h3 className="text-base font-semibold text-stone-900">{song.title}</h3>
+                        <p className="text-sm text-stone-700">
+                          {song.artist || "Unknown artist"}
+                        </p>
+                      </div>
+                      <span className="w-fit rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                        Source: {formatLibrarySourceRole(song.source_role)}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
+                      {song.song_key ? <p>Key: {song.song_key}</p> : null}
+                      {song.notes ? <p>Notes: {song.notes}</p> : null}
+                      {song.lyrics ? (
+                        <p className="text-xs text-stone-500">Lyrics available in library</p>
+                      ) : null}
+                    </div>
+
+                    {viewMode === "admin" ? (
+                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleAddLibrarySongToSection(song, "set1")}
+                          disabled={activeSetlistActionId === song.id}
+                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                        >
+                          Add to Set 1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddLibrarySongToSection(song, "set2")}
+                          disabled={activeSetlistActionId === song.id}
+                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Add to Set 2
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddLibrarySongToSection(song, "encore")}
+                          disabled={activeSetlistActionId === song.id}
+                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Add to Encore
+                        </button>
+                      </div>
+                    ) : null}
+                  </article>
                 ))}
               </div>
             )}

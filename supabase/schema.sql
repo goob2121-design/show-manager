@@ -75,6 +75,17 @@ create table if not exists public.guest_profiles (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.song_library (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  artist text,
+  song_key text,
+  notes text,
+  lyrics text,
+  source_role text,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists setlist_songs_show_id_position_idx
   on public.setlist_songs(show_id, position);
 
