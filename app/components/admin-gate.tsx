@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 
 type AdminGateProps = {
   slug: string;
+  resourceLabel?: string;
+  continueLabel?: string;
   children: ReactNode;
 };
 
@@ -12,7 +14,12 @@ function getStorageKey(slug: string) {
   return `cmms-admin-access:${slug}`;
 }
 
-export function AdminGate({ slug, children }: AdminGateProps) {
+export function AdminGate({
+  slug,
+  resourceLabel,
+  continueLabel = "Continue to Admin Portal",
+  children,
+}: AdminGateProps) {
   // Add NEXT_PUBLIC_ADMIN_PASSWORD in .env.local to enable this simple admin gate.
   const expectedPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "";
   const [password, setPassword] = useState("");
@@ -75,7 +82,8 @@ export function AdminGate({ slug, children }: AdminGateProps) {
           </p>
           <h1 className="text-3xl font-semibold tracking-tight">Enter Admin Password</h1>
           <p className="text-sm text-stone-600">
-            This simple password gate protects the admin portal for <span className="font-medium">{slug}</span>.
+            This simple password gate protects{" "}
+            <span className="font-medium">{resourceLabel ?? `the admin portal for ${slug}`}</span>.
           </p>
         </header>
 
@@ -102,7 +110,7 @@ export function AdminGate({ slug, children }: AdminGateProps) {
             type="submit"
             className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
           >
-            Continue to Admin Portal
+            {continueLabel}
           </button>
         </form>
       </section>

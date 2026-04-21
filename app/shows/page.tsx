@@ -2,10 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
+import { AdminGate } from "@/app/components/admin-gate";
 import { createClient } from "@/lib/supabase/client";
-import type { ShowRecord } from "@/lib/types";
+import type { SetlistSong, ShowRecord } from "@/lib/types";
 
 type ShowFormState = {
   name: string;
@@ -59,7 +61,17 @@ function buildShowFormState(show: Pick<ShowRecord, "name" | "show_date" | "venue
   };
 }
 
+function buildDuplicateFormState() {
+  return {
+    name: "",
+    showDate: "",
+    venue: "",
+    slug: "",
+  };
+}
+
 export default function ShowsDashboardPage() {
+  const router = useRouter();
   const [shows, setShows] = useState<ShowRecord[]>([]);
   const [formState, setFormState] = useState<ShowFormState>(initialFormState);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,6 +82,10 @@ export default function ShowsDashboardPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [editingShowId, setEditingShowId] = useState<string | null>(null);
   const [editFormState, setEditFormState] = useState<ShowFormState>(initialFormState);
+  const [duplicatingShowId, setDuplicatingShowId] = useState<string | null>(null);
+  const [duplicateFormState, setDuplicateFormState] = useState<ShowFormState>(
+    buildDuplicateFormState(),
+  );
   const [activeShowActionId, setActiveShowActionId] = useState<string | null>(null);
 
   const activeShows = shows.filter((show) => !show.is_archived);
@@ -106,14 +122,19 @@ export default function ShowsDashboardPage() {
   function handleChange(
     event: ChangeEvent<HTMLInputElement>,
     options?: {
-      mode?: "create" | "edit";
+      mode?: "create" | "edit" | "duplicate";
       preserveManualSlug?: boolean;
     },
   ) {
     const { name, value } = event.target;
     const mode = options?.mode ?? "create";
     const preserveManualSlug = options?.preserveManualSlug ?? false;
-    const setState = mode === "edit" ? setEditFormState : setFormState;
+    const setState =
+      mode === "edit"
+        ? setEditFormState
+        : mode === "duplicate"
+          ? setDuplicateFormState
+          : setFormState;
 
     setState((currentState) => {
       if (name === "name") {
@@ -144,6 +165,8 @@ export default function ShowsDashboardPage() {
   }
 
   function startEditingShow(show: ShowRecord) {
+    setDuplicatingShowId(null);
+    setDuplicateFormState(buildDuplicateFormState());
     setEditingShowId(show.id);
     setEditFormState(buildShowFormState(show));
     setErrorMessage(null);
@@ -152,6 +175,24 @@ export default function ShowsDashboardPage() {
   function cancelEditingShow() {
     setEditingShowId(null);
     setEditFormState(initialFormState);
+  }
+
+  function startDuplicatingShow(show: ShowRecord) {
+    setEditingShowId(null);
+    setEditFormState(initialFormState);
+    setDuplicatingShowId(show.id);
+    setDuplicateFormState({
+      name: "",
+      showDate: "",
+      venue: show.venue ?? "",
+      slug: "",
+    });
+    setErrorMessage(null);
+  }
+
+  function cancelDuplicatingShow() {
+    setDuplicatingShowId(null);
+    setDuplicateFormState(buildDuplicateFormState());
   }
 
   function validateShowValues({
@@ -180,6 +221,23 @@ export default function ShowsDashboardPage() {
     }
 
     return null;
+  }
+
+  function validateDuplicateValues({
+    showDate,
+    slug,
+  }: {
+    showDate: string;
+    slug: string;
+  }) {
+    if (!showDate) {
+      return "Show date is required when duplicating a show.";
+    }
+
+    return validateShowValues({
+      name: "temporary-name",
+      slug,
+    });
   }
 
   async function handleCopyLink(slug: string, role: "guest" | "band" | "admin") {
@@ -232,7 +290,7 @@ export default function ShowsDashboardPage() {
         throw error;
       }
 
-      window.location.href = `/admin/${data.slug}`;
+      router.push(`/admin/${data.slug}`);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -308,6 +366,105 @@ export default function ShowsDashboardPage() {
       if (editingShowId === showId) {
         cancelEditingShow();
       }
+
+      if (duplicatingShowId === showId) {
+        cancelDuplicatingShow();
+      }
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveShowActionId(null);
+    }
+  }
+
+  async function handleDuplicateShow(event: FormEvent<HTMLFormElement>, sourceShow: ShowRecord) {
+    event.preventDefault();
+
+    const name = duplicateFormState.name.trim() || sourceShow.name;
+    const showDate = duplicateFormState.showDate;
+    const slug = slugify(duplicateFormState.slug);
+    const validationError = validateDuplicateValues({ showDate, slug });
+
+    if (!name) {
+      setErrorMessage("Show name is required.");
+      return;
+    }
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    setErrorMessage(null);
+    setActiveShowActionId(sourceShow.id);
+
+    try {
+      const supabase = createClient();
+      const { data: createdShow, error: createShowError } = await supabase
+        .from("shows")
+        .insert({
+          name,
+          slug,
+          show_date: showDate,
+          venue: sourceShow.venue,
+          venue_address: sourceShow.venue_address,
+          directions_url: sourceShow.directions_url,
+          call_time: sourceShow.call_time,
+          soundcheck_time: sourceShow.soundcheck_time,
+          guest_arrival_time: sourceShow.guest_arrival_time,
+          band_arrival_time: sourceShow.band_arrival_time,
+          show_start_time: sourceShow.show_start_time,
+          contact_name: sourceShow.contact_name,
+          contact_phone: sourceShow.contact_phone,
+          parking_notes: sourceShow.parking_notes,
+          load_in_notes: sourceShow.load_in_notes,
+          announcements: sourceShow.announcements,
+          guest_message: sourceShow.guest_message,
+          is_archived: false,
+        })
+        .select("*")
+        .single();
+
+      if (createShowError) {
+        throw createShowError;
+      }
+
+      const { data: sourceSetlist, error: sourceSetlistError } = await supabase
+        .from("setlist_songs")
+        .select("*")
+        .eq("show_id", sourceShow.id)
+        .order("position", { ascending: true });
+
+      if (sourceSetlistError) {
+        await supabase.from("shows").delete().eq("id", createdShow.id);
+        throw sourceSetlistError;
+      }
+
+      const typedSetlist = (sourceSetlist ?? []) as Array<
+        SetlistSong & { set_section?: string | null }
+      >;
+
+      if (typedSetlist.length > 0) {
+        const { error: insertSetlistError } = await supabase.from("setlist_songs").insert(
+          typedSetlist.map((song) => ({
+            show_id: createdShow.id,
+            position: song.position,
+            set_section: song.set_section ?? "set1",
+            title: song.title,
+            artist: song.artist,
+            song_key: song.song_key,
+            notes: song.notes,
+            lyrics: song.lyrics,
+          })),
+        );
+
+        if (insertSetlistError) {
+          await supabase.from("shows").delete().eq("id", createdShow.id);
+          throw insertSetlistError;
+        }
+      }
+
+      router.push(`/admin/${createdShow.slug}`);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -316,8 +473,13 @@ export default function ShowsDashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
-      <section className="mx-auto flex w-full max-w-5xl flex-col gap-8 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+    <AdminGate
+      slug="shows-dashboard"
+      resourceLabel="the show management dashboard"
+      continueLabel="Continue to Dashboard"
+    >
+      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
+        <section className="mx-auto flex w-full max-w-5xl flex-col gap-8 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
         <header className="flex flex-col gap-2 border-b border-stone-200 pb-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             {showLogo ? (
@@ -469,6 +631,7 @@ export default function ShowsDashboardPage() {
                     <div className="grid gap-4">
                       {activeShows.map((show) => {
                         const isEditing = editingShowId === show.id;
+                        const isDuplicating = duplicatingShowId === show.id;
 
                         return (
                           <article
@@ -552,6 +715,86 @@ export default function ShowsDashboardPage() {
                                   </button>
                                 </div>
                               </form>
+                            ) : isDuplicating ? (
+                              <form
+                                className="grid gap-4"
+                                onSubmit={(event) => handleDuplicateShow(event, show)}
+                              >
+                                <div className="flex flex-col gap-1">
+                                  <h4 className="text-lg font-semibold text-stone-900">
+                                    Duplicate {show.name}
+                                  </h4>
+                                  <p className="text-sm text-stone-600">
+                                    This copies the show setup and official setlist. Leave the name
+                                    blank to reuse the current show name.
+                                  </p>
+                                </div>
+
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    New Show Name
+                                    <input
+                                      type="text"
+                                      name="name"
+                                      value={duplicateFormState.name}
+                                      onChange={(event) =>
+                                        handleChange(event, {
+                                          mode: "duplicate",
+                                          preserveManualSlug: true,
+                                        })
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      placeholder={show.name}
+                                    />
+                                  </label>
+
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    New Show Date
+                                    <input
+                                      type="date"
+                                      name="showDate"
+                                      value={duplicateFormState.showDate}
+                                      onChange={(event) =>
+                                        handleChange(event, { mode: "duplicate" })
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      required
+                                    />
+                                  </label>
+                                </div>
+
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  New Slug
+                                  <input
+                                    type="text"
+                                    name="slug"
+                                    value={duplicateFormState.slug}
+                                    onChange={(event) =>
+                                      handleChange(event, { mode: "duplicate" })
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder={`${show.slug}-copy`}
+                                    required
+                                  />
+                                </label>
+
+                                <div className="flex flex-col gap-3 sm:flex-row">
+                                  <button
+                                    type="submit"
+                                    disabled={activeShowActionId === show.id}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    Create Duplicate
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelDuplicatingShow}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
                             ) : (
                               <>
                                 <div className="flex flex-col gap-2">
@@ -626,6 +869,13 @@ export default function ShowsDashboardPage() {
                                   </button>
                                   <button
                                     type="button"
+                                    onClick={() => startDuplicatingShow(show)}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Duplicate Show
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => handleSetArchived(show.id, true)}
                                     disabled={activeShowActionId === show.id}
                                     className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
@@ -659,6 +909,7 @@ export default function ShowsDashboardPage() {
                       <div className="grid gap-4">
                         {archivedShows.map((show) => {
                           const isEditing = editingShowId === show.id;
+                          const isDuplicating = duplicatingShowId === show.id;
 
                           return (
                             <article
@@ -742,6 +993,86 @@ export default function ShowsDashboardPage() {
                                     </button>
                                   </div>
                                 </form>
+                              ) : isDuplicating ? (
+                                <form
+                                  className="grid gap-4"
+                                  onSubmit={(event) => handleDuplicateShow(event, show)}
+                                >
+                                  <div className="flex flex-col gap-1">
+                                    <h4 className="text-lg font-semibold text-stone-900">
+                                      Duplicate {show.name}
+                                    </h4>
+                                    <p className="text-sm text-stone-600">
+                                      This creates a new active show with the same itinerary and
+                                      official setlist.
+                                    </p>
+                                  </div>
+
+                                  <div className="grid gap-4 sm:grid-cols-2">
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      New Show Name
+                                      <input
+                                        type="text"
+                                        name="name"
+                                        value={duplicateFormState.name}
+                                        onChange={(event) =>
+                                          handleChange(event, {
+                                            mode: "duplicate",
+                                            preserveManualSlug: true,
+                                          })
+                                        }
+                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        placeholder={show.name}
+                                      />
+                                    </label>
+
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      New Show Date
+                                      <input
+                                        type="date"
+                                        name="showDate"
+                                        value={duplicateFormState.showDate}
+                                        onChange={(event) =>
+                                          handleChange(event, { mode: "duplicate" })
+                                        }
+                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        required
+                                      />
+                                    </label>
+                                  </div>
+
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    New Slug
+                                    <input
+                                      type="text"
+                                      name="slug"
+                                      value={duplicateFormState.slug}
+                                      onChange={(event) =>
+                                        handleChange(event, { mode: "duplicate" })
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      placeholder={`${show.slug}-copy`}
+                                      required
+                                    />
+                                  </label>
+
+                                  <div className="flex flex-col gap-3 sm:flex-row">
+                                    <button
+                                      type="submit"
+                                      disabled={activeShowActionId === show.id}
+                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                    >
+                                      Create Duplicate
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelDuplicatingShow}
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </form>
                               ) : (
                                 <>
                                   <div className="flex flex-col gap-2">
@@ -791,6 +1122,13 @@ export default function ShowsDashboardPage() {
                                     </button>
                                     <button
                                       type="button"
+                                      onClick={() => startDuplicatingShow(show)}
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Duplicate Show
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => handleSetArchived(show.id, false)}
                                       disabled={activeShowActionId === show.id}
                                       className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
@@ -811,7 +1149,8 @@ export default function ShowsDashboardPage() {
             )}
           </section>
         </section>
-      </section>
-    </main>
+        </section>
+      </main>
+    </AdminGate>
   );
 }
