@@ -21,13 +21,6 @@ type ScriptFormState = {
   closingScript: string;
 };
 
-type SponsorFormState = {
-  name: string;
-  shortMessage: string;
-  fullMessage: string;
-  placementNote: string;
-};
-
 type BlockNoteFormState = {
   introNote: string;
   sponsorMention: string;
@@ -58,18 +51,36 @@ type McRunSection = {
   blocks: McPerformanceBlock[];
 };
 
+type McRunSheetItem =
+  | {
+      kind: "block";
+      id: string;
+      block: McPerformanceBlock;
+      upNext: McPerformanceBlock | null;
+    }
+  | {
+      kind: "sponsor";
+      id: string;
+      sponsor: ShowSponsor;
+    };
+
+type McRunSheetData = {
+  sectionItems: Array<{
+    key: SetSection;
+    title: string;
+    items: McRunSheetItem[];
+  }>;
+  beforeIntermission: ShowSponsor[];
+  afterIntermission: ShowSponsor[];
+  closing: ShowSponsor[];
+  flexible: ShowSponsor[];
+};
+
 const setSectionOrder: SetSection[] = ["set1", "set2", "encore"];
 const setSectionTitles: Record<SetSection, string> = {
   set1: "Set 1",
   set2: "Set 2",
   encore: "Encore",
-};
-
-const initialSponsorFormState: SponsorFormState = {
-  name: "",
-  shortMessage: "",
-  fullMessage: "",
-  placementNote: "",
 };
 
 function normalizeSetSection(value: string | null | undefined): SetSection {
@@ -105,6 +116,16 @@ function sortSetlistSongs(songs: SetlistSong[]) {
   });
 }
 
+function sortSponsors(sponsors: ShowSponsor[]) {
+  return [...sponsors].sort((sponsorA, sponsorB) => {
+    if (sponsorA.placement_order !== sponsorB.placement_order) {
+      return sponsorA.placement_order - sponsorB.placement_order;
+    }
+
+    return sponsorA.created_at.localeCompare(sponsorB.created_at);
+  });
+}
+
 function formatShowDate(showDate: string | null) {
   if (!showDate) {
     return "Date TBD";
@@ -135,17 +156,76 @@ function normalizeName(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
 }
 
-function buildSponsorDrafts(sponsors: ShowSponsor[]) {
-  return sponsors.reduce<Record<string, SponsorFormState>>((drafts, sponsor) => {
-    drafts[sponsor.id] = {
-      name: sponsor.sponsor?.name ?? "Sponsor",
-      shortMessage: sponsor.sponsor?.short_message ?? "",
-      fullMessage: sponsor.sponsor?.full_message ?? "",
-      placementNote: sponsor.custom_note ?? sponsor.linked_performer ?? sponsor.placement_type ?? "",
-    };
+function normalizeSponsorPlacementType(value: string | null | undefined) {
+  switch (value) {
+    case "before_performer":
+      return "before_performer";
+    case "after_performer":
+      return "after_performer";
+    case "before_intermission":
+      return "before_intermission";
+    case "after_intermission":
+      return "after_intermission";
+    case "closing":
+      return "closing";
+    case "opening":
+      return "before_performer";
+    case "changeover":
+      return "after_performer";
+    case "intermission":
+      return "before_intermission";
+    default:
+      return "flexible";
+  }
+}
 
-    return drafts;
-  }, {});
+function formatSponsorPlacementType(value: string | null | undefined) {
+  switch (normalizeSponsorPlacementType(value)) {
+    case "before_performer":
+      return "Before performer";
+    case "after_performer":
+      return "After performer";
+    case "before_intermission":
+      return "Before intermission";
+    case "after_intermission":
+      return "After intermission";
+    case "closing":
+      return "Closing section";
+    default:
+      return "Placement flexible";
+  }
+}
+
+function getSponsorReadText(sponsor: ShowSponsor) {
+  const fullMessage = sponsor.sponsor?.full_message?.trim();
+
+  if (fullMessage) {
+    return fullMessage;
+  }
+
+  const shortMessage = sponsor.sponsor?.short_message?.trim();
+
+  if (shortMessage) {
+    return shortMessage;
+  }
+
+  return "No sponsor read has been added yet.";
+}
+
+function getGuestIntroText(profile: GuestProfile | null) {
+  if (!profile) {
+    return null;
+  }
+
+  if (profile.short_bio?.trim()) {
+    return profile.short_bio.trim();
+  }
+
+  if (profile.full_bio?.trim()) {
+    return profile.full_bio.trim();
+  }
+
+  return null;
 }
 
 function buildScriptFormState(show: ShowRecord | null): ScriptFormState {
@@ -209,10 +289,7 @@ function buildMcRunSections(
     .filter((section) => section.blocks.length > 0);
 }
 
-function buildBlockNoteDrafts(
-  runSections: McRunSection[],
-  blockNotes: McBlockNote[],
-) {
+function buildBlockNoteDrafts(runSections: McRunSection[], blockNotes: McBlockNote[]) {
   const noteLookup = blockNotes.reduce<Record<string, McBlockNote>>((lookup, note) => {
     lookup[note.anchor_song_id] = note;
     return lookup;
@@ -233,6 +310,311 @@ function buildBlockNoteDrafts(
   }, {});
 }
 
+function findMatchingBlockIndex(blocks: McPerformanceBlock[], linkedPerformer: string | null, fallbackIndex: number) {
+  if (blocks.length === 0) {
+    return null;
+  }
+
+  const normalizedPerformer = normalizeName(linkedPerformer);
+
+  if (!normalizedPerformer) {
+    return fallbackIndex;
+  }
+
+  const exactMatchIndex = blocks.findIndex(
+    (block) => normalizeName(block.performer) === normalizedPerformer,
+  );
+
+  if (exactMatchIndex >= 0) {
+    return exactMatchIndex;
+  }
+
+  const partialMatchIndex = blocks.findIndex((block) => {
+    const normalizedBlockPerformer = normalizeName(block.performer);
+    return (
+      normalizedBlockPerformer.includes(normalizedPerformer) ||
+      normalizedPerformer.includes(normalizedBlockPerformer)
+    );
+  });
+
+  if (partialMatchIndex >= 0) {
+    return partialMatchIndex;
+  }
+
+  return fallbackIndex;
+}
+
+function buildMcRunSheetData(
+  runSections: McRunSection[],
+  sponsors: ShowSponsor[],
+): McRunSheetData {
+  const orderedSponsors = sortSponsors(sponsors);
+  const allBlocks = runSections.flatMap((section) => section.blocks);
+  const beforeByAnchorSongId: Record<string, ShowSponsor[]> = {};
+  const afterByAnchorSongId: Record<string, ShowSponsor[]> = {};
+  const beforeIntermission: ShowSponsor[] = [];
+  const afterIntermission: ShowSponsor[] = [];
+  const closing: ShowSponsor[] = [];
+  const flexible: ShowSponsor[] = [];
+
+  function appendSponsor(
+    lookup: Record<string, ShowSponsor[]>,
+    anchorSongId: string,
+    sponsor: ShowSponsor,
+  ) {
+    if (!lookup[anchorSongId]) {
+      lookup[anchorSongId] = [];
+    }
+
+    lookup[anchorSongId].push(sponsor);
+  }
+
+  orderedSponsors.forEach((sponsor) => {
+    const placementType = normalizeSponsorPlacementType(sponsor.placement_type);
+
+    if (placementType === "before_intermission") {
+      beforeIntermission.push(sponsor);
+      return;
+    }
+
+    if (placementType === "after_intermission") {
+      afterIntermission.push(sponsor);
+      return;
+    }
+
+    if (placementType === "closing") {
+      closing.push(sponsor);
+      return;
+    }
+
+    if (placementType === "before_performer") {
+      const targetIndex = findMatchingBlockIndex(allBlocks, sponsor.linked_performer, 0);
+
+      if (targetIndex === null) {
+        flexible.push(sponsor);
+        return;
+      }
+
+      appendSponsor(beforeByAnchorSongId, allBlocks[targetIndex].anchorSongId, sponsor);
+      return;
+    }
+
+    if (placementType === "after_performer") {
+      const targetIndex = findMatchingBlockIndex(
+        allBlocks,
+        sponsor.linked_performer,
+        Math.max(allBlocks.length - 1, 0),
+      );
+
+      if (targetIndex === null) {
+        flexible.push(sponsor);
+        return;
+      }
+
+      appendSponsor(afterByAnchorSongId, allBlocks[targetIndex].anchorSongId, sponsor);
+      return;
+    }
+
+    flexible.push(sponsor);
+  });
+
+  return {
+    sectionItems: runSections.map((section) => {
+      const items: McRunSheetItem[] = [];
+
+      section.blocks.forEach((block) => {
+        const beforeSponsors = beforeByAnchorSongId[block.anchorSongId] ?? [];
+        const afterSponsors = afterByAnchorSongId[block.anchorSongId] ?? [];
+        const blockIndex = allBlocks.findIndex(
+          (candidateBlock) => candidateBlock.anchorSongId === block.anchorSongId,
+        );
+
+        beforeSponsors.forEach((sponsor) => {
+          items.push({
+            kind: "sponsor",
+            id: `before-${block.anchorSongId}-${sponsor.id}`,
+            sponsor,
+          });
+        });
+
+        items.push({
+          kind: "block",
+          id: block.anchorSongId,
+          block,
+          upNext: blockIndex >= 0 ? allBlocks[blockIndex + 1] ?? null : null,
+        });
+
+        afterSponsors.forEach((sponsor) => {
+          items.push({
+            kind: "sponsor",
+            id: `after-${block.anchorSongId}-${sponsor.id}`,
+            sponsor,
+          });
+        });
+      });
+
+      return {
+        key: section.key,
+        title: section.title,
+        items,
+      };
+    }),
+    beforeIntermission,
+    afterIntermission,
+    closing,
+    flexible,
+  };
+}
+
+function ScriptCard({
+  title,
+  text,
+}: {
+  title: string;
+  text: string;
+}) {
+  return (
+    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">{title}</p>
+      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">
+        {text.trim() || "No script added yet."}
+      </p>
+    </article>
+  );
+}
+
+function SponsorReadCard({ sponsor }: { sponsor: ShowSponsor }) {
+  return (
+    <article className="rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
+            Sponsor Read
+          </span>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+            {formatSponsorPlacementType(sponsor.placement_type)}
+          </span>
+        </div>
+
+        <div>
+          <h4 className="text-lg font-semibold text-stone-900">
+            {sponsor.sponsor?.name ?? "Assigned sponsor"}
+          </h4>
+          {sponsor.linked_performer ? (
+            <p className="mt-1 text-sm text-stone-600">
+              Performer link: {sponsor.linked_performer}
+            </p>
+          ) : null}
+        </div>
+
+        <p className="whitespace-pre-wrap text-sm leading-7 text-stone-700">
+          {getSponsorReadText(sponsor)}
+        </p>
+
+        {sponsor.custom_note?.trim() ? (
+          <p className="text-sm text-stone-600">MC note: {sponsor.custom_note.trim()}</p>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function PerformerBlockCard({
+  block,
+  blockDraft,
+  upNext,
+}: {
+  block: McPerformanceBlock;
+  blockDraft: BlockNoteFormState;
+  upNext: McPerformanceBlock | null;
+}) {
+  const guestIntroText = getGuestIntroText(block.guestProfile);
+
+  return (
+    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-lg font-semibold text-stone-900">{block.performer}</h4>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
+            {block.songs.length} {block.songs.length === 1 ? "song" : "songs"}
+          </span>
+          {block.guestProfile ? (
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+              Guest intro available
+            </span>
+          ) : null}
+        </div>
+
+        <p className="text-sm text-stone-600">
+          {block.songs
+            .map((song) => (song.song_key ? `${song.title} (${song.song_key})` : song.title))
+            .join(", ")}
+        </p>
+
+        {upNext ? (
+          <p className="print-hidden text-sm text-stone-500">
+            Up next: {upNext.performer} - {upNext.songs.length}{" "}
+            {upNext.songs.length === 1 ? "song" : "songs"}
+          </p>
+        ) : null}
+
+        <div className="grid gap-3">
+          {blockDraft.introNote.trim() ? (
+            <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                MC Intro
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
+                {blockDraft.introNote.trim()}
+              </p>
+            </div>
+          ) : null}
+
+          {guestIntroText ? (
+            <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                Guest Intro
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">{guestIntroText}</p>
+            </div>
+          ) : null}
+
+          {blockDraft.sponsorMention.trim() ? (
+            <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                Sponsor Mention
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
+                {blockDraft.sponsorMention.trim()}
+              </p>
+            </div>
+          ) : null}
+
+          {blockDraft.transitionNote.trim() ? (
+            <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                Transition
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
+                {blockDraft.transitionNote.trim()}
+              </p>
+            </div>
+          ) : null}
+
+          {!blockDraft.introNote.trim() &&
+          !guestIntroText &&
+          !blockDraft.sponsorMention.trim() &&
+          !blockDraft.transitionNote.trim() ? (
+            <div className="rounded-xl border border-dashed border-stone-300 bg-white px-3 py-3 text-sm text-stone-500">
+              No MC notes added for this block yet.
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export function McPage({
   showSlug,
   initialShow,
@@ -246,17 +628,9 @@ export function McPage({
     sortSetlistSongs(initialSetlist.map((song) => normalizeSetlistSong(song))),
   );
   const [guestProfiles] = useState<GuestProfile[]>(initialGuestProfiles);
-  const [sponsors, setSponsors] = useState<ShowSponsor[]>(initialSponsors);
   const [blockNotes, setBlockNotes] = useState<McBlockNote[]>(initialBlockNotes);
   const [scriptFormState, setScriptFormState] = useState<ScriptFormState>(() =>
     buildScriptFormState(initialShow),
-  );
-  const [sponsorDrafts, setSponsorDrafts] = useState<Record<string, SponsorFormState>>(() =>
-    buildSponsorDrafts(initialSponsors),
-  );
-  const runSections = useMemo(
-    () => buildMcRunSections(setlist, guestProfiles, blockNotes),
-    [blockNotes, guestProfiles, setlist],
   );
   const [blockNoteDrafts, setBlockNoteDrafts] = useState<Record<string, BlockNoteFormState>>(() =>
     buildBlockNoteDrafts(
@@ -268,23 +642,27 @@ export function McPage({
       initialBlockNotes,
     ),
   );
-  const [newSponsorFormState, setNewSponsorFormState] = useState<SponsorFormState>(
-    initialSponsorFormState,
-  );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showLogo, setShowLogo] = useState(true);
   const [isSavingScripts, setIsSavingScripts] = useState(false);
-  const [activeSponsorActionId, setActiveSponsorActionId] = useState<string | null>(null);
   const [activeBlockActionId, setActiveBlockActionId] = useState<string | null>(null);
+
+  const sponsors = useMemo(() => sortSponsors(initialSponsors), [initialSponsors]);
+  const runSections = useMemo(
+    () => buildMcRunSections(setlist, guestProfiles, blockNotes),
+    [blockNotes, guestProfiles, setlist],
+  );
+  const runSheetData = useMemo(
+    () => buildMcRunSheetData(runSections, sponsors),
+    [runSections, sponsors],
+  );
 
   function handlePrintPacket() {
     window.print();
   }
 
-  function handleScriptChange(
-    event: ChangeEvent<HTMLTextAreaElement>,
-  ) {
+  function handleScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     const { name, value } = event.target;
 
     setScriptFormState((currentState) => ({
@@ -328,170 +706,6 @@ export function McPage({
       setErrorMessage(getErrorMessage(error));
     } finally {
       setIsSavingScripts(false);
-    }
-  }
-
-  function handleSponsorDraftChange(
-    sponsorId: string,
-    field: keyof SponsorFormState,
-    value: string,
-  ) {
-    setSponsorDrafts((currentDrafts) => ({
-      ...currentDrafts,
-      [sponsorId]: {
-        ...currentDrafts[sponsorId],
-        [field]: value,
-      },
-    }));
-  }
-
-  function handleNewSponsorChange(
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) {
-    const { name, value } = event.target;
-
-    setNewSponsorFormState((currentState) => ({
-      ...currentState,
-      [name]: value,
-    }));
-  }
-
-  async function handleAddSponsor(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!show) {
-      setErrorMessage("The show could not be loaded.");
-      return;
-    }
-
-    const sponsorName = newSponsorFormState.name.trim();
-
-    if (!sponsorName) {
-      setErrorMessage("Sponsor name is required.");
-      return;
-    }
-
-    setErrorMessage(null);
-    setStatusMessage(null);
-    setActiveSponsorActionId("new");
-
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("show_sponsors")
-        .insert({
-          show_id: show.id,
-          name: sponsorName,
-          short_message: normalizeOptionalField(newSponsorFormState.shortMessage),
-          full_message: normalizeOptionalField(newSponsorFormState.fullMessage),
-          placement_note: normalizeOptionalField(newSponsorFormState.placementNote),
-        })
-        .select("*")
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      setSponsors((currentSponsors) => [...currentSponsors, data]);
-      setSponsorDrafts((currentDrafts) => ({
-        ...currentDrafts,
-        [data.id]: {
-          name: data.name,
-          shortMessage: data.short_message ?? "",
-          fullMessage: data.full_message ?? "",
-          placementNote: data.placement_note ?? "",
-        },
-      }));
-      setNewSponsorFormState(initialSponsorFormState);
-      setStatusMessage("Sponsor read added.");
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    } finally {
-      setActiveSponsorActionId(null);
-    }
-  }
-
-  async function handleSaveSponsor(sponsorId: string) {
-    const draft = sponsorDrafts[sponsorId];
-
-    if (!show || !draft) {
-      setErrorMessage("That sponsor could not be loaded.");
-      return;
-    }
-
-    if (!draft.name.trim()) {
-      setErrorMessage("Sponsor name is required.");
-      return;
-    }
-
-    setErrorMessage(null);
-    setStatusMessage(null);
-    setActiveSponsorActionId(sponsorId);
-
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("show_sponsors")
-        .update({
-          name: draft.name.trim(),
-          short_message: normalizeOptionalField(draft.shortMessage),
-          full_message: normalizeOptionalField(draft.fullMessage),
-          placement_note: normalizeOptionalField(draft.placementNote),
-        })
-        .eq("id", sponsorId)
-        .eq("show_id", show.id)
-        .select("*")
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      setSponsors((currentSponsors) =>
-        currentSponsors.map((sponsor) => (sponsor.id === sponsorId ? data : sponsor)),
-      );
-      setStatusMessage("Sponsor read updated.");
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    } finally {
-      setActiveSponsorActionId(null);
-    }
-  }
-
-  async function handleDeleteSponsor(sponsorId: string) {
-    if (!show) {
-      setErrorMessage("The show could not be loaded.");
-      return;
-    }
-
-    setErrorMessage(null);
-    setStatusMessage(null);
-    setActiveSponsorActionId(sponsorId);
-
-    try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("show_sponsors")
-        .delete()
-        .eq("id", sponsorId)
-        .eq("show_id", show.id);
-
-      if (error) {
-        throw error;
-      }
-
-      setSponsors((currentSponsors) => currentSponsors.filter((sponsor) => sponsor.id !== sponsorId));
-      setSponsorDrafts((currentDrafts) => {
-        const nextDrafts = { ...currentDrafts };
-        delete nextDrafts[sponsorId];
-        return nextDrafts;
-      });
-      setStatusMessage("Sponsor read removed.");
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    } finally {
-      setActiveSponsorActionId(null);
     }
   }
 
@@ -604,6 +818,17 @@ export function McPage({
     { label: "Announcements", value: show?.announcements ?? "" },
   ].filter((item) => item.value.trim());
 
+  const hasIntermissionSection =
+    Boolean(scriptFormState.intermissionScript.trim()) ||
+    runSheetData.beforeIntermission.length > 0 ||
+    runSheetData.afterIntermission.length > 0 ||
+    runSections.some((section) => section.key === "set2" || section.key === "encore");
+
+  const hasClosingSection =
+    Boolean(scriptFormState.closingScript.trim()) ||
+    runSheetData.closing.length > 0 ||
+    runSheetData.flexible.length > 0;
+
   if (!show) {
     return (
       <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
@@ -644,7 +869,8 @@ export function McPage({
                 </p>
                 <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{show.name}</h1>
                 <p className="text-base text-stone-600">
-                  Generated from the official setlist, with MC notes layered on top.
+                  One clean run sheet generated from the official setlist, with sponsor reads
+                  placed directly in the flow.
                 </p>
               </div>
             </div>
@@ -681,11 +907,11 @@ export function McPage({
           </div>
         ) : null}
 
-        <section className="mc-section flex flex-col gap-4">
+        <section className="print-hidden mc-section flex flex-col gap-4">
           <div className="flex flex-col gap-1">
             <h2 className="text-xl font-semibold">Show Overview</h2>
             <p className="text-sm text-stone-600">
-              Quick reference details for the MC packet.
+              Quick reference details for the show operator and MC team.
             </p>
           </div>
 
@@ -707,47 +933,15 @@ export function McPage({
           )}
         </section>
 
-        <section className="mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+        <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
           <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">MC Scripts</h2>
+            <h2 className="text-xl font-semibold">MC Script Editor</h2>
             <p className="text-sm text-stone-600">
-              Opening, intermission, and closing language for the announcer.
+              Opening, intermission, and closing scripts feed directly into the run sheet below.
             </p>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            {[
-              {
-                key: "opening",
-                title: "Opening Script",
-                value: scriptFormState.openingScript,
-              },
-              {
-                key: "intermission",
-                title: "Intermission Script",
-                value: scriptFormState.intermissionScript,
-              },
-              {
-                key: "closing",
-                title: "Closing Script",
-                value: scriptFormState.closingScript,
-              },
-            ].map((script) => (
-              <article
-                key={script.key}
-                className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-              >
-                <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {script.title}
-                </h3>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">
-                  {script.value.trim() || "No script added yet."}
-                </p>
-              </article>
-            ))}
-          </div>
-
-          <form className="print-hidden grid gap-4" onSubmit={handleSaveScripts}>
+          <form className="grid gap-4" onSubmit={handleSaveScripts}>
             <div className="grid gap-4 lg:grid-cols-3">
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                 Opening Script
@@ -756,7 +950,7 @@ export function McPage({
                   value={scriptFormState.openingScript}
                   onChange={handleScriptChange}
                   className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Welcome language, show opener, and first housekeeping notes"
+                  placeholder="Welcome language, opener, and first housekeeping notes"
                 />
               </label>
 
@@ -795,124 +989,70 @@ export function McPage({
           </form>
         </section>
 
-        <section className="mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+        <section className="mc-section flex flex-col gap-5 border-t border-stone-200 pt-6">
           <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">Generated Run Sheet</h2>
+            <h2 className="text-xl font-semibold">Live Run Sheet</h2>
             <p className="text-sm text-stone-600">
-              Performance blocks are generated directly from the official setlist.
+              Read straight down this page during the show. Sponsor reads appear where they should
+              happen in the flow.
             </p>
           </div>
 
-          {runSections.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-              No official setlist is available yet, so the MC run sheet is still empty.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-8">
-              {runSections.map((section) => (
+          <div className="flex flex-col gap-5">
+            <section className="mc-run-section flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-stone-900">Opening</h3>
+                <p className="text-sm text-stone-600">Kickoff script before the first performer.</p>
+              </div>
+
+              <ScriptCard title="Opening Script" text={scriptFormState.openingScript} />
+            </section>
+
+            {runSections.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                No official setlist is available yet, so the MC run sheet is still empty.
+              </div>
+            ) : (
+              runSheetData.sectionItems.map((section) => (
                 <section key={section.key} className="mc-run-section flex flex-col gap-4">
                   <div className="flex flex-col gap-1">
                     <h3 className="text-lg font-semibold text-stone-900">{section.title}</h3>
                     <p className="text-sm text-stone-600">
-                      {section.blocks.length} performance{" "}
-                      {section.blocks.length === 1 ? "block" : "blocks"}
+                      {section.items.filter((item) => item.kind === "block").length} performance{" "}
+                      {section.items.filter((item) => item.kind === "block").length === 1
+                        ? "block"
+                        : "blocks"}
                     </p>
                   </div>
 
                   <div className="grid gap-4">
-                    {section.blocks.map((block, index) => {
-                      const blockDraft = blockNoteDrafts[block.anchorSongId] ?? {
+                    {section.items.map((item) => {
+                      if (item.kind === "sponsor") {
+                        return <SponsorReadCard key={item.id} sponsor={item.sponsor} />;
+                      }
+
+                      const blockDraft = blockNoteDrafts[item.block.anchorSongId] ?? {
                         introNote: "",
                         sponsorMention: "",
                         transitionNote: "",
                       };
-                      const upNextBlock = section.blocks[index + 1];
-                      const onDeckBlock = section.blocks[index + 2];
 
                       return (
-                        <article
-                          key={block.anchorSongId}
-                          className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-                        >
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="flex flex-col gap-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h4 className="text-lg font-semibold text-stone-900">
-                                  {block.performer}
-                                </h4>
-                                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
-                                  {block.songs.length}{" "}
-                                  {block.songs.length === 1 ? "song" : "songs"}
-                                </span>
-                                {block.guestProfile ? (
-                                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
-                                    Guest intro available
-                                  </span>
-                                ) : null}
-                              </div>
+                        <div key={item.id} className="grid gap-4">
+                          <PerformerBlockCard
+                            block={item.block}
+                            blockDraft={blockDraft}
+                            upNext={item.upNext}
+                          />
 
-                              <div className="flex flex-col gap-1 text-sm text-stone-600">
-                                <p>
-                                  Songs:{" "}
-                                  {block.songs
-                                    .map((song) =>
-                                      song.song_key
-                                        ? `${song.title} (${song.song_key})`
-                                        : song.title,
-                                    )
-                                    .join(", ")}
-                                </p>
-                                {upNextBlock ? (
-                                  <p>
-                                    Up next: {upNextBlock.performer} - {upNextBlock.songs.length}{" "}
-                                    {upNextBlock.songs.length === 1 ? "song" : "songs"}
-                                  </p>
-                                ) : null}
-                                {onDeckBlock ? (
-                                  <p>
-                                    On deck: {onDeckBlock.performer} - {onDeckBlock.songs.length}{" "}
-                                    {onDeckBlock.songs.length === 1 ? "song" : "songs"}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                                Intro Note
-                              </p>
-                              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
-                                {blockDraft.introNote.trim() || "No intro note added."}
-                              </p>
-                            </div>
-                            <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                                Sponsor Mention
-                              </p>
-                              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
-                                {blockDraft.sponsorMention.trim() || "No sponsor mention added."}
-                              </p>
-                            </div>
-                            <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                                Transition Note
-                              </p>
-                              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
-                                {blockDraft.transitionNote.trim() || "No transition note added."}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="print-hidden mt-4 grid gap-4 lg:grid-cols-3">
+                          <div className="print-hidden grid gap-4 rounded-2xl border border-stone-200 bg-white p-4 lg:grid-cols-3">
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                               Intro Note
                               <textarea
                                 value={blockDraft.introNote}
                                 onChange={(event) =>
                                   handleBlockDraftChange(
-                                    block.anchorSongId,
+                                    item.block.anchorSongId,
                                     "introNote",
                                     event.target.value,
                                   )
@@ -928,13 +1068,13 @@ export function McPage({
                                 value={blockDraft.sponsorMention}
                                 onChange={(event) =>
                                   handleBlockDraftChange(
-                                    block.anchorSongId,
+                                    item.block.anchorSongId,
                                     "sponsorMention",
                                     event.target.value,
                                   )
                                 }
                                 className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                placeholder="Optional sponsor mention before this block"
+                                placeholder="Optional sponsor line tied to this performer"
                               />
                             </label>
 
@@ -944,7 +1084,7 @@ export function McPage({
                                 value={blockDraft.transitionNote}
                                 onChange={(event) =>
                                   handleBlockDraftChange(
-                                    block.anchorSongId,
+                                    item.block.anchorSongId,
                                     "transitionNote",
                                     event.target.value,
                                   )
@@ -955,307 +1095,72 @@ export function McPage({
                             </label>
                           </div>
 
-                          <div className="print-hidden mt-4 flex justify-start">
+                          <div className="print-hidden flex justify-start">
                             <button
                               type="button"
-                              onClick={() => handleSaveBlockNote(block.anchorSongId)}
-                              disabled={activeBlockActionId === block.anchorSongId}
+                              onClick={() => handleSaveBlockNote(item.block.anchorSongId)}
+                              disabled={activeBlockActionId === item.block.anchorSongId}
                               className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                             >
-                              {activeBlockActionId === block.anchorSongId
+                              {activeBlockActionId === item.block.anchorSongId
                                 ? "Saving Block Notes..."
                                 : "Save Block Notes"}
                             </button>
                           </div>
-                        </article>
+                        </div>
                       );
                     })}
                   </div>
                 </section>
-              ))}
-            </div>
-          )}
-        </section>
+              ))
+            )}
 
-        <section className="mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">Sponsor Reads</h2>
-            <p className="text-sm text-stone-600">
-              Thank-yous and sponsor language available for the MC packet.
-            </p>
+            {hasIntermissionSection ? (
+              <section className="mc-run-section flex flex-col gap-4">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Intermission</h3>
+                  <p className="text-sm text-stone-600">
+                    Mid-show sponsor reads and return script.
+                  </p>
+                </div>
+
+                <div className="grid gap-4">
+                  {runSheetData.beforeIntermission.map((sponsor) => (
+                    <SponsorReadCard key={`before-intermission-${sponsor.id}`} sponsor={sponsor} />
+                  ))}
+
+                  <ScriptCard title="Intermission Script" text={scriptFormState.intermissionScript} />
+
+                  {runSheetData.afterIntermission.map((sponsor) => (
+                    <SponsorReadCard key={`after-intermission-${sponsor.id}`} sponsor={sponsor} />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {hasClosingSection ? (
+              <section className="mc-run-section flex flex-col gap-4">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Closing</h3>
+                  <p className="text-sm text-stone-600">
+                    End-of-show thank-yous and sign-off.
+                  </p>
+                </div>
+
+                <div className="grid gap-4">
+                  {runSheetData.closing.map((sponsor) => (
+                    <SponsorReadCard key={`closing-${sponsor.id}`} sponsor={sponsor} />
+                  ))}
+
+                  <ScriptCard title="Closing Script" text={scriptFormState.closingScript} />
+
+                  {runSheetData.flexible.map((sponsor) => (
+                    <SponsorReadCard key={`flexible-${sponsor.id}`} sponsor={sponsor} />
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </div>
-
-          {sponsors.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-              No sponsor reads have been added yet.
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {sponsors.map((sponsor) => {
-                const draft = sponsorDrafts[sponsor.id] ?? {
-                  name: sponsor.sponsor?.name ?? "Sponsor",
-                  shortMessage: sponsor.sponsor?.short_message ?? "",
-                  fullMessage: sponsor.sponsor?.full_message ?? "",
-                  placementNote: sponsor.custom_note ?? sponsor.linked_performer ?? sponsor.placement_type ?? "",
-                };
-
-                return (
-                  <article
-                    key={sponsor.id}
-                    className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-                  >
-                    <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-                      <div className="flex flex-col gap-3">
-                        <div>
-                          <h3 className="text-lg font-semibold text-stone-900">{draft.name}</h3>
-                          {draft.placementNote.trim() ? (
-                            <p className="mt-1 text-sm text-stone-600">
-                              Placement: {draft.placementNote}
-                            </p>
-                          ) : null}
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                              Short Message
-                            </p>
-                            <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
-                              {draft.shortMessage.trim() || "No short read added."}
-                            </p>
-                          </div>
-                          <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                              Full Message
-                            </p>
-                            <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
-                              {draft.fullMessage.trim() || "No full read added."}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="print-hidden grid gap-3">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Sponsor Name
-                          <input
-                            type="text"
-                            value={draft.name}
-                            onChange={(event) =>
-                              handleSponsorDraftChange(sponsor.id, "name", event.target.value)
-                            }
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          />
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Short Message
-                          <textarea
-                            value={draft.shortMessage}
-                            onChange={(event) =>
-                              handleSponsorDraftChange(
-                                sponsor.id,
-                                "shortMessage",
-                                event.target.value,
-                              )
-                            }
-                            className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          />
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Full Message
-                          <textarea
-                            value={draft.fullMessage}
-                            onChange={(event) =>
-                              handleSponsorDraftChange(
-                                sponsor.id,
-                                "fullMessage",
-                                event.target.value,
-                              )
-                            }
-                            className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          />
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Placement Note
-                          <input
-                            type="text"
-                            value={draft.placementNote}
-                            onChange={(event) =>
-                              handleSponsorDraftChange(
-                                sponsor.id,
-                                "placementNote",
-                                event.target.value,
-                              )
-                            }
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Before Set 2 opener, during intermission, etc."
-                          />
-                        </label>
-
-                        <div className="flex flex-col gap-3 sm:flex-row">
-                          <button
-                            type="button"
-                            onClick={() => handleSaveSponsor(sponsor.id)}
-                            disabled={activeSponsorActionId === sponsor.id}
-                            className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                          >
-                            {activeSponsorActionId === sponsor.id
-                              ? "Saving Sponsor..."
-                              : "Save Sponsor"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSponsor(sponsor.id)}
-                            disabled={activeSponsorActionId === sponsor.id}
-                            className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                          >
-                            Delete Sponsor
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-
-          <form
-            className="print-hidden grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-            onSubmit={handleAddSponsor}
-          >
-            <div className="flex flex-col gap-1">
-              <h3 className="text-lg font-semibold text-stone-900">Add Sponsor Read</h3>
-              <p className="text-sm text-stone-600">
-                Add sponsor language for the MC packet and printout.
-              </p>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Sponsor Name
-                <input
-                  type="text"
-                  name="name"
-                  value={newSponsorFormState.name}
-                  onChange={handleNewSponsorChange}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Business or sponsor name"
-                  required
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Placement Note
-                <input
-                  type="text"
-                  name="placementNote"
-                  value={newSponsorFormState.placementNote}
-                  onChange={handleNewSponsorChange}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Before opener, before Greg block, intermission, etc."
-                />
-              </label>
-            </div>
-
-            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-              Short Message
-              <textarea
-                name="shortMessage"
-                value={newSponsorFormState.shortMessage}
-                onChange={handleNewSponsorChange}
-                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                placeholder="Short thank-you or mention"
-              />
-            </label>
-
-            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-              Full Message
-              <textarea
-                name="fullMessage"
-                value={newSponsorFormState.fullMessage}
-                onChange={handleNewSponsorChange}
-                className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                placeholder="Longer sponsor read for the MC"
-              />
-            </label>
-
-            <div className="flex justify-start">
-              <button
-                type="submit"
-                disabled={activeSponsorActionId === "new"}
-                className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-              >
-                {activeSponsorActionId === "new" ? "Adding Sponsor..." : "Add Sponsor Read"}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">Guest Intros</h2>
-            <p className="text-sm text-stone-600">
-              Intro notes generated from submitted guest profiles.
-            </p>
-          </div>
-
-          {guestProfiles.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-              No guest profiles are available for intro notes yet.
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {guestProfiles.map((profile) => (
-                <article
-                  key={profile.id}
-                  className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-lg font-semibold text-stone-900">
-                      {profile.name || "Unnamed guest"}
-                    </h3>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
-                        profile.permission_granted
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-rose-100 text-rose-700"
-                      }`}
-                    >
-                      {profile.permission_granted ? "Permission granted" : "No permission"}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                        Short Intro
-                      </p>
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
-                        {profile.short_bio || "Short bio not submitted."}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                        Full Intro
-                      </p>
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
-                        {profile.full_bio || "Full bio not submitted."}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-4 text-sm text-stone-600">
-                    {profile.hometown ? <p>Hometown: {profile.hometown}</p> : null}
-                    {profile.instruments ? <p>Instruments: {profile.instruments}</p> : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
         </section>
       </section>
     </main>

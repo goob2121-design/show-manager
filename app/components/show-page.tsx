@@ -103,6 +103,15 @@ const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
   customNote: "",
 };
 
+const sponsorPlacementOptions = [
+  { value: "", label: "Flexible / not set" },
+  { value: "before_performer", label: "Before Performer Block" },
+  { value: "after_performer", label: "After Performer Block" },
+  { value: "before_intermission", label: "Before Intermission" },
+  { value: "after_intermission", label: "After Intermission" },
+  { value: "closing", label: "Closing Section" },
+] as const;
+
 function formatShowDate(showDate: string | null) {
   if (!showDate) {
     return "Date TBD";
@@ -340,6 +349,29 @@ function getNextSponsorPlacementOrder(sponsors: ShowSponsor[]) {
   return sponsors.length > 0
     ? Math.max(...sponsors.map((sponsor) => sponsor.placement_order)) + 1
     : 1;
+}
+
+function formatSponsorPlacementType(value: string | null | undefined) {
+  switch (value) {
+    case "before_performer":
+      return "Before performer block";
+    case "after_performer":
+      return "After performer block";
+    case "before_intermission":
+      return "Before intermission";
+    case "after_intermission":
+      return "After intermission";
+    case "closing":
+      return "Closing section";
+    case "opening":
+      return "Opening";
+    case "changeover":
+      return "Changeover";
+    case "intermission":
+      return "Intermission";
+    default:
+      return null;
+  }
 }
 
 function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
@@ -2676,11 +2708,11 @@ export function ShowPage({
                         onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
                         className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                       >
-                        <option value="">Flexible / not set</option>
-                        <option value="opening">Opening</option>
-                        <option value="changeover">Changeover</option>
-                        <option value="intermission">Intermission</option>
-                        <option value="closing">Closing</option>
+                        {sponsorPlacementOptions.map((option) => (
+                          <option key={option.value || "unset"} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
                     </label>
 
@@ -2692,7 +2724,7 @@ export function ShowPage({
                         value={showSponsorAssignmentFormState.linkedPerformer}
                         onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
                         className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Optional performer or segment"
+                        placeholder="Optional performer name for before/after performer slots"
                       />
                     </label>
                   </div>
@@ -2749,11 +2781,11 @@ export function ShowPage({
                                   }
                                   className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                                 >
-                                  <option value="">Flexible / not set</option>
-                                  <option value="opening">Opening</option>
-                                  <option value="changeover">Changeover</option>
-                                  <option value="intermission">Intermission</option>
-                                  <option value="closing">Closing</option>
+                                  {sponsorPlacementOptions.map((option) => (
+                                    <option key={option.value || "unset"} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
                                 </select>
                               </label>
 
@@ -2767,6 +2799,7 @@ export function ShowPage({
                                     handleShowSponsorAssignmentChange(event, "edit")
                                   }
                                   className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  placeholder="Optional performer name for before/after performer slots"
                                 />
                               </label>
                             </div>
@@ -2812,9 +2845,9 @@ export function ShowPage({
                                   <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
                                     Slot {sponsor.placement_order}
                                   </span>
-                                  {sponsor.placement_type ? (
+                                  {formatSponsorPlacementType(sponsor.placement_type) ? (
                                     <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
-                                      {sponsor.placement_type}
+                                      {formatSponsorPlacementType(sponsor.placement_type)}
                                     </span>
                                   ) : null}
                                 </div>
