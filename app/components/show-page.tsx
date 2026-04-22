@@ -377,6 +377,93 @@ function normalizeOptionalField(value: string) {
   return trimmedValue ? trimmedValue : null;
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getSiteBaseUrl() {
+  // NEXT_PUBLIC_SITE_URL is optional and used to build full admin links for emails.
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+  if (configuredSiteUrl) {
+    return configuredSiteUrl.replace(/\/+$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  return "";
+}
+
+function buildAdminShowUrl(showSlug: string) {
+  const adminPath = `/admin/${encodeURIComponent(showSlug)}`;
+  const siteBaseUrl = getSiteBaseUrl();
+
+  return siteBaseUrl ? `${siteBaseUrl}${adminPath}` : adminPath;
+}
+
+function buildNotificationHtml({
+  heading,
+  intro,
+  rows,
+  adminUrl,
+}: {
+  heading: string;
+  intro: string;
+  rows: Array<{ label: string; value: string | null | undefined }>;
+  adminUrl: string;
+}) {
+  const visibleRows = rows.filter((row) => row.value?.trim());
+
+  return `
+    <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
+      <p style="margin: 0 0 16px; font-size: 22px; font-weight: 700;">${escapeHtml(heading)}</p>
+      <p style="margin: 0 0 18px;">${escapeHtml(intro)}</p>
+      <div style="margin: 0 0 20px;">
+        ${visibleRows
+          .map(
+            (row) =>
+              `<p style="margin: 0 0 10px;"><strong>${escapeHtml(row.label)}:</strong> ${escapeHtml(row.value?.trim() ?? "")}</p>`,
+          )
+          .join("")}
+      </div>
+      <p style="margin: 24px 0 0;">
+        <a href="${escapeHtml(adminUrl)}" style="color: #047857; font-weight: 700; text-decoration: underline;">
+          Open Show in Admin
+        </a>
+      </p>
+    </div>
+  `;
+}
+
+async function sendAdminNotification(payload: { subject: string; html: string }) {
+  try {
+    const response = await fetch("/api/notify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Admin notification request failed.", {
+        status: response.status,
+        body: errorText,
+      });
+    }
+  } catch (error) {
+    console.error("Admin notification request failed unexpectedly.", error);
+  }
+}
+
 function normalizeSubmittedByRole(value: string | null | undefined): "guest" | "band" | "admin" {
   if (value === "band" || value === "admin") {
     return value;
@@ -1811,6 +1898,38 @@ export function ShowPage({
 
       setPendingSongs((currentSongs) => [...currentSongs, normalizePendingSubmission(data)]);
       setFormState(initialFormState);
+
+      if (normalizedSubmittedByRole === "guest" || normalizedSubmittedByRole === "band") {
+        const adminUrl = buildAdminShowUrl(show.slug);
+        const notificationSubject =
+          normalizedSubmittedByRole === "guest"
+            ? `Guest Song Submission - ${show.name} - ${guestSingerName || data.submitted_by_name || artist}`
+            : `Band Song Submission - ${show.name}`;
+
+        const singingName =
+          normalizedSubmittedByRole === "guest"
+            ? guestSingerName || data.submitted_by_name || artist
+            : data.artist || artist || data.submitted_by_name || defaultSingerName;
+
+        void sendAdminNotification({
+          subject: notificationSubject,
+          html: buildNotificationHtml({
+            heading: normalizedSubmittedByRole === "guest" ? "Guest Song Submission" : "Band Song Submission",
+            intro:
+              normalizedSubmittedByRole === "guest"
+                ? "A guest submitted a new song for this show."
+                : "A band member submitted a new song for this show.",
+            rows: [
+              { label: "Show Name", value: show.name },
+              { label: "Who's Singing", value: singingName },
+              { label: "Song Title", value: data.title },
+              { label: "Key", value: data.song_key },
+              { label: "Notes", value: data.notes },
+            ],
+            adminUrl,
+          }),
+        });
+      }
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -1910,6 +2029,22 @@ export function ShowPage({
         );
         setEditingGuestProfileId(updatedProfile.id);
         setSelectedGuestProfileId(updatedProfile.id);
+
+        const adminUrl = buildAdminShowUrl(show.slug);
+        void sendAdminNotification({
+          subject: `Guest Info Updated - ${show.name} - ${updatedProfile.name ?? normalizedName}`,
+          html: buildNotificationHtml({
+            heading: "Guest Info Updated",
+            intro: "A guest updated their artist information for this show.",
+            rows: [
+              { label: "Show Name", value: show.name },
+              { label: "Guest Name", value: updatedProfile.name },
+              { label: "Hometown", value: updatedProfile.hometown },
+              { label: "Instruments", value: updatedProfile.instruments },
+            ],
+            adminUrl,
+          }),
+        });
       } else {
         const { data: insertedProfile, error: insertError } = await supabase
           .from("guest_profiles")
@@ -1924,6 +2059,22 @@ export function ShowPage({
         setGuestProfiles((currentProfiles) => [...currentProfiles, insertedProfile]);
         setEditingGuestProfileId(insertedProfile.id);
         setSelectedGuestProfileId(insertedProfile.id);
+
+        const adminUrl = buildAdminShowUrl(show.slug);
+        void sendAdminNotification({
+          subject: `Guest Info Submitted - ${show.name} - ${insertedProfile.name ?? normalizedName}`,
+          html: buildNotificationHtml({
+            heading: "Guest Info Submitted",
+            intro: "A guest submitted artist information for this show.",
+            rows: [
+              { label: "Show Name", value: show.name },
+              { label: "Guest Name", value: insertedProfile.name },
+              { label: "Hometown", value: insertedProfile.hometown },
+              { label: "Instruments", value: insertedProfile.instruments },
+            ],
+            adminUrl,
+          }),
+        });
       }
 
       setGuestPhotoFile(null);
