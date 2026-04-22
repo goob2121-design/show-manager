@@ -217,6 +217,49 @@ function getTrimmedValue(value: string | null | undefined) {
   return value?.trim() ?? "";
 }
 
+function getSponsorInitials(name: string | null | undefined) {
+  const parts = (name ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "NL";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
+function SponsorLogoThumbnail({
+  logoUrl,
+  sponsorName,
+}: {
+  logoUrl: string | null | undefined;
+  sponsorName: string;
+}) {
+  return (
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-amber-200 bg-white/80 p-2 text-amber-900 dark:border-amber-700 dark:bg-slate-900/80 dark:text-amber-100">
+      {logoUrl ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoUrl}
+            alt={`${sponsorName} logo`}
+            className="h-full w-full object-contain"
+          />
+        </>
+      ) : (
+        <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+          {getSponsorInitials(sponsorName)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function getPerformerSummary(block: McPerformanceBlock) {
   return block.songs
     .map((song) => (song.song_key ? `${song.title} (${song.song_key})` : song.title))
@@ -523,7 +566,7 @@ export function ScriptCard({
 export function SponsorReadCard({ sponsor }: { sponsor: ShowSponsor }) {
   return (
     <article className="rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5">
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
             Sponsor Read
@@ -533,15 +576,22 @@ export function SponsorReadCard({ sponsor }: { sponsor: ShowSponsor }) {
           </span>
         </div>
 
-        <div>
-          <h4 className="text-lg font-semibold text-stone-900">
-            {sponsor.sponsor?.name ?? "Assigned sponsor"}
-          </h4>
-          {sponsor.linked_performer ? (
-            <p className="mt-1 text-sm text-stone-600">
-              Performer link: {sponsor.linked_performer}
-            </p>
-          ) : null}
+        <div className="flex items-start gap-3">
+          <SponsorLogoThumbnail
+            logoUrl={sponsor.sponsor?.logo_url}
+            sponsorName={sponsor.sponsor?.name ?? "Assigned sponsor"}
+          />
+
+          <div className="min-w-0 flex-1">
+            <h4 className="text-lg font-semibold text-stone-900">
+              {sponsor.sponsor?.name ?? "Assigned sponsor"}
+            </h4>
+            {sponsor.linked_performer ? (
+              <p className="mt-1 text-sm text-stone-600">
+                Performer link: {sponsor.linked_performer}
+              </p>
+            ) : null}
+          </div>
         </div>
 
         <p className="whitespace-pre-wrap text-sm leading-7 text-stone-700">

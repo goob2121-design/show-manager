@@ -475,6 +475,22 @@ async function uploadSponsorLogoFile(
   return publicUrlData.publicUrl;
 }
 
+function getSponsorInitials(name: string) {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "NL";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
 function SponsorLogoThumbnail({
   logoUrl,
   sponsorName,
@@ -484,20 +500,26 @@ function SponsorLogoThumbnail({
   sponsorName: string;
   className?: string;
 }) {
-  if (!logoUrl) {
-    return null;
-  }
+  const initials = getSponsorInitials(sponsorName);
 
   return (
     <div
-      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white ${className ?? "h-14 w-14"}`}
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-50 p-2 text-stone-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 ${className ?? "h-14 w-14"}`}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={logoUrl}
-        alt={`${sponsorName} logo`}
-        className="h-full w-full object-contain"
-      />
+      {logoUrl ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoUrl}
+            alt={`${sponsorName} logo`}
+            className="h-full w-full object-contain"
+          />
+        </>
+      ) : (
+        <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+          {initials}
+        </span>
+      )}
     </div>
   );
 }
