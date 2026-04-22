@@ -101,6 +101,9 @@ create table if not exists public.sponsor_library (
   created_at timestamptz not null default now()
 );
 
+alter table public.sponsor_library
+  add column if not exists logo_url text;
+
 create table if not exists public.show_sponsors (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,
@@ -189,6 +192,58 @@ insert into storage.buckets (id, name, public)
 values ('guest-photos', 'guest-photos', true)
 on conflict (id) do update
 set public = excluded.public;
+
+insert into storage.buckets (id, name, public)
+values ('sponsor-logos', 'sponsor-logos', true)
+on conflict (id) do update
+set public = excluded.public;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'Sponsor logos are publicly readable'
+  ) then
+    create policy "Sponsor logos are publicly readable"
+      on storage.objects
+      for select
+      to public
+      using (bucket_id = 'sponsor-logos');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'Sponsor logos can be uploaded publicly'
+  ) then
+    create policy "Sponsor logos can be uploaded publicly"
+      on storage.objects
+      for insert
+      to public
+      with check (bucket_id = 'sponsor-logos');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'Sponsor logos can be updated publicly'
+  ) then
+    create policy "Sponsor logos can be updated publicly"
+      on storage.objects
+      for update
+      to public
+      using (bucket_id = 'sponsor-logos')
+      with check (bucket_id = 'sponsor-logos');
+  end if;
+end
+$$;
 
 insert into public.shows (slug, name, show_date)
 values ('cmms-april-27', 'Cumberland Mountain Music Show', '2026-04-27')

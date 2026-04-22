@@ -40,6 +40,7 @@ type PrintMode = "stage" | "band" | "standard";
 type AdminTab = "setlist" | "songs" | "guests" | "sponsors" | "mc-builder" | "show-details";
 type BandTab = "setlist" | "songs";
 type GuestTab = "songs" | "artist-info" | "itinerary";
+type SponsorAdminTab = "library" | "show";
 type SetlistSectionConfig = {
   key: SetSection;
   title: string;
@@ -64,6 +65,23 @@ const guestTabItems: Array<{ key: GuestTab; label: string }> = [
   { key: "songs", label: "Songs" },
   { key: "artist-info", label: "Artist Info" },
   { key: "itinerary", label: "Itinerary" },
+];
+
+const sponsorAdminTabItems: Array<{
+  key: SponsorAdminTab;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: "library",
+    label: "Sponsor Library",
+    description: "Reusable sponsors saved for any show.",
+  },
+  {
+    key: "show",
+    label: "This Show's Sponsors",
+    description: "Assignments, ordering, and placement for this event.",
+  },
 ];
 
 const setlistSectionOrder: SetSection[] = ["set1", "set2", "encore"];
@@ -194,6 +212,7 @@ const initialSponsorLibraryFormState: SponsorLibraryFormState = {
   shortMessage: "",
   fullMessage: "",
   website: "",
+  logoUrl: "",
 };
 
 const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
@@ -286,6 +305,7 @@ function buildSponsorLibraryFormState(sponsor: SponsorLibraryEntry): SponsorLibr
     shortMessage: sponsor.short_message ?? "",
     fullMessage: sponsor.full_message ?? "",
     website: sponsor.website ?? "",
+    logoUrl: sponsor.logo_url ?? "",
   };
 }
 
@@ -420,7 +440,66 @@ function normalizeSponsorLibraryEntry(
   return {
     ...sponsor,
     website: sponsor.website ?? null,
+    logo_url: sponsor.logo_url ?? null,
   };
+}
+
+async function uploadSponsorLogoFile(
+  file: File,
+  sponsorName: string,
+): Promise<string> {
+  const supabase = createClient();
+  const fileExt = file.name.includes(".") ? file.name.split(".").pop() : undefined;
+  const fileName = `${Date.now()}-${sponsorName
+    .replace(/[^a-z0-9]+/gi, "-")
+    .toLowerCase()
+    .replace(/^-+|-+$/g, "") || "sponsor-logo"}`;
+  const filePath = fileExt
+    ? `${fileName}.${fileExt}`
+    : fileName;
+
+  const { error: uploadError } = await supabase.storage
+    .from("sponsor-logos")
+    .upload(filePath, file, {
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from("sponsor-logos")
+    .getPublicUrl(filePath);
+
+  return publicUrlData.publicUrl;
+}
+
+function SponsorLogoThumbnail({
+  logoUrl,
+  sponsorName,
+  className,
+}: {
+  logoUrl: string | null | undefined;
+  sponsorName: string;
+  className?: string;
+}) {
+  if (!logoUrl) {
+    return null;
+  }
+
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white ${className ?? "h-14 w-14"}`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={logoUrl}
+        alt={`${sponsorName} logo`}
+        className="h-full w-full object-contain"
+      />
+    </div>
+  );
 }
 
 function normalizeShowSponsor(
@@ -758,6 +837,7 @@ export function ShowPage({
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>("setlist");
   const [activeBandTab, setActiveBandTab] = useState<BandTab>("setlist");
   const [activeGuestTab, setActiveGuestTab] = useState<GuestTab>("songs");
+  const [activeSponsorAdminTab, setActiveSponsorAdminTab] = useState<SponsorAdminTab>("library");
   const [printMode, setPrintMode] = useState<PrintMode>("standard");
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [setlist, setSetlist] = useState<SetlistSong[]>([]);
@@ -809,6 +889,8 @@ export function ShowPage({
   );
   const [newSponsorLibraryFormState, setNewSponsorLibraryFormState] =
     useState<SponsorLibraryFormState>(initialSponsorLibraryFormState);
+  const [newSponsorLogoFile, setNewSponsorLogoFile] = useState<File | null>(null);
+  const [editingSponsorLogoFile, setEditingSponsorLogoFile] = useState<File | null>(null);
   const [showSponsorAssignmentFormState, setShowSponsorAssignmentFormState] =
     useState<ShowSponsorAssignmentFormState>(initialShowSponsorAssignmentFormState);
   const [editingShowSponsorFormState, setEditingShowSponsorFormState] =
@@ -1178,6 +1260,20 @@ export function ShowPage({
     }));
   }
 
+  function handleSponsorLogoFileChange(
+    event: ChangeEvent<HTMLInputElement>,
+    mode: "new" | "edit",
+  ) {
+    const file = event.target.files?.[0] ?? null;
+
+    if (mode === "edit") {
+      setEditingSponsorLogoFile(file);
+      return;
+    }
+
+    setNewSponsorLogoFile(file);
+  }
+
   function handleShowSponsorAssignmentChange(
     event: ChangeEvent<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>,
     mode: "new" | "edit",
@@ -1201,11 +1297,13 @@ export function ShowPage({
 
     setEditingSponsorLibraryId(sponsorId);
     setSponsorLibraryFormState(buildSponsorLibraryFormState(sponsorToEdit));
+    setEditingSponsorLogoFile(null);
   }
 
   function cancelEditingSponsorLibraryEntry() {
     setEditingSponsorLibraryId(null);
     setSponsorLibraryFormState(initialSponsorLibraryFormState);
+    setEditingSponsorLogoFile(null);
   }
 
   async function handleCreateSponsorLibraryEntry(event: FormEvent<HTMLFormElement>) {
@@ -1223,6 +1321,10 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
+      const logoUrl = newSponsorLogoFile
+        ? await uploadSponsorLogoFile(newSponsorLogoFile, name)
+        : null;
+
       const { data, error } = await supabase
         .from("sponsor_library")
         .insert({
@@ -1230,6 +1332,7 @@ export function ShowPage({
           short_message: normalizeOptionalField(newSponsorLibraryFormState.shortMessage),
           full_message: normalizeOptionalField(newSponsorLibraryFormState.fullMessage),
           website: normalizeOptionalField(newSponsorLibraryFormState.website),
+          logo_url: logoUrl,
         })
         .select("*")
         .single();
@@ -1244,6 +1347,7 @@ export function ShowPage({
         ),
       );
       setNewSponsorLibraryFormState(initialSponsorLibraryFormState);
+      setNewSponsorLogoFile(null);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -1264,6 +1368,10 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
+      const logoUrl = editingSponsorLogoFile
+        ? await uploadSponsorLogoFile(editingSponsorLogoFile, name)
+        : normalizeOptionalField(sponsorLibraryFormState.logoUrl);
+
       const { data, error } = await supabase
         .from("sponsor_library")
         .update({
@@ -1271,6 +1379,7 @@ export function ShowPage({
           short_message: normalizeOptionalField(sponsorLibraryFormState.shortMessage),
           full_message: normalizeOptionalField(sponsorLibraryFormState.fullMessage),
           website: normalizeOptionalField(sponsorLibraryFormState.website),
+          logo_url: logoUrl,
         })
         .eq("id", sponsorId)
         .select("*")
@@ -3875,8 +3984,29 @@ export function ShowPage({
               </p>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
-              <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+            <div className="flex flex-wrap gap-2 rounded-2xl bg-stone-100 p-2">
+              {sponsorAdminTabItems.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveSponsorAdminTab(tab.key)}
+                  className={`flex min-w-[12rem] flex-1 flex-col rounded-xl px-4 py-3 text-left transition ${
+                    activeSponsorAdminTab === tab.key
+                      ? "bg-white text-stone-900 shadow-sm"
+                      : "bg-transparent text-stone-600 hover:bg-white/80 hover:text-stone-900"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">{tab.label}</span>
+                  <span className="mt-1 text-xs leading-5 text-stone-500">
+                    {tab.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="grid gap-6">
+              {activeSponsorAdminTab === "library" ? (
+                <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
                 <div className="flex flex-col gap-1">
                   <h3 className="text-lg font-semibold text-stone-900">Sponsor Library</h3>
                   <p className="text-sm text-stone-600">
@@ -3932,6 +4062,19 @@ export function ShowPage({
                     />
                   </label>
 
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Sponsor Logo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => handleSponsorLogoFileChange(event, "new")}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                    />
+                    <span className="text-xs font-normal text-stone-500">
+                      Optional. Upload a reusable sponsor logo once for all shows.
+                    </span>
+                  </label>
+
                   <div className="flex justify-start">
                     <button
                       type="submit"
@@ -3958,6 +4101,25 @@ export function ShowPage({
                       >
                         {editingSponsorLibraryId === sponsor.id ? (
                           <div className="grid gap-4">
+                            <div className="flex flex-wrap items-start gap-3">
+                              <SponsorLogoThumbnail
+                                logoUrl={sponsorLibraryFormState.logoUrl}
+                                sponsorName={sponsor.name}
+                              />
+                              <div className="min-w-[12rem] flex-1">
+                                <p className="text-sm font-medium text-stone-700">
+                                  {sponsorLibraryFormState.logoUrl
+                                    ? "Current sponsor logo"
+                                    : "No sponsor logo uploaded yet"}
+                                </p>
+                                {editingSponsorLogoFile ? (
+                                  <p className="mt-1 text-xs text-stone-500">
+                                    New file selected: {editingSponsorLogoFile.name}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                               Sponsor Name
                               <input
@@ -4001,6 +4163,16 @@ export function ShowPage({
                               />
                             </label>
 
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Replace Sponsor Logo
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(event) => handleSponsorLogoFileChange(event, "edit")}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                              />
+                            </label>
+
                             <div className="flex flex-col gap-3 sm:flex-row">
                               <button
                                 type="button"
@@ -4021,8 +4193,14 @@ export function ShowPage({
                           </div>
                         ) : (
                           <>
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex gap-3">
+                                <SponsorLogoThumbnail
+                                  logoUrl={sponsor.logo_url}
+                                  sponsorName={sponsor.name}
+                                />
+
+                                <div className="flex flex-col gap-1">
                                 <h4 className="text-base font-semibold text-stone-900">
                                   {sponsor.name}
                                 </h4>
@@ -4036,6 +4214,7 @@ export function ShowPage({
                                     {sponsor.website}
                                   </a>
                                 ) : null}
+                              </div>
                               </div>
 
                               <button
@@ -4057,9 +4236,11 @@ export function ShowPage({
                     ))}
                   </div>
                 )}
-              </section>
+                </section>
+              ) : null}
 
-              <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              {activeSponsorAdminTab === "show" ? (
+                <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
                 <div className="flex flex-col gap-1">
                   <h3 className="text-lg font-semibold text-stone-900">Sponsors for This Show</h3>
                   <p className="text-sm text-stone-600">
@@ -4223,9 +4404,16 @@ export function ShowPage({
                           </div>
                         ) : (
                           <>
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="flex flex-col gap-1">
-                                <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex gap-3">
+                                <SponsorLogoThumbnail
+                                  logoUrl={sponsor.sponsor?.logo_url}
+                                  sponsorName={sponsor.sponsor?.name ?? "Assigned sponsor"}
+                                  className="h-12 w-12"
+                                />
+
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex flex-wrap items-center gap-2">
                                   <h4 className="text-base font-semibold text-stone-900">
                                     {sponsor.sponsor?.name ?? "Assigned sponsor"}
                                   </h4>
@@ -4237,17 +4425,18 @@ export function ShowPage({
                                       {formatSponsorPlacementType(sponsor.placement_type)}
                                     </span>
                                   ) : null}
+                                  </div>
+                                  {sponsor.linked_performer ? (
+                                    <p className="text-sm text-stone-600">
+                                      Linked performer: {sponsor.linked_performer}
+                                    </p>
+                                  ) : null}
+                                  {sponsor.custom_note ? (
+                                    <p className="text-sm text-stone-600">
+                                      Note: {sponsor.custom_note}
+                                    </p>
+                                  ) : null}
                                 </div>
-                                {sponsor.linked_performer ? (
-                                  <p className="text-sm text-stone-600">
-                                    Linked performer: {sponsor.linked_performer}
-                                  </p>
-                                ) : null}
-                                {sponsor.custom_note ? (
-                                  <p className="text-sm text-stone-600">
-                                    Note: {sponsor.custom_note}
-                                  </p>
-                                ) : null}
                               </div>
 
                               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -4295,7 +4484,8 @@ export function ShowPage({
                     ))}
                   </div>
                 )}
-              </section>
+                </section>
+              ) : null}
             </div>
           </section>
         ) : null}

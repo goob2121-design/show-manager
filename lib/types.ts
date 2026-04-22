@@ -88,6 +88,7 @@ export type SponsorLibraryEntry = {
   short_message: string | null;
   full_message: string | null;
   website: string | null;
+  logo_url: string | null;
   created_at: string;
 };
 
@@ -109,6 +110,7 @@ export type SponsorLibraryFormState = {
   shortMessage: string;
   fullMessage: string;
   website: string;
+  logoUrl: string;
 };
 
 export type ShowSponsorAssignmentFormState = {
