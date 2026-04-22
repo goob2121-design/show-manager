@@ -39,6 +39,7 @@ import type {
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab = "setlist" | "songs" | "guests" | "sponsors" | "mc-builder" | "show-details";
 type BandTab = "setlist" | "songs";
+type GuestTab = "songs" | "artist-info" | "itinerary";
 type SetlistSectionConfig = {
   key: SetSection;
   title: string;
@@ -57,6 +58,12 @@ const adminTabItems: Array<{ key: AdminTab; label: string }> = [
 const bandTabItems: Array<{ key: BandTab; label: string }> = [
   { key: "setlist", label: "Setlist" },
   { key: "songs", label: "Songs" },
+];
+
+const guestTabItems: Array<{ key: GuestTab; label: string }> = [
+  { key: "songs", label: "Songs" },
+  { key: "artist-info", label: "Artist Info" },
+  { key: "itinerary", label: "Itinerary" },
 ];
 
 const setlistSectionOrder: SetSection[] = ["set1", "set2", "encore"];
@@ -256,6 +263,20 @@ function buildSongEditFormState(song: {
     key: song.song_key ?? "",
     notes: song.notes ?? "",
     lyrics: song.lyrics ?? "",
+  };
+}
+
+function buildGuestProfileFormStateFromProfile(profile: GuestProfile): GuestProfileFormState {
+  return {
+    name: profile.name ?? "",
+    shortBio: profile.short_bio ?? "",
+    fullBio: profile.full_bio ?? "",
+    hometown: profile.hometown ?? "",
+    instruments: profile.instruments ?? "",
+    facebook: profile.facebook ?? "",
+    instagram: profile.instagram ?? "",
+    website: profile.website ?? "",
+    permissionGranted: profile.permission_granted,
   };
 }
 
@@ -722,6 +743,7 @@ export function ShowPage({
   const [viewMode, setViewMode] = useState<ViewMode>(initialRole);
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>("setlist");
   const [activeBandTab, setActiveBandTab] = useState<BandTab>("setlist");
+  const [activeGuestTab, setActiveGuestTab] = useState<GuestTab>("songs");
   const [printMode, setPrintMode] = useState<PrintMode>("standard");
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [setlist, setSetlist] = useState<SetlistSong[]>([]);
@@ -733,6 +755,8 @@ export function ShowPage({
     initialGuestProfileFormState,
   );
   const [guestPhotoFile, setGuestPhotoFile] = useState<File | null>(null);
+  const [editingGuestProfileId, setEditingGuestProfileId] = useState<string | null>(null);
+  const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>("");
   const [guestProfiles, setGuestProfiles] = useState<GuestProfile[]>([]);
   const [mcBlockNotes, setMcBlockNotes] = useState<McBlockNote[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
@@ -803,15 +827,21 @@ export function ShowPage({
   const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band";
   const isAdminView = viewMode === "admin";
   const isBandView = viewMode === "band";
+  const isGuestView = viewMode === "guest";
   const shouldShowAdminSongSubmission =
     isAdminView && (activeAdminTab === "setlist" || activeAdminTab === "songs");
   const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
+  const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
+  const shouldShowGuestArtistInfoTab = isGuestView && activeGuestTab === "artist-info";
+  const shouldShowGuestItineraryTab = isGuestView && activeGuestTab === "itinerary";
   const shouldShowSongSubmissionForm = isAdminView
     ? shouldShowAdminSongSubmission
     : isBandView
       ? shouldShowBandSongTools
-      : true;
-  const shouldShowSetlistSection = isAdminView
+      : shouldShowGuestSongsTab;
+  const shouldShowSetlistSection = viewMode === "guest"
+    ? false
+    : isAdminView
     ? activeAdminTab === "setlist"
     : !isBandView || activeBandTab === "setlist";
   const setlistSections = getRenderableSetlistSections(setlist);
@@ -823,6 +853,10 @@ export function ShowPage({
   function canEditPoolSong(song: PendingSubmission) {
     if (viewMode === "admin") {
       return true;
+    }
+
+    if (viewMode === "guest") {
+      return normalizeSubmittedByRole(song.submitted_by_role) === "guest";
     }
 
     return viewMode === "band" && canBandEditSharedSong(song.submitted_by_role);
@@ -1023,6 +1057,10 @@ export function ShowPage({
     if (viewMode === "band") {
       setActiveBandTab("setlist");
     }
+
+    if (viewMode === "guest") {
+      setActiveGuestTab("songs");
+    }
   }, [viewMode]);
 
   const mcRunSections = useMemo(
@@ -1079,6 +1117,38 @@ export function ShowPage({
   function handleGuestPhotoChange(event: ChangeEvent<HTMLInputElement>) {
     const nextFile = event.target.files?.[0] ?? null;
     setGuestPhotoFile(nextFile);
+  }
+
+  function handleSelectedGuestProfileChange(event: ChangeEvent<HTMLSelectElement>) {
+    const nextProfileId = event.target.value;
+    const selectedProfile = guestProfiles.find((profile) => profile.id === nextProfileId);
+
+    setSelectedGuestProfileId(nextProfileId);
+    setEditingGuestProfileId(selectedProfile?.id ?? null);
+
+    if (selectedProfile) {
+      setGuestProfileFormState(buildGuestProfileFormStateFromProfile(selectedProfile));
+      setGuestPhotoFile(null);
+    }
+  }
+
+  function startEditingGuestProfile(profileId: string) {
+    const profileToEdit = guestProfiles.find((profile) => profile.id === profileId);
+
+    if (!profileToEdit) {
+      return;
+    }
+
+    setEditingGuestProfileId(profileId);
+    setSelectedGuestProfileId(profileId);
+    setGuestPhotoFile(null);
+    setGuestProfileFormState(buildGuestProfileFormStateFromProfile(profileToEdit));
+  }
+
+  function resetGuestProfileForm() {
+    setEditingGuestProfileId(null);
+    setGuestPhotoFile(null);
+    setGuestProfileFormState(initialGuestProfileFormState);
   }
 
   function handleSponsorLibraryChange(
@@ -1509,8 +1579,18 @@ export function ShowPage({
       return;
     }
 
+    if (viewMode === "guest" && guestProfiles.length === 0) {
+      setActionError("Please complete guest info first before submitting songs.");
+      return;
+    }
+
+    if (viewMode === "guest" && requiresGuestSelection) {
+      setActionError("Choose the correct guest before submitting a song.");
+      return;
+    }
+
     if (viewMode === "guest" && !guestSingerName) {
-      setActionError("Add your name in Artist Info first so guest song requests can use the correct singer.");
+      setActionError("Choose the correct guest before submitting a song.");
       return;
     }
 
@@ -1614,11 +1694,13 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
-      const existingProfile = guestProfiles.find(
-        (profile) =>
-          normalizeGuestProfileName(profile.name ?? "") ===
-          normalizeGuestProfileName(normalizedName),
-      );
+      const existingProfile =
+        guestProfiles.find((profile) => profile.id === editingGuestProfileId) ??
+        guestProfiles.find(
+          (profile) =>
+            normalizeGuestProfileName(profile.name ?? "") ===
+            normalizeGuestProfileName(normalizedName),
+        );
 
       let photoUrl = existingProfile?.photo_url ?? null;
 
@@ -1681,6 +1763,8 @@ export function ShowPage({
             profile.id === updatedProfile.id ? updatedProfile : profile,
           ),
         );
+        setEditingGuestProfileId(updatedProfile.id);
+        setSelectedGuestProfileId(updatedProfile.id);
       } else {
         const { data: insertedProfile, error: insertError } = await supabase
           .from("guest_profiles")
@@ -1693,13 +1777,15 @@ export function ShowPage({
         }
 
         setGuestProfiles((currentProfiles) => [...currentProfiles, insertedProfile]);
+        setEditingGuestProfileId(insertedProfile.id);
+        setSelectedGuestProfileId(insertedProfile.id);
       }
 
       setGuestPhotoFile(null);
       setGuestProfileFormState((currentState) => ({
         ...currentState,
-        shortBio,
         name: normalizedName,
+        shortBio,
       }));
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -2074,10 +2160,25 @@ export function ShowPage({
     }
 
     const title = poolSongEditFormState.title.trim();
-    const artist = poolSongEditFormState.artist.trim() || defaultSingerName;
+    const guestAssociationName =
+      viewMode === "guest"
+        ? selectedGuestProfile?.name?.trim() ||
+          songToUpdate.submitted_by_name?.trim() ||
+          songToUpdate.artist?.trim() ||
+          ""
+        : "";
+    const artist =
+      viewMode === "guest"
+        ? guestAssociationName
+        : poolSongEditFormState.artist.trim() || defaultSingerName;
 
     if (!title) {
       setActionError("Song title is required.");
+      return;
+    }
+
+    if (viewMode === "guest" && !guestAssociationName) {
+      setActionError("Choose the correct guest before saving this song.");
       return;
     }
 
@@ -2086,21 +2187,124 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("pending_submissions")
-        .update({
+      if (viewMode === "guest") {
+        const targetSongId = songToUpdate.id;
+        const guestUpdatePayload = {
+          show_id: songToUpdate.show_id,
+          submitted_by_role: songToUpdate.submitted_by_role,
           title,
           artist,
+          submitted_by_name: guestAssociationName,
           song_key: normalizeOptionalField(poolSongEditFormState.key),
           notes: normalizeOptionalField(poolSongEditFormState.notes),
           lyrics: normalizeOptionalField(poolSongEditFormState.lyrics),
-        })
+        };
+
+        console.info("Updating guest song in pending_submissions", {
+          table: "pending_submissions",
+          requestedSongId: songId,
+          targetSongId,
+          editingPoolSongId,
+          guestUpdatePayload,
+        });
+
+        const { data: updatedRows, error: updateError } = await supabase
+          .from("pending_submissions")
+          .update(guestUpdatePayload)
+          .eq("id", targetSongId)
+          .select("*");
+
+        console.info("Guest song update response", {
+          targetSongId,
+          returnedData: updatedRows,
+          rowCount: updatedRows?.length ?? 0,
+        });
+
+        if (updateError) {
+          console.warn("Failed to update guest song", {
+            songId: targetSongId,
+            showId: songToUpdate.show_id,
+            guestAssociationName,
+            guestUpdatePayload,
+            updateError,
+          });
+          throw updateError;
+        }
+
+        if (!updatedRows || updatedRows.length === 0) {
+          console.warn("Guest song update affected zero rows", {
+            songId: targetSongId,
+            guestAssociationName,
+            guestUpdatePayload,
+          });
+          const { data: existingRow, error: existingRowError } = await supabase
+            .from("pending_submissions")
+            .select("*")
+            .eq("id", targetSongId)
+            .maybeSingle();
+
+          console.warn("Guest song zero-row diagnostic", {
+            targetSongId,
+            existingRow,
+            existingRowError,
+          });
+          setActionError("That guest song could not be saved right now.");
+          return;
+        }
+
+        console.info("Guest song updated successfully", {
+          songId: targetSongId,
+          updatedRowCount: updatedRows.length,
+        });
+
+        const { data: refreshedPendingRows, error: refreshError } = await supabase
+          .from("pending_submissions")
+          .select("*")
+          .eq("show_id", songToUpdate.show_id)
+          .order("created_at", { ascending: true });
+
+        if (refreshError) {
+          console.warn("Failed to refresh guest songs after save", {
+            songId,
+            showId: songToUpdate.show_id,
+            refreshError,
+          });
+        } else {
+          setPendingSongs(
+            (refreshedPendingRows ?? []).map(
+              (submission: PendingSubmission & { submitted_by_name?: string | null }) =>
+                normalizePendingSubmission(submission),
+            ),
+          );
+          handleCancelPoolSongEdit();
+          return;
+        }
+      }
+
+      const updatePayload = {
+        title,
+        artist,
+        song_key: normalizeOptionalField(poolSongEditFormState.key),
+        notes: normalizeOptionalField(poolSongEditFormState.notes),
+        lyrics: normalizeOptionalField(poolSongEditFormState.lyrics),
+      };
+      const { data, error } = await supabase
+        .from("pending_submissions")
+        .update(updatePayload)
         .eq("id", songId)
         .select("*")
-        .single();
+        .maybeSingle();
 
       if (error) {
         throw error;
+      }
+
+      if (!data) {
+        console.warn("Pending submission was missing during guest song save", { songId, viewMode });
+        if (editingPoolSongId === songId) {
+          handleCancelPoolSongEdit();
+        }
+        return;
       }
 
       setPendingSongs((currentSongs) =>
@@ -2588,14 +2792,37 @@ export function ShowPage({
     : [];
 
   const guestMessage = show?.guest_message?.trim() ?? "";
+  const autoSelectedGuestProfile =
+    guestProfiles.length === 1 ? guestProfiles[0] : null;
+  const selectedGuestProfile =
+    viewMode === "guest"
+      ? guestProfiles.find((profile) => profile.id === selectedGuestProfileId) ??
+        autoSelectedGuestProfile
+      : null;
   const guestSingerName =
     viewMode === "guest"
-      ? guestProfileFormState.name.trim() ||
-        guestProfiles
-          .map((profile) => profile.name?.trim() ?? "")
-          .find(Boolean) ||
-        ""
+      ? selectedGuestProfile?.name?.trim() || guestProfileFormState.name.trim() || ""
       : "";
+  const requiresGuestSelection = viewMode === "guest" && guestProfiles.length > 1 && !selectedGuestProfile;
+  const isGuestSongSubmissionBlocked = viewMode === "guest" && guestProfiles.length === 0;
+  const guestSubmittedSongs =
+    viewMode === "guest"
+      ? pendingSongs.filter((song) => {
+          if (normalizeSubmittedByRole(song.submitted_by_role) !== "guest") {
+            return false;
+          }
+
+          if (!selectedGuestProfile) {
+            return guestProfiles.length <= 1;
+          }
+
+          const submittedByName = normalizeGuestProfileName(song.submitted_by_name ?? "");
+          const artistName = normalizeGuestProfileName(song.artist ?? "");
+          const currentGuestName = normalizeGuestProfileName(selectedGuestProfile.name ?? "");
+
+          return submittedByName === currentGuestName || artistName === currentGuestName;
+        })
+      : [];
 
   const bandShowInfoItems: ShowInfoItem[] = show
     ? [
@@ -2624,6 +2851,8 @@ export function ShowPage({
     adminTabItems.find((tab) => tab.key === activeAdminTab)?.label ?? "Setlist";
   const activeBandTabLabel =
     bandTabItems.find((tab) => tab.key === activeBandTab)?.label ?? "Setlist";
+  const activeGuestTabLabel =
+    guestTabItems.find((tab) => tab.key === activeGuestTab)?.label ?? "Songs";
 
   if (isLoading) {
     return (
@@ -2829,7 +3058,45 @@ export function ShowPage({
           </section>
         ) : null}
 
-        {viewMode === "guest" && guestMessage ? (
+        {isGuestView ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Guest Sections</h2>
+              <p className="text-sm text-stone-600">
+                Switch between songs and artist details without scrolling through everything at once.
+              </p>
+            </div>
+
+            <div
+              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2"
+              role="tablist"
+              aria-label="Guest portal sections"
+            >
+              {guestTabItems.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeGuestTab === tab.key}
+                  onClick={() => setActiveGuestTab(tab.key)}
+                  className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                    activeGuestTab === tab.key
+                      ? "bg-emerald-700 text-white shadow-sm"
+                      : "bg-white text-stone-700 hover:bg-stone-50"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+              Active section: <span className="font-semibold text-emerald-700">{activeGuestTabLabel}</span>
+            </div>
+          </section>
+        ) : null}
+
+        {shouldShowGuestItineraryTab && guestMessage ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Welcome</h2>
@@ -2846,7 +3113,7 @@ export function ShowPage({
           </section>
         ) : null}
 
-        {viewMode === "guest" ? (
+        {shouldShowGuestItineraryTab ? (
           <ShowInfoCard
             title="Guest Itinerary"
             subtitle="Show details, timing, and contact information for guest performers."
@@ -4027,7 +4294,7 @@ export function ShowPage({
                                     />
                                   </label>
                                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    Who's Singing
+                                    Who&apos;s Singing
                                     <input
                                       type="text"
                                       name="artist"
@@ -4225,19 +4492,76 @@ export function ShowPage({
         </section>
         ) : null}
 
-        {viewMode === "guest" ? (
+        {shouldShowGuestArtistInfoTab ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Artist Info</h2>
               <p className="text-sm text-stone-600">
-                Share your promo bio and photo for this show.
+                Share your promo bio and photo for this show, then come back anytime to update it.
               </p>
             </div>
+
+            {guestProfiles.length > 0 ? (
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-base font-semibold text-stone-900">Submitted Guest Artists</h3>
+                  <p className="text-sm text-stone-600">
+                    Choose an entry to review or update in the form below. The same guest list is
+                    used for song submission.
+                  </p>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3">
+                  {guestProfiles.map((profile) => (
+                    <article
+                      key={profile.id}
+                      className="rounded-xl border border-stone-200 bg-white px-4 py-3"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex flex-col gap-1">
+                          <p className="text-sm font-semibold text-stone-900">
+                            {profile.name || "Unnamed guest"}
+                          </p>
+                          <p className="text-sm text-stone-600">
+                            {profile.short_bio || "Short bio not added yet."}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => startEditingGuestProfile(profile.id)}
+                          className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Edit Artist Info
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <form
               className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
               onSubmit={handleGuestProfileSubmit}
             >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm text-stone-600">
+                  {editingGuestProfileId
+                    ? "Editing an existing artist entry."
+                    : "Add a new artist entry for this show."}
+                </div>
+                {editingGuestProfileId ? (
+                  <button
+                    type="button"
+                    onClick={resetGuestProfileForm}
+                    className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    New Artist Info
+                  </button>
+                ) : null}
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                   Name
@@ -4367,7 +4691,11 @@ export function ShowPage({
                   disabled={isSavingGuestProfile}
                   className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                 >
-                  {isSavingGuestProfile ? "Saving Artist Info..." : "Save Artist Info"}
+                  {isSavingGuestProfile
+                    ? "Saving Artist Info..."
+                    : editingGuestProfileId
+                      ? "Save Artist Info Changes"
+                      : "Save Artist Info"}
                 </button>
               </div>
             </form>
@@ -4510,7 +4838,9 @@ export function ShowPage({
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">{formHeading}</h2>
               <p className="text-sm text-stone-600">
-                Add a song request or suggestion to the shared song pool.
+                {viewMode === "guest"
+                  ? "Add one or more songs for this show. Guests will only see guest-facing submission details here."
+                  : "Add a song request or suggestion to the shared song pool."}
               </p>
             </div>
 
@@ -4534,7 +4864,7 @@ export function ShowPage({
 
                 {viewMode !== "guest" ? (
                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Who's Singing
+                    Who&apos;s Singing
                     <input
                       type="text"
                       name="artist"
@@ -4548,9 +4878,47 @@ export function ShowPage({
               </div>
 
               {viewMode === "guest" ? (
-                <p className="text-sm text-stone-600">
-                  Who&apos;s Singing will be set automatically from your Artist Info name.
-                </p>
+                <div className="flex flex-col gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">
+                  {guestProfiles.length === 0 ? (
+                    <p>Please complete guest info first before submitting songs.</p>
+                  ) : guestProfiles.length === 1 ? (
+                    <p>
+                      Who&apos;s Singing will be set automatically to {selectedGuestProfile?.name || "your guest profile"}.
+                    </p>
+                  ) : (
+                    <p>Choose the correct guest below before submitting a song.</p>
+                  )}
+                  <p>You can submit multiple songs for this show. Each one will be saved as its own entry.</p>
+                </div>
+              ) : null}
+
+              {viewMode === "guest" ? (
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Guest
+                  <select
+                    value={selectedGuestProfile?.id ?? ""}
+                    onChange={handleSelectedGuestProfileChange}
+                    disabled={guestProfiles.length <= 1}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 disabled:cursor-not-allowed disabled:bg-stone-100"
+                  >
+                    {guestProfiles.length === 0 ? (
+                      <option value="">Complete guest info first</option>
+                    ) : guestProfiles.length === 1 ? (
+                      <option value={selectedGuestProfile?.id ?? ""}>
+                        {selectedGuestProfile?.name || "Guest"}
+                      </option>
+                    ) : (
+                      <>
+                        <option value="">Select a guest</option>
+                        {guestProfiles.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name || "Unnamed guest"}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                </label>
               ) : null}
 
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
@@ -4590,13 +4958,173 @@ export function ShowPage({
               <div className="flex justify-start">
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isGuestSongSubmissionBlocked || requiresGuestSelection}
                   className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                 >
-                  {isSubmitting ? "Submitting..." : "Add Pending Song"}
+                  {isSubmitting
+                    ? "Submitting..."
+                    : viewMode === "guest"
+                      ? "Submit Song"
+                      : "Add Pending Song"}
                 </button>
               </div>
             </form>
+
+            {viewMode === "guest" ? (
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-base font-semibold text-stone-900">Submitted Guest Songs</h3>
+                  <p className="text-sm text-stone-600">
+                    {selectedGuestProfile?.name
+                      ? `Review and update songs already submitted for ${selectedGuestProfile.name} on this show.`
+                      : guestProfiles.length > 1
+                        ? "Select a guest above to review that guest's submitted songs."
+                        : "Review and update guest-submitted songs for this show."}
+                  </p>
+                </div>
+
+                {guestSubmittedSongs.length === 0 ? (
+                  <p className="mt-4 text-sm text-stone-500">
+                    {guestProfiles.length > 1 && !selectedGuestProfile
+                      ? "Choose a guest to view that guest's submitted songs."
+                      : "No songs submitted yet. The first song will appear here after it is sent."}
+                  </p>
+                ) : (
+                  <div className="mt-4 flex flex-col gap-3">
+                    {guestSubmittedSongs.map((song, songIndex) => (
+                      <article
+                        key={song.id}
+                        className="rounded-xl border border-stone-200 bg-white px-4 py-4"
+                      >
+                        {editingPoolSongId === song.id ? (
+                          <div className="grid gap-4">
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Song Title
+                                <input
+                                  type="text"
+                                  name="title"
+                                  value={poolSongEditFormState.title}
+                                  onChange={handlePoolSongEditChange}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  required
+                                />
+                              </label>
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Who&apos;s Singing
+                                <input
+                                  type="text"
+                                  name="artist"
+                                  value={poolSongEditFormState.artist}
+                                  onChange={handlePoolSongEditChange}
+                                  readOnly
+                                  className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
+                                  placeholder="Singer name"
+                                />
+                              </label>
+                            </div>
+
+                            <p className="text-sm text-stone-600">
+                              This song stays linked to the selected guest so it remains in the
+                              correct guest song list.
+                            </p>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Key
+                              <input
+                                type="text"
+                                name="key"
+                                value={poolSongEditFormState.key}
+                                onChange={handlePoolSongEditChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Optional key"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Notes
+                              <textarea
+                                name="notes"
+                                value={poolSongEditFormState.notes}
+                                onChange={handlePoolSongEditChange}
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Optional notes"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Lyrics / lyric cue
+                              <textarea
+                                name="lyrics"
+                                value={poolSongEditFormState.lyrics}
+                                onChange={handlePoolSongEditChange}
+                                className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Optional lyrics, chorus, or cue"
+                              />
+                            </label>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleSavePoolSong(song.id)}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                Save Song
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelPoolSongEdit}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3">
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-stone-900">
+                                  {songIndex + 1}. {song.title}
+                                </p>
+                                <p className="text-sm text-stone-600">
+                                  {song.artist || guestSingerName}
+                                  {song.song_key ? ` • Key: ${song.song_key}` : ""}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditingPoolSong(song.id)}
+                                disabled={activePendingActionId === song.id}
+                                className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Edit Song
+                              </button>
+                            </div>
+
+                            {song.notes ? (
+                              <p className="text-sm text-stone-600">{song.notes}</p>
+                            ) : null}
+
+                            {song.lyrics ? (
+                              <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-3">
+                                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                  Lyrics
+                                </p>
+                                <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
+                                  {song.lyrics}
+                                </p>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -4635,7 +5163,7 @@ export function ShowPage({
                           />
                         </label>
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Who's Singing
+                          Who&apos;s Singing
                           <input
                             type="text"
                             name="artist"
@@ -4827,7 +5355,7 @@ export function ShowPage({
                             />
                           </label>
                           <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Who's Singing
+                            Who&apos;s Singing
                               <input
                                 type="text"
                                 name="artist"

@@ -653,7 +653,6 @@ export function PerformerBlockCard({
 }
 
 export function McPage({
-  showSlug,
   initialShow,
   initialSetlist,
   initialGuestProfiles,
