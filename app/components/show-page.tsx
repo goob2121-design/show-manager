@@ -338,6 +338,20 @@ function normalizeGuestProfileName(name: string) {
   return name.trim().toLowerCase();
 }
 
+function isGuestSongForProfile(song: PendingSubmission, profileName: string | null | undefined) {
+  const normalizedProfileName = normalizeGuestProfileName(profileName ?? "");
+
+  if (!normalizedProfileName) {
+    return false;
+  }
+
+  return (
+    normalizeSubmittedByRole(song.submitted_by_role) === "guest" &&
+    (normalizeGuestProfileName(song.submitted_by_name ?? "") === normalizedProfileName ||
+      normalizeGuestProfileName(song.artist ?? "") === normalizedProfileName)
+  );
+}
+
 function normalizeOptionalField(value: string) {
   const trimmedValue = value.trim();
   return trimmedValue ? trimmedValue : null;
@@ -2119,6 +2133,96 @@ export function ShowPage({
     }
   }
 
+  async function handleDeleteGuestSong(songId: string) {
+    const songToDelete = pendingSongs.find((song) => song.id === songId);
+
+    if (!songToDelete || normalizeSubmittedByRole(songToDelete.submitted_by_role) !== "guest") {
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      `Delete the guest song "${songToDelete.title}" for ${getDisplaySingerName(songToDelete.artist)}?`,
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    await handleDeleteFromSongPool(songId);
+  }
+
+  async function handleDeleteGuestProfile(profileId: string) {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    const profileToDelete = guestProfiles.find((profile) => profile.id === profileId);
+
+    if (!profileToDelete) {
+      return;
+    }
+
+    const relatedGuestSongs = pendingSongs.filter((song) =>
+      isGuestSongForProfile(song, profileToDelete.name),
+    );
+    const shouldDelete = window.confirm(
+      `Delete guest profile "${profileToDelete.name || "Unnamed guest"}"? This will also delete ${relatedGuestSongs.length} submitted song${
+        relatedGuestSongs.length === 1 ? "" : "s"
+      } for this show.`,
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setActionError(null);
+    setActivePendingActionId(`guest-${profileId}`);
+
+    try {
+      const supabase = createClient();
+      const relatedSongIds = relatedGuestSongs.map((song) => song.id);
+
+      if (relatedSongIds.length > 0) {
+        const { error: deleteSongsError } = await supabase
+          .from("pending_submissions")
+          .delete()
+          .in("id", relatedSongIds);
+
+        if (deleteSongsError) {
+          throw deleteSongsError;
+        }
+      }
+
+      const { error: deleteProfileError } = await supabase
+        .from("guest_profiles")
+        .delete()
+        .eq("id", profileId)
+        .eq("show_id", show.id);
+
+      if (deleteProfileError) {
+        throw deleteProfileError;
+      }
+
+      setGuestProfiles((currentProfiles) => currentProfiles.filter((profile) => profile.id !== profileId));
+      setPendingSongs((currentSongs) =>
+        currentSongs.filter((song) => !relatedSongIds.includes(song.id)),
+      );
+
+      if (editingGuestProfileId === profileId) {
+        resetGuestProfileForm();
+      }
+
+      if (selectedGuestProfileId === profileId) {
+        setSelectedGuestProfileId("");
+      }
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActivePendingActionId(null);
+    }
+  }
+
   function handlePoolSongEditChange(
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) {
@@ -2208,17 +2312,10 @@ export function ShowPage({
           guestUpdatePayload,
         });
 
-        const { data: updatedRows, error: updateError } = await supabase
+        const { error: updateError } = await supabase
           .from("pending_submissions")
           .update(guestUpdatePayload)
-          .eq("id", targetSongId)
-          .select("*");
-
-        console.info("Guest song update response", {
-          targetSongId,
-          returnedData: updatedRows,
-          rowCount: updatedRows?.length ?? 0,
-        });
+          .eq("id", targetSongId);
 
         if (updateError) {
           console.warn("Failed to update guest song", {
@@ -2231,22 +2328,31 @@ export function ShowPage({
           throw updateError;
         }
 
-        if (!updatedRows || updatedRows.length === 0) {
+        const { data: updatedRow, error: updatedRowError } = await supabase
+          .from("pending_submissions")
+          .select("*")
+          .eq("id", targetSongId)
+          .maybeSingle();
+
+        console.info("Guest song update response", {
+          targetSongId,
+          returnedData: updatedRow ? [updatedRow] : [],
+          rowCount: updatedRow ? 1 : 0,
+          updatedRowError,
+        });
+
+        if (updatedRowError) {
+          console.warn("Failed to verify guest song after update", {
+            songId: targetSongId,
+            updatedRowError,
+          });
+        }
+
+        if (!updatedRow) {
           console.warn("Guest song update affected zero rows", {
             songId: targetSongId,
             guestAssociationName,
             guestUpdatePayload,
-          });
-          const { data: existingRow, error: existingRowError } = await supabase
-            .from("pending_submissions")
-            .select("*")
-            .eq("id", targetSongId)
-            .maybeSingle();
-
-          console.warn("Guest song zero-row diagnostic", {
-            targetSongId,
-            existingRow,
-            existingRowError,
           });
           setActionError("That guest song could not be saved right now.");
           return;
@@ -2254,7 +2360,7 @@ export function ShowPage({
 
         console.info("Guest song updated successfully", {
           songId: targetSongId,
-          updatedRowCount: updatedRows.length,
+          updatedRowCount: 1,
         });
 
         const { data: refreshedPendingRows, error: refreshError } = await supabase
@@ -4800,7 +4906,7 @@ export function ShowPage({
                           </div>
                         </div>
 
-                        <div className="w-full max-w-[180px]">
+                        <div className="flex w-full max-w-[180px] flex-col gap-3">
                           {profile.photo_url ? (
                             <img
                               src={profile.photo_url}
@@ -4812,6 +4918,15 @@ export function ShowPage({
                               No photo
                             </div>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteGuestProfile(profile.id)}
+                            disabled={activePendingActionId === `guest-${profile.id}`}
+                            className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                          >
+                            Delete Guest
+                          </button>
                         </div>
                       </div>
                     </article>
@@ -5301,11 +5416,17 @@ export function ShowPage({
                             <div className="flex flex-col gap-3 sm:flex-row">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteFromSongPool(song.id)}
+                                onClick={() =>
+                                  normalizeSubmittedByRole(song.submitted_by_role) === "guest"
+                                    ? handleDeleteGuestSong(song.id)
+                                    : handleDeleteFromSongPool(song.id)
+                                }
                                 disabled={activePendingActionId === song.id}
                                 className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
                               >
-                                Delete from Pool
+                                {normalizeSubmittedByRole(song.submitted_by_role) === "guest"
+                                  ? "Delete Song"
+                                  : "Delete from Pool"}
                               </button>
                             </div>
                           ) : null}
