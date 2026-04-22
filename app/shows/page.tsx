@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent, FormEvent, MouseEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { ThemeToggle } from "@/app/components/theme-toggle";
@@ -17,12 +17,40 @@ type ShowFormState = {
   slug: string;
 };
 
+type DashboardTab = "active" | "create" | "archived";
+
+type PrefillSource = "" | string;
+type CopyLinkRole = "guest" | "band" | "admin" | "mc";
+type CopyMenuDirection = "up" | "down";
+
 const initialFormState: ShowFormState = {
   name: "",
   showDate: "",
   venue: "",
   slug: "",
 };
+
+const dashboardTabs: Array<{
+  id: DashboardTab;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "active",
+    label: "Active Shows",
+    description: "Open portals, update details, and manage the current lineup.",
+  },
+  {
+    id: "create",
+    label: "Create Show",
+    description: "Spin up a new show record and jump directly into setup.",
+  },
+  {
+    id: "archived",
+    label: "Archived Shows",
+    description: "Restore older shows safely without losing related show data.",
+  },
+];
 
 function formatShowDate(showDate: string | null) {
   if (!showDate) {
@@ -71,6 +99,26 @@ function buildDuplicateFormState() {
   };
 }
 
+function getShowCardTone(isArchived: boolean) {
+  if (isArchived) {
+    return {
+      card: "border-amber-300 bg-amber-50",
+      badge: "bg-amber-200 text-amber-900",
+      divider: "border-amber-300",
+      metaCard: "border-amber-300 bg-white/80",
+      status: "Archived",
+    };
+  }
+
+  return {
+    card: "border-stone-200 bg-white",
+    badge: "bg-emerald-100 text-emerald-800",
+    divider: "border-stone-200",
+    metaCard: "border-stone-200 bg-stone-50",
+    status: "Active",
+  };
+}
+
 export default function ShowsDashboardPage() {
   const router = useRouter();
   const [shows, setShows] = useState<ShowRecord[]>([]);
@@ -80,7 +128,7 @@ export default function ShowsDashboardPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
   const [showLogo, setShowLogo] = useState(true);
-  const [showArchived, setShowArchived] = useState(false);
+  const [activeTab, setActiveTab] = useState<DashboardTab>("active");
   const [editingShowId, setEditingShowId] = useState<string | null>(null);
   const [editFormState, setEditFormState] = useState<ShowFormState>(initialFormState);
   const [duplicatingShowId, setDuplicatingShowId] = useState<string | null>(null);
@@ -88,9 +136,16 @@ export default function ShowsDashboardPage() {
     buildDuplicateFormState(),
   );
   const [activeShowActionId, setActiveShowActionId] = useState<string | null>(null);
+  const [prefillSourceShowId, setPrefillSourceShowId] = useState<PrefillSource>("");
+  const [openCopyMenuShowId, setOpenCopyMenuShowId] = useState<string | null>(null);
+  const [copyMenuDirection, setCopyMenuDirection] = useState<CopyMenuDirection>("down");
 
   const activeShows = shows.filter((show) => !show.is_archived);
   const archivedShows = shows.filter((show) => show.is_archived);
+  const today = new Date().toISOString().slice(0, 10);
+  const upcomingShowsCount = activeShows.filter(
+    (show) => show.show_date && show.show_date >= today,
+  ).length;
 
   const loadShows = useCallback(async () => {
     setIsLoading(true);
@@ -241,7 +296,7 @@ export default function ShowsDashboardPage() {
     });
   }
 
-  async function handleCopyLink(slug: string, role: "guest" | "band" | "admin" | "mc") {
+  async function handleCopyLink(slug: string, role: CopyLinkRole) {
     const routePath = `/${role}/${slug}`;
     const absoluteUrl =
       typeof window === "undefined" ? routePath : `${window.location.origin}${routePath}`;
@@ -250,13 +305,57 @@ export default function ShowsDashboardPage() {
       await navigator.clipboard.writeText(absoluteUrl);
       const nextKey = `${role}-${slug}`;
       setCopiedLinkKey(nextKey);
+      setOpenCopyMenuShowId(null);
 
       window.setTimeout(() => {
-        setCopiedLinkKey((currentKey) => (currentKey === nextKey ? null : currentKey));
+        setCopiedLinkKey((currentKey) =>
+          currentKey === nextKey ? null : currentKey,
+        );
       }, 1800);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
+  }
+
+  function handlePrefillFromExistingShow(event: ChangeEvent<HTMLSelectElement>) {
+    const nextShowId = event.target.value;
+    setPrefillSourceShowId(nextShowId);
+
+    if (!nextShowId) {
+      setFormState(initialFormState);
+      return;
+    }
+
+    const sourceShow = shows.find((show) => show.id === nextShowId);
+
+    if (!sourceShow) {
+      return;
+    }
+
+    setFormState({
+      name: "",
+      showDate: "",
+      venue: sourceShow.venue ?? "",
+      slug: "",
+    });
+  }
+
+  function handleToggleCopyMenu(event: MouseEvent<HTMLButtonElement>, showId: string) {
+    if (openCopyMenuShowId === showId) {
+      setOpenCopyMenuShowId(null);
+      return;
+    }
+
+    const buttonRect = event.currentTarget.getBoundingClientRect();
+    const estimatedMenuHeight = 196;
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - buttonRect.bottom;
+    const spaceAbove = buttonRect.top;
+
+    setCopyMenuDirection(
+      spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow ? "up" : "down",
+    );
+    setOpenCopyMenuShowId(showId);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -477,708 +576,628 @@ export default function ShowsDashboardPage() {
     }
   }
 
+  function renderPortalLinks(show: ShowRecord) {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Link
+          href={`/guest/${show.slug}`}
+          className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+        >
+          Guest
+        </Link>
+        <Link
+          href={`/band/${show.slug}`}
+          className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+        >
+          Band
+        </Link>
+        <Link
+          href={`/mc/${show.slug}`}
+          className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+        >
+          MC
+        </Link>
+        <Link
+          href={`/admin/${show.slug}`}
+          className="flex min-h-11 items-center justify-center rounded-xl bg-emerald-700 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-emerald-800"
+        >
+          Admin
+        </Link>
+      </div>
+    );
+  }
+
+  function renderEditForm(show: ShowRecord, title: string, description: string) {
+    return (
+      <form className="grid gap-4" onSubmit={(event) => handleSaveShow(event, show.id)}>
+        <div className="flex flex-col gap-1">
+          <h4 className="text-lg font-semibold text-stone-900">{title}</h4>
+          <p className="text-sm text-stone-600">{description}</p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+            Show Name
+            <input
+              type="text"
+              name="name"
+              value={editFormState.name}
+              onChange={(event) =>
+                handleChange(event, {
+                  mode: "edit",
+                  preserveManualSlug: true,
+                })
+              }
+              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+              required
+            />
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+            Show Date
+            <input
+              type="date"
+              name="showDate"
+              value={editFormState.showDate}
+              onChange={(event) => handleChange(event, { mode: "edit" })}
+              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+            Venue
+            <input
+              type="text"
+              name="venue"
+              value={editFormState.venue}
+              onChange={(event) => handleChange(event, { mode: "edit" })}
+              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+            />
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+            Slug
+            <input
+              type="text"
+              name="slug"
+              value={editFormState.slug}
+              onChange={(event) => handleChange(event, { mode: "edit" })}
+              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+              required
+            />
+          </label>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            type="submit"
+            disabled={activeShowActionId === show.id}
+            className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+          >
+            Save Changes
+          </button>
+          <button
+            type="button"
+            onClick={cancelEditingShow}
+            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  function renderDuplicateForm(show: ShowRecord, description: string) {
+    return (
+      <form className="grid gap-4" onSubmit={(event) => handleDuplicateShow(event, show)}>
+        <div className="flex flex-col gap-1">
+          <h4 className="text-lg font-semibold text-stone-900">Duplicate {show.name}</h4>
+          <p className="text-sm text-stone-600">{description}</p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+            New Show Name
+            <input
+              type="text"
+              name="name"
+              value={duplicateFormState.name}
+              onChange={(event) =>
+                handleChange(event, {
+                  mode: "duplicate",
+                  preserveManualSlug: true,
+                })
+              }
+              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+              placeholder={show.name}
+            />
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+            New Show Date
+            <input
+              type="date"
+              name="showDate"
+              value={duplicateFormState.showDate}
+              onChange={(event) => handleChange(event, { mode: "duplicate" })}
+              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+              required
+            />
+          </label>
+        </div>
+
+        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+          New Slug
+          <input
+            type="text"
+            name="slug"
+            value={duplicateFormState.slug}
+            onChange={(event) => handleChange(event, { mode: "duplicate" })}
+            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+            placeholder={`${show.slug}-copy`}
+            required
+          />
+        </label>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            type="submit"
+            disabled={activeShowActionId === show.id}
+            className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+          >
+            Create Duplicate
+          </button>
+          <button
+            type="button"
+            onClick={cancelDuplicatingShow}
+            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  function renderShowCard(show: ShowRecord, isArchived: boolean) {
+    const isEditing = editingShowId === show.id;
+    const isDuplicating = duplicatingShowId === show.id;
+    const tone = getShowCardTone(isArchived);
+    const isCopyMenuOpen = openCopyMenuShowId === show.id;
+
+    return (
+      <article
+        key={show.id}
+        className={`rounded-3xl border p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg sm:p-6 ${tone.card}`}
+      >
+        {isEditing
+          ? renderEditForm(
+              show,
+              isArchived ? "Edit Archived Show" : "Edit Show",
+              isArchived
+                ? "Update the archived record now, then restore it whenever you're ready."
+                : "Update the core show details without affecting setlists, guests, or portal data.",
+            )
+          : isDuplicating
+            ? renderDuplicateForm(
+                show,
+                isArchived
+                  ? "Build a fresh active show from this archived template."
+                  : "Create a new active show with the same itinerary, settings, and official setlist.",
+              )
+            : (
+              <>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-stretch sm:justify-between">
+                    <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${tone.badge}`}
+                        >
+                          {tone.status}
+                        </span>
+                        <span className="text-xs font-medium uppercase tracking-[0.14em] text-stone-500">
+                          {show.slug}
+                        </span>
+                      </div>
+                      <h4 className="max-w-[18ch] text-2xl font-semibold leading-tight tracking-tight text-stone-900 sm:max-w-none">
+                        {show.name}
+                      </h4>
+                    </div>
+
+                    <div
+                      className={`flex min-h-[5.5rem] min-w-[9.5rem] items-center justify-center rounded-2xl border px-4 py-3 text-center text-sm font-medium leading-5 text-stone-600 ${tone.metaCard}`}
+                    >
+                      {formatShowDate(show.show_date)}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className={`flex min-h-[5.25rem] flex-col justify-center rounded-2xl border px-4 py-3 ${tone.metaCard}`}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
+                        Venue
+                      </p>
+                      <p className="mt-1 text-sm text-stone-700">{show.venue || "Venue not set"}</p>
+                    </div>
+
+                    <div className={`flex min-h-[5.25rem] flex-col justify-center rounded-2xl border px-4 py-3 ${tone.metaCard}`}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
+                        Slug
+                      </p>
+                      <p className="mt-1 text-sm text-stone-700">{show.slug}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`mt-5 grid gap-3 border-t pt-5 ${tone.divider}`}>
+                  {renderPortalLinks(show)}
+
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <button
+                      type="button"
+                      onClick={() => startEditingShow(show)}
+                      className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startDuplicatingShow(show)}
+                      className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                    >
+                      Duplicate Show
+                    </button>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={(event) => handleToggleCopyMenu(event, show.id)}
+                        className="flex min-h-11 w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Copy Links
+                      </button>
+
+                      {isCopyMenuOpen ? (
+                        <div
+                          className={`absolute left-0 z-20 w-full min-w-[12rem] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                            copyMenuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(show.slug, "guest")}
+                            className="flex w-full items-center justify-center px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                          >
+                            {copiedLinkKey === `guest-${show.slug}` ? "Copied Guest Link" : "Copy Guest Link"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(show.slug, "band")}
+                            className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                          >
+                            {copiedLinkKey === `band-${show.slug}` ? "Copied Band Link" : "Copy Band Link"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(show.slug, "mc")}
+                            className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                          >
+                            {copiedLinkKey === `mc-${show.slug}` ? "Copied MC Link" : "Copy MC Link"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(show.slug, "admin")}
+                            className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                          >
+                            {copiedLinkKey === `admin-${show.slug}` ? "Copied Admin Link" : "Copy Admin Link"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSetArchived(show.id, !isArchived)}
+                      disabled={activeShowActionId === show.id}
+                      className={`flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 text-center text-sm font-semibold text-white transition disabled:cursor-not-allowed ${
+                        isArchived
+                          ? "bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400"
+                          : "bg-stone-800 hover:bg-black disabled:bg-stone-500"
+                      }`}
+                    >
+                      {isArchived ? "Restore" : "Archive"}
+                    </button>
+                  </div>
+
+                </div>
+              </>
+            )}
+      </article>
+    );
+  }
+
   return (
     <AdminGate
       slug="shows-dashboard"
       resourceLabel="the show management dashboard"
       continueLabel="Continue to Dashboard"
     >
-      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
-        <section className="mx-auto flex w-full max-w-5xl flex-col gap-8 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-        <header className="flex flex-col gap-4 border-b border-stone-200 pb-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              {showLogo ? (
-                <Image
-                  src="/cmms-logo.png"
-                  alt="CMMS logo"
-                  width={72}
-                  height={72}
-                  className="h-14 w-auto rounded-lg object-contain"
-                  onError={() => setShowLogo(false)}
-                  priority
-                />
-              ) : null}
+      <main className="min-h-screen bg-gradient-to-b from-stone-100 via-stone-50 to-stone-100 px-4 py-8 text-stone-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100 sm:px-6 sm:py-10">
+        <section className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+          <header className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                  {showLogo ? (
+                    <Image
+                      src="/cmms-logo.png"
+                      alt="CMMS logo"
+                      width={88}
+                      height={88}
+                      className="h-16 w-auto rounded-2xl bg-white/95 p-2 object-contain shadow-sm"
+                      onError={() => setShowLogo(false)}
+                      priority
+                    />
+                  ) : null}
 
-              <div className="flex flex-col gap-2">
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                  CMMS Portal
+                  <div className="max-w-2xl space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-100">
+                      CMMS Control Center
+                    </p>
+                    <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                      Show Manager
+                    </h1>
+                    <p className="text-sm leading-6 text-emerald-50/90 sm:text-base">
+                      Manage your shows, guests, and setlists.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-stretch gap-3 sm:items-end">
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("create")}
+                      className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-emerald-900 shadow-sm transition hover:bg-emerald-50"
+                    >
+                      Create New Show
+                    </button>
+                    <ThemeToggle />
+                  </div>
+                  <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm text-emerald-50 backdrop-blur">
+                    Dashboard access stays protected by the admin password gate.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 border-t border-stone-200 bg-stone-50/70 px-6 py-5 dark:border-slate-800 dark:bg-slate-950/60 sm:grid-cols-3 sm:px-8">
+              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
+                  Active Shows
                 </p>
-                <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Show Manager
-                </h1>
+                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{activeShows.length}</p>
+                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Shows currently visible and in rotation</p>
+              </div>
+
+              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
+                  Archived Shows
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{archivedShows.length}</p>
+                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Stored safely for later reference or restore</p>
+              </div>
+
+              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
+                  Upcoming Shows
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{upcomingShowsCount}</p>
+                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Active shows with a date still ahead</p>
               </div>
             </div>
+          </header>
 
-            <ThemeToggle />
-          </div>
-          <p className="text-base text-stone-600">
-            Create a new event, then open the Guest, Band, MC, or Admin portal for that show.
-          </p>
-        </header>
-
-        {errorMessage ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {errorMessage}
-          </div>
-        ) : null}
-
-        <section className="grid gap-8 lg:grid-cols-[1.05fr_1.45fr]">
-          <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Create New Show</h2>
-              <p className="text-sm text-stone-600">
-                Create a show record and jump straight into its admin portal.
-              </p>
+          {errorMessage ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {errorMessage}
             </div>
+          ) : null}
 
-            <form className="grid gap-4" onSubmit={handleSubmit}>
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Show Name
-                <input
-                  type="text"
-                  name="name"
-                  value={formState.name}
-                  onChange={handleChange}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Cumberland Mountain Music Show"
-                  required
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Show Date
-                <input
-                  type="date"
-                  name="showDate"
-                  value={formState.showDate}
-                  onChange={handleChange}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Venue
-                <input
-                  type="text"
-                  name="venue"
-                  value={formState.venue}
-                  onChange={handleChange}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Optional venue"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Slug
-                <input
-                  type="text"
-                  name="slug"
-                  value={formState.slug}
-                  onChange={handleChange}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="cmms-april-27"
-                  required
-                />
-              </label>
-
-              <div className="flex justify-start">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                >
-                  {isSubmitting ? "Creating Show..." : "Create Show"}
-                </button>
-              </div>
-            </form>
-          </section>
-
-          <section className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div className="flex flex-col gap-1">
-                <h2 className="text-xl font-semibold">Shows</h2>
-                <p className="text-sm text-stone-600">
-                  Open portals, fix show details, or archive older shows safely.
+          <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div className="flex flex-col gap-4 border-b border-stone-200 pb-5 dark:border-slate-800">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">Dashboard</h2>
+                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
+                  Switch between active shows, new show setup, and archived cleanup without
+                  digging through one long page.
                 </p>
               </div>
 
-              <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm font-medium text-stone-700">
-                <input
-                  type="checkbox"
-                  checked={showArchived}
-                  onChange={(event) => setShowArchived(event.target.checked)}
-                  className="h-4 w-4"
-                />
-                <span>Show Archived</span>
-              </label>
+              <div className="flex flex-wrap gap-2 rounded-2xl bg-stone-100 p-2 dark:bg-slate-950/70">
+                {dashboardTabs.map((tab) => {
+                  const isActive = activeTab === tab.id;
+
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex min-w-[10rem] flex-1 flex-col rounded-xl px-4 py-3 text-left transition sm:min-w-[11rem] ${
+                        isActive
+                          ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-200"
+                          : "text-stone-600 hover:bg-white/80 hover:text-stone-900"
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">{tab.label}</span>
+                      <span className="mt-1 text-xs leading-5 text-stone-500">
+                        {tab.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {isLoading ? (
-              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600">
-                Loading shows...
-              </div>
-            ) : activeShows.length === 0 && (!showArchived || archivedShows.length === 0) ? (
-              <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                No shows created yet.
-              </div>
-            ) : (
-              <div className="grid gap-6">
-                <section className="flex flex-col gap-4">
+            {activeTab === "active" ? (
+              <section className="pt-6">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-xl font-semibold text-stone-900">Active Shows</h3>
+                  <p className="text-sm text-stone-600">
+                    Jump into any portal, copy links for the team, or make quick show-management
+                    changes from one place.
+                  </p>
+                </div>
+
+                {isLoading ? (
+                  <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600">
+                    Loading shows...
+                  </div>
+                ) : activeShows.length === 0 ? (
+                  <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500">
+                    No active shows yet. Open the Create Show tab to get the next event started.
+                  </div>
+                ) : (
+                  <div className="mt-5 grid gap-5 xl:grid-cols-2 2xl:grid-cols-3">
+                    {activeShows.map((show) => renderShowCard(show, false))}
+                  </div>
+                )}
+              </section>
+            ) : null}
+
+            {activeTab === "create" ? (
+              <section className="pt-6">
+                <div className="mx-auto max-w-2xl rounded-3xl border border-stone-200 bg-stone-50 p-5 sm:p-6">
                   <div className="flex flex-col gap-1">
-                    <h3 className="text-lg font-semibold text-stone-900">Active Shows</h3>
+                    <h3 className="text-xl font-semibold text-stone-900">Create New Show</h3>
                     <p className="text-sm text-stone-600">
-                      Shows visible in the normal dashboard list.
+                      Start a new show record here, then jump straight into the admin portal to
+                      finish setup.
                     </p>
                   </div>
 
-                  {activeShows.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                      No active shows right now.
-                    </div>
-                  ) : (
-                    <div className="grid gap-4">
-                      {activeShows.map((show) => {
-                        const isEditing = editingShowId === show.id;
-                        const isDuplicating = duplicatingShowId === show.id;
+                  <form className="mt-5 grid gap-4" onSubmit={handleSubmit}>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Duplicate Existing Show
+                      <select
+                        value={prefillSourceShowId}
+                        onChange={handlePrefillFromExistingShow}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Start from a blank show</option>
+                        {shows.map((show) => (
+                          <option key={show.id} value={show.id}>
+                            {show.name} ({show.slug})
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-xs font-normal text-stone-500">
+                        Optional: prefill the venue from an existing show to speed up setup.
+                      </span>
+                    </label>
 
-                        return (
-                          <article
-                            key={show.id}
-                            className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-                          >
-                            {isEditing ? (
-                              <form
-                                className="grid gap-4"
-                                onSubmit={(event) => handleSaveShow(event, show.id)}
-                              >
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    Show Name
-                                    <input
-                                      type="text"
-                                      name="name"
-                                      value={editFormState.name}
-                                      onChange={(event) =>
-                                        handleChange(event, {
-                                          mode: "edit",
-                                          preserveManualSlug: true,
-                                        })
-                                      }
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      required
-                                    />
-                                  </label>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Show Name
+                      <input
+                        type="text"
+                        name="name"
+                        value={formState.name}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Cumberland Mountain Music Show"
+                        required
+                      />
+                    </label>
 
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    Show Date
-                                    <input
-                                      type="date"
-                                      name="showDate"
-                                      value={editFormState.showDate}
-                                      onChange={(event) => handleChange(event, { mode: "edit" })}
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    />
-                                  </label>
-                                </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Show Date
+                        <input
+                          type="date"
+                          name="showDate"
+                          value={formState.showDate}
+                          onChange={handleChange}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        />
+                      </label>
 
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    Venue
-                                    <input
-                                      type="text"
-                                      name="venue"
-                                      value={editFormState.venue}
-                                      onChange={(event) => handleChange(event, { mode: "edit" })}
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    />
-                                  </label>
-
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    Slug
-                                    <input
-                                      type="text"
-                                      name="slug"
-                                      value={editFormState.slug}
-                                      onChange={(event) => handleChange(event, { mode: "edit" })}
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      required
-                                    />
-                                  </label>
-                                </div>
-
-                                <div className="flex flex-col gap-3 sm:flex-row">
-                                  <button
-                                    type="submit"
-                                    disabled={activeShowActionId === show.id}
-                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                                  >
-                                    Save Changes
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={cancelEditingShow}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </form>
-                            ) : isDuplicating ? (
-                              <form
-                                className="grid gap-4"
-                                onSubmit={(event) => handleDuplicateShow(event, show)}
-                              >
-                                <div className="flex flex-col gap-1">
-                                  <h4 className="text-lg font-semibold text-stone-900">
-                                    Duplicate {show.name}
-                                  </h4>
-                                  <p className="text-sm text-stone-600">
-                                    This copies the show setup and official setlist. Leave the name
-                                    blank to reuse the current show name.
-                                  </p>
-                                </div>
-
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    New Show Name
-                                    <input
-                                      type="text"
-                                      name="name"
-                                      value={duplicateFormState.name}
-                                      onChange={(event) =>
-                                        handleChange(event, {
-                                          mode: "duplicate",
-                                          preserveManualSlug: true,
-                                        })
-                                      }
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      placeholder={show.name}
-                                    />
-                                  </label>
-
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    New Show Date
-                                    <input
-                                      type="date"
-                                      name="showDate"
-                                      value={duplicateFormState.showDate}
-                                      onChange={(event) =>
-                                        handleChange(event, { mode: "duplicate" })
-                                      }
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      required
-                                    />
-                                  </label>
-                                </div>
-
-                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                  New Slug
-                                  <input
-                                    type="text"
-                                    name="slug"
-                                    value={duplicateFormState.slug}
-                                    onChange={(event) =>
-                                      handleChange(event, { mode: "duplicate" })
-                                    }
-                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    placeholder={`${show.slug}-copy`}
-                                    required
-                                  />
-                                </label>
-
-                                <div className="flex flex-col gap-3 sm:flex-row">
-                                  <button
-                                    type="submit"
-                                    disabled={activeShowActionId === show.id}
-                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                                  >
-                                    Create Duplicate
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={cancelDuplicatingShow}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </form>
-                            ) : (
-                              <>
-                                <div className="flex flex-col gap-2">
-                                  <h4 className="text-lg font-semibold text-stone-900">
-                                    {show.name}
-                                  </h4>
-                                  <div className="grid gap-1 text-sm text-stone-600">
-                                    <p>Date: {formatShowDate(show.show_date)}</p>
-                                    {show.venue ? <p>Venue: {show.venue}</p> : null}
-                                    <p>Slug: {show.slug}</p>
-                                  </div>
-                                </div>
-
-                                <div className="mt-4 flex flex-wrap gap-3">
-                                  <Link
-                                    href={`/guest/${show.slug}`}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Guest Portal
-                                  </Link>
-                                  <Link
-                                    href={`/band/${show.slug}`}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Band Portal
-                                  </Link>
-                                  <Link
-                                    href={`/mc/${show.slug}`}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    MC Portal
-                                  </Link>
-                                  <Link
-                                    href={`/admin/${show.slug}`}
-                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                                  >
-                                    Admin Portal
-                                  </Link>
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap gap-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyLink(show.slug, "guest")}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    {copiedLinkKey === `guest-${show.slug}`
-                                      ? "Copied!"
-                                      : "Copy Guest Link"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyLink(show.slug, "band")}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    {copiedLinkKey === `band-${show.slug}`
-                                      ? "Copied!"
-                                      : "Copy Band Link"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyLink(show.slug, "admin")}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    {copiedLinkKey === `admin-${show.slug}`
-                                      ? "Copied!"
-                                      : "Copy Admin Link"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyLink(show.slug, "mc")}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    {copiedLinkKey === `mc-${show.slug}`
-                                      ? "Copied!"
-                                      : "Copy MC Link"}
-                                  </button>
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap gap-3 border-t border-stone-200 pt-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => startEditingShow(show)}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Edit Show
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => startDuplicatingShow(show)}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Duplicate Show
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSetArchived(show.id, true)}
-                                    disabled={activeShowActionId === show.id}
-                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                                  >
-                                    Archive Show
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-
-                {showArchived ? (
-                  <section className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-1">
-                      <h3 className="text-lg font-semibold text-stone-900">Archived Shows</h3>
-                      <p className="text-sm text-stone-600">
-                        Hidden from the normal list but still restorable and accessible by link.
-                      </p>
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Venue
+                        <input
+                          type="text"
+                          name="venue"
+                          value={formState.venue}
+                          onChange={handleChange}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Optional venue"
+                        />
+                      </label>
                     </div>
 
-                    {archivedShows.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                        No archived shows yet.
-                      </div>
-                    ) : (
-                      <div className="grid gap-4">
-                        {archivedShows.map((show) => {
-                          const isEditing = editingShowId === show.id;
-                          const isDuplicating = duplicatingShowId === show.id;
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Slug
+                      <input
+                        type="text"
+                        name="slug"
+                        value={formState.slug}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="cmms-april-27"
+                        required
+                      />
+                    </label>
 
-                          return (
-                            <article
-                              key={show.id}
-                              className="rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5"
-                            >
-                              {isEditing ? (
-                                <form
-                                  className="grid gap-4"
-                                  onSubmit={(event) => handleSaveShow(event, show.id)}
-                                >
-                                  <div className="grid gap-4 sm:grid-cols-2">
-                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                      Show Name
-                                      <input
-                                        type="text"
-                                        name="name"
-                                        value={editFormState.name}
-                                        onChange={(event) =>
-                                          handleChange(event, {
-                                            mode: "edit",
-                                            preserveManualSlug: true,
-                                          })
-                                        }
-                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                        required
-                                      />
-                                    </label>
+                    <div className="flex flex-wrap items-center gap-3 pt-2">
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                      >
+                        {isSubmitting ? "Creating Show..." : "Create Show"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrefillSourceShowId("");
+                          setFormState(initialFormState);
+                        }}
+                        className="rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Clear Form
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </section>
+            ) : null}
 
-                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                      Show Date
-                                      <input
-                                        type="date"
-                                        name="showDate"
-                                        value={editFormState.showDate}
-                                        onChange={(event) => handleChange(event, { mode: "edit" })}
-                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      />
-                                    </label>
-                                  </div>
+            {activeTab === "archived" ? (
+              <section className="pt-6">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-xl font-semibold text-stone-900">Archived Shows</h3>
+                  <p className="text-sm text-stone-600">
+                    Hide old or mistaken shows from the main control center while keeping them
+                    fully restorable.
+                  </p>
+                </div>
 
-                                  <div className="grid gap-4 sm:grid-cols-2">
-                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                      Venue
-                                      <input
-                                        type="text"
-                                        name="venue"
-                                        value={editFormState.venue}
-                                        onChange={(event) => handleChange(event, { mode: "edit" })}
-                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      />
-                                    </label>
-
-                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                      Slug
-                                      <input
-                                        type="text"
-                                        name="slug"
-                                        value={editFormState.slug}
-                                        onChange={(event) => handleChange(event, { mode: "edit" })}
-                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                        required
-                                      />
-                                    </label>
-                                  </div>
-
-                                  <div className="flex flex-col gap-3 sm:flex-row">
-                                    <button
-                                      type="submit"
-                                      disabled={activeShowActionId === show.id}
-                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                                    >
-                                      Save Changes
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={cancelEditingShow}
-                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </form>
-                              ) : isDuplicating ? (
-                                <form
-                                  className="grid gap-4"
-                                  onSubmit={(event) => handleDuplicateShow(event, show)}
-                                >
-                                  <div className="flex flex-col gap-1">
-                                    <h4 className="text-lg font-semibold text-stone-900">
-                                      Duplicate {show.name}
-                                    </h4>
-                                    <p className="text-sm text-stone-600">
-                                      This creates a new active show with the same itinerary and
-                                      official setlist.
-                                    </p>
-                                  </div>
-
-                                  <div className="grid gap-4 sm:grid-cols-2">
-                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                      New Show Name
-                                      <input
-                                        type="text"
-                                        name="name"
-                                        value={duplicateFormState.name}
-                                        onChange={(event) =>
-                                          handleChange(event, {
-                                            mode: "duplicate",
-                                            preserveManualSlug: true,
-                                          })
-                                        }
-                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                        placeholder={show.name}
-                                      />
-                                    </label>
-
-                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                      New Show Date
-                                      <input
-                                        type="date"
-                                        name="showDate"
-                                        value={duplicateFormState.showDate}
-                                        onChange={(event) =>
-                                          handleChange(event, { mode: "duplicate" })
-                                        }
-                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                        required
-                                      />
-                                    </label>
-                                  </div>
-
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    New Slug
-                                    <input
-                                      type="text"
-                                      name="slug"
-                                      value={duplicateFormState.slug}
-                                      onChange={(event) =>
-                                        handleChange(event, { mode: "duplicate" })
-                                      }
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      placeholder={`${show.slug}-copy`}
-                                      required
-                                    />
-                                  </label>
-
-                                  <div className="flex flex-col gap-3 sm:flex-row">
-                                    <button
-                                      type="submit"
-                                      disabled={activeShowActionId === show.id}
-                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                                    >
-                                      Create Duplicate
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={cancelDuplicatingShow}
-                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </form>
-                              ) : (
-                                <>
-                                  <div className="flex flex-col gap-2">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <h4 className="text-lg font-semibold text-stone-900">
-                                        {show.name}
-                                      </h4>
-                                      <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
-                                        Archived
-                                      </span>
-                                    </div>
-                                    <div className="grid gap-1 text-sm text-stone-600">
-                                      <p>Date: {formatShowDate(show.show_date)}</p>
-                                      {show.venue ? <p>Venue: {show.venue}</p> : null}
-                                      <p>Slug: {show.slug}</p>
-                                    </div>
-                                  </div>
-
-                                  <div className="mt-4 flex flex-wrap gap-3">
-                                    <Link
-                                      href={`/guest/${show.slug}`}
-                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                    >
-                                      Guest Portal
-                                    </Link>
-                                    <Link
-                                      href={`/band/${show.slug}`}
-                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                    >
-                                      Band Portal
-                                    </Link>
-                                    <Link
-                                      href={`/mc/${show.slug}`}
-                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                    >
-                                      MC Portal
-                                    </Link>
-                                    <Link
-                                      href={`/admin/${show.slug}`}
-                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                                    >
-                                      Admin Portal
-                                    </Link>
-                                  </div>
-
-                                  <div className="mt-3 flex flex-wrap gap-3 border-t border-amber-300 pt-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => startEditingShow(show)}
-                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                    >
-                                      Edit Show
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => startDuplicatingShow(show)}
-                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                    >
-                                      Duplicate Show
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSetArchived(show.id, false)}
-                                      disabled={activeShowActionId === show.id}
-                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                                    >
-                                      Restore Show
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </article>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </section>
-                ) : null}
-              </div>
-            )}
+                {isLoading ? (
+                  <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600">
+                    Loading archived shows...
+                  </div>
+                ) : archivedShows.length === 0 ? (
+                  <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500">
+                    No archived shows yet.
+                  </div>
+                ) : (
+                  <div className="mt-5 grid gap-5 xl:grid-cols-2 2xl:grid-cols-3">
+                    {archivedShows.map((show) => renderShowCard(show, true))}
+                  </div>
+                )}
+              </section>
+            ) : null}
           </section>
-        </section>
         </section>
       </main>
     </AdminGate>
