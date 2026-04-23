@@ -1386,6 +1386,28 @@ export function ShowPage({
     const matchesSongType = !librarySongTypeFilter || song.song_type === librarySongTypeFilter;
     return matchesTempo && matchesSongType;
   });
+  const librarySongSetlistUsageCounts = useMemo(
+    () =>
+      setlist.reduce<Record<string, number>>((usageCounts, song) => {
+        if (song.source_type === "library" && song.song_id) {
+          usageCounts[song.song_id] = (usageCounts[song.song_id] ?? 0) + 1;
+        }
+
+        return usageCounts;
+      }, {}),
+    [setlist],
+  );
+  const guestSongSetlistUsageCounts = useMemo(
+    () =>
+      setlist.reduce<Record<string, number>>((usageCounts, song) => {
+        if (song.source_type === "guest" && song.guest_song_id) {
+          usageCounts[song.guest_song_id] = (usageCounts[song.guest_song_id] ?? 0) + 1;
+        }
+
+        return usageCounts;
+      }, {}),
+    [setlist],
+  );
 
   function canEditPoolSong() {
     if (viewMode === "admin") {
@@ -3648,6 +3670,140 @@ export function ShowPage({
       );
     } catch (error) {
       setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSetlistActionId(null);
+    }
+  }
+
+  async function handleRemoveLibrarySongFromAnySetlist(song: SongLibrarySong) {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    const setlistEntryIdsToRemove = setlist
+      .filter((setlistSong) => setlistSong.source_type === "library" && setlistSong.song_id === song.id)
+      .map((setlistSong) => setlistSong.id);
+    const usageCount = setlistEntryIdsToRemove.length;
+
+    if (usageCount === 0) {
+      setActionError(`"${song.title}" is not currently in this show's setlist.`);
+      return;
+    }
+
+    const shouldRemove = window.confirm(
+      `Remove "${song.title}" from ${usageCount} setlist entr${usageCount === 1 ? "y" : "ies"} in this show? The song will stay in the library.`,
+    );
+
+    if (!shouldRemove) {
+      return;
+    }
+
+    setActionError(null);
+    setActiveSetlistActionId(song.id);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("setlist_entries")
+        .delete()
+        .eq("show_id", show.id)
+        .eq("source_type", "library")
+        .eq("song_id", song.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setSetlist((currentSetlist) =>
+        currentSetlist.filter(
+          (setlistSong) =>
+            !(setlistSong.source_type === "library" && setlistSong.song_id === song.id),
+        ),
+      );
+      setEditingSetlistSongId((currentSongId) =>
+        currentSongId && setlistEntryIdsToRemove.includes(currentSongId) ? null : currentSongId,
+      );
+      setMcBlockNotes((currentNotes) =>
+        currentNotes.filter((note) => !setlistEntryIdsToRemove.includes(note.anchor_song_id)),
+      );
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((sponsor) =>
+          sponsor.mc_anchor_song_id && setlistEntryIdsToRemove.includes(sponsor.mc_anchor_song_id)
+            ? { ...sponsor, mc_anchor_song_id: null }
+            : sponsor,
+        ),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+      await loadShowData(false);
+    } finally {
+      setActiveSetlistActionId(null);
+    }
+  }
+
+  async function handleRemoveGuestSongFromAnySetlist(song: PendingSubmission) {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    const setlistEntryIdsToRemove = setlist
+      .filter((setlistSong) => setlistSong.source_type === "guest" && setlistSong.guest_song_id === song.id)
+      .map((setlistSong) => setlistSong.id);
+    const usageCount = setlistEntryIdsToRemove.length;
+
+    if (usageCount === 0) {
+      setActionError(`"${song.title}" is not currently in this show's setlist.`);
+      return;
+    }
+
+    const shouldRemove = window.confirm(
+      `Remove "${song.title}" from ${usageCount} setlist entr${usageCount === 1 ? "y" : "ies"} in this show? The guest song will stay in the guest songs list.`,
+    );
+
+    if (!shouldRemove) {
+      return;
+    }
+
+    setActionError(null);
+    setActiveSetlistActionId(song.id);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("setlist_entries")
+        .delete()
+        .eq("show_id", show.id)
+        .eq("source_type", "guest")
+        .eq("guest_song_id", song.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setSetlist((currentSetlist) =>
+        currentSetlist.filter(
+          (setlistSong) =>
+            !(setlistSong.source_type === "guest" && setlistSong.guest_song_id === song.id),
+        ),
+      );
+      setEditingSetlistSongId((currentSongId) =>
+        currentSongId && setlistEntryIdsToRemove.includes(currentSongId) ? null : currentSongId,
+      );
+      setMcBlockNotes((currentNotes) =>
+        currentNotes.filter((note) => !setlistEntryIdsToRemove.includes(note.anchor_song_id)),
+      );
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((sponsor) =>
+          sponsor.mc_anchor_song_id && setlistEntryIdsToRemove.includes(sponsor.mc_anchor_song_id)
+            ? { ...sponsor, mc_anchor_song_id: null }
+            : sponsor,
+        ),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+      await loadShowData(false);
     } finally {
       setActiveSetlistActionId(null);
     }
@@ -7043,190 +7199,214 @@ export function ShowPage({
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                {visibleGuestSongs.map((song) => (
-                <article
-                  key={song.id}
-                  className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
-                >
-                  {editingPoolSongId === song.id ? (
-                    <div className="grid gap-4">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Song Title
-                          <input
-                            type="text"
-                            name="title"
-                            value={poolSongEditFormState.title}
-                            onChange={handlePoolSongEditChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            required
-                          />
-                        </label>
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Guest
-                          <input
-                            type="text"
-                            value={song.submitted_by_name ?? ""}
-                            readOnly
-                            className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
-                            placeholder="Guest name"
-                          />
-                        </label>
-                      </div>
+                {visibleGuestSongs.map((song) => {
+                  const setlistUsageCount = guestSongSetlistUsageCounts[song.id] ?? 0;
+                  const isUsedInSetlist = setlistUsageCount > 0;
 
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Key
-                        <input
-                          type="text"
-                          name="key"
-                          value={poolSongEditFormState.key}
-                          onChange={handlePoolSongEditChange}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional key"
-                        />
-                      </label>
+                  return (
+                    <article
+                      key={song.id}
+                      className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
+                    >
+                      {editingPoolSongId === song.id ? (
+                        <div className="grid gap-4">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Song Title
+                              <input
+                                type="text"
+                                name="title"
+                                value={poolSongEditFormState.title}
+                                onChange={handlePoolSongEditChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                required
+                              />
+                            </label>
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Guest
+                              <input
+                                type="text"
+                                value={song.submitted_by_name ?? ""}
+                                readOnly
+                                className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
+                                placeholder="Guest name"
+                              />
+                            </label>
+                          </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Tempo
-                          <select
-                            name="tempo"
-                            value={poolSongEditFormState.tempo}
-                            onChange={handlePoolSongEditChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="fast">Fast</option>
-                            <option value="medium">Medium</option>
-                            <option value="slow">Slow</option>
-                          </select>
-                        </label>
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Key
+                            <input
+                              type="text"
+                              name="key"
+                              value={poolSongEditFormState.key}
+                              onChange={handlePoolSongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Optional key"
+                            />
+                          </label>
 
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Song Type
-                          <select
-                            name="songType"
-                            value={poolSongEditFormState.songType}
-                            onChange={handlePoolSongEditChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="vocal">Vocal</option>
-                            <option value="instrumental">Instrumental</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="flex flex-col gap-3 sm:flex-row">
-                        <button
-                          type="button"
-                          onClick={() => handleSavePoolSong(song.id)}
-                          disabled={activePendingActionId === song.id}
-                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                        >
-                          Save Song
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCancelPoolSongEdit}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex flex-col gap-1">
-                        <h3 className="text-base font-semibold text-stone-900">
-                          {song.title}
-                        </h3>
-                        <p className="text-sm text-stone-700">
-                          {getDisplaySingerName(song.artist)}
-                        </p>
-                      </div>
-
-                      <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
-                        {song.song_key ? <p>Key: {song.song_key}</p> : null}
-                        {song.notes ? (
-                          <p className="whitespace-pre-wrap">
-                            Notes: {renderTextWithLinks(song.notes)}
-                          </p>
-                        ) : null}
-                      </div>
-
-                      {song.lyrics ? (
-                        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                          Lyrics included
-                        </p>
-                      ) : null}
-
-                      {canEditPoolSong() || viewMode === "admin" ? (
-                        <div className="mt-4 flex flex-col gap-3">
-                          {canEditPoolSong() ? (
-                            <div className="flex flex-col gap-3 sm:flex-row">
-                              <button
-                                type="button"
-                                onClick={() => handleStartEditingPoolSong(song.id)}
-                                disabled={activePendingActionId === song.id}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Tempo
+                              <select
+                                name="tempo"
+                                value={poolSongEditFormState.tempo}
+                                onChange={handlePoolSongEditChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                               >
-                                Edit Song
-                              </button>
-                            </div>
-                          ) : null}
+                                <option value="">Not set</option>
+                                <option value="fast">Fast</option>
+                                <option value="medium">Medium</option>
+                                <option value="slow">Slow</option>
+                              </select>
+                            </label>
 
-                          {viewMode === "admin" ? (
-                            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => handleAddPoolSongToSection(song, "set1")}
-                                disabled={activePendingActionId === song.id}
-                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Song Type
+                              <select
+                                name="songType"
+                                value={poolSongEditFormState.songType}
+                                onChange={handlePoolSongEditChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                               >
-                                Add to Set 1
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleAddPoolSongToSection(song, "set2")}
-                                disabled={activePendingActionId === song.id}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Add to Set 2
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleAddPoolSongToSection(song, "encore")}
-                                disabled={activePendingActionId === song.id}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Add to Encore
-                              </button>
-                            </div>
-                          ) : null}
+                                <option value="">Not set</option>
+                                <option value="vocal">Vocal</option>
+                                <option value="instrumental">Instrumental</option>
+                              </select>
+                            </label>
+                          </div>
 
-                          {viewMode === "admin" ? (
-                            <div className="flex flex-col gap-3 sm:flex-row">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  normalizeSubmittedByRole(song.submitted_by_role) === "guest"
-                                    ? handleDeleteGuestSong(song.id)
-                                    : handleDeleteFromSongPool(song.id)
-                                }
-                                disabled={activePendingActionId === song.id}
-                                className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                              >
-                                Delete Song
-                              </button>
-                            </div>
-                          ) : null}
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <button
+                              type="button"
+                              onClick={() => handleSavePoolSong(song.id)}
+                              disabled={activePendingActionId === song.id}
+                              className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                            >
+                              Save Song
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelPoolSongEdit}
+                              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                      ) : null}
-                    </>
-                  )}
-                </article>
-                ))}
+                      ) : (
+                        <>
+                          <div className="flex flex-col gap-1">
+                            <h3 className="text-base font-semibold text-stone-900">
+                              {song.title}
+                            </h3>
+                            <p className="text-sm text-stone-700">
+                              {getDisplaySingerName(song.artist)}
+                            </p>
+                          </div>
+
+                          <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
+                            {song.song_key ? <p>Key: {song.song_key}</p> : null}
+                            {isUsedInSetlist ? (
+                              <p className="font-medium text-emerald-700">
+                                Used in {setlistUsageCount} setlist entr{setlistUsageCount === 1 ? "y" : "ies"}
+                              </p>
+                            ) : (
+                              <p>Not currently in this show&apos;s setlist.</p>
+                            )}
+                            {song.notes ? (
+                              <p className="whitespace-pre-wrap">
+                                Notes: {renderTextWithLinks(song.notes)}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          {song.lyrics ? (
+                            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                              Lyrics included
+                            </p>
+                          ) : null}
+
+                          {canEditPoolSong() || viewMode === "admin" ? (
+                            <div className="mt-4 flex flex-col gap-3">
+                              {canEditPoolSong() ? (
+                                <div className="flex flex-col gap-3 sm:flex-row">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditingPoolSong(song.id)}
+                                    disabled={activePendingActionId === song.id}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Edit Song
+                                  </button>
+                                  {viewMode === "admin" && isUsedInSetlist ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveGuestSongFromAnySetlist(song)}
+                                      disabled={activeSetlistActionId === song.id}
+                                      className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                    >
+                                      {activeSetlistActionId === song.id
+                                        ? "Removing from Setlist..."
+                                        : "Remove from Any Setlist"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+
+                              {viewMode === "admin" ? (
+                                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddPoolSongToSection(song, "set1")}
+                                    disabled={activePendingActionId === song.id}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    Add to Set 1
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddPoolSongToSection(song, "set2")}
+                                    disabled={activePendingActionId === song.id}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Add to Set 2
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddPoolSongToSection(song, "encore")}
+                                    disabled={activePendingActionId === song.id}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Add to Encore
+                                  </button>
+                                </div>
+                              ) : null}
+
+                              {viewMode === "admin" ? (
+                                <div className="flex flex-col gap-3 sm:flex-row">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      normalizeSubmittedByRole(song.submitted_by_role) === "guest"
+                                        ? handleDeleteGuestSong(song.id)
+                                        : handleDeleteFromSongPool(song.id)
+                                    }
+                                    disabled={activePendingActionId === song.id}
+                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                  >
+                                    Delete Song
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -7279,7 +7459,11 @@ export function ShowPage({
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                {filteredSongLibrary.map((song) => (
+                {filteredSongLibrary.map((song) => {
+                  const setlistUsageCount = librarySongSetlistUsageCounts[song.id] ?? 0;
+                  const isUsedInSetlist = setlistUsageCount > 0;
+
+                  return (
                   <article
                     key={song.id}
                     className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
@@ -7404,6 +7588,13 @@ export function ShowPage({
                           {song.song_key ? <p>Key: {song.song_key}</p> : null}
                           {song.tempo ? <p>Tempo: {song.tempo}</p> : null}
                           {song.song_type ? <p>Type: {song.song_type}</p> : null}
+                          {isUsedInSetlist ? (
+                            <p className="font-medium text-emerald-700">
+                              Used in {setlistUsageCount} setlist entr{setlistUsageCount === 1 ? "y" : "ies"}
+                            </p>
+                          ) : (
+                            <p>Not currently in this show&apos;s setlist.</p>
+                          )}
                           {song.notes?.trim() ? (
                             <p className="whitespace-pre-wrap">
                               Notes: {renderTextWithLinks(song.notes)}
@@ -7437,6 +7628,18 @@ export function ShowPage({
                                 >
                                   Print Lyrics
                                 </button>
+                                {viewMode === "admin" && isUsedInSetlist ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveLibrarySongFromAnySetlist(song)}
+                                    disabled={activeSetlistActionId === song.id}
+                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                  >
+                                    {activeSetlistActionId === song.id
+                                      ? "Removing from Setlist..."
+                                      : "Remove from Any Setlist"}
+                                  </button>
+                                ) : null}
                               </div>
                             ) : null}
 
@@ -7493,7 +7696,8 @@ export function ShowPage({
                       </>
                     )}
                   </article>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
