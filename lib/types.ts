@@ -4,6 +4,14 @@ export type SetSection = "set1" | "set2" | "encore";
 export type SongTempo = "fast" | "medium" | "slow";
 export type SongType = "vocal" | "instrumental";
 export type SongSourceType = "library" | "guest";
+export type PromoMaterialCategory =
+  | "flyer"
+  | "social_graphic"
+  | "poster"
+  | "sponsor_graphic"
+  | "logo"
+  | "promo_photo"
+  | "other";
 
 export type ShowRecord = {
   id: string;
@@ -111,6 +119,29 @@ export type ShowSponsor = {
   custom_note: string | null;
   created_at: string;
   sponsor?: SponsorLibraryEntry | null;
+};
+
+export type PromoMaterial = {
+  id: string;
+  show_id: string;
+  title: string;
+  description: string | null;
+  category: PromoMaterialCategory | string | null;
+  file_name: string;
+  file_path: string;
+  file_url: string;
+  file_mime_type: string | null;
+  file_size: number | null;
+  is_visible: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PromoMaterialFormState = {
+  title: string;
+  description: string;
+  category: "" | PromoMaterialCategory;
+  isVisible: boolean;
 };
 
 export type SponsorLibraryFormState = {

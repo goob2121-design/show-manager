@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { Fragment } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,12 +16,21 @@ import {
   ScriptCard,
   SponsorReadCard,
 } from "@/app/components/mc-page";
+import {
+  formatPromoFileSize,
+  formatPromoMaterialCategory,
+  formatPromoUploadDate,
+  PromoMaterialsView,
+} from "@/app/components/promo-materials-view";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "@/app/components/theme-toggle";
 import type {
   GuestProfile,
   GuestProfileFormState,
   McBlockNote,
+  PromoMaterial,
+  PromoMaterialCategory,
+  PromoMaterialFormState,
   SetSection,
   SetlistEntry,
   ShowGuestSong,
@@ -65,9 +73,9 @@ type SetlistSong = SetlistEntry & {
 };
 
 type PrintMode = "stage" | "band" | "standard";
-type AdminTab = "setlist" | "songs" | "guests" | "sponsors" | "mc-builder" | "show-details";
-type BandTab = "setlist" | "songs" | "itinerary";
-type GuestTab = "songs" | "artist-info" | "itinerary";
+type AdminTab = "setlist" | "songs" | "guests" | "promo-materials" | "sponsors" | "mc-builder" | "show-details";
+type BandTab = "setlist" | "songs" | "itinerary" | "promo-materials";
+type GuestTab = "songs" | "artist-info" | "itinerary" | "promo-materials";
 type SponsorAdminTab = "library" | "show";
 type SetlistSectionConfig = {
   key: SetSection;
@@ -79,6 +87,7 @@ const adminTabItems: Array<{ key: AdminTab; label: string }> = [
   { key: "setlist", label: "Setlist" },
   { key: "songs", label: "Songs" },
   { key: "guests", label: "Guests" },
+  { key: "promo-materials", label: "Promo Materials" },
   { key: "sponsors", label: "Sponsors" },
   { key: "mc-builder", label: "MC Builder" },
   { key: "show-details", label: "Show Details" },
@@ -92,12 +101,14 @@ const bandTabItems: Array<{ key: BandTab; label: string }> = [
   { key: "setlist", label: "Setlist" },
   { key: "songs", label: "Songs" },
   { key: "itinerary", label: "Itinerary" },
+  { key: "promo-materials", label: "Promo Materials" },
 ];
 
 const guestTabItems: Array<{ key: GuestTab; label: string }> = [
   { key: "songs", label: "Songs" },
   { key: "artist-info", label: "Artist Info" },
   { key: "itinerary", label: "Itinerary" },
+  { key: "promo-materials", label: "Promo Materials" },
 ];
 
 const sponsorAdminTabItems: Array<{
@@ -161,6 +172,26 @@ const initialShowDetailsFormState: ShowDetailsFormState = {
   announcements: "",
   guestMessage: "",
 };
+
+const initialPromoMaterialFormState: PromoMaterialFormState = {
+  title: "",
+  description: "",
+  category: "other",
+  isVisible: true,
+};
+
+const promoMaterialCategoryOptions: Array<{
+  value: PromoMaterialCategory;
+  label: string;
+}> = [
+  { value: "flyer", label: "Flyer" },
+  { value: "social_graphic", label: "Social Graphic" },
+  { value: "poster", label: "Poster" },
+  { value: "sponsor_graphic", label: "Sponsor Graphic" },
+  { value: "logo", label: "Logo" },
+  { value: "promo_photo", label: "Promo Photo" },
+  { value: "other", label: "Other" },
+];
 
 const defaultSingerName = "CMMS Band";
 const urlPattern = /(https?:\/\/[^\s]+)/g;
@@ -291,6 +322,12 @@ function getErrorMessage(error: unknown) {
   return "Something went wrong while talking to Supabase.";
 }
 
+function logDataSectionError(sectionName: string, error: unknown) {
+  if (process.env.NODE_ENV !== "production") {
+    console.error(`Failed to load ${sectionName}.`, error);
+  }
+}
+
 function sortSetlistSongs(songs: SetlistSong[]) {
   return [...songs].sort((songA, songB) => {
     const sectionDifference =
@@ -352,6 +389,18 @@ type SetlistEntryQueryRow = {
   library_song?: SongLibrarySong | SongLibrarySong[] | null;
   guest_song?: PendingSubmission | PendingSubmission[] | null;
 };
+
+type DataSectionKey =
+  | "setlist"
+  | "guestSongs"
+  | "songLibrary"
+  | "sponsorLibrary"
+  | "showSponsors"
+  | "promoMaterials"
+  | "guestProfiles"
+  | "mcBlockNotes";
+
+type DataSectionErrors = Partial<Record<DataSectionKey, string>>;
 
 function buildGuestProfileFormStateFromProfile(profile: GuestProfile): GuestProfileFormState {
   return {
@@ -489,6 +538,30 @@ function isGuestSongForProfile(song: PendingSubmission, profileName: string | nu
 function normalizeOptionalField(value: string) {
   const trimmedValue = value.trim();
   return trimmedValue ? trimmedValue : null;
+}
+
+function normalizePromoMaterialCategory(value: string | null | undefined): PromoMaterialCategory {
+  return promoMaterialCategoryOptions.some((option) => option.value === value)
+    ? (value as PromoMaterialCategory)
+    : "other";
+}
+
+function buildPromoMaterialFormState(material: PromoMaterial): PromoMaterialFormState {
+  return {
+    title: material.title,
+    description: material.description ?? "",
+    category: normalizePromoMaterialCategory(material.category),
+    isVisible: material.is_visible,
+  };
+}
+
+function sanitizeFileName(value: string) {
+  const sanitized = value
+    .trim()
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return sanitized || "promo-material";
 }
 
 function escapeHtml(value: string) {
@@ -726,6 +799,44 @@ async function uploadSponsorLogoFile(
     .getPublicUrl(filePath);
 
   return publicUrlData.publicUrl;
+}
+
+async function uploadPromoMaterialFile({
+  file,
+  showId,
+  title,
+}: {
+  file: File;
+  showId: string;
+  title: string;
+}) {
+  const supabase = createClient();
+  const originalName = sanitizeFileName(file.name);
+  const titleSlug = sanitizeFileName(title || "promo-material");
+  const filePath = `${showId}/${Date.now()}-${titleSlug}-${originalName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("promo-materials")
+    .upload(filePath, file, {
+      upsert: true,
+      contentType: file.type || undefined,
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from("promo-materials")
+    .getPublicUrl(filePath);
+
+  return {
+    file_name: originalName,
+    file_path: filePath,
+    file_url: publicUrlData.publicUrl,
+    file_mime_type: file.type || null,
+    file_size: file.size,
+  };
 }
 
 function getSponsorInitials(name: string) {
@@ -1085,9 +1196,22 @@ function ShowInfoCard({
   );
 }
 
+function SectionLoadWarning({ message }: { message: string | undefined }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      This section could not load right now. Other show details are still available.
+    </div>
+  );
+}
+
 type ShowPageProps = {
   showSlug?: string;
   initialRole?: ViewMode;
+  initialAdminTab?: string | null;
   showRoleToggle?: boolean;
 };
 
@@ -1106,10 +1230,10 @@ function getPortalLabel(role: ViewMode) {
 export function ShowPage({
   showSlug = "cmms-april-27",
   initialRole = "guest",
+  initialAdminTab = null,
   showRoleToggle = true,
 }: ShowPageProps) {
-  const searchParams = useSearchParams();
-  const requestedAdminTab = normalizeAdminTab(searchParams.get("tab"));
+  const requestedAdminTab = normalizeAdminTab(initialAdminTab);
   const [viewMode, setViewMode] = useState<ViewMode>(initialRole);
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(
     requestedAdminTab ?? "setlist",
@@ -1138,6 +1262,15 @@ export function ShowPage({
   const [librarySongTypeFilter, setLibrarySongTypeFilter] = useState<"" | SongType>("");
   const [sponsorLibrary, setSponsorLibrary] = useState<SponsorLibraryEntry[]>([]);
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
+  const [promoMaterials, setPromoMaterials] = useState<PromoMaterial[]>([]);
+  const [promoMaterialFormState, setPromoMaterialFormState] = useState<PromoMaterialFormState>(
+    initialPromoMaterialFormState,
+  );
+  const [promoMaterialFile, setPromoMaterialFile] = useState<File | null>(null);
+  const [editingPromoMaterialId, setEditingPromoMaterialId] = useState<string | null>(null);
+  const [promoMaterialEditFormState, setPromoMaterialEditFormState] =
+    useState<PromoMaterialFormState>(initialPromoMaterialFormState);
+  const [editingPromoMaterialFile, setEditingPromoMaterialFile] = useState<File | null>(null);
   const [editingPoolSongId, setEditingPoolSongId] = useState<string | null>(null);
   const [editingSetlistSongId, setEditingSetlistSongId] = useState<string | null>(null);
   const [editingLibrarySongId, setEditingLibrarySongId] = useState<string | null>(null);
@@ -1178,6 +1311,7 @@ export function ShowPage({
     useState<ShowSponsorAssignmentFormState>(initialShowSponsorAssignmentFormState);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [dataSectionErrors, setDataSectionErrors] = useState<DataSectionErrors>({});
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingShowDetails, setIsSavingShowDetails] = useState(false);
@@ -1197,6 +1331,10 @@ export function ShowPage({
   const [activePendingActionId, setActivePendingActionId] = useState<string | null>(null);
   const [activeSetlistActionId, setActiveSetlistActionId] = useState<string | null>(null);
   const [activeSponsorActionId, setActiveSponsorActionId] = useState<string | null>(null);
+  const [activePromoMaterialActionId, setActivePromoMaterialActionId] = useState<string | null>(null);
+  const [isSavingPromoMaterial, setIsSavingPromoMaterial] = useState(false);
+  const [promoMaterialMessage, setPromoMaterialMessage] = useState<string | null>(null);
+  const [promoMaterialError, setPromoMaterialError] = useState<string | null>(null);
 
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
@@ -1211,7 +1349,10 @@ export function ShowPage({
   const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
   const shouldShowGuestArtistInfoTab = isGuestView && activeGuestTab === "artist-info";
   const shouldShowGuestItineraryTab = isGuestView && activeGuestTab === "itinerary";
+  const shouldShowGuestPromoMaterialsTab = isGuestView && activeGuestTab === "promo-materials";
+  const shouldShowBandPromoMaterialsTab = isBandView && activeBandTab === "promo-materials";
   const shouldShowSongSubmissionForm = shouldShowAdminSongSubmission;
+  const visiblePromoMaterials = promoMaterials.filter((material) => material.is_visible);
   const shouldShowSetlistSection = viewMode === "guest"
     ? false
     : isAdminView
@@ -1268,6 +1409,7 @@ export function ShowPage({
       }
 
       setErrorMessage(null);
+      setDataSectionErrors({});
 
       try {
         const supabase = createClient();
@@ -1289,6 +1431,7 @@ export function ShowPage({
           setSongLibrary([]);
           setSponsorLibrary([]);
           setShowSponsors([]);
+          setPromoMaterials([]);
           setGuestProfiles([]);
           setMcBlockNotes([]);
           setErrorMessage("Show not found");
@@ -1297,16 +1440,43 @@ export function ShowPage({
 
         setShow(showRecord);
 
+        const sectionErrors: DataSectionErrors = {};
+        const loadSection = async <T,>(
+          sectionKey: DataSectionKey,
+          sectionName: string,
+          query: PromiseLike<{ data: T | null; error: unknown }>,
+          fallback: T,
+        ) => {
+          try {
+            const result = await query;
+
+            if (result.error) {
+              sectionErrors[sectionKey] = getErrorMessage(result.error);
+              logDataSectionError(sectionName, result.error);
+              return fallback;
+            }
+
+            return result.data ?? fallback;
+          } catch (error) {
+            sectionErrors[sectionKey] = getErrorMessage(error);
+            logDataSectionError(sectionName, error);
+            return fallback;
+          }
+        };
+
         const [
-          { data: setlistRows, error: setlistError },
-          { data: pendingRows, error: pendingError },
-          { data: libraryRows, error: libraryError },
-          { data: sponsorLibraryRows, error: sponsorLibraryError },
-          { data: showSponsorRows, error: showSponsorError },
-          { data: guestProfileRows, error: guestProfilesError },
-          { data: mcBlockNoteRows, error: mcBlockNotesError },
-        ] =
-          await Promise.all([
+          setlistRows,
+          pendingRows,
+          libraryRows,
+          sponsorLibraryRows,
+          showSponsorRows,
+          promoMaterialRows,
+          guestProfileRows,
+          mcBlockNoteRows,
+        ] = await Promise.all([
+          loadSection(
+            "setlist",
+            "setlist entries",
             supabase
               .from("setlist_entries")
               .select(`
@@ -1345,64 +1515,78 @@ export function ShowPage({
               .eq("show_id", showRecord.id)
               .order("section", { ascending: true })
               .order("position", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "guestSongs",
+            "guest songs",
             supabase
               .from("show_guest_songs")
               .select("*")
               .eq("show_id", showRecord.id)
               .order("created_at", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "songLibrary",
+            "song library",
             supabase
               .from("songs")
               .select("*")
               .order("title", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "sponsorLibrary",
+            "sponsor library",
             supabase
               .from("sponsor_library")
               .select("*")
               .order("name", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "showSponsors",
+            "show sponsors",
             supabase
               .from("show_sponsors")
               .select("*")
               .eq("show_id", showRecord.id)
               .order("placement_order", { ascending: true })
               .order("created_at", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "promoMaterials",
+            "promo materials",
+            supabase
+              .from("promo_materials")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("created_at", { ascending: false }),
+            [],
+          ),
+          loadSection(
+            "guestProfiles",
+            "guest profiles",
             supabase
               .from("guest_profiles")
               .select("*")
               .eq("show_id", showRecord.id)
               .order("created_at", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "mcBlockNotes",
+            "MC block notes",
             supabase
               .from("mc_block_notes")
               .select("*")
               .eq("show_id", showRecord.id)
               .order("created_at", { ascending: true }),
-          ]);
-
-        if (setlistError) {
-          throw setlistError;
-        }
-
-        if (pendingError) {
-          throw pendingError;
-        }
-
-        if (libraryError) {
-          throw libraryError;
-        }
-
-        if (sponsorLibraryError) {
-          throw sponsorLibraryError;
-        }
-
-        if (showSponsorError) {
-          throw showSponsorError;
-        }
-
-        if (guestProfilesError) {
-          throw guestProfilesError;
-        }
-
-        if (mcBlockNotesError) {
-          throw mcBlockNotesError;
-        }
+            [],
+          ),
+        ]);
 
         setSetlist(
           sortSetlistSongs(
@@ -1426,8 +1610,10 @@ export function ShowPage({
         setShowSponsors(
           mergeShowSponsorsWithLibrary((showSponsorRows ?? []) as ShowSponsor[], normalizedSponsorLibrary),
         );
+        setPromoMaterials((promoMaterialRows ?? []) as PromoMaterial[]);
         setGuestProfiles(guestProfileRows ?? []);
         setMcBlockNotes((mcBlockNoteRows ?? []) as McBlockNote[]);
+        setDataSectionErrors(sectionErrors);
       } catch (error) {
         setErrorMessage(getErrorMessage(error));
       } finally {
@@ -1949,6 +2135,205 @@ export function ShowPage({
       setActionError(getErrorMessage(error));
     } finally {
       setActiveSponsorActionId(null);
+    }
+  }
+
+  function handlePromoMaterialChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    mode: "new" | "edit",
+  ) {
+    const { name, value } = event.target;
+    const checked = event.target instanceof HTMLInputElement ? event.target.checked : false;
+    const setState = mode === "edit" ? setPromoMaterialEditFormState : setPromoMaterialFormState;
+
+    setState((currentState) => ({
+      ...currentState,
+      [name]: name === "isVisible" ? checked : value,
+    }));
+  }
+
+  function handlePromoMaterialFileChange(
+    event: ChangeEvent<HTMLInputElement>,
+    mode: "new" | "edit",
+  ) {
+    const file = event.target.files?.[0] ?? null;
+
+    if (mode === "edit") {
+      setEditingPromoMaterialFile(file);
+      return;
+    }
+
+    setPromoMaterialFile(file);
+  }
+
+  async function handleCreatePromoMaterial(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!show) {
+      setPromoMaterialError("The show is not loaded yet.");
+      return;
+    }
+
+    const title = promoMaterialFormState.title.trim();
+
+    if (!title) {
+      setPromoMaterialError("Promo material title is required.");
+      return;
+    }
+
+    if (!promoMaterialFile) {
+      setPromoMaterialError("Choose a file to upload.");
+      return;
+    }
+
+    setIsSavingPromoMaterial(true);
+    setPromoMaterialError(null);
+    setPromoMaterialMessage(null);
+
+    try {
+      const supabase = createClient();
+      const uploadedFile = await uploadPromoMaterialFile({
+        file: promoMaterialFile,
+        showId: show.id,
+        title,
+      });
+
+      const { data, error } = await supabase
+        .from("promo_materials")
+        .insert({
+          show_id: show.id,
+          title,
+          description: normalizeOptionalField(promoMaterialFormState.description),
+          category: promoMaterialFormState.category || "other",
+          is_visible: promoMaterialFormState.isVisible,
+          ...uploadedFile,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPromoMaterials((currentMaterials) => [data as PromoMaterial, ...currentMaterials]);
+      setPromoMaterialFormState(initialPromoMaterialFormState);
+      setPromoMaterialFile(null);
+      setPromoMaterialMessage("Promo material uploaded.");
+    } catch (error) {
+      setPromoMaterialError(getErrorMessage(error));
+    } finally {
+      setIsSavingPromoMaterial(false);
+    }
+  }
+
+  function startEditingPromoMaterial(material: PromoMaterial) {
+    setEditingPromoMaterialId(material.id);
+    setPromoMaterialEditFormState(buildPromoMaterialFormState(material));
+    setEditingPromoMaterialFile(null);
+    setPromoMaterialError(null);
+    setPromoMaterialMessage(null);
+  }
+
+  function cancelEditingPromoMaterial() {
+    setEditingPromoMaterialId(null);
+    setPromoMaterialEditFormState(initialPromoMaterialFormState);
+    setEditingPromoMaterialFile(null);
+  }
+
+  async function handleSavePromoMaterial(material: PromoMaterial) {
+    const title = promoMaterialEditFormState.title.trim();
+
+    if (!title) {
+      setPromoMaterialError("Promo material title is required.");
+      return;
+    }
+
+    setActivePromoMaterialActionId(material.id);
+    setPromoMaterialError(null);
+    setPromoMaterialMessage(null);
+
+    try {
+      const supabase = createClient();
+      const uploadedFile = editingPromoMaterialFile
+        ? await uploadPromoMaterialFile({
+            file: editingPromoMaterialFile,
+            showId: material.show_id,
+            title,
+          })
+        : null;
+
+      const { data, error } = await supabase
+        .from("promo_materials")
+        .update({
+          title,
+          description: normalizeOptionalField(promoMaterialEditFormState.description),
+          category: promoMaterialEditFormState.category || "other",
+          is_visible: promoMaterialEditFormState.isVisible,
+          updated_at: new Date().toISOString(),
+          ...(uploadedFile ?? {}),
+        })
+        .eq("id", material.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      if (uploadedFile) {
+        await supabase.storage.from("promo-materials").remove([material.file_path]);
+      }
+
+      setPromoMaterials((currentMaterials) =>
+        currentMaterials.map((currentMaterial) =>
+          currentMaterial.id === material.id ? (data as PromoMaterial) : currentMaterial,
+        ),
+      );
+      cancelEditingPromoMaterial();
+      setPromoMaterialMessage("Promo material saved.");
+    } catch (error) {
+      setPromoMaterialError(getErrorMessage(error));
+    } finally {
+      setActivePromoMaterialActionId(null);
+    }
+  }
+
+  async function handleDeletePromoMaterial(material: PromoMaterial) {
+    const shouldDelete = window.confirm(`Delete promo material "${material.title}"?`);
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setActivePromoMaterialActionId(material.id);
+    setPromoMaterialError(null);
+    setPromoMaterialMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("promo_materials")
+        .delete()
+        .eq("id", material.id);
+
+      if (error) {
+        throw error;
+      }
+
+      await supabase.storage.from("promo-materials").remove([material.file_path]);
+      setPromoMaterials((currentMaterials) =>
+        currentMaterials.filter((currentMaterial) => currentMaterial.id !== material.id),
+      );
+
+      if (editingPromoMaterialId === material.id) {
+        cancelEditingPromoMaterial();
+      }
+
+      setPromoMaterialMessage("Promo material deleted.");
+    } catch (error) {
+      setPromoMaterialError(getErrorMessage(error));
+    } finally {
+      setActivePromoMaterialActionId(null);
     }
   }
 
@@ -3530,7 +3915,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-3 xl:grid-cols-6"
+              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-3 xl:grid-cols-7"
               role="tablist"
               aria-label="Admin portal sections"
             >
@@ -3568,7 +3953,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="grid grid-cols-1 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-3"
+              className="grid grid-cols-1 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-4"
               role="tablist"
               aria-label="Band portal sections"
             >
@@ -3623,7 +4008,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2"
+              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-4"
               role="tablist"
               aria-label="Guest portal sections"
             >
@@ -3665,6 +4050,24 @@ export function ShowPage({
             subtitle="Show details, timing, and logistics for the band."
             items={bandShowInfoItems}
           />
+        ) : null}
+
+        {shouldShowGuestPromoMaterialsTab || shouldShowBandPromoMaterialsTab ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Promo Materials</h2>
+              <p className="text-sm text-stone-600">
+                Download flyers, graphics, and promotional items for this show.
+              </p>
+            </div>
+
+            <SectionLoadWarning message={dataSectionErrors.promoMaterials} />
+
+            <PromoMaterialsView
+              materials={visiblePromoMaterials}
+              emptyMessage="No visible promo materials have been added for this show yet."
+            />
+          </section>
         ) : null}
 
         {isAdminView && activeAdminTab === "mc-builder" ? (
@@ -4298,6 +4701,297 @@ export function ShowPage({
           </section>
         ) : null}
 
+        {isAdminView && activeAdminTab === "promo-materials" ? (
+          <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Promo Materials</h2>
+              <p className="text-sm text-stone-600">
+                Upload flyers, graphics, logos, photos, and other downloadable promo assets for this show.
+              </p>
+            </div>
+
+            <SectionLoadWarning message={dataSectionErrors.promoMaterials} />
+
+            {show ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                Shareable promo hub:{" "}
+                <Link
+                  href={`/promo/${show.slug}`}
+                  className="font-semibold underline"
+                  target="_blank"
+                >
+                  /promo/{show.slug}
+                </Link>
+              </div>
+            ) : null}
+
+            {promoMaterialMessage ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {promoMaterialMessage}
+              </div>
+            ) : null}
+
+            {promoMaterialError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {promoMaterialError}
+              </div>
+            ) : null}
+
+            <form
+              className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+              onSubmit={handleCreatePromoMaterial}
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Title
+                  <input
+                    type="text"
+                    name="title"
+                    value={promoMaterialFormState.title}
+                    onChange={(event) => handlePromoMaterialChange(event, "new")}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="April show flyer"
+                    required
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Category
+                  <select
+                    name="category"
+                    value={promoMaterialFormState.category}
+                    onChange={(event) => handlePromoMaterialChange(event, "new")}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  >
+                    {promoMaterialCategoryOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Description
+                <textarea
+                  name="description"
+                  value={promoMaterialFormState.description}
+                  onChange={(event) => handlePromoMaterialChange(event, "new")}
+                  className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  placeholder="Optional details about where or how to use this item"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                File
+                <input
+                  type="file"
+                  onChange={(event) => handlePromoMaterialFileChange(event, "new")}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                  required
+                />
+              </label>
+
+              <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
+                <input
+                  type="checkbox"
+                  name="isVisible"
+                  checked={promoMaterialFormState.isVisible}
+                  onChange={(event) => handlePromoMaterialChange(event, "new")}
+                  className="h-4 w-4 rounded border-stone-300 text-emerald-700"
+                />
+                Visible in guest, band, and promo hub pages
+              </label>
+
+              <div className="flex justify-start">
+                <button
+                  type="submit"
+                  disabled={isSavingPromoMaterial}
+                  className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                >
+                  {isSavingPromoMaterial ? "Uploading..." : "Upload Promo Material"}
+                </button>
+              </div>
+            </form>
+
+            <section className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-stone-900">Uploaded Materials</h3>
+                <p className="text-sm text-stone-600">
+                  Hidden items stay available here for admin, but will not show on public promo pages.
+                </p>
+              </div>
+
+              {promoMaterials.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                  No promo materials have been uploaded for this show yet.
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {promoMaterials.map((material) => {
+                    const isEditingPromoMaterial = editingPromoMaterialId === material.id;
+                    const fileSize = formatPromoFileSize(material.file_size);
+                    const uploadDate = formatPromoUploadDate(material.created_at);
+
+                    return (
+                      <article
+                        key={material.id}
+                        className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+                      >
+                        {isEditingPromoMaterial ? (
+                          <div className="grid gap-4">
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Title
+                                <input
+                                  type="text"
+                                  name="title"
+                                  value={promoMaterialEditFormState.title}
+                                  onChange={(event) => handlePromoMaterialChange(event, "edit")}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  required
+                                />
+                              </label>
+
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Category
+                                <select
+                                  name="category"
+                                  value={promoMaterialEditFormState.category}
+                                  onChange={(event) => handlePromoMaterialChange(event, "edit")}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                >
+                                  {promoMaterialCategoryOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Description
+                              <textarea
+                                name="description"
+                                value={promoMaterialEditFormState.description}
+                                onChange={(event) => handlePromoMaterialChange(event, "edit")}
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Replace File
+                              <input
+                                type="file"
+                                onChange={(event) => handlePromoMaterialFileChange(event, "edit")}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                              />
+                            </label>
+
+                            <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
+                              <input
+                                type="checkbox"
+                                name="isVisible"
+                                checked={promoMaterialEditFormState.isVisible}
+                                onChange={(event) => handlePromoMaterialChange(event, "edit")}
+                                className="h-4 w-4 rounded border-stone-300 text-emerald-700"
+                              />
+                              Visible in guest, band, and promo hub pages
+                            </label>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleSavePromoMaterial(material)}
+                                disabled={activePromoMaterialActionId === material.id}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                Save Material
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingPromoMaterial}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <div className="flex flex-wrap gap-2">
+                                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
+                                    {formatPromoMaterialCategory(material.category)}
+                                  </span>
+                                  <span
+                                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
+                                      material.is_visible
+                                        ? "bg-stone-200 text-stone-700"
+                                        : "bg-amber-200 text-amber-900"
+                                    }`}
+                                  >
+                                    {material.is_visible ? "Visible" : "Hidden"}
+                                  </span>
+                                </div>
+                                <h4 className="mt-3 text-lg font-semibold text-stone-900">
+                                  {material.title}
+                                </h4>
+                                {material.description?.trim() ? (
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-600">
+                                    {material.description}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <a
+                                href={material.file_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                download={material.file_name}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Download
+                              </a>
+                            </div>
+
+                            <div className="flex flex-wrap gap-3 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                              <span>{material.file_name}</span>
+                              {fileSize ? <span>{fileSize}</span> : null}
+                              {uploadDate ? <span>Uploaded {uploadDate}</span> : null}
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => startEditingPromoMaterial(material)}
+                                disabled={activePromoMaterialActionId === material.id}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePromoMaterial(material)}
+                                disabled={activePromoMaterialActionId === material.id}
+                                className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </section>
+        ) : null}
+
         {isAdminView && activeAdminTab === "sponsors" ? (
           <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
@@ -4306,6 +5000,8 @@ export function ShowPage({
                 Store sponsors once, then assign and order them for this show.
               </p>
             </div>
+
+            <SectionLoadWarning message={dataSectionErrors.sponsorLibrary || dataSectionErrors.showSponsors} />
 
             <div className="flex flex-wrap gap-2 rounded-2xl bg-stone-100 p-2">
               {sponsorAdminTabItems.map((tab) => (
@@ -4844,6 +5540,8 @@ export function ShowPage({
             </button>
           </div>
 
+          <SectionLoadWarning message={dataSectionErrors.setlist} />
+
           {setlist.length === 0 ? (
             <div className="print-hidden rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
               No setlist songs yet. Add a song from the library or this show&apos;s guest songs to get started.
@@ -5267,6 +5965,8 @@ export function ShowPage({
               </p>
             </div>
 
+            <SectionLoadWarning message={dataSectionErrors.guestProfiles} />
+
             {guestProfiles.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
                 No guest profiles submitted yet.
@@ -5395,6 +6095,7 @@ export function ShowPage({
                 Build the official setlist from the library and this show&apos;s guest songs.
               </p>
             </div>
+            <SectionLoadWarning message={dataSectionErrors.guestSongs || dataSectionErrors.songLibrary} />
           </section>
         ) : null}
 
@@ -6155,6 +6856,7 @@ export function ShowPage({
                 Guest-submitted songs stay attached to this show and can still be added to the setlist.
               </p>
             </div>
+            <SectionLoadWarning message={dataSectionErrors.guestSongs} />
 
             {visibleGuestSongs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
@@ -6359,6 +7061,7 @@ export function ShowPage({
                 Reusable songs collected from past band and admin submissions.
               </p>
             </div>
+            <SectionLoadWarning message={dataSectionErrors.songLibrary} />
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
