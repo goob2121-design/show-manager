@@ -4481,7 +4481,6 @@ export function ShowPage({
               </div>
               <Link
                 href={`/admin/${show.slug}/print/itinerary`}
-                target="_blank"
                 className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
               >
                 Print Itinerary
@@ -5167,7 +5166,6 @@ export function ShowPage({
               </div>
               <Link
                 href={`/admin/${show.slug}/print/sponsors`}
-                target="_blank"
                 className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
               >
                 Print Sponsor Rundown
@@ -6140,7 +6138,6 @@ export function ShowPage({
               </div>
               <Link
                 href={`/admin/${show.slug}/print/guests`}
-                target="_blank"
                 className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
               >
                 Print Guest Info
