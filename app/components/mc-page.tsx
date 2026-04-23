@@ -7,10 +7,25 @@ import type {
   GuestProfile,
   McBlockNote,
   SetSection,
-  SetlistSong,
+  SetlistEntry,
+  ShowGuestSong,
   ShowRecord,
   ShowSponsor,
+  SongRecord,
 } from "@/lib/types";
+
+type SetlistSong = SetlistEntry & {
+  set_section: SetSection;
+  source_role: string | null;
+  artist: string | null;
+  song_key: string | null;
+  notes: string | null;
+};
+
+type SetlistEntryRow = SetlistEntry & {
+  library_song?: SongRecord | SongRecord[] | null;
+  guest_song?: ShowGuestSong | ShowGuestSong[] | null;
+};
 
 export type ScriptFormState = {
   openingScript: string;
@@ -27,7 +42,7 @@ export type BlockNoteFormState = {
 type McPageProps = {
   showSlug: string;
   initialShow: ShowRecord | null;
-  initialSetlist: Array<SetlistSong & { set_section?: string | null }>;
+  initialSetlist: SetlistEntryRow[];
   initialGuestProfiles: GuestProfile[];
   initialSponsors: ShowSponsor[];
   initialBlockNotes: McBlockNote[];
@@ -89,11 +104,35 @@ function normalizeSetSection(value: string | null | undefined): SetSection {
   return "set1";
 }
 
-function normalizeSetlistSong(song: SetlistSong & { set_section?: string | null }): SetlistSong {
+function normalizeSetlistSong(song: SetlistEntryRow | SetlistSong): SetlistSong {
+  const librarySong = "library_song" in song
+    ? Array.isArray(song.library_song)
+      ? song.library_song[0]
+      : song.library_song
+    : null;
+  const guestSong = "guest_song" in song
+    ? Array.isArray(song.guest_song)
+      ? song.guest_song[0]
+      : song.guest_song
+    : null;
+  const resolvedKey = librarySong?.key ?? guestSong?.key ?? song.key ?? null;
+  const resolvedNotes = librarySong?.notes ?? song.notes ?? null;
+  const resolvedPerformer =
+    guestSong?.submitted_by_name?.trim() ||
+    ("performer_name" in song ? song.performer_name : null) ||
+    defaultSingerName;
+
   return {
     ...song,
-    set_section: normalizeSetSection(song.set_section),
-    source_role: song.source_role ?? null,
+    section: normalizeSetSection(song.section),
+    set_section: normalizeSetSection(song.section),
+    title: song.custom_title?.trim() || librarySong?.title || guestSong?.title || song.title,
+    key: resolvedKey,
+    performer_name: resolvedPerformer,
+    source_role: song.source_type === "guest" ? "guest" : "band",
+    artist: resolvedPerformer,
+    song_key: resolvedKey,
+    notes: resolvedNotes,
   };
 }
 

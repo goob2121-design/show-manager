@@ -22,19 +22,46 @@ import type {
   GuestProfile,
   GuestProfileFormState,
   McBlockNote,
-  PendingSubmission,
   SetSection,
+  SetlistEntry,
+  ShowGuestSong,
   ShowSponsor,
-  SetlistSong,
+  SongRecord,
   SponsorLibraryEntry,
   SponsorLibraryFormState,
-  SongLibrarySong,
   ShowSponsorAssignmentFormState,
   ShowDetailsFormState,
   ShowRecord,
   SongFormState,
+  SongTempo,
+  SongType,
   ViewMode,
 } from "@/lib/types";
+
+type PendingSubmission = ShowGuestSong & {
+  artist: string | null;
+  song_key: string | null;
+  notes: string | null;
+  lyrics: string | null;
+  submitted_by_role: "guest";
+};
+
+type SongLibrarySong = SongRecord & {
+  artist: string | null;
+  song_key: string | null;
+  notes: string | null;
+  lyrics: string | null;
+  source_role: SongRecord["created_by_role"];
+};
+
+type SetlistSong = SetlistEntry & {
+  set_section: SetSection;
+  artist: string | null;
+  song_key: string | null;
+  notes: string | null;
+  lyrics: string | null;
+  source_role: string | null;
+};
 
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab = "setlist" | "songs" | "guests" | "sponsors" | "mc-builder" | "show-details";
@@ -92,10 +119,10 @@ const setlistSectionConfigs: SetlistSectionConfig[] = [
 ];
 
 const initialFormState: SongFormState = {
-  submittedByName: "",
   title: "",
-  artist: "",
   key: "",
+  tempo: "",
+  songType: "",
   notes: "",
   lyrics: "",
 };
@@ -183,10 +210,16 @@ type BlockNoteFormState = {
 
 type SongEditFormState = {
   title: string;
-  artist: string;
   key: string;
-  notes: string;
-  lyrics: string;
+  tempo: "" | SongTempo;
+  songType: "" | SongType;
+  artist?: string;
+  notes?: string;
+  lyrics?: string;
+};
+
+type SetlistSongEditFormState = {
+  customTitle: string;
 };
 
 type McFlowRenderableItem =
@@ -255,7 +288,7 @@ function getErrorMessage(error: unknown) {
 function sortSetlistSongs(songs: SetlistSong[]) {
   return [...songs].sort((songA, songB) => {
     const sectionDifference =
-      setlistSectionOrder.indexOf(songA.set_section) - setlistSectionOrder.indexOf(songB.set_section);
+      setlistSectionOrder.indexOf(songA.section) - setlistSectionOrder.indexOf(songB.section);
 
     if (sectionDifference !== 0) {
       return sectionDifference;
@@ -271,19 +304,48 @@ function sortSetlistSongs(songs: SetlistSong[]) {
 
 function buildSongEditFormState(song: {
   title: string;
-  artist: string | null;
-  song_key: string | null;
-  notes: string | null;
-  lyrics: string | null;
+  key: string | null;
+  tempo: SongTempo | null;
+  song_type: SongType | null;
+  notes?: string | null;
+  lyrics?: string | null;
 }): SongEditFormState {
   return {
     title: song.title,
-    artist: song.artist ?? "",
-    key: song.song_key ?? "",
+    key: song.key ?? "",
+    tempo: song.tempo ?? "",
+    songType: song.song_type ?? "",
     notes: song.notes ?? "",
     lyrics: song.lyrics ?? "",
   };
 }
+
+function buildSetlistSongEditFormState(song: SetlistSong): SetlistSongEditFormState {
+  return {
+    customTitle: song.custom_title ?? "",
+  };
+}
+
+type SetlistEntryQueryRow = {
+  id: string;
+  show_id: string;
+  section: string | null;
+  position: number;
+  source_type: string | null;
+  song_id: string | null;
+  guest_song_id: string | null;
+  custom_title: string | null;
+  created_at: string;
+  title?: string;
+  key?: string | null;
+  tempo?: SongTempo | null;
+  song_type?: SongType | null;
+  notes?: string | null;
+  lyrics?: string | null;
+  performer_name?: string | null;
+  library_song?: SongLibrarySong | SongLibrarySong[] | null;
+  guest_song?: PendingSubmission | PendingSubmission[] | null;
+};
 
 function buildGuestProfileFormStateFromProfile(profile: GuestProfile): GuestProfileFormState {
   return {
@@ -326,16 +388,64 @@ function normalizeSetSection(value: string | null | undefined): SetSection {
   return "set1";
 }
 
-function normalizeSetlistSong(song: SetlistSong & { set_section?: string | null }): SetlistSong {
+function normalizeSongTempo(value: string | null | undefined): SongTempo | null {
+  if (value === "fast" || value === "medium" || value === "slow") {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeSongType(value: string | null | undefined): SongType | null {
+  if (value === "vocal" || value === "instrumental") {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): SetlistSong {
+  const librarySong = "library_song" in song
+    ? Array.isArray(song.library_song)
+      ? song.library_song[0]
+      : song.library_song
+    : null;
+  const guestSong = "guest_song" in song
+    ? Array.isArray(song.guest_song)
+      ? song.guest_song[0]
+      : song.guest_song
+    : null;
+  const resolvedTitle = song.custom_title?.trim() || librarySong?.title || guestSong?.title || song.title || "";
+  const resolvedKey = librarySong?.key ?? guestSong?.key ?? song.key ?? null;
+  const resolvedTempo = librarySong?.tempo ?? guestSong?.tempo ?? song.tempo ?? null;
+  const resolvedSongType = librarySong?.song_type ?? guestSong?.song_type ?? song.song_type ?? null;
+  const resolvedNotes = librarySong?.notes ?? guestSong?.notes ?? song.notes ?? null;
+  const resolvedLyrics = librarySong?.lyrics ?? guestSong?.lyrics ?? song.lyrics ?? null;
+  const resolvedPerformer =
+    guestSong?.submitted_by_name?.trim() ||
+    ("performer_name" in song ? song.performer_name : null) ||
+    defaultSingerName;
+
   return {
     ...song,
-    set_section: normalizeSetSection(song.set_section),
-    source_role: song.source_role ? normalizeSubmittedByRole(song.source_role) : null,
+    section: normalizeSetSection(song.section),
+    source_type: song.source_type === "guest" ? "guest" : "library",
+    title: resolvedTitle,
+    key: resolvedKey,
+    tempo: normalizeSongTempo(resolvedTempo),
+    song_type: normalizeSongType(resolvedSongType),
+    performer_name: resolvedPerformer,
+    set_section: normalizeSetSection(song.section),
+    artist: resolvedPerformer,
+    song_key: resolvedKey,
+    notes: resolvedNotes,
+    lyrics: resolvedLyrics,
+    source_role: song.source_type === "guest" ? "guest" : "band",
   };
 }
 
 function getSongsInSection(songs: SetlistSong[], section: SetSection) {
-  return songs.filter((song) => song.set_section === section);
+  return songs.filter((song) => song.section === section);
 }
 
 function getNextPositionForSection(songs: SetlistSong[], section: SetSection) {
@@ -366,9 +476,7 @@ function isGuestSongForProfile(song: PendingSubmission, profileName: string | nu
   }
 
   return (
-    normalizeSubmittedByRole(song.submitted_by_role) === "guest" &&
-    (normalizeGuestProfileName(song.submitted_by_name ?? "") === normalizedProfileName ||
-      normalizeGuestProfileName(song.artist ?? "") === normalizedProfileName)
+    normalizeGuestProfileName(song.submitted_by_name ?? "") === normalizedProfileName
   );
 }
 
@@ -442,6 +550,42 @@ function buildNotificationHtml({
   `;
 }
 
+function buildSongPrintHtml(song: SongLibrarySong) {
+  const songKey = song.song_key ?? song.key ?? null;
+  const notes = song.notes?.trim() || "No notes added.";
+  const lyrics = song.lyrics?.trim() || "No lyrics added.";
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(song.title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #1f2937; margin: 32px; }
+          h1 { margin: 0 0 12px; font-size: 28px; }
+          .meta { margin: 0 0 24px; font-size: 14px; color: #4b5563; }
+          .section { margin-top: 24px; }
+          .label { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #6b7280; }
+          .body { margin-top: 8px; font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(song.title)}</h1>
+        <p class="meta">${songKey ? `Key: ${escapeHtml(songKey)}` : "Key: Not set"}</p>
+        <section class="section">
+          <div class="label">Notes</div>
+          <div class="body">${escapeHtml(notes)}</div>
+        </section>
+        <section class="section">
+          <div class="label">Lyrics</div>
+          <div class="body">${escapeHtml(lyrics)}</div>
+        </section>
+      </body>
+    </html>
+  `;
+}
+
 async function sendAdminNotification(payload: { subject: string; html: string }) {
   try {
     const response = await fetch("/api/notify", {
@@ -489,16 +633,23 @@ function canBandEditSharedSong(role: string | null | undefined) {
 }
 
 function normalizePendingSubmission(
-  submission: PendingSubmission & { submitted_by_name?: string | null },
+  submission: PendingSubmission,
 ): PendingSubmission {
   return {
     ...submission,
-    submitted_by_role: normalizeSubmittedByRole(submission.submitted_by_role),
+    key: submission.key ?? null,
+    tempo: normalizeSongTempo(submission.tempo),
+    song_type: normalizeSongType(submission.song_type),
     submitted_by_name: submission.submitted_by_name ?? null,
+    artist: submission.submitted_by_name ?? null,
+    song_key: submission.key ?? null,
+    notes: submission.notes ?? null,
+    lyrics: submission.lyrics ?? null,
+    submitted_by_role: "guest",
   };
 }
 
-function formatSubmittedByRole(role: PendingSubmission["submitted_by_role"]) {
+function formatSubmittedByRole(role: SongLibrarySong["created_by_role"]) {
   const normalizedRole = normalizeSubmittedByRole(role);
 
   if (normalizedRole === "admin") {
@@ -513,11 +664,20 @@ function formatSubmittedByRole(role: PendingSubmission["submitted_by_role"]) {
 }
 
 function normalizeSongLibrarySong(
-  song: SongLibrarySong & { source_role?: string | null },
+  song: SongLibrarySong,
 ): SongLibrarySong {
   return {
     ...song,
-    source_role: song.source_role ? normalizeSubmittedByRole(song.source_role) : null,
+    key: song.key ?? null,
+    tempo: normalizeSongTempo(song.tempo),
+    song_type: normalizeSongType(song.song_type),
+    created_by_role: normalizeSubmittedByRole(song.created_by_role) as SongLibrarySong["created_by_role"],
+    created_by_name: song.created_by_name ?? null,
+    artist: null,
+    song_key: song.key ?? null,
+    notes: song.notes ?? null,
+    lyrics: song.lyrics ?? null,
+    source_role: normalizeSubmittedByRole(song.created_by_role),
   };
 }
 
@@ -653,7 +813,7 @@ function attachSponsorToShowAssignment(
   });
 }
 
-function formatLibrarySourceRole(role: SongLibrarySong["source_role"]) {
+function formatLibrarySourceRole(role: SongLibrarySong["created_by_role"]) {
   if (!role) {
     return "Unknown";
   }
@@ -964,32 +1124,32 @@ export function ShowPage({
   const [mcBlockNotes, setMcBlockNotes] = useState<McBlockNote[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
   const [songLibrary, setSongLibrary] = useState<SongLibrarySong[]>([]);
+  const [libraryTempoFilter, setLibraryTempoFilter] = useState<"" | SongTempo>("");
+  const [librarySongTypeFilter, setLibrarySongTypeFilter] = useState<"" | SongType>("");
   const [sponsorLibrary, setSponsorLibrary] = useState<SponsorLibraryEntry[]>([]);
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
-  const [openLyricsSongId, setOpenLyricsSongId] = useState<string | null>(null);
   const [editingPoolSongId, setEditingPoolSongId] = useState<string | null>(null);
   const [editingSetlistSongId, setEditingSetlistSongId] = useState<string | null>(null);
   const [editingLibrarySongId, setEditingLibrarySongId] = useState<string | null>(null);
+  const [openLibraryLyricsSongId, setOpenLibraryLyricsSongId] = useState<string | null>(null);
   const [editingSponsorLibraryId, setEditingSponsorLibraryId] = useState<string | null>(null);
   const [editingShowSponsorId, setEditingShowSponsorId] = useState<string | null>(null);
   const [poolSongEditFormState, setPoolSongEditFormState] = useState<SongEditFormState>({
     title: "",
-    artist: "",
     key: "",
+    tempo: "",
+    songType: "",
     notes: "",
     lyrics: "",
   });
-  const [setlistSongEditFormState, setSetlistSongEditFormState] = useState<SongEditFormState>({
-    title: "",
-    artist: "",
-    key: "",
-    notes: "",
-    lyrics: "",
+  const [setlistSongEditFormState, setSetlistSongEditFormState] = useState<SetlistSongEditFormState>({
+    customTitle: "",
   });
   const [librarySongEditFormState, setLibrarySongEditFormState] = useState<SongEditFormState>({
     title: "",
-    artist: "",
     key: "",
+    tempo: "",
+    songType: "",
     notes: "",
     lyrics: "",
   });
@@ -1050,29 +1210,31 @@ export function ShowPage({
     ? activeAdminTab === "setlist"
     : !isBandView || activeBandTab === "setlist";
   const setlistSections = getRenderableSetlistSections(setlist);
-  const visibleSongPool =
-    viewMode === "guest"
-      ? []
-      : pendingSongs;
+  const visibleGuestSongs = viewMode === "guest" ? [] : pendingSongs;
+  const filteredSongLibrary = songLibrary.filter((song) => {
+    const matchesTempo = !libraryTempoFilter || song.tempo === libraryTempoFilter;
+    const matchesSongType = !librarySongTypeFilter || song.song_type === librarySongTypeFilter;
+    return matchesTempo && matchesSongType;
+  });
 
-  function canEditPoolSong(song: PendingSubmission) {
+  function canEditPoolSong() {
     if (viewMode === "admin") {
       return true;
     }
 
     if (viewMode === "guest") {
-      return normalizeSubmittedByRole(song.submitted_by_role) === "guest";
+      return true;
     }
 
-    return viewMode === "band" && canBandEditSharedSong(song.submitted_by_role);
+    return false;
   }
 
-  function canEditSetlistSong(song: SetlistSong) {
+  function canEditSetlistSong() {
     if (viewMode === "admin") {
       return true;
     }
 
-    return viewMode === "band" && canBandEditSharedSong(song.source_role);
+    return false;
   }
 
   function canEditLibrarySong(song: SongLibrarySong) {
@@ -1080,7 +1242,7 @@ export function ShowPage({
       return true;
     }
 
-    return viewMode === "band" && canBandEditSharedSong(song.source_role);
+    return viewMode === "band" && canBandEditSharedSong(song.created_by_role);
   }
 
   function handlePrint(nextPrintMode: PrintMode) {
@@ -1138,20 +1300,52 @@ export function ShowPage({
         ] =
           await Promise.all([
             supabase
-              .from("setlist_songs")
-              .select("*")
+              .from("setlist_entries")
+              .select(`
+                id,
+                show_id,
+                section,
+                position,
+                source_type,
+                song_id,
+                guest_song_id,
+                custom_title,
+                created_at,
+                library_song:song_id (
+                  id,
+                  title,
+                  key,
+                  tempo,
+                  song_type,
+                  notes,
+                  lyrics,
+                  created_by_role,
+                  created_by_name,
+                  created_at
+                ),
+                guest_song:guest_song_id (
+                  id,
+                  show_id,
+                  title,
+                  key,
+                  tempo,
+                  song_type,
+                  submitted_by_name,
+                  created_at
+                )
+              `)
               .eq("show_id", showRecord.id)
+              .order("section", { ascending: true })
               .order("position", { ascending: true }),
             supabase
-              .from("pending_submissions")
+              .from("show_guest_songs")
               .select("*")
               .eq("show_id", showRecord.id)
               .order("created_at", { ascending: true }),
             supabase
-              .from("song_library")
+              .from("songs")
               .select("*")
-              .order("title", { ascending: true })
-              .order("artist", { ascending: true, nullsFirst: false }),
+              .order("title", { ascending: true }),
             supabase
               .from("sponsor_library")
               .select("*")
@@ -1204,22 +1398,18 @@ export function ShowPage({
 
         setSetlist(
           sortSetlistSongs(
-            (setlistRows ?? []).map((song: SetlistSong & { set_section?: string | null }) =>
+            (setlistRows ?? []).map((song: SetlistEntryQueryRow) =>
               normalizeSetlistSong(song),
             ),
           ),
         );
         setPendingSongs(
-          (pendingRows ?? []).map(
-            (submission: PendingSubmission & { submitted_by_name?: string | null }) =>
-              normalizePendingSubmission(submission),
+          (pendingRows ?? []).map((submission: PendingSubmission) =>
+            normalizePendingSubmission(submission),
           ),
         );
         setSongLibrary(
-          (libraryRows ?? []).map(
-            (song: SongLibrarySong & { source_role?: string | null }) =>
-              normalizeSongLibrarySong(song),
-          ),
+          (libraryRows ?? []).map((song: SongLibrarySong) => normalizeSongLibrarySong(song)),
         );
         const normalizedSponsorLibrary = (sponsorLibraryRows ?? []).map(
           (sponsor: SponsorLibraryEntry) => normalizeSponsorLibraryEntry(sponsor),
@@ -1286,7 +1476,7 @@ export function ShowPage({
   }, [mcBlockNotes, mcRunSections]);
 
   function handleChange(
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
     const { name, value } = event.target;
 
@@ -1802,10 +1992,9 @@ export function ShowPage({
     }
 
     const title = formState.title.trim();
-    const artist =
-      viewMode === "guest"
-        ? guestSingerName || defaultSingerName
-        : formState.artist.trim() || defaultSingerName;
+    const key = normalizeOptionalField(formState.key);
+    const tempo = formState.tempo || null;
+    const songType = formState.songType || null;
 
     if (!title) {
       return;
@@ -1831,105 +2020,104 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("pending_submissions")
-        .insert({
-          show_id: show.id,
-          title,
-          artist,
-          song_key: formState.key.trim() || null,
-          notes: formState.notes.trim() || null,
-          lyrics: formState.lyrics.trim() || null,
-          submitted_by_role: viewMode,
-          submitted_by_name:
-            viewMode === "guest" ? guestSingerName || null : formState.submittedByName.trim() || null,
-        })
-        .select("*")
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
       const normalizedSubmittedByRole = normalizeSubmittedByRole(viewMode);
 
-      if (normalizedSubmittedByRole === "band" || normalizedSubmittedByRole === "admin") {
-        const normalizedTitle = title.toLowerCase();
-        const normalizedArtist = artist.toLowerCase();
+      if (normalizedSubmittedByRole === "guest") {
+        const { data, error } = await supabase
+          .from("show_guest_songs")
+          .insert({
+            show_id: show.id,
+            title,
+            key,
+            tempo,
+            song_type: songType,
+            submitted_by_name: guestSingerName || null,
+          })
+          .select("*")
+          .single();
 
-        const existingLibrarySong = songLibrary.find((song) => {
-          const libraryTitle = song.title.trim().toLowerCase();
-          const libraryArtist = (song.artist ?? "").trim().toLowerCase();
-
-          return libraryTitle === normalizedTitle && libraryArtist === normalizedArtist;
-        });
-
-        if (!existingLibrarySong) {
-          const { data: insertedLibrarySong, error: libraryInsertError } = await supabase
-            .from("song_library")
-            .insert({
-              title,
-              artist,
-              song_key: formState.key.trim() || null,
-              notes: formState.notes.trim() || null,
-              lyrics: formState.lyrics.trim() || null,
-              source_role: normalizedSubmittedByRole,
-            })
-            .select("*")
-            .single();
-
-          if (libraryInsertError) {
-            throw libraryInsertError;
-          }
-
-          setSongLibrary((currentSongs) =>
-            [...currentSongs, normalizeSongLibrarySong(insertedLibrarySong)].sort((songA, songB) => {
-              const titleComparison = songA.title.localeCompare(songB.title);
-
-              if (titleComparison !== 0) {
-                return titleComparison;
-              }
-
-              return (songA.artist ?? "").localeCompare(songB.artist ?? "");
-            }),
-          );
+        if (error) {
+          throw error;
         }
-      }
 
-      setPendingSongs((currentSongs) => [...currentSongs, normalizePendingSubmission(data)]);
-      setFormState(initialFormState);
+        setPendingSongs((currentSongs) => [...currentSongs, normalizePendingSubmission(data)]);
 
-      if (normalizedSubmittedByRole === "guest" || normalizedSubmittedByRole === "band") {
         const adminUrl = buildAdminShowUrl(show.slug);
-        const notificationSubject =
-          normalizedSubmittedByRole === "guest"
-            ? `Guest Song Submission - ${show.name} - ${guestSingerName || data.submitted_by_name || artist}`
-            : `Band Song Submission - ${show.name}`;
-
-        const singingName =
-          normalizedSubmittedByRole === "guest"
-            ? guestSingerName || data.submitted_by_name || artist
-            : data.artist || artist || data.submitted_by_name || defaultSingerName;
-
         void sendAdminNotification({
-          subject: notificationSubject,
+          subject: `Guest Song Submission - ${show.name} - ${guestSingerName || "Guest"}`,
           html: buildNotificationHtml({
-            heading: normalizedSubmittedByRole === "guest" ? "Guest Song Submission" : "Band Song Submission",
-            intro:
-              normalizedSubmittedByRole === "guest"
-                ? "A guest submitted a new song for this show."
-                : "A band member submitted a new song for this show.",
+            heading: "Guest Song Submission",
+            intro: "A guest submitted a new song for this show.",
             rows: [
               { label: "Show Name", value: show.name },
-              { label: "Who's Singing", value: singingName },
+              { label: "Who's Singing", value: guestSingerName || "Guest" },
               { label: "Song Title", value: data.title },
-              { label: "Key", value: data.song_key },
+              { label: "Key", value: data.key },
+              { label: "Tempo", value: data.tempo },
+              { label: "Song Type", value: data.song_type },
               { label: "Notes", value: data.notes },
             ],
             adminUrl,
           }),
         });
+      } else {
+        const normalizedTitle = title.toLowerCase();
+        const normalizedKey = (key ?? "").toLowerCase();
+        const existingLibrarySong = songLibrary.find(
+          (song) =>
+            song.title.trim().toLowerCase() === normalizedTitle &&
+            (song.key ?? "").trim().toLowerCase() === normalizedKey,
+        );
+
+        if (!existingLibrarySong) {
+          const { data, error } = await supabase
+            .from("songs")
+            .insert({
+              title,
+              key,
+              tempo,
+              song_type: songType,
+              notes: normalizeOptionalField(formState.notes),
+              lyrics: normalizeOptionalField(formState.lyrics),
+              created_by_role: normalizedSubmittedByRole,
+              created_by_name: null,
+            })
+            .select("*")
+            .single();
+
+          if (error) {
+            throw error;
+          }
+
+          setSongLibrary((currentSongs) =>
+            [...currentSongs, normalizeSongLibrarySong(data)].sort((songA, songB) =>
+              songA.title.localeCompare(songB.title),
+            ),
+          );
+        }
+
+        if (normalizedSubmittedByRole === "band") {
+          const adminUrl = buildAdminShowUrl(show.slug);
+          void sendAdminNotification({
+            subject: `Band Song Submission - ${show.name}`,
+            html: buildNotificationHtml({
+              heading: "Band Song Submission",
+              intro: "A band member submitted a new song to the library.",
+              rows: [
+                { label: "Show Name", value: show.name },
+                { label: "Song Title", value: title },
+                { label: "Key", value: key },
+                { label: "Tempo", value: tempo },
+                { label: "Song Type", value: songType },
+                { label: "Notes", value: formState.notes },
+              ],
+              adminUrl,
+            }),
+          });
+        }
       }
+
+      setFormState(initialFormState);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -2353,39 +2541,43 @@ export function ShowPage({
       const nextPosition = getNextPositionForSection(setlist, section);
 
       const { data: insertedSong, error: insertError } = await supabase
-        .from("setlist_songs")
+        .from("setlist_entries")
         .insert({
           show_id: show.id,
+          section,
           position: nextPosition,
-          set_section: section,
-          source_role: normalizeSubmittedByRole(songToPlace.submitted_by_role),
-          title: songToPlace.title,
-          artist: songToPlace.artist,
-          song_key: songToPlace.song_key,
-          notes: songToPlace.notes,
-          lyrics: songToPlace.lyrics,
+          source_type: "guest",
+          guest_song_id: songToPlace.id,
         })
-        .select("*")
+        .select(`
+          id,
+          show_id,
+          section,
+          position,
+          source_type,
+          song_id,
+          guest_song_id,
+          custom_title,
+          created_at,
+          guest_song:guest_song_id (
+            id,
+            show_id,
+            title,
+            key,
+            tempo,
+            song_type,
+            submitted_by_name,
+            created_at
+          )
+        `)
         .single();
 
       if (insertError) {
         throw insertError;
       }
 
-      const { error: deleteError } = await supabase
-        .from("pending_submissions")
-        .delete()
-        .eq("id", songToPlace.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
       setSetlist((currentSongs) =>
-        sortSetlistSongs([...currentSongs, normalizeSetlistSong(insertedSong)]),
-      );
-      setPendingSongs((currentSongs) =>
-        currentSongs.filter((song) => song.id !== songToPlace.id),
+        sortSetlistSongs([...currentSongs, normalizeSetlistSong(insertedSong as SetlistEntryQueryRow)]),
       );
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -2401,7 +2593,7 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.from("pending_submissions").delete().eq("id", songId);
+      const { error } = await supabase.from("show_guest_songs").delete().eq("id", songId);
 
       if (error) {
         throw error;
@@ -2418,12 +2610,12 @@ export function ShowPage({
   async function handleDeleteGuestSong(songId: string) {
     const songToDelete = pendingSongs.find((song) => song.id === songId);
 
-    if (!songToDelete || normalizeSubmittedByRole(songToDelete.submitted_by_role) !== "guest") {
+    if (!songToDelete) {
       return;
     }
 
     const shouldDelete = window.confirm(
-      `Delete the guest song "${songToDelete.title}" for ${getDisplaySingerName(songToDelete.artist)}?`,
+      `Delete the guest song "${songToDelete.title}" for ${getDisplaySingerName(songToDelete.submitted_by_name)}?`,
     );
 
     if (!shouldDelete) {
@@ -2467,7 +2659,7 @@ export function ShowPage({
 
       if (relatedSongIds.length > 0) {
         const { error: deleteSongsError } = await supabase
-          .from("pending_submissions")
+          .from("show_guest_songs")
           .delete()
           .in("id", relatedSongIds);
 
@@ -2506,7 +2698,7 @@ export function ShowPage({
   }
 
   function handlePoolSongEditChange(
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
     const { name, value } = event.target;
 
@@ -2519,7 +2711,7 @@ export function ShowPage({
   function handleStartEditingPoolSong(songId: string) {
     const songToEdit = pendingSongs.find((song) => song.id === songId);
 
-    if (!songToEdit || !canEditPoolSong(songToEdit)) {
+    if (!songToEdit || !canEditPoolSong()) {
       return;
     }
 
@@ -2531,32 +2723,24 @@ export function ShowPage({
     setEditingPoolSongId(null);
     setPoolSongEditFormState({
       title: "",
-      artist: "",
       key: "",
-      notes: "",
-      lyrics: "",
+      tempo: "",
+      songType: "",
     });
   }
 
   async function handleSavePoolSong(songId: string) {
     const songToUpdate = pendingSongs.find((song) => song.id === songId);
 
-    if (!songToUpdate || !canEditPoolSong(songToUpdate)) {
+    if (!songToUpdate || !canEditPoolSong()) {
       return;
     }
 
     const title = poolSongEditFormState.title.trim();
     const guestAssociationName =
-      viewMode === "guest"
-        ? selectedGuestProfile?.name?.trim() ||
-          songToUpdate.submitted_by_name?.trim() ||
-          songToUpdate.artist?.trim() ||
-          ""
-        : "";
-    const artist =
-      viewMode === "guest"
-        ? guestAssociationName
-        : poolSongEditFormState.artist.trim() || defaultSingerName;
+      selectedGuestProfile?.name?.trim() ||
+      songToUpdate.submitted_by_name?.trim() ||
+      "";
 
     if (!title) {
       setActionError("Song title is required.");
@@ -2573,111 +2757,15 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
-      if (viewMode === "guest") {
-        const targetSongId = songToUpdate.id;
-        const guestUpdatePayload = {
-          show_id: songToUpdate.show_id,
-          submitted_by_role: songToUpdate.submitted_by_role,
-          title,
-          artist,
-          submitted_by_name: guestAssociationName,
-          song_key: normalizeOptionalField(poolSongEditFormState.key),
-          notes: normalizeOptionalField(poolSongEditFormState.notes),
-          lyrics: normalizeOptionalField(poolSongEditFormState.lyrics),
-        };
-
-        console.info("Updating guest song in pending_submissions", {
-          table: "pending_submissions",
-          requestedSongId: songId,
-          targetSongId,
-          editingPoolSongId,
-          guestUpdatePayload,
-        });
-
-        const { error: updateError } = await supabase
-          .from("pending_submissions")
-          .update(guestUpdatePayload)
-          .eq("id", targetSongId);
-
-        if (updateError) {
-          console.warn("Failed to update guest song", {
-            songId: targetSongId,
-            showId: songToUpdate.show_id,
-            guestAssociationName,
-            guestUpdatePayload,
-            updateError,
-          });
-          throw updateError;
-        }
-
-        const { data: updatedRow, error: updatedRowError } = await supabase
-          .from("pending_submissions")
-          .select("*")
-          .eq("id", targetSongId)
-          .maybeSingle();
-
-        console.info("Guest song update response", {
-          targetSongId,
-          returnedData: updatedRow ? [updatedRow] : [],
-          rowCount: updatedRow ? 1 : 0,
-          updatedRowError,
-        });
-
-        if (updatedRowError) {
-          console.warn("Failed to verify guest song after update", {
-            songId: targetSongId,
-            updatedRowError,
-          });
-        }
-
-        if (!updatedRow) {
-          console.warn("Guest song update affected zero rows", {
-            songId: targetSongId,
-            guestAssociationName,
-            guestUpdatePayload,
-          });
-          setActionError("That guest song could not be saved right now.");
-          return;
-        }
-
-        console.info("Guest song updated successfully", {
-          songId: targetSongId,
-          updatedRowCount: 1,
-        });
-
-        const { data: refreshedPendingRows, error: refreshError } = await supabase
-          .from("pending_submissions")
-          .select("*")
-          .eq("show_id", songToUpdate.show_id)
-          .order("created_at", { ascending: true });
-
-        if (refreshError) {
-          console.warn("Failed to refresh guest songs after save", {
-            songId,
-            showId: songToUpdate.show_id,
-            refreshError,
-          });
-        } else {
-          setPendingSongs(
-            (refreshedPendingRows ?? []).map(
-              (submission: PendingSubmission & { submitted_by_name?: string | null }) =>
-                normalizePendingSubmission(submission),
-            ),
-          );
-          handleCancelPoolSongEdit();
-          return;
-        }
-      }
-
       const updatePayload = {
         title,
-        artist,
-        song_key: normalizeOptionalField(poolSongEditFormState.key),
-        notes: normalizeOptionalField(poolSongEditFormState.notes),
-        lyrics: normalizeOptionalField(poolSongEditFormState.lyrics),
+        key: normalizeOptionalField(poolSongEditFormState.key),
+        tempo: poolSongEditFormState.tempo || null,
+        song_type: poolSongEditFormState.songType || null,
+        submitted_by_name: guestAssociationName,
       };
       const { data, error } = await supabase
-        .from("pending_submissions")
+        .from("show_guest_songs")
         .update(updatePayload)
         .eq("id", songId)
         .select("*")
@@ -2688,7 +2776,6 @@ export function ShowPage({
       }
 
       if (!data) {
-        console.warn("Pending submission was missing during guest song save", { songId, viewMode });
         if (editingPoolSongId === songId) {
           handleCancelPoolSongEdit();
         }
@@ -2697,11 +2784,7 @@ export function ShowPage({
 
       setPendingSongs((currentSongs) =>
         currentSongs.map((song) =>
-          song.id === songId
-            ? normalizePendingSubmission(
-                data as PendingSubmission & { submitted_by_name?: string | null },
-              )
-            : song,
+          song.id === songId ? normalizePendingSubmission(data as PendingSubmission) : song,
         ),
       );
       handleCancelPoolSongEdit();
@@ -2713,7 +2796,7 @@ export function ShowPage({
   }
 
   function handleLibrarySongEditChange(
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
     const { name, value } = event.target;
 
@@ -2738,11 +2821,51 @@ export function ShowPage({
     setEditingLibrarySongId(null);
     setLibrarySongEditFormState({
       title: "",
-      artist: "",
       key: "",
+      tempo: "",
+      songType: "",
       notes: "",
       lyrics: "",
     });
+  }
+
+  function handleToggleLibraryLyrics(songId: string) {
+    setOpenLibraryLyricsSongId((currentSongId) => (currentSongId === songId ? null : songId));
+  }
+
+  function handlePrintLibrarySong(song: SongLibrarySong) {
+    console.log("Printing library song", song);
+
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      window.alert("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+
+    const printHtml = buildSongPrintHtml(song);
+    const triggerPrint = () => {
+      if (printWindow.closed) {
+        return;
+      }
+
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    printWindow.onload = triggerPrint;
+    printWindow.onafterprint = () => {
+      printWindow.close();
+    };
+
+    const { document } = printWindow;
+    document.open();
+    document.write(printHtml);
+    document.close();
+
+    if (document.readyState === "complete") {
+      triggerPrint();
+    }
   }
 
   async function handleSaveLibrarySong(songId: string) {
@@ -2753,7 +2876,6 @@ export function ShowPage({
     }
 
     const title = librarySongEditFormState.title.trim();
-    const artist = librarySongEditFormState.artist.trim() || defaultSingerName;
 
     if (!title) {
       setActionError("Song title is required.");
@@ -2766,13 +2888,14 @@ export function ShowPage({
     try {
       const supabase = createClient();
       const { data, error } = await supabase
-        .from("song_library")
+        .from("songs")
         .update({
           title,
-          artist,
-          song_key: normalizeOptionalField(librarySongEditFormState.key),
-          notes: normalizeOptionalField(librarySongEditFormState.notes),
-          lyrics: normalizeOptionalField(librarySongEditFormState.lyrics),
+          key: normalizeOptionalField(librarySongEditFormState.key),
+          tempo: librarySongEditFormState.tempo || null,
+          song_type: librarySongEditFormState.songType || null,
+          notes: normalizeOptionalField(librarySongEditFormState.notes ?? ""),
+          lyrics: normalizeOptionalField(librarySongEditFormState.lyrics ?? ""),
         })
         .eq("id", songId)
         .select("*")
@@ -2785,15 +2908,19 @@ export function ShowPage({
       setSongLibrary((currentSongs) =>
         currentSongs
           .map((song) => (song.id === songId ? normalizeSongLibrarySong(data) : song))
-          .sort((songA, songB) => {
-            const titleComparison = songA.title.localeCompare(songB.title);
+          .sort((songA, songB) => songA.title.localeCompare(songB.title)),
+      );
+      setSetlist((currentSongs) =>
+        currentSongs.map((setlistSong) => {
+          if (setlistSong.source_type !== "library" || setlistSong.song_id !== songId) {
+            return setlistSong;
+          }
 
-            if (titleComparison !== 0) {
-              return titleComparison;
-            }
-
-            return (songA.artist ?? "").localeCompare(songB.artist ?? "");
-          }),
+          return normalizeSetlistSong({
+            ...setlistSong,
+            library_song: data as SongLibrarySong,
+          });
+        }),
       );
       handleCancelLibrarySongEdit();
     } catch (error) {
@@ -2817,19 +2944,37 @@ export function ShowPage({
       const nextPosition = getNextPositionForSection(setlist, section);
 
       const { data: insertedSong, error } = await supabase
-        .from("setlist_songs")
+        .from("setlist_entries")
         .insert({
           show_id: show.id,
+          section,
           position: nextPosition,
-          set_section: section,
-          source_role: songToPlace.source_role ?? "band",
-          title: songToPlace.title,
-          artist: songToPlace.artist,
-          song_key: songToPlace.song_key,
-          notes: songToPlace.notes,
-          lyrics: songToPlace.lyrics,
+          source_type: "library",
+          song_id: songToPlace.id,
         })
-        .select("*")
+        .select(`
+          id,
+          show_id,
+          section,
+          position,
+          source_type,
+          song_id,
+          guest_song_id,
+          custom_title,
+          created_at,
+          library_song:song_id (
+            id,
+            title,
+            key,
+            tempo,
+            song_type,
+            notes,
+            lyrics,
+            created_by_role,
+            created_by_name,
+            created_at
+          )
+        `)
         .single();
 
       if (error) {
@@ -2837,7 +2982,7 @@ export function ShowPage({
       }
 
       setSetlist((currentSongs) =>
-        sortSetlistSongs([...currentSongs, normalizeSetlistSong(insertedSong)]),
+        sortSetlistSongs([...currentSongs, normalizeSetlistSong(insertedSong as SetlistEntryQueryRow)]),
       );
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -2854,7 +2999,7 @@ export function ShowPage({
       return;
     }
 
-    const sectionSongs = getSongsInSection(setlist, songToMove.set_section);
+    const sectionSongs = getSongsInSection(setlist, songToMove.section);
     const songIndex = sectionSongs.findIndex((song) => song.id === songId);
 
     if (songIndex <= 0) {
@@ -2873,7 +3018,7 @@ export function ShowPage({
     try {
       const supabase = createClient();
       const { error: firstUpdateError } = await supabase
-        .from("setlist_songs")
+        .from("setlist_entries")
         .update({ position: songAbove.position })
         .eq("id", songToMove.id);
 
@@ -2882,7 +3027,7 @@ export function ShowPage({
       }
 
       const { error: secondUpdateError } = await supabase
-        .from("setlist_songs")
+        .from("setlist_entries")
         .update({ position: songToMove.position })
         .eq("id", songAbove.id);
 
@@ -2920,7 +3065,7 @@ export function ShowPage({
       return;
     }
 
-    const sectionSongs = getSongsInSection(setlist, songToMove.set_section);
+    const sectionSongs = getSongsInSection(setlist, songToMove.section);
     const songIndex = sectionSongs.findIndex((song) => song.id === songId);
 
     if (songIndex === -1 || songIndex >= sectionSongs.length - 1) {
@@ -2939,7 +3084,7 @@ export function ShowPage({
     try {
       const supabase = createClient();
       const { error: firstUpdateError } = await supabase
-        .from("setlist_songs")
+        .from("setlist_entries")
         .update({ position: songBelow.position })
         .eq("id", songToMove.id);
 
@@ -2948,7 +3093,7 @@ export function ShowPage({
       }
 
       const { error: secondUpdateError } = await supabase
-        .from("setlist_songs")
+        .from("setlist_entries")
         .update({ position: songToMove.position })
         .eq("id", songBelow.id);
 
@@ -2986,7 +3131,7 @@ export function ShowPage({
       return;
     }
 
-    if (songToMove.set_section === nextSection) {
+    if (songToMove.section === nextSection) {
       return;
     }
 
@@ -2998,8 +3143,8 @@ export function ShowPage({
       const nextPosition = getNextPositionForSection(setlist, nextSection);
 
       const { error } = await supabase
-        .from("setlist_songs")
-        .update({ set_section: nextSection, position: nextPosition })
+        .from("setlist_entries")
+        .update({ section: nextSection, position: nextPosition })
         .eq("id", songToMove.id);
 
       if (error) {
@@ -3010,7 +3155,7 @@ export function ShowPage({
         sortSetlistSongs(
           currentSetlist.map((song) =>
             song.id === songToMove.id
-              ? { ...song, set_section: nextSection, position: nextPosition }
+              ? { ...song, section: nextSection, position: nextPosition }
               : song,
           ),
         ),
@@ -3035,7 +3180,7 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.from("setlist_songs").delete().eq("id", songToRemove.id);
+      const { error } = await supabase.from("setlist_entries").delete().eq("id", songToRemove.id);
 
       if (error) {
         throw error;
@@ -3043,9 +3188,6 @@ export function ShowPage({
 
       setSetlist((currentSetlist) =>
         currentSetlist.filter((song) => song.id !== songToRemove.id),
-      );
-      setOpenLyricsSongId((currentSongId) =>
-        currentSongId === songToRemove.id ? null : currentSongId,
       );
       setEditingSetlistSongId((currentSongId) =>
         currentSongId === songToRemove.id ? null : currentSongId,
@@ -3057,14 +3199,8 @@ export function ShowPage({
     }
   }
 
-  function handleToggleLyrics(songId: string) {
-    setOpenLyricsSongId((currentSongId) =>
-      currentSongId === songId ? null : songId,
-    );
-  }
-
   function handleSetlistSongEditChange(
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
     const { name, value } = event.target;
 
@@ -3077,29 +3213,22 @@ export function ShowPage({
   function handleStartEditingSetlistSong(songId: string) {
     const songToEdit = setlist.find((song) => song.id === songId);
 
-    if (!songToEdit || !canEditSetlistSong(songToEdit)) {
+    if (!songToEdit || !canEditSetlistSong()) {
       return;
     }
 
     setEditingSetlistSongId(songId);
-    setSetlistSongEditFormState(buildSongEditFormState(songToEdit));
-    setOpenLyricsSongId(songId);
+    setSetlistSongEditFormState(buildSetlistSongEditFormState(songToEdit));
   }
 
   async function handleSaveSetlistSong(songId: string) {
     const songToUpdate = setlist.find((song) => song.id === songId);
 
-    if (!songToUpdate || !canEditSetlistSong(songToUpdate)) {
+    if (!songToUpdate || !canEditSetlistSong()) {
       return;
     }
 
-    const title = setlistSongEditFormState.title.trim();
-    const artist = setlistSongEditFormState.artist.trim() || defaultSingerName;
-
-    if (!title) {
-      setActionError("Song title is required.");
-      return;
-    }
+    const customTitle = normalizeOptionalField(setlistSongEditFormState.customTitle);
 
     setActionError(null);
     setActiveSetlistActionId(songToUpdate.id);
@@ -3107,13 +3236,9 @@ export function ShowPage({
     try {
       const supabase = createClient();
       const { error } = await supabase
-        .from("setlist_songs")
+        .from("setlist_entries")
         .update({
-          title,
-          artist,
-          song_key: normalizeOptionalField(setlistSongEditFormState.key),
-          notes: normalizeOptionalField(setlistSongEditFormState.notes),
-          lyrics: normalizeOptionalField(setlistSongEditFormState.lyrics),
+          custom_title: customTitle,
         })
         .eq("id", songToUpdate.id);
 
@@ -3126,18 +3251,20 @@ export function ShowPage({
           song.id === songToUpdate.id
             ? {
                 ...song,
-                title,
-                artist,
-                song_key: normalizeOptionalField(setlistSongEditFormState.key),
-                notes: normalizeOptionalField(setlistSongEditFormState.notes),
-                lyrics: normalizeOptionalField(setlistSongEditFormState.lyrics),
+                custom_title: customTitle,
+                title: customTitle ?? (
+                  song.source_type === "guest"
+                    ? pendingSongs.find((guestSong) => guestSong.id === song.guest_song_id)?.title ??
+                      song.title
+                    : songLibrary.find((librarySong) => librarySong.id === song.song_id)?.title ??
+                      song.title
+                ),
               }
             : song,
         ),
       );
 
       setEditingSetlistSongId(null);
-      setOpenLyricsSongId(songId);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -3148,11 +3275,7 @@ export function ShowPage({
   function handleCancelSetlistSongEdit() {
     setEditingSetlistSongId(null);
     setSetlistSongEditFormState({
-      title: "",
-      artist: "",
-      key: "",
-      notes: "",
-      lyrics: "",
+      customTitle: "",
     });
   }
 
@@ -3205,10 +3328,9 @@ export function ShowPage({
           }
 
           const submittedByName = normalizeGuestProfileName(song.submitted_by_name ?? "");
-          const artistName = normalizeGuestProfileName(song.artist ?? "");
           const currentGuestName = normalizeGuestProfileName(selectedGuestProfile.name ?? "");
 
-          return submittedByName === currentGuestName || artistName === currentGuestName;
+          return submittedByName === currentGuestName;
         })
       : [];
 
@@ -4696,7 +4818,7 @@ export function ShowPage({
 
           {setlist.length === 0 ? (
             <div className="print-hidden rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-              No setlist songs yet. Add a song from the pool to get started.
+              No setlist songs yet. Add a song from the library or this show&apos;s guest songs to get started.
             </div>
           ) : (
             <div className="print-hidden flex flex-col gap-6">
@@ -4722,22 +4844,20 @@ export function ShowPage({
                               {song.title} - {getDisplaySingerName(song.artist)}
                               {song.song_key ? ` (${song.song_key})` : ""}
                             </p>
-                            {song.notes ? (
-                              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-600">
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              <span>{song.source_type === "guest" ? "Guest Song" : "Library Song"}</span>
+                              {song.tempo ? <span>Tempo: {song.tempo}</span> : null}
+                              {song.song_type ? <span>Type: {song.song_type}</span> : null}
+                            </div>
+
+                            {song.notes?.trim() ? (
+                              <p className="mt-3 whitespace-pre-wrap text-sm text-stone-600">
                                 {renderTextWithLinks(song.notes)}
                               </p>
                             ) : null}
 
                             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleLyrics(song.id)}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                              >
-                                {openLyricsSongId === song.id ? "Hide Lyrics" : "Show Lyrics"}
-                              </button>
-
-                              {canEditSetlistSong(song) ? (
+                              {canEditSetlistSong() ? (
                                 <button
                                   type="button"
                                   onClick={() => handleStartEditingSetlistSong(song.id)}
@@ -4750,62 +4870,15 @@ export function ShowPage({
 
                             {editingSetlistSongId === song.id ? (
                               <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    Song Title
-                                    <input
-                                      type="text"
-                                      name="title"
-                                      value={setlistSongEditFormState.title}
-                                      onChange={handleSetlistSongEditChange}
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      required
-                                    />
-                                  </label>
-                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                    Who&apos;s Singing
-                                    <input
-                                      type="text"
-                                      name="artist"
-                                      value={setlistSongEditFormState.artist}
-                                      onChange={handleSetlistSongEditChange}
-                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                      placeholder="Leave blank to use CMMS Band"
-                                    />
-                                  </label>
-                                </div>
-
-                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                  Key
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Custom Title
                                   <input
                                     type="text"
-                                    name="key"
-                                    value={setlistSongEditFormState.key}
+                                    name="customTitle"
+                                    value={setlistSongEditFormState.customTitle}
                                     onChange={handleSetlistSongEditChange}
                                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    placeholder="Optional key"
-                                  />
-                                </label>
-
-                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                  Notes
-                                  <textarea
-                                    name="notes"
-                                    value={setlistSongEditFormState.notes}
-                                    onChange={handleSetlistSongEditChange}
-                                    className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    placeholder="Optional notes"
-                                  />
-                                </label>
-
-                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                  Lyrics
-                                  <textarea
-                                    name="lyrics"
-                                    value={setlistSongEditFormState.lyrics}
-                                    onChange={handleSetlistSongEditChange}
-                                    className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    placeholder="Add lyrics for this song"
+                                    placeholder="Leave blank to use the source song title"
                                   />
                                 </label>
 
@@ -4826,17 +4899,6 @@ export function ShowPage({
                                     Cancel
                                   </button>
                                 </div>
-                              </div>
-                            ) : null}
-
-                            {openLyricsSongId === song.id ? (
-                              <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-4 py-4">
-                                <p className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">
-                                  Lyrics
-                                </p>
-                                <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-stone-700">
-                                  {song.lyrics || "No lyrics added yet"}
-                                </p>
                               </div>
                             ) : null}
 
@@ -4943,9 +5005,6 @@ export function ShowPage({
                                   <p className="print-song-artist">
                                     {getDisplaySingerName(song.artist)}
                                   </p>
-                                  {printMode !== "stage" && song.notes ? (
-                                    <p className="print-song-notes">{song.notes}</p>
-                                  ) : null}
                                 </div>
                               ) : null}
                             </div>
@@ -5305,7 +5364,7 @@ export function ShowPage({
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Setlist Builder</h2>
               <p className="text-sm text-stone-600">
-                Place songs from the pool into the official setlist when you are ready.
+                Build the official setlist from the library and this show&apos;s guest songs.
               </p>
             </div>
           </section>
@@ -5318,7 +5377,7 @@ export function ShowPage({
               <p className="text-sm text-stone-600">
                 {viewMode === "guest"
                   ? "Add one or more songs for this show. Guests will only see guest-facing submission details here."
-                  : "Add a song request or suggestion to the shared song pool."}
+                  : "Add a reusable song to the library."}
               </p>
             </div>
 
@@ -5326,7 +5385,7 @@ export function ShowPage({
               className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
               onSubmit={handleSubmit}
             >
-              <div className={`grid gap-4 ${viewMode === "guest" ? "" : "sm:grid-cols-2"}`}>
+              <div className="grid gap-4">
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                   Song Title
                   <input
@@ -5339,20 +5398,6 @@ export function ShowPage({
                     required
                   />
                 </label>
-
-                {viewMode !== "guest" ? (
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Who&apos;s Singing
-                    <input
-                      type="text"
-                      name="artist"
-                      value={formState.artist}
-                      onChange={handleChange}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Leave blank to use CMMS Band"
-                    />
-                  </label>
-                ) : null}
               </div>
 
               {viewMode === "guest" ? (
@@ -5411,27 +5456,62 @@ export function ShowPage({
                 />
               </label>
 
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Notes
-                <textarea
-                  name="notes"
-                  value={formState.notes}
-                  onChange={handleChange}
-                  className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Optional notes"
-                />
-              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Tempo
+                  <select
+                    name="tempo"
+                    value={formState.tempo}
+                    onChange={handleChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  >
+                    <option value="">Not set</option>
+                    <option value="fast">Fast</option>
+                    <option value="medium">Medium</option>
+                    <option value="slow">Slow</option>
+                  </select>
+                </label>
 
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Lyrics / lyric cue / chorus (optional)
-                <textarea
-                  name="lyrics"
-                  value={formState.lyrics}
-                  onChange={handleChange}
-                  className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Optional lyrics, chorus, or cue"
-                />
-              </label>
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Song Type
+                  <select
+                    name="songType"
+                    value={formState.songType}
+                    onChange={handleChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  >
+                    <option value="">Not set</option>
+                    <option value="vocal">Vocal</option>
+                    <option value="instrumental">Instrumental</option>
+                  </select>
+                </label>
+              </div>
+
+              {viewMode !== "guest" ? (
+                <>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Notes
+                    <textarea
+                      name="notes"
+                      value={formState.notes}
+                      onChange={handleChange}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional notes for the setlist side"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Lyrics
+                    <textarea
+                      name="lyrics"
+                      value={formState.lyrics}
+                      onChange={handleChange}
+                      className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional lyrics"
+                    />
+                  </label>
+                </>
+              ) : null}
 
               <div className="flex justify-start">
                 <button
@@ -5443,7 +5523,7 @@ export function ShowPage({
                     ? "Submitting..."
                     : viewMode === "guest"
                       ? "Submit Song"
-                      : "Add Pending Song"}
+                      : "Add to Library"}
                 </button>
               </div>
             </form>
@@ -5489,12 +5569,10 @@ export function ShowPage({
                                 />
                               </label>
                               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Who&apos;s Singing
+                                Guest
                                 <input
                                   type="text"
-                                  name="artist"
-                                  value={poolSongEditFormState.artist}
-                                  onChange={handlePoolSongEditChange}
+                                  value={song.submitted_by_name ?? guestSingerName}
                                   readOnly
                                   className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
                                   placeholder="Singer name"
@@ -5520,25 +5598,32 @@ export function ShowPage({
                             </label>
 
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Notes
-                              <textarea
-                                name="notes"
-                                value={poolSongEditFormState.notes}
+                              Tempo
+                              <select
+                                name="tempo"
+                                value={poolSongEditFormState.tempo}
                                 onChange={handlePoolSongEditChange}
-                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                placeholder="Optional notes"
-                              />
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              >
+                                <option value="">Not set</option>
+                                <option value="fast">Fast</option>
+                                <option value="medium">Medium</option>
+                                <option value="slow">Slow</option>
+                              </select>
                             </label>
 
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Lyrics / lyric cue
-                              <textarea
-                                name="lyrics"
-                                value={poolSongEditFormState.lyrics}
+                              Song Type
+                              <select
+                                name="songType"
+                                value={poolSongEditFormState.songType}
                                 onChange={handlePoolSongEditChange}
-                                className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                placeholder="Optional lyrics, chorus, or cue"
-                              />
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              >
+                                <option value="">Not set</option>
+                                <option value="vocal">Vocal</option>
+                                <option value="instrumental">Instrumental</option>
+                              </select>
                             </label>
 
                             <div className="flex flex-col gap-3 sm:flex-row">
@@ -5606,22 +5691,22 @@ export function ShowPage({
           </section>
         ) : null}
 
-        {shouldShowBandSongTools || (isAdminView && activeAdminTab === "songs") ? (
+        {isAdminView && activeAdminTab === "songs" ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Song Pool</h2>
+              <h2 className="text-xl font-semibold">Guest Songs for This Show</h2>
               <p className="text-sm text-stone-600">
-                Shared submissions from guests, band members, and admins for this show.
+                Guest-submitted songs stay attached to this show and can still be added to the setlist.
               </p>
             </div>
 
-            {visibleSongPool.length === 0 ? (
+            {visibleGuestSongs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                No songs in the pool yet. Submit one above to get started.
+                No guest songs have been submitted for this show yet.
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                {visibleSongPool.map((song) => (
+                {visibleGuestSongs.map((song) => (
                 <article
                   key={song.id}
                   className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
@@ -5641,14 +5726,13 @@ export function ShowPage({
                           />
                         </label>
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Who&apos;s Singing
+                          Guest
                           <input
                             type="text"
-                            name="artist"
-                            value={poolSongEditFormState.artist}
-                            onChange={handlePoolSongEditChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Leave blank to use CMMS Band"
+                            value={song.submitted_by_name ?? ""}
+                            readOnly
+                            className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
+                            placeholder="Guest name"
                           />
                         </label>
                       </div>
@@ -5665,27 +5749,36 @@ export function ShowPage({
                         />
                       </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Notes
-                        <textarea
-                          name="notes"
-                          value={poolSongEditFormState.notes}
-                          onChange={handlePoolSongEditChange}
-                          className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional notes"
-                        />
-                      </label>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Tempo
+                          <select
+                            name="tempo"
+                            value={poolSongEditFormState.tempo}
+                            onChange={handlePoolSongEditChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          >
+                            <option value="">Not set</option>
+                            <option value="fast">Fast</option>
+                            <option value="medium">Medium</option>
+                            <option value="slow">Slow</option>
+                          </select>
+                        </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Lyrics
-                        <textarea
-                          name="lyrics"
-                          value={poolSongEditFormState.lyrics}
-                          onChange={handlePoolSongEditChange}
-                          className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Lyrics, chorus, or cue"
-                        />
-                      </label>
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Song Type
+                          <select
+                            name="songType"
+                            value={poolSongEditFormState.songType}
+                            onChange={handlePoolSongEditChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          >
+                            <option value="">Not set</option>
+                            <option value="vocal">Vocal</option>
+                            <option value="instrumental">Instrumental</option>
+                          </select>
+                        </label>
+                      </div>
 
                       <div className="flex flex-col gap-3 sm:flex-row">
                         <button
@@ -5731,9 +5824,9 @@ export function ShowPage({
                         </p>
                       ) : null}
 
-                      {canEditPoolSong(song) || viewMode === "admin" ? (
+                      {canEditPoolSong() || viewMode === "admin" ? (
                         <div className="mt-4 flex flex-col gap-3">
-                          {canEditPoolSong(song) ? (
+                          {canEditPoolSong() ? (
                             <div className="flex flex-col gap-3 sm:flex-row">
                               <button
                                 type="button"
@@ -5787,9 +5880,7 @@ export function ShowPage({
                                 disabled={activePendingActionId === song.id}
                                 className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
                               >
-                                {normalizeSubmittedByRole(song.submitted_by_role) === "guest"
-                                  ? "Delete Song"
-                                  : "Delete from Pool"}
+                                Delete Song
                               </button>
                             </div>
                           ) : null}
@@ -5813,13 +5904,44 @@ export function ShowPage({
               </p>
             </div>
 
-            {songLibrary.length === 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Filter by Tempo
+                <select
+                  value={libraryTempoFilter}
+                  onChange={(event) => setLibraryTempoFilter(event.target.value as "" | SongTempo)}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                >
+                  <option value="">All tempos</option>
+                  <option value="fast">Fast</option>
+                  <option value="medium">Medium</option>
+                  <option value="slow">Slow</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Filter by Song Type
+                <select
+                  value={librarySongTypeFilter}
+                  onChange={(event) => setLibrarySongTypeFilter(event.target.value as "" | SongType)}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                >
+                  <option value="">All song types</option>
+                  <option value="vocal">Vocal</option>
+                  <option value="instrumental">Instrumental</option>
+                </select>
+              </label>
+            </div>
+
+            {filteredSongLibrary.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                No reusable songs saved yet. Band and admin submissions will build the library over time.
+                {songLibrary.length === 0
+                  ? "No reusable songs saved yet. Band and admin submissions will build the library over time."
+                  : "No library songs match the current filters."}
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                {songLibrary.map((song) => (
+                {filteredSongLibrary.map((song) => (
                   <article
                     key={song.id}
                     className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
@@ -5838,17 +5960,12 @@ export function ShowPage({
                               required
                             />
                           </label>
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Who&apos;s Singing
-                              <input
-                                type="text"
-                                name="artist"
-                                value={librarySongEditFormState.artist}
-                                onChange={handleLibrarySongEditChange}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                placeholder="Leave blank to use CMMS Band"
-                              />
-                          </label>
+                          <div className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            <span>Created By</span>
+                            <div className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700">
+                              {formatLibrarySourceRole(song.source_role)}
+                            </div>
+                          </div>
                         </div>
 
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
@@ -5863,14 +5980,45 @@ export function ShowPage({
                           />
                         </label>
 
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Tempo
+                            <select
+                              name="tempo"
+                              value={librarySongEditFormState.tempo}
+                              onChange={handleLibrarySongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            >
+                              <option value="">Not set</option>
+                              <option value="fast">Fast</option>
+                              <option value="medium">Medium</option>
+                              <option value="slow">Slow</option>
+                            </select>
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Song Type
+                            <select
+                              name="songType"
+                              value={librarySongEditFormState.songType}
+                              onChange={handleLibrarySongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            >
+                              <option value="">Not set</option>
+                              <option value="vocal">Vocal</option>
+                              <option value="instrumental">Instrumental</option>
+                            </select>
+                          </label>
+                        </div>
+
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                           Notes
                           <textarea
                             name="notes"
-                            value={librarySongEditFormState.notes}
+                            value={librarySongEditFormState.notes ?? ""}
                             onChange={handleLibrarySongEditChange}
-                            className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Optional notes"
+                            className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Optional notes for the setlist side"
                           />
                         </label>
 
@@ -5878,10 +6026,10 @@ export function ShowPage({
                           Lyrics
                           <textarea
                             name="lyrics"
-                            value={librarySongEditFormState.lyrics}
+                            value={librarySongEditFormState.lyrics ?? ""}
                             onChange={handleLibrarySongEditChange}
-                            className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Lyrics, chorus, or cue"
+                            className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Optional lyrics"
                           />
                         </label>
 
@@ -5908,9 +6056,6 @@ export function ShowPage({
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex flex-col gap-1">
                             <h3 className="text-base font-semibold text-stone-900">{song.title}</h3>
-                            <p className="text-sm text-stone-700">
-                              {getDisplaySingerName(song.artist)}
-                            </p>
                           </div>
                           <span className="w-fit rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
                             Source: {formatLibrarySourceRole(song.source_role)}
@@ -5919,13 +6064,12 @@ export function ShowPage({
 
                         <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
                           {song.song_key ? <p>Key: {song.song_key}</p> : null}
-                          {song.notes ? (
+                          {song.tempo ? <p>Tempo: {song.tempo}</p> : null}
+                          {song.song_type ? <p>Type: {song.song_type}</p> : null}
+                          {song.notes?.trim() ? (
                             <p className="whitespace-pre-wrap">
                               Notes: {renderTextWithLinks(song.notes)}
                             </p>
-                          ) : null}
-                          {song.lyrics ? (
-                            <p className="text-xs text-stone-500">Lyrics available in library</p>
                           ) : null}
                         </div>
 
@@ -5940,6 +6084,20 @@ export function ShowPage({
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Edit Song
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleLibraryLyrics(song.id)}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  {openLibraryLyricsSongId === song.id ? "Hide Lyrics" : "View Lyrics"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintLibrarySong(song)}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Print Lyrics
                                 </button>
                               </div>
                             ) : null}
@@ -5972,6 +6130,26 @@ export function ShowPage({
                                 </button>
                               </div>
                             ) : null}
+                          </div>
+                        ) : null}
+
+                        {openLibraryLyricsSongId === song.id ? (
+                          <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-4 py-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                Lyrics
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => handlePrintLibrarySong(song)}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Print
+                              </button>
+                            </div>
+                            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                              {song.lyrics?.trim() || "No lyrics added yet."}
+                            </p>
                           </div>
                         ) : null}
                       </>

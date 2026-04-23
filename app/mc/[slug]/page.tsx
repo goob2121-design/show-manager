@@ -3,11 +3,18 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type {
   GuestProfile,
   McBlockNote,
-  SetlistSong,
+  SetlistEntry,
+  ShowGuestSong,
+  SongRecord,
   ShowRecord,
   ShowSponsor,
   SponsorLibraryEntry,
 } from "@/lib/types";
+
+type SetlistEntryRow = SetlistEntry & {
+  library_song?: SongRecord | SongRecord[] | null;
+  guest_song?: ShowGuestSong | ShowGuestSong[] | null;
+};
 
 function mergeShowSponsorsWithLibrary(
   showSponsors: ShowSponsor[],
@@ -54,9 +61,34 @@ async function loadMcPageData(slug: string) {
     { data: blockNoteRows, error: blockNoteError },
   ] = await Promise.all([
     supabase
-      .from("setlist_songs")
-      .select("*")
+      .from("setlist_entries")
+      .select(`
+        *,
+        library_song:song_id (
+          id,
+          title,
+          key,
+          tempo,
+          song_type,
+          notes,
+          lyrics,
+          created_by_role,
+          created_by_name,
+          created_at
+        ),
+        guest_song:guest_song_id (
+          id,
+          show_id,
+          title,
+          key,
+          tempo,
+          song_type,
+          submitted_by_name,
+          created_at
+        )
+      `)
       .eq("show_id", showRecord.id)
+      .order("section", { ascending: true })
       .order("position", { ascending: true }),
     supabase
       .from("guest_profiles")
@@ -102,7 +134,7 @@ async function loadMcPageData(slug: string) {
 
   return {
     show: showRecord as ShowRecord,
-    setlist: (setlistRows ?? []) as Array<SetlistSong & { set_section?: string | null }>,
+    setlist: (setlistRows ?? []) as SetlistEntryRow[],
     guestProfiles: (guestProfileRows ?? []) as GuestProfile[],
     sponsors: mergeShowSponsorsWithLibrary(
       (sponsorRows ?? []) as ShowSponsor[],

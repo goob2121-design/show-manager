@@ -34,36 +34,45 @@ alter table public.shows
   add column if not exists intermission_script text,
   add column if not exists closing_script text;
 
-create table if not exists public.setlist_songs (
+create table if not exists public.songs (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  key text,
+  tempo text check (tempo in ('fast', 'medium', 'slow')),
+  song_type text check (song_type in ('vocal', 'instrumental')),
+  notes text,
+  lyrics text,
+  created_by_role text not null check (created_by_role in ('band', 'admin')),
+  created_by_name text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.show_guest_songs (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,
+  title text not null,
+  key text,
+  tempo text check (tempo in ('fast', 'medium', 'slow')),
+  song_type text check (song_type in ('vocal', 'instrumental')),
+  submitted_by_name text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.setlist_entries (
+  id uuid primary key default gen_random_uuid(),
+  show_id uuid not null references public.shows(id) on delete cascade,
+  section text not null check (section in ('set1', 'set2', 'encore')),
   position integer not null,
-  title text not null,
-  artist text,
-  song_key text,
-  notes text,
-  lyrics text,
-  created_at timestamptz not null default now()
+  source_type text not null check (source_type in ('library', 'guest')),
+  song_id uuid references public.songs(id),
+  guest_song_id uuid references public.show_guest_songs(id) on delete cascade,
+  custom_title text,
+  created_at timestamptz not null default now(),
+  constraint setlist_entries_source_reference_check check (
+    (source_type = 'library' and song_id is not null and guest_song_id is null) or
+    (source_type = 'guest' and guest_song_id is not null and song_id is null)
+  )
 );
-
-alter table public.setlist_songs
-  add column if not exists set_section text,
-  add column if not exists source_role text;
-
-create table if not exists public.pending_submissions (
-  id uuid primary key default gen_random_uuid(),
-  show_id uuid not null references public.shows(id) on delete cascade,
-  title text not null,
-  artist text,
-  song_key text,
-  notes text,
-  lyrics text,
-  submitted_by_role text not null,
-  created_at timestamptz not null default now()
-);
-
-alter table public.pending_submissions
-  add column if not exists submitted_by_name text;
 
 create table if not exists public.guest_profiles (
   id uuid primary key default gen_random_uuid(),
@@ -78,17 +87,6 @@ create table if not exists public.guest_profiles (
   website text,
   photo_url text,
   permission_granted boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.song_library (
-  id uuid primary key default gen_random_uuid(),
-  title text not null,
-  artist text,
-  song_key text,
-  notes text,
-  lyrics text,
-  source_role text,
   created_at timestamptz not null default now()
 );
 
@@ -110,7 +108,7 @@ create table if not exists public.show_sponsors (
   sponsor_id uuid references public.sponsor_library(id) on delete cascade,
   placement_order integer not null default 1,
   placement_type text,
-  mc_anchor_song_id uuid references public.setlist_songs(id) on delete set null,
+  mc_anchor_song_id uuid references public.setlist_entries(id) on delete set null,
   linked_performer text,
   custom_note text,
   created_at timestamptz not null default now()
@@ -120,7 +118,7 @@ alter table public.show_sponsors
   add column if not exists sponsor_id uuid references public.sponsor_library(id) on delete cascade,
   add column if not exists placement_order integer not null default 1,
   add column if not exists placement_type text,
-  add column if not exists mc_anchor_song_id uuid references public.setlist_songs(id) on delete set null,
+  add column if not exists mc_anchor_song_id uuid references public.setlist_entries(id) on delete set null,
   add column if not exists linked_performer text,
   add column if not exists custom_note text,
   add column if not exists name text,
@@ -151,18 +149,27 @@ where public.show_sponsors.sponsor_id is null
 create table if not exists public.mc_block_notes (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,
-  anchor_song_id uuid not null references public.setlist_songs(id) on delete cascade,
+  anchor_song_id uuid not null references public.setlist_entries(id) on delete cascade,
   intro_note text,
   sponsor_mention text,
   transition_note text,
   created_at timestamptz not null default now()
 );
 
-create index if not exists setlist_songs_show_id_position_idx
-  on public.setlist_songs(show_id, position);
+create index if not exists songs_title_key_idx
+  on public.songs(lower(title), lower(coalesce(key, '')));
 
-create index if not exists pending_submissions_show_id_created_at_idx
-  on public.pending_submissions(show_id, created_at);
+create unique index if not exists songs_title_key_unique
+  on public.songs(lower(title), lower(coalesce(key, '')));
+
+create index if not exists show_guest_songs_show_id_created_at_idx
+  on public.show_guest_songs(show_id, created_at);
+
+create index if not exists show_guest_songs_show_id_title_idx
+  on public.show_guest_songs(show_id, lower(title));
+
+create index if not exists setlist_entries_show_id_position_idx
+  on public.setlist_entries(show_id, section, position);
 
 create index if not exists guest_profiles_show_id_created_at_idx
   on public.guest_profiles(show_id, created_at);

@@ -8,7 +8,11 @@ import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { ThemeToggle } from "@/app/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
-import type { SetlistSong, ShowRecord } from "@/lib/types";
+import type { SetlistEntry, ShowGuestSong, ShowRecord } from "@/lib/types";
+
+type SetlistEntryRow = SetlistEntry & {
+  guest_song?: ShowGuestSong | ShowGuestSong[] | null;
+};
 
 type ShowFormState = {
   name: string;
@@ -533,8 +537,20 @@ export default function ShowsDashboardPage() {
       }
 
       const { data: sourceSetlist, error: sourceSetlistError } = await supabase
-        .from("setlist_songs")
-        .select("*")
+        .from("setlist_entries")
+        .select(`
+          *,
+          guest_song:guest_song_id (
+            id,
+            show_id,
+            title,
+            key,
+            tempo,
+            song_type,
+            submitted_by_name,
+            created_at
+          )
+        `)
         .eq("show_id", sourceShow.id)
         .order("position", { ascending: true });
 
@@ -543,22 +559,55 @@ export default function ShowsDashboardPage() {
         throw sourceSetlistError;
       }
 
-      const typedSetlist = (sourceSetlist ?? []) as Array<
-        SetlistSong & { set_section?: string | null }
-      >;
+      const typedSetlist = (sourceSetlist ?? []) as SetlistEntryRow[];
 
       if (typedSetlist.length > 0) {
-        const { error: insertSetlistError } = await supabase.from("setlist_songs").insert(
+        const guestSongsToClone = typedSetlist
+          .filter((song) => song.source_type === "guest")
+          .map((song) => (Array.isArray(song.guest_song) ? song.guest_song[0] : song.guest_song))
+          .filter((song): song is ShowGuestSong => Boolean(song));
+        const guestSongIdMap = new Map<string, string>();
+
+        if (guestSongsToClone.length > 0) {
+          const { data: insertedGuestSongs, error: insertGuestSongsError } = await supabase
+            .from("show_guest_songs")
+            .insert(
+              guestSongsToClone.map((song) => ({
+                show_id: createdShow.id,
+                title: song.title,
+                key: song.key,
+                tempo: song.tempo,
+                song_type: song.song_type,
+                submitted_by_name: song.submitted_by_name,
+              })),
+            )
+            .select("*");
+
+          if (insertGuestSongsError) {
+            await supabase.from("shows").delete().eq("id", createdShow.id);
+            throw insertGuestSongsError;
+          }
+
+          guestSongsToClone.forEach((song, index) => {
+            const insertedSong = insertedGuestSongs?.[index];
+            if (insertedSong) {
+              guestSongIdMap.set(song.id, insertedSong.id);
+            }
+          });
+        }
+
+        const { error: insertSetlistError } = await supabase.from("setlist_entries").insert(
           typedSetlist.map((song) => ({
             show_id: createdShow.id,
+            section: song.section,
             position: song.position,
-            set_section: song.set_section ?? "set1",
-            source_role: song.source_role ?? null,
-            title: song.title,
-            artist: song.artist,
-            song_key: song.song_key,
-            notes: song.notes,
-            lyrics: song.lyrics,
+            source_type: song.source_type,
+            song_id: song.source_type === "library" ? song.song_id : null,
+            guest_song_id:
+              song.source_type === "guest" && song.guest_song_id
+                ? guestSongIdMap.get(song.guest_song_id) ?? null
+                : null,
+            custom_title: song.custom_title,
           })),
         );
 

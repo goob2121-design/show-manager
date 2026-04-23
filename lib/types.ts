@@ -1,6 +1,9 @@
 export type ViewMode = "guest" | "band" | "admin";
 export type SubmittedByRole = "guest" | "band" | "admin";
 export type SetSection = "set1" | "set2" | "encore";
+export type SongTempo = "fast" | "medium" | "slow";
+export type SongType = "vocal" | "instrumental";
+export type SongSourceType = "library" | "guest";
 
 export type ShowRecord = {
   id: string;
@@ -28,31 +31,47 @@ export type ShowRecord = {
   created_at: string;
 };
 
-export type SetlistSong = {
+export type SongRecord = {
   id: string;
-  show_id: string;
-  position: number;
-  set_section: SetSection;
-  source_role: SubmittedByRole | string | null;
   title: string;
-  artist: string | null;
-  song_key: string | null;
-  notes: string | null;
-  lyrics: string | null;
+  key: string | null;
+  tempo: SongTempo | null;
+  song_type: SongType | null;
+  notes?: string | null;
+  lyrics?: string | null;
+  created_by_role: Extract<SubmittedByRole, "band" | "admin"> | string;
+  created_by_name: string | null;
   created_at: string;
 };
 
-export type PendingSubmission = {
+export type ShowGuestSong = {
   id: string;
   show_id: string;
   title: string;
-  artist: string | null;
-  song_key: string | null;
-  notes: string | null;
-  lyrics: string | null;
-  submitted_by_role: SubmittedByRole | string;
+  key: string | null;
+  tempo: SongTempo | null;
+  song_type: SongType | null;
   submitted_by_name: string | null;
   created_at: string;
+};
+
+export type SetlistEntry = {
+  id: string;
+  show_id: string;
+  section: SetSection;
+  position: number;
+  source_type: SongSourceType;
+  song_id: string | null;
+  guest_song_id: string | null;
+  custom_title: string | null;
+  created_at: string;
+  title: string;
+  key: string | null;
+  tempo: SongTempo | null;
+  song_type: SongType | null;
+  notes?: string | null;
+  lyrics?: string | null;
+  performer_name: string | null;
 };
 
 export type GuestProfile = {
@@ -68,17 +87,6 @@ export type GuestProfile = {
   website: string | null;
   photo_url: string | null;
   permission_granted: boolean;
-  created_at: string;
-};
-
-export type SongLibrarySong = {
-  id: string;
-  title: string;
-  artist: string | null;
-  song_key: string | null;
-  notes: string | null;
-  lyrics: string | null;
-  source_role: SubmittedByRole | string | null;
   created_at: string;
 };
 
@@ -131,10 +139,10 @@ export type McBlockNote = {
 };
 
 export type SongFormState = {
-  submittedByName: string;
   title: string;
-  artist: string;
   key: string;
+  tempo: "" | SongTempo;
+  songType: "" | SongType;
   notes: string;
   lyrics: string;
 };
