@@ -16,6 +16,24 @@ export function getAdminAccessStorageKey(slug: string) {
   return `cmms-admin-access:${slug}`;
 }
 
+function readAdminAccess(slug: string) {
+  const storageKey = getAdminAccessStorageKey(slug);
+  const sessionValue = window.sessionStorage.getItem(storageKey);
+
+  if (sessionValue === "granted") {
+    return true;
+  }
+
+  return window.localStorage.getItem(storageKey) === "granted";
+}
+
+function persistAdminAccess(slug: string) {
+  const storageKey = getAdminAccessStorageKey(slug);
+
+  window.sessionStorage.setItem(storageKey, "granted");
+  window.localStorage.setItem(storageKey, "granted");
+}
+
 export function AdminGate({
   slug,
   resourceLabel,
@@ -39,8 +57,7 @@ export function AdminGate({
       return;
     }
 
-    const storedValue = window.sessionStorage.getItem(getAdminAccessStorageKey(slug));
-    setIsAuthorized(storedValue === "granted");
+    setIsAuthorized(readAdminAccess(slug));
     setIsReady(true);
   }, [isGateEnabled, slug]);
 
@@ -53,7 +70,7 @@ export function AdminGate({
     }
 
     if (password === expectedPassword) {
-      window.sessionStorage.setItem(getAdminAccessStorageKey(slug), "granted");
+      persistAdminAccess(slug);
       setIsAuthorized(true);
       setErrorMessage(null);
       return;

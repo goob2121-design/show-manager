@@ -33,6 +33,9 @@ export type ShowRecord = {
   load_in_notes: string | null;
   announcements: string | null;
   guest_message: string | null;
+  promo_short: string | null;
+  promo_long: string | null;
+  ticket_link: string | null;
   opening_script: string | null;
   intermission_script: string | null;
   closing_script: string | null;
@@ -205,4 +208,7 @@ export type ShowDetailsFormState = {
   loadInNotes: string;
   announcements: string;
   guestMessage: string;
+  promoShort: string;
+  promoLong: string;
+  ticketLink: string;
 };

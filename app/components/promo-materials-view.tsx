@@ -1,5 +1,21 @@
 import type { PromoMaterial } from "@/lib/types";
 
+const imageFileExtensions = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+
+export function getPromoFileExtension(fileName: string | null | undefined) {
+  const extension = fileName?.split(".").pop()?.trim().toLowerCase();
+  return extension && extension !== fileName?.toLowerCase() ? extension : null;
+}
+
+export function isPromoMaterialImage(material: Pick<PromoMaterial, "file_mime_type" | "file_name">) {
+  if (material.file_mime_type?.toLowerCase().startsWith("image/")) {
+    return true;
+  }
+
+  const extension = getPromoFileExtension(material.file_name);
+  return extension ? imageFileExtensions.has(extension) : false;
+}
+
 export function formatPromoMaterialCategory(category: string | null | undefined) {
   switch (category) {
     case "flyer":
@@ -65,12 +81,37 @@ export function PromoMaterialsView({
       {materials.map((material) => {
         const uploadDate = formatPromoUploadDate(material.created_at);
         const fileSize = formatPromoFileSize(material.file_size);
+        const isImage = isPromoMaterialImage(material);
+        const fileExtension = getPromoFileExtension(material.file_name);
 
         return (
           <article
             key={material.id}
-            className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+            className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-stone-50"
           >
+            {isImage ? (
+              <a
+                href={material.file_url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open ${material.title} preview`}
+                className="block aspect-[4/3] border-b border-stone-200 bg-stone-200 bg-cover bg-center transition hover:opacity-90"
+                style={{ backgroundImage: `url("${material.file_url}")` }}
+              />
+            ) : (
+              <div className="flex aspect-[4/3] items-center justify-center border-b border-stone-200 bg-white">
+                <div className="flex h-24 w-20 flex-col items-center justify-center rounded-xl border border-stone-300 bg-stone-50 text-center shadow-sm">
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    File
+                  </span>
+                  <span className="mt-2 text-lg font-semibold uppercase text-stone-800">
+                    {fileExtension ?? "Doc"}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
@@ -93,6 +134,7 @@ export function PromoMaterialsView({
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                <span className="break-all normal-case tracking-normal">{material.file_name}</span>
                 {uploadDate ? <span>Uploaded {uploadDate}</span> : null}
                 {fileSize ? <span>{fileSize}</span> : null}
               </div>
@@ -107,6 +149,7 @@ export function PromoMaterialsView({
             >
               Download
             </a>
+            </div>
           </article>
         );
       })}

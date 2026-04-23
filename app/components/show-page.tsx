@@ -20,6 +20,8 @@ import {
   formatPromoFileSize,
   formatPromoMaterialCategory,
   formatPromoUploadDate,
+  getPromoFileExtension,
+  isPromoMaterialImage,
   PromoMaterialsView,
 } from "@/app/components/promo-materials-view";
 import { createClient } from "@/lib/supabase/client";
@@ -171,6 +173,9 @@ const initialShowDetailsFormState: ShowDetailsFormState = {
   loadInNotes: "",
   announcements: "",
   guestMessage: "",
+  promoShort: "",
+  promoLong: "",
+  ticketLink: "",
 };
 
 const initialPromoMaterialFormState: PromoMaterialFormState = {
@@ -1135,6 +1140,9 @@ function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
     loadInNotes: show.load_in_notes ?? "",
     announcements: show.announcements ?? "",
     guestMessage: show.guest_message ?? "",
+    promoShort: show.promo_short ?? "",
+    promoLong: show.promo_long ?? "",
+    ticketLink: show.ticket_link ?? "",
   };
 }
 
@@ -1335,6 +1343,7 @@ export function ShowPage({
   const [isSavingPromoMaterial, setIsSavingPromoMaterial] = useState(false);
   const [promoMaterialMessage, setPromoMaterialMessage] = useState<string | null>(null);
   const [promoMaterialError, setPromoMaterialError] = useState<string | null>(null);
+  const [copiedPromoTextKey, setCopiedPromoTextKey] = useState<string | null>(null);
 
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
@@ -1353,6 +1362,18 @@ export function ShowPage({
   const shouldShowBandPromoMaterialsTab = isBandView && activeBandTab === "promo-materials";
   const shouldShowSongSubmissionForm = shouldShowAdminSongSubmission;
   const visiblePromoMaterials = promoMaterials.filter((material) => material.is_visible);
+  const generatedPromoPost = [
+    show?.name ?? "",
+    [formatShowDate(show?.show_date ?? null), show?.show_start_time ?? ""]
+      .filter((part) => part.trim())
+      .join(" • "),
+    showDetailsFormState.promoShort,
+    showDetailsFormState.ticketLink
+      ? `Tickets:\n${showDetailsFormState.ticketLink}`
+      : "",
+  ]
+    .filter((part) => part.trim())
+    .join("\n\n");
   const shouldShowSetlistSection = viewMode === "guest"
     ? false
     : isAdminView
@@ -1701,6 +1722,25 @@ export function ShowPage({
       ...currentState,
       [name]: value,
     }));
+  }
+
+  async function handleCopyPromoText(text: string, copyKey: string) {
+    if (!text.trim()) {
+      setShowDetailsError("There is no promo text to copy yet.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setShowDetailsError(null);
+      setCopiedPromoTextKey(copyKey);
+
+      window.setTimeout(() => {
+        setCopiedPromoTextKey((currentKey) => (currentKey === copyKey ? null : currentKey));
+      }, 1800);
+    } catch (error) {
+      setShowDetailsError(getErrorMessage(error));
+    }
   }
 
   function handleGuestProfileChange(
@@ -2366,6 +2406,9 @@ export function ShowPage({
         load_in_notes: normalizeOptionalField(showDetailsFormState.loadInNotes),
         announcements: normalizeOptionalField(showDetailsFormState.announcements),
         guest_message: normalizeOptionalField(showDetailsFormState.guestMessage),
+        promo_short: normalizeOptionalField(showDetailsFormState.promoShort),
+        promo_long: normalizeOptionalField(showDetailsFormState.promoLong),
+        ticket_link: normalizeOptionalField(showDetailsFormState.ticketLink),
       };
 
       const { data, error } = await supabase
@@ -4429,11 +4472,20 @@ export function ShowPage({
 
         {isAdminView && activeAdminTab === "show-details" ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Show Details</h2>
-              <p className="text-sm text-stone-600">
-                Update itinerary details that guests and band members will see in their portals.
-              </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Show Details</h2>
+                <p className="text-sm text-stone-600">
+                  Update itinerary details that guests and band members will see in their portals.
+                </p>
+              </div>
+              <Link
+                href={`/admin/${show.slug}/print/itinerary`}
+                target="_blank"
+                className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+              >
+                Print Itinerary
+              </Link>
             </div>
 
             {showDetailsMessage ? (
@@ -4623,6 +4675,92 @@ export function ShowPage({
                   placeholder="Add a warm welcome, arrival notes, or anything guests should see first."
                 />
               </label>
+
+              <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Promo Text</h3>
+                  <p className="text-sm text-stone-600">
+                    Reusable copy for social posts, emails, and future public promo pages.
+                  </p>
+                </div>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Short Promo
+                  <textarea
+                    name="promoShort"
+                    value={showDetailsFormState.promoShort}
+                    onChange={handleShowDetailsChange}
+                    className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="A short blurb for quick social posts or event listings"
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPromoText(showDetailsFormState.promoShort, "short")}
+                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    {copiedPromoTextKey === "short" ? "Copied!" : "Copy Short Promo"}
+                  </button>
+                </div>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Full Promo
+                  <textarea
+                    name="promoLong"
+                    value={showDetailsFormState.promoLong}
+                    onChange={handleShowDetailsChange}
+                    className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="A longer promo blurb with details, highlights, sponsors, or artist notes"
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPromoText(showDetailsFormState.promoLong, "long")}
+                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    {copiedPromoTextKey === "long" ? "Copied!" : "Copy Full Promo"}
+                  </button>
+                </div>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Ticket Link
+                  <input
+                    type="url"
+                    name="ticketLink"
+                    value={showDetailsFormState.ticketLink}
+                    onChange={handleShowDetailsChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="https://tickets.example.com/show"
+                  />
+                </label>
+
+                <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Generated Post
+                      </p>
+                      <p className="mt-1 text-sm text-stone-600">
+                        Combines the show name, date, short promo, and ticket link.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPromoText(generatedPromoPost, "post")}
+                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                    >
+                      {copiedPromoTextKey === "post" ? "Copied!" : "Copy Full Post"}
+                    </button>
+                  </div>
+                  <pre className="mt-4 whitespace-pre-wrap rounded-xl border border-stone-200 bg-white px-4 py-4 text-sm leading-6 text-stone-700">
+                    {generatedPromoPost || "Add promo text to generate a ready-to-copy post."}
+                  </pre>
+                </div>
+              </section>
 
               <div className="flex justify-start">
                 <button
@@ -4833,6 +4971,8 @@ export function ShowPage({
                     const isEditingPromoMaterial = editingPromoMaterialId === material.id;
                     const fileSize = formatPromoFileSize(material.file_size);
                     const uploadDate = formatPromoUploadDate(material.created_at);
+                    const isImage = isPromoMaterialImage(material);
+                    const fileExtension = getPromoFileExtension(material.file_name);
 
                     return (
                       <article
@@ -4922,7 +5062,30 @@ export function ShowPage({
                         ) : (
                           <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                              <div>
+                              <div className="flex flex-col gap-4 sm:flex-row">
+                                {isImage ? (
+                                  <a
+                                    href={material.file_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    aria-label={`Open ${material.title} preview`}
+                                    className="block aspect-[4/3] w-full shrink-0 rounded-2xl border border-stone-200 bg-stone-200 bg-cover bg-center transition hover:opacity-90 sm:w-44"
+                                    style={{ backgroundImage: `url("${material.file_url}")` }}
+                                  />
+                                ) : (
+                                  <div className="flex aspect-[4/3] w-full shrink-0 items-center justify-center rounded-2xl border border-stone-200 bg-white sm:w-44">
+                                    <div className="flex h-20 w-16 flex-col items-center justify-center rounded-xl border border-stone-300 bg-stone-50 text-center">
+                                      <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                        File
+                                      </span>
+                                      <span className="mt-1 text-base font-semibold uppercase text-stone-800">
+                                        {fileExtension ?? "Doc"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="min-w-0">
                                 <div className="flex flex-wrap gap-2">
                                   <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
                                     {formatPromoMaterialCategory(material.category)}
@@ -4945,6 +5108,7 @@ export function ShowPage({
                                     {material.description}
                                   </p>
                                 ) : null}
+                              </div>
                               </div>
                               <a
                                 href={material.file_url}
@@ -4994,11 +5158,20 @@ export function ShowPage({
 
         {isAdminView && activeAdminTab === "sponsors" ? (
           <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Sponsor Management</h2>
-              <p className="text-sm text-stone-600">
-                Store sponsors once, then assign and order them for this show.
-              </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Sponsor Management</h2>
+                <p className="text-sm text-stone-600">
+                  Store sponsors once, then assign and order them for this show.
+                </p>
+              </div>
+              <Link
+                href={`/admin/${show.slug}/print/sponsors`}
+                target="_blank"
+                className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+              >
+                Print Sponsor Rundown
+              </Link>
             </div>
 
             <SectionLoadWarning message={dataSectionErrors.sponsorLibrary || dataSectionErrors.showSponsors} />
@@ -5958,11 +6131,20 @@ export function ShowPage({
 
         {isAdminView && activeAdminTab === "guests" ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Guest Profiles</h2>
-              <p className="text-sm text-stone-600">
-                Promo bios and photos submitted for this show.
-              </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Guest Profiles</h2>
+                <p className="text-sm text-stone-600">
+                  Promo bios and photos submitted for this show.
+                </p>
+              </div>
+              <Link
+                href={`/admin/${show.slug}/print/guests`}
+                target="_blank"
+                className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+              >
+                Print Guest Info
+              </Link>
             </div>
 
             <SectionLoadWarning message={dataSectionErrors.guestProfiles} />
