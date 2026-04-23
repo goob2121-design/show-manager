@@ -65,7 +65,7 @@ type SetlistSong = SetlistEntry & {
 
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab = "setlist" | "songs" | "guests" | "sponsors" | "mc-builder" | "show-details";
-type BandTab = "setlist" | "songs";
+type BandTab = "setlist" | "songs" | "itinerary";
 type GuestTab = "songs" | "artist-info" | "itinerary";
 type SponsorAdminTab = "library" | "show";
 type SetlistSectionConfig = {
@@ -86,6 +86,7 @@ const adminTabItems: Array<{ key: AdminTab; label: string }> = [
 const bandTabItems: Array<{ key: BandTab; label: string }> = [
   { key: "setlist", label: "Setlist" },
   { key: "songs", label: "Songs" },
+  { key: "itinerary", label: "Itinerary" },
 ];
 
 const guestTabItems: Array<{ key: GuestTab; label: string }> = [
@@ -1132,6 +1133,8 @@ export function ShowPage({
   const [editingSetlistSongId, setEditingSetlistSongId] = useState<string | null>(null);
   const [editingLibrarySongId, setEditingLibrarySongId] = useState<string | null>(null);
   const [openLibraryLyricsSongId, setOpenLibraryLyricsSongId] = useState<string | null>(null);
+  const [isBandSongFormOpen, setIsBandSongFormOpen] = useState(false);
+  const [isGuestSongFormOpen, setIsGuestSongFormOpen] = useState(false);
   const [editingSponsorLibraryId, setEditingSponsorLibraryId] = useState<string | null>(null);
   const [editingShowSponsorId, setEditingShowSponsorId] = useState<string | null>(null);
   const [poolSongEditFormState, setPoolSongEditFormState] = useState<SongEditFormState>({
@@ -1199,11 +1202,7 @@ export function ShowPage({
   const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
   const shouldShowGuestArtistInfoTab = isGuestView && activeGuestTab === "artist-info";
   const shouldShowGuestItineraryTab = isGuestView && activeGuestTab === "itinerary";
-  const shouldShowSongSubmissionForm = isAdminView
-    ? shouldShowAdminSongSubmission
-    : isBandView
-      ? shouldShowBandSongTools
-      : shouldShowGuestSongsTab;
+  const shouldShowSongSubmissionForm = shouldShowAdminSongSubmission;
   const shouldShowSetlistSection = viewMode === "guest"
     ? false
     : isAdminView
@@ -1457,6 +1456,18 @@ export function ShowPage({
       setActiveGuestTab("songs");
     }
   }, [viewMode]);
+
+  useEffect(() => {
+    if (!shouldShowBandSongTools) {
+      setIsBandSongFormOpen(false);
+    }
+  }, [shouldShowBandSongTools]);
+
+  useEffect(() => {
+    if (!shouldShowGuestSongsTab) {
+      setIsGuestSongFormOpen(false);
+    }
+  }, [shouldShowGuestSongsTab]);
 
   const mcRunSections = useMemo(
     () => buildMcRunSections(setlist, guestProfiles, mcBlockNotes),
@@ -2118,6 +2129,12 @@ export function ShowPage({
       }
 
       setFormState(initialFormState);
+      if (normalizedSubmittedByRole === "band") {
+        setIsBandSongFormOpen(false);
+      }
+      if (normalizedSubmittedByRole === "guest") {
+        setIsGuestSongFormOpen(false);
+      }
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -3316,6 +3333,8 @@ export function ShowPage({
       : "";
   const requiresGuestSelection = viewMode === "guest" && guestProfiles.length > 1 && !selectedGuestProfile;
   const isGuestSongSubmissionBlocked = viewMode === "guest" && guestProfiles.length === 0;
+  const shouldShowGuestProfileSelector = shouldShowGuestSongsTab && guestProfiles.length > 1;
+  const canOpenGuestSongForm = guestProfiles.length === 1 || Boolean(selectedGuestProfile);
   const guestSubmittedSongs =
     viewMode === "guest"
       ? pendingSongs.filter((song) => {
@@ -3535,12 +3554,12 @@ export function ShowPage({
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Band Sections</h2>
               <p className="text-sm text-stone-600">
-                Start with the show-day setlist, or switch to song collaboration tools when needed.
+                Jump between the show-day setlist, song collaboration tools, and itinerary details.
               </p>
             </div>
 
             <div
-              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2"
+              className="grid grid-cols-1 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-3"
               role="tablist"
               aria-label="Band portal sections"
             >
@@ -3631,7 +3650,7 @@ export function ShowPage({
           />
         ) : null}
 
-        {viewMode === "band" && activeBandTab === "setlist" ? (
+        {viewMode === "band" && activeBandTab === "itinerary" ? (
           <ShowInfoCard
             title="Band Itinerary"
             subtitle="Show details, timing, and logistics for the band."
@@ -5370,15 +5389,231 @@ export function ShowPage({
           </section>
         ) : null}
 
+        {shouldShowBandSongTools ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Song Suggestions</h2>
+                <p className="text-sm text-stone-600">
+                  Open the song suggestion form when you want to add a reusable library song.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsBandSongFormOpen(true)}
+                className="w-full rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 sm:w-auto"
+              >
+                + Suggest a Song
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {shouldShowGuestSongsTab ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Song Submission</h2>
+                <p className="text-sm text-stone-600">
+                  Choose a guest here, then review and submit songs for that guest.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsGuestSongFormOpen(true)}
+                disabled={!canOpenGuestSongForm}
+                className="w-full rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
+              >
+                Submit a Song
+              </button>
+            </div>
+
+            {shouldShowGuestProfileSelector ? (
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Select Guest
+                <select
+                  value={selectedGuestProfile?.id ?? ""}
+                  onChange={handleSelectedGuestProfileChange}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                >
+                  <option value="">Choose a guest</option>
+                  {guestProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name || "Unnamed guest"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-base font-semibold text-stone-900">Submitted Guest Songs</h3>
+                <p className="text-sm text-stone-600">
+                  {selectedGuestProfile?.name
+                    ? `Review and update songs already submitted for ${selectedGuestProfile.name} on this show.`
+                    : guestProfiles.length > 1
+                      ? "Choose a guest above to review that guest's submitted songs."
+                      : "Review and update guest-submitted songs for this show."}
+                </p>
+              </div>
+
+              {guestSubmittedSongs.length === 0 ? (
+                <p className="mt-4 text-sm text-stone-500">
+                  {guestProfiles.length > 1 && !selectedGuestProfile
+                    ? "Choose a guest above to see that guest's submitted songs."
+                    : "No songs submitted yet. The first song will appear here after it is sent."}
+                </p>
+              ) : (
+                <div className="mt-4 flex flex-col gap-3">
+                  {guestSubmittedSongs.map((song, songIndex) => (
+                    <article
+                      key={song.id}
+                      className="rounded-xl border border-stone-200 bg-white px-4 py-4"
+                    >
+                      {editingPoolSongId === song.id ? (
+                        <div className="grid gap-4">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Song Title
+                              <input
+                                type="text"
+                                name="title"
+                                value={poolSongEditFormState.title}
+                                onChange={handlePoolSongEditChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                required
+                              />
+                            </label>
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Guest
+                              <input
+                                type="text"
+                                value={song.submitted_by_name ?? guestSingerName}
+                                readOnly
+                                className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
+                                placeholder="Singer name"
+                              />
+                            </label>
+                          </div>
+
+                          <p className="text-sm text-stone-600">
+                            This song stays linked to the selected guest so it remains in the
+                            correct guest song list.
+                          </p>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Key
+                            <input
+                              type="text"
+                              name="key"
+                              value={poolSongEditFormState.key}
+                              onChange={handlePoolSongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Optional key"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Tempo
+                            <select
+                              name="tempo"
+                              value={poolSongEditFormState.tempo}
+                              onChange={handlePoolSongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            >
+                              <option value="">Not set</option>
+                              <option value="fast">Fast</option>
+                              <option value="medium">Medium</option>
+                              <option value="slow">Slow</option>
+                            </select>
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Song Type
+                            <select
+                              name="songType"
+                              value={poolSongEditFormState.songType}
+                              onChange={handlePoolSongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            >
+                              <option value="">Not set</option>
+                              <option value="vocal">Vocal</option>
+                              <option value="instrumental">Instrumental</option>
+                            </select>
+                          </label>
+
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <button
+                              type="button"
+                              onClick={() => handleSavePoolSong(song.id)}
+                              disabled={activePendingActionId === song.id}
+                              className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                            >
+                              Save Song
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelPoolSongEdit}
+                              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-stone-900">
+                                {songIndex + 1}. {song.title}
+                              </p>
+                              <p className="text-sm text-stone-600">
+                                {song.artist || guestSingerName}
+                                {song.song_key ? ` • Key: ${song.song_key}` : ""}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditingPoolSong(song.id)}
+                              disabled={activePendingActionId === song.id}
+                              className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Edit Song
+                            </button>
+                          </div>
+
+                          {song.notes ? (
+                            <p className="text-sm text-stone-600">{song.notes}</p>
+                          ) : null}
+
+                          {song.lyrics ? (
+                            <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                Lyrics
+                              </p>
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
+                                {song.lyrics}
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        ) : null}
+
         {shouldShowSongSubmissionForm ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">{formHeading}</h2>
-              <p className="text-sm text-stone-600">
-                {viewMode === "guest"
-                  ? "Add one or more songs for this show. Guests will only see guest-facing submission details here."
-                  : "Add a reusable song to the library."}
-              </p>
+              <p className="text-sm text-stone-600">Add a reusable song to the library.</p>
             </div>
 
             <form
@@ -5399,50 +5634,6 @@ export function ShowPage({
                   />
                 </label>
               </div>
-
-              {viewMode === "guest" ? (
-                <div className="flex flex-col gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">
-                  {guestProfiles.length === 0 ? (
-                    <p>Please complete guest info first before submitting songs.</p>
-                  ) : guestProfiles.length === 1 ? (
-                    <p>
-                      Who&apos;s Singing will be set automatically to {selectedGuestProfile?.name || "your guest profile"}.
-                    </p>
-                  ) : (
-                    <p>Choose the correct guest below before submitting a song.</p>
-                  )}
-                  <p>You can submit multiple songs for this show. Each one will be saved as its own entry.</p>
-                </div>
-              ) : null}
-
-              {viewMode === "guest" ? (
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Guest
-                  <select
-                    value={selectedGuestProfile?.id ?? ""}
-                    onChange={handleSelectedGuestProfileChange}
-                    disabled={guestProfiles.length <= 1}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 disabled:cursor-not-allowed disabled:bg-stone-100"
-                  >
-                    {guestProfiles.length === 0 ? (
-                      <option value="">Complete guest info first</option>
-                    ) : guestProfiles.length === 1 ? (
-                      <option value={selectedGuestProfile?.id ?? ""}>
-                        {selectedGuestProfile?.name || "Guest"}
-                      </option>
-                    ) : (
-                      <>
-                        <option value="">Select a guest</option>
-                        {guestProfiles.map((profile) => (
-                          <option key={profile.id} value={profile.id}>
-                            {profile.name || "Unnamed guest"}
-                          </option>
-                        ))}
-                      </>
-                    )}
-                  </select>
-                </label>
-              ) : null}
 
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                 Key
@@ -5487,54 +5678,46 @@ export function ShowPage({
                 </label>
               </div>
 
-              {viewMode !== "guest" ? (
-                <>
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Notes
-                    <textarea
-                      name="notes"
-                      value={formState.notes}
-                      onChange={handleChange}
-                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Optional notes for the setlist side"
-                    />
-                  </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Notes
+                <textarea
+                  name="notes"
+                  value={formState.notes}
+                  onChange={handleChange}
+                  className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  placeholder="Optional notes for the setlist side"
+                />
+              </label>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Lyrics
-                    <textarea
-                      name="lyrics"
-                      value={formState.lyrics}
-                      onChange={handleChange}
-                      className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Optional lyrics"
-                    />
-                  </label>
-                </>
-              ) : null}
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Lyrics
+                <textarea
+                  name="lyrics"
+                  value={formState.lyrics}
+                  onChange={handleChange}
+                  className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  placeholder="Optional lyrics"
+                />
+              </label>
 
               <div className="flex justify-start">
                 <button
                   type="submit"
-                  disabled={isSubmitting || isGuestSongSubmissionBlocked || requiresGuestSelection}
+                  disabled={isSubmitting}
                   className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                 >
-                  {isSubmitting
-                    ? "Submitting..."
-                    : viewMode === "guest"
-                      ? "Submit Song"
-                      : "Add to Library"}
+                  {isSubmitting ? "Submitting..." : "Add to Library"}
                 </button>
               </div>
             </form>
 
-            {viewMode === "guest" ? (
+            {false ? (
               <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
                 <div className="flex flex-col gap-1">
                   <h3 className="text-base font-semibold text-stone-900">Submitted Guest Songs</h3>
                   <p className="text-sm text-stone-600">
                     {selectedGuestProfile?.name
-                      ? `Review and update songs already submitted for ${selectedGuestProfile.name} on this show.`
+                      ? `Review and update songs already submitted for ${selectedGuestProfile?.name} on this show.`
                       : guestProfiles.length > 1
                         ? "Select a guest above to review that guest's submitted songs."
                         : "Review and update guest-submitted songs for this show."}
@@ -5689,6 +5872,270 @@ export function ShowPage({
               </div>
             ) : null}
           </section>
+        ) : null}
+
+        {shouldShowBandSongTools && isBandSongFormOpen ? (
+          <div className="print-hidden fixed inset-0 z-50 flex items-end bg-stone-950/50 sm:items-center sm:justify-center">
+            <button
+              type="button"
+              aria-label="Close suggest a song form"
+              onClick={() => setIsBandSongFormOpen(false)}
+              className="absolute inset-0 cursor-default"
+            />
+
+            <section className="relative z-10 flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[85vh] sm:max-w-2xl sm:rounded-3xl">
+              <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-4 sm:px-6">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-xl font-semibold">Suggest a Song</h2>
+                  <p className="text-sm text-stone-600">
+                    Add a reusable song to the library without leaving the Songs tab.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsBandSongFormOpen(false)}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="overflow-y-auto px-5 py-5 sm:px-6">
+                <form className="grid gap-4" onSubmit={handleSubmit}>
+                  <div className="grid gap-4">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Song Title
+                      <input
+                        type="text"
+                        name="title"
+                        value={formState.title}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Enter song title"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Key
+                    <input
+                      type="text"
+                      name="key"
+                      value={formState.key}
+                      onChange={handleChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional key"
+                    />
+                  </label>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Tempo
+                      <select
+                        name="tempo"
+                        value={formState.tempo}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Not set</option>
+                        <option value="fast">Fast</option>
+                        <option value="medium">Medium</option>
+                        <option value="slow">Slow</option>
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Song Type
+                      <select
+                        name="songType"
+                        value={formState.songType}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Not set</option>
+                        <option value="vocal">Vocal</option>
+                        <option value="instrumental">Instrumental</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Notes
+                    <textarea
+                      name="notes"
+                      value={formState.notes}
+                      onChange={handleChange}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional notes for the setlist side"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Lyrics
+                    <textarea
+                      name="lyrics"
+                      value={formState.lyrics}
+                      onChange={handleChange}
+                      className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional lyrics"
+                    />
+                  </label>
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {isSubmitting ? "Submitting..." : "Add to Library"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsBandSongFormOpen(false)}
+                      className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {shouldShowGuestSongsTab && isGuestSongFormOpen ? (
+          <div className="print-hidden fixed inset-0 z-50 flex items-end bg-stone-950/50 sm:items-center sm:justify-center">
+            <button
+              type="button"
+              aria-label="Close guest song submission form"
+              onClick={() => setIsGuestSongFormOpen(false)}
+              className="absolute inset-0 cursor-default"
+            />
+
+            <section className="relative z-10 flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[85vh] sm:max-w-2xl sm:rounded-3xl">
+              <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-4 sm:px-6">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-xl font-semibold">Submit a Song</h2>
+                  <p className="text-sm text-stone-600">
+                    Add one or more songs for this show using the same guest submission flow.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsGuestSongFormOpen(false)}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="overflow-y-auto px-5 py-5 sm:px-6">
+                <form className="grid gap-4" onSubmit={handleSubmit}>
+                  <div className="grid gap-4">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Song Title
+                      <input
+                        type="text"
+                        name="title"
+                        value={formState.title}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Enter song title"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex flex-col gap-2 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                    {guestProfiles.length === 0 ? (
+                      <p>Please complete guest info first before submitting songs.</p>
+                    ) : selectedGuestProfile ? (
+                      <p>
+                        This song will be submitted for {selectedGuestProfile.name || "your guest profile"}.
+                      </p>
+                    ) : (
+                      <p>Choose a guest from the Songs tab before submitting a song.</p>
+                    )}
+                    <p>You can submit multiple songs for this show. Each one will be saved as its own entry.</p>
+                  </div>
+
+                  {selectedGuestProfile ? (
+                    <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Selected Guest
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-stone-900">
+                        {selectedGuestProfile.name || "Guest"}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Key
+                    <input
+                      type="text"
+                      name="key"
+                      value={formState.key}
+                      onChange={handleChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional key"
+                    />
+                  </label>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Tempo
+                      <select
+                        name="tempo"
+                        value={formState.tempo}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Not set</option>
+                        <option value="fast">Fast</option>
+                        <option value="medium">Medium</option>
+                        <option value="slow">Slow</option>
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Song Type
+                      <select
+                        name="songType"
+                        value={formState.songType}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Not set</option>
+                        <option value="vocal">Vocal</option>
+                        <option value="instrumental">Instrumental</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || isGuestSongSubmissionBlocked || requiresGuestSelection}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {isSubmitting ? "Submitting..." : "Submit Song"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsGuestSongFormOpen(false)}
+                      className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </section>
+          </div>
         ) : null}
 
         {isAdminView && activeAdminTab === "songs" ? (
