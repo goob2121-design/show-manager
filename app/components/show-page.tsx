@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Fragment } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -82,6 +83,10 @@ const adminTabItems: Array<{ key: AdminTab; label: string }> = [
   { key: "mc-builder", label: "MC Builder" },
   { key: "show-details", label: "Show Details" },
 ];
+
+function normalizeAdminTab(value: string | null): AdminTab | null {
+  return adminTabItems.some((tab) => tab.key === value) ? (value as AdminTab) : null;
+}
 
 const bandTabItems: Array<{ key: BandTab; label: string }> = [
   { key: "setlist", label: "Setlist" },
@@ -1103,8 +1108,12 @@ export function ShowPage({
   initialRole = "guest",
   showRoleToggle = true,
 }: ShowPageProps) {
+  const searchParams = useSearchParams();
+  const requestedAdminTab = normalizeAdminTab(searchParams.get("tab"));
   const [viewMode, setViewMode] = useState<ViewMode>(initialRole);
-  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>("setlist");
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(
+    requestedAdminTab ?? "setlist",
+  );
   const [activeBandTab, setActiveBandTab] = useState<BandTab>("setlist");
   const [activeGuestTab, setActiveGuestTab] = useState<GuestTab>("songs");
   const [activeSponsorAdminTab, setActiveSponsorAdminTab] = useState<SponsorAdminTab>("library");
@@ -1197,7 +1206,7 @@ export function ShowPage({
   const isBandView = viewMode === "band";
   const isGuestView = viewMode === "guest";
   const shouldShowAdminSongSubmission =
-    isAdminView && (activeAdminTab === "setlist" || activeAdminTab === "songs");
+    isAdminView && activeAdminTab === "songs";
   const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
   const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
   const shouldShowGuestArtistInfoTab = isGuestView && activeGuestTab === "artist-info";
@@ -1445,7 +1454,7 @@ export function ShowPage({
 
   useEffect(() => {
     if (viewMode === "admin") {
-      setActiveAdminTab("setlist");
+      setActiveAdminTab(requestedAdminTab ?? "setlist");
     }
 
     if (viewMode === "band") {
@@ -1455,7 +1464,7 @@ export function ShowPage({
     if (viewMode === "guest") {
       setActiveGuestTab("songs");
     }
-  }, [viewMode]);
+  }, [requestedAdminTab, viewMode]);
 
   useEffect(() => {
     if (!shouldShowBandSongTools) {
@@ -3587,6 +3596,23 @@ export function ShowPage({
           </section>
         ) : null}
 
+        {isGuestView && guestMessage ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Welcome</h2>
+              <p className="text-sm text-stone-600">
+                A message from the show team for this event.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 sm:px-5">
+              <p className="whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                {guestMessage}
+              </p>
+            </div>
+          </section>
+        ) : null}
+
         {isGuestView ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
@@ -3621,23 +3647,6 @@ export function ShowPage({
 
             <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
               Active section: <span className="font-semibold text-emerald-700">{activeGuestTabLabel}</span>
-            </div>
-          </section>
-        ) : null}
-
-        {shouldShowGuestItineraryTab && guestMessage ? (
-          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Welcome</h2>
-              <p className="text-sm text-stone-600">
-                A message from the show team for this event.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 sm:px-5">
-              <p className="whitespace-pre-wrap text-sm leading-7 text-stone-700">
-                {guestMessage}
-              </p>
             </div>
           </section>
         ) : null}

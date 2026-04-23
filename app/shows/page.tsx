@@ -4,11 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ChangeEvent, FormEvent, MouseEvent } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { ThemeToggle } from "@/app/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
-import type { SetlistEntry, ShowGuestSong, ShowRecord } from "@/lib/types";
+import type { GuestProfile, SetlistEntry, ShowGuestSong, ShowRecord } from "@/lib/types";
 
 type SetlistEntryRow = SetlistEntry & {
   guest_song?: ShowGuestSong | ShowGuestSong[] | null;
@@ -26,6 +26,13 @@ type DashboardTab = "active" | "create" | "archived";
 type PrefillSource = "" | string;
 type CopyLinkRole = "guest" | "band" | "admin" | "mc";
 type CopyMenuDirection = "up" | "down";
+
+type CurrentShowDashboardMetrics = {
+  songLibraryCount: number | null;
+  guestSongs: ShowGuestSong[];
+  guestProfiles: GuestProfile[];
+  setlistEntries: Array<Pick<SetlistEntry, "id" | "guest_song_id" | "section">>;
+};
 
 const initialFormState: ShowFormState = {
   name: "",
@@ -103,6 +110,29 @@ function buildDuplicateFormState() {
   };
 }
 
+function normalizeGuestName(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function getCurrentShow(shows: ShowRecord[], today: string) {
+  const activeShows = shows.filter((show) => !show.is_archived);
+  const upcomingShows = activeShows.filter((show) => show.show_date && show.show_date >= today);
+
+  return upcomingShows[0] ?? activeShows[0] ?? null;
+}
+
+function getSetlistSectionLabel(section: SetlistEntry["section"]) {
+  if (section === "set2") {
+    return "Set 2";
+  }
+
+  if (section === "encore") {
+    return "Encore";
+  }
+
+  return "Set 1";
+}
+
 function getShowCardTone(isArchived: boolean) {
   if (isArchived) {
     return {
@@ -143,13 +173,76 @@ export default function ShowsDashboardPage() {
   const [prefillSourceShowId, setPrefillSourceShowId] = useState<PrefillSource>("");
   const [openCopyMenuShowId, setOpenCopyMenuShowId] = useState<string | null>(null);
   const [copyMenuDirection, setCopyMenuDirection] = useState<CopyMenuDirection>("down");
+  const [currentShowMetrics, setCurrentShowMetrics] = useState<CurrentShowDashboardMetrics>({
+    songLibraryCount: null,
+    guestSongs: [],
+    guestProfiles: [],
+    setlistEntries: [],
+  });
 
   const activeShows = shows.filter((show) => !show.is_archived);
   const archivedShows = shows.filter((show) => show.is_archived);
   const today = new Date().toISOString().slice(0, 10);
+  const currentShow = getCurrentShow(shows, today);
   const upcomingShowsCount = activeShows.filter(
     (show) => show.show_date && show.show_date >= today,
   ).length;
+  const guestSongIdsInSetlist = useMemo(
+    () =>
+      new Set(
+        currentShowMetrics.setlistEntries
+          .map((entry) => entry.guest_song_id)
+          .filter((songId): songId is string => Boolean(songId)),
+      ),
+    [currentShowMetrics.setlistEntries],
+  );
+  const guestsMissingPhotos = currentShowMetrics.guestProfiles.filter(
+    (guest) => !guest.photo_url?.trim(),
+  );
+  const pendingGuestSongs = currentShowMetrics.guestSongs.filter(
+    (song) => !guestSongIdsInSetlist.has(song.id),
+  );
+  const guestsWithoutSongs = currentShowMetrics.guestProfiles.filter((guest) => {
+    const guestName = normalizeGuestName(guest.name);
+
+    if (!guestName) {
+      return true;
+    }
+
+    return !currentShowMetrics.guestSongs.some(
+      (song) => normalizeGuestName(song.submitted_by_name) === guestName,
+    );
+  });
+  const guestsReadyCount = currentShowMetrics.guestProfiles.filter(
+    (guest) => guest.permission_granted && Boolean(guest.photo_url?.trim()),
+  ).length;
+  const setlistSectionCounts = (["set1", "set2", "encore"] as const).map((section) => ({
+    section,
+    count: currentShowMetrics.setlistEntries.filter((entry) => entry.section === section).length,
+  }));
+  const guestNames = currentShowMetrics.guestProfiles
+    .map((guest) => guest.name?.trim())
+    .filter((name): name is string => Boolean(name));
+  const needsAttentionItems = [
+    ...guestsMissingPhotos.slice(0, 4).map((guest) => ({
+      title: `${guest.name || "Unnamed guest"} needs a promo photo`,
+      detail: "Add a photo in the guest profile before promo materials go out.",
+    })),
+    ...guestsWithoutSongs.slice(0, 4).map((guest) => ({
+      title: `${guest.name || "Unnamed guest"} has no submitted songs`,
+      detail: "Guest songs can be submitted through the guest portal or reviewed in admin.",
+    })),
+    ...(pendingGuestSongs.length > 0
+      ? [
+          {
+            title: `${pendingGuestSongs.length} guest song${
+              pendingGuestSongs.length === 1 ? "" : "s"
+            } pending review`,
+            detail: "Review guest-submitted songs and add the final choices to the setlist.",
+          },
+        ]
+      : []),
+  ].slice(0, 6);
 
   const loadShows = useCallback(async () => {
     setIsLoading(true);
@@ -167,7 +260,65 @@ export default function ShowsDashboardPage() {
         throw error;
       }
 
-      setShows(data ?? []);
+      const nextShows = data ?? [];
+      const nextCurrentShow = getCurrentShow(nextShows, new Date().toISOString().slice(0, 10));
+      const { count: songLibraryCount, error: songLibraryCountError } = await supabase
+        .from("songs")
+        .select("id", { count: "exact", head: true });
+
+      if (songLibraryCountError) {
+        throw songLibraryCountError;
+      }
+
+      if (!nextCurrentShow) {
+        setShows(nextShows);
+        setCurrentShowMetrics({
+          songLibraryCount: songLibraryCount ?? 0,
+          guestSongs: [],
+          guestProfiles: [],
+          setlistEntries: [],
+        });
+        return;
+      }
+
+      const [
+        { data: guestSongs, error: guestSongsError },
+        { data: guestProfiles, error: guestProfilesError },
+        { data: setlistEntries, error: setlistEntriesError },
+      ] = await Promise.all([
+        supabase
+          .from("show_guest_songs")
+          .select("*")
+          .eq("show_id", nextCurrentShow.id),
+        supabase
+          .from("guest_profiles")
+          .select("*")
+          .eq("show_id", nextCurrentShow.id),
+        supabase
+          .from("setlist_entries")
+          .select("id, guest_song_id, section")
+          .eq("show_id", nextCurrentShow.id),
+      ]);
+
+      if (guestSongsError) {
+        throw guestSongsError;
+      }
+
+      if (guestProfilesError) {
+        throw guestProfilesError;
+      }
+
+      if (setlistEntriesError) {
+        throw setlistEntriesError;
+      }
+
+      setShows(nextShows);
+      setCurrentShowMetrics({
+        songLibraryCount: songLibraryCount ?? 0,
+        guestSongs: (guestSongs ?? []) as ShowGuestSong[],
+        guestProfiles: (guestProfiles ?? []) as GuestProfile[],
+        setlistEntries: (setlistEntries ?? []) as Array<Pick<SetlistEntry, "id" | "guest_song_id" | "section">>,
+      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -439,6 +590,7 @@ export default function ShowsDashboardPage() {
         currentShows.map((show) => (show.id === showId ? data : show)),
       );
       cancelEditingShow();
+      void loadShows();
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -474,6 +626,8 @@ export default function ShowsDashboardPage() {
       if (duplicatingShowId === showId) {
         cancelDuplicatingShow();
       }
+
+      void loadShows();
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -1020,32 +1174,6 @@ export default function ShowsDashboardPage() {
                 </div>
               </div>
             </div>
-
-            <div className="grid gap-4 border-t border-stone-200 bg-stone-50/70 px-6 py-5 dark:border-slate-800 dark:bg-slate-950/60 sm:grid-cols-3 sm:px-8">
-              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
-                  Active Shows
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{activeShows.length}</p>
-                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Shows currently visible and in rotation</p>
-              </div>
-
-              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
-                  Archived Shows
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{archivedShows.length}</p>
-                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Stored safely for later reference or restore</p>
-              </div>
-
-              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
-                  Upcoming Shows
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{upcomingShowsCount}</p>
-                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Active shows with a date still ahead</p>
-              </div>
-            </div>
           </header>
 
           {errorMessage ? (
@@ -1053,6 +1181,200 @@ export default function ShowsDashboardPage() {
               {errorMessage}
             </div>
           ) : null}
+
+          <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                  Current Show Command Center
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                  Current Show Snapshot
+                </h2>
+                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
+                  The next active show gets priority here, with setup signals pulled from the
+                  guest, song, and setlist data already in the app.
+                </p>
+              </div>
+
+              {currentShow ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-100">
+                  {formatShowDate(currentShow.show_date)}
+                </div>
+              ) : null}
+            </div>
+
+            {isLoading ? (
+              <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
+                Loading current show snapshot...
+              </div>
+            ) : currentShow ? (
+              <div className="mt-5 grid gap-5">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    {
+                      label: "Current Show",
+                      value: currentShow.name,
+                      detail: currentShow.venue || "Venue not set",
+                    },
+                    {
+                      label: "Songs in Library",
+                      value: currentShowMetrics.songLibraryCount?.toString() ?? "0",
+                      detail: "Reusable songs available to build from",
+                    },
+                    {
+                      label: "Guest Songs Submitted",
+                      value: currentShowMetrics.guestSongs.length.toString(),
+                      detail: "Guest song choices attached to this show",
+                    },
+                    {
+                      label: "Guests Ready",
+                      value: `${guestsReadyCount}/${currentShowMetrics.guestProfiles.length}`,
+                      detail: "Profiles with permission and a promo photo",
+                    },
+                    {
+                      label: "Missing Promo Photos",
+                      value: guestsMissingPhotos.length.toString(),
+                      detail: "Guest profiles still missing photo assets",
+                    },
+                    {
+                      label: "Pending Review",
+                      value: pendingGuestSongs.length.toString(),
+                      detail: "Guest songs not yet placed in the setlist",
+                    },
+                  ].map((card) => (
+                    <div
+                      key={card.label}
+                      className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                        {card.label}
+                      </p>
+                      <p className="mt-2 break-words text-2xl font-semibold text-stone-900 dark:text-slate-100">
+                        {card.value}
+                      </p>
+                      <p className="mt-1 text-sm leading-5 text-stone-600 dark:text-slate-300">
+                        {card.detail}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid gap-5">
+                  <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5">
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
+                        Needs Attention
+                      </h3>
+                      <p className="text-sm text-stone-600 dark:text-slate-300">
+                        A short punch list for the current show.
+                      </p>
+                    </div>
+
+                    {needsAttentionItems.length === 0 ? (
+                      <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-100">
+                        Everything for this show is looking good.
+                      </div>
+                    ) : (
+                      <div className="mt-4 grid gap-3">
+                        {needsAttentionItems.map((item) => (
+                          <article
+                            key={`${item.title}-${item.detail}`}
+                            className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900"
+                          >
+                            <h4 className="text-sm font-semibold text-stone-900 dark:text-slate-100">
+                              {item.title}
+                            </h4>
+                            <p className="mt-1 text-sm leading-5 text-stone-600 dark:text-slate-300">
+                              {item.detail}
+                            </p>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5">
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
+                        Show Details
+                      </h3>
+                      <p className="text-sm text-stone-600 dark:text-slate-300">
+                        A quick read on who is booked and how the setlist is shaping up.
+                      </p>
+                    </div>
+
+                    <div className="mt-4 grid gap-4">
+                      <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                          Show
+                        </p>
+                        <Link
+                          href={`/admin/${currentShow.slug}?tab=show-details`}
+                          className="mt-2 block text-base font-semibold text-stone-900 underline-offset-4 transition hover:text-emerald-700 hover:underline dark:text-slate-100 dark:hover:text-emerald-300"
+                        >
+                          {currentShow.name}
+                        </Link>
+                        <div className="mt-2 grid gap-1 text-sm text-stone-600 dark:text-slate-300">
+                          <p>{formatShowDate(currentShow.show_date)}</p>
+                          <p>{currentShow.venue || "Venue not set"}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                          Guests
+                        </p>
+                        {guestNames.length === 0 ? (
+                          <p className="mt-2 text-sm text-stone-500 dark:text-slate-400">
+                            No guest names added yet.
+                          </p>
+                        ) : (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {guestNames.map((guestName, guestIndex) => (
+                              <Link
+                                key={`${guestName}-${guestIndex}`}
+                                href={`/admin/${currentShow.slug}?tab=guests`}
+                                className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-sm font-medium text-stone-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-emerald-900 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-100"
+                              >
+                                {guestName}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                          Setlist Songs
+                        </p>
+                        <div className="mt-3 grid gap-2">
+                          {setlistSectionCounts.map((item) => (
+                            <Link
+                              key={item.section}
+                              href={`/admin/${currentShow.slug}?tab=setlist`}
+                              className="flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2 text-sm transition hover:bg-emerald-50 dark:bg-slate-950 dark:hover:bg-emerald-950/40"
+                            >
+                              <span className="font-medium text-stone-700 dark:text-slate-200">
+                                {getSetlistSectionLabel(item.section)}
+                              </span>
+                              <span className="font-semibold text-stone-900 dark:text-slate-100">
+                                {item.count} {item.count === 1 ? "song" : "songs"}
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-400">
+                No active show is available yet. Create a show to light up the command center.
+              </div>
+            )}
+          </section>
 
           <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <div className="flex flex-col gap-4 border-b border-stone-200 pb-5 dark:border-slate-800">
@@ -1246,6 +1568,43 @@ export default function ShowsDashboardPage() {
                 )}
               </section>
             ) : null}
+          </section>
+
+          <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                Archive & Totals
+              </h2>
+              <p className="text-sm text-stone-600 dark:text-slate-300">
+                The original show counts are still here, just out of the main command-center lane.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
+                  Active Shows
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{activeShows.length}</p>
+                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Shows currently visible and in rotation</p>
+              </div>
+
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
+                  Archived Shows
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{archivedShows.length}</p>
+                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Stored safely for later reference or restore</p>
+              </div>
+
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
+                  Upcoming Shows
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{upcomingShowsCount}</p>
+                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Active shows with a date still ahead</p>
+              </div>
+            </div>
           </section>
         </section>
       </main>
