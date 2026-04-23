@@ -6,7 +6,8 @@ import { getAdminAccessStorageKey } from "@/app/components/admin-gate";
 
 type AdminQuickNavProps = {
   slug: string;
-  currentView: "admin" | "band" | "guest" | "mc";
+  currentView: "dashboard" | "admin" | "band" | "guest" | "mc";
+  accessSlug?: string;
 };
 
 const quickNavLinks = [
@@ -29,10 +30,10 @@ function subscribeToAdminAccess(callback: () => void) {
   };
 }
 
-export function AdminQuickNav({ slug, currentView }: AdminQuickNavProps) {
+export function AdminQuickNav({ slug, currentView, accessSlug = slug }: AdminQuickNavProps) {
   const isVisible = useSyncExternalStore(
     subscribeToAdminAccess,
-    () => window.sessionStorage.getItem(getAdminAccessStorageKey(slug)) === "granted",
+    () => window.sessionStorage.getItem(getAdminAccessStorageKey(accessSlug)) === "granted",
     () => false,
   );
 

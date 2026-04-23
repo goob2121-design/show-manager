@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { ChangeEvent, FormEvent, MouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
+import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { ThemeToggle } from "@/app/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import type { GuestProfile, SetlistEntry, ShowGuestSong, ShowRecord } from "@/lib/types";
@@ -1128,6 +1129,16 @@ export default function ShowsDashboardPage() {
     >
       <main className="min-h-screen bg-gradient-to-b from-stone-100 via-stone-50 to-stone-100 px-4 py-8 text-stone-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100 sm:px-6 sm:py-10">
         <section className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+          {currentShow ? (
+            <div className="sticky top-3 z-30">
+              <AdminQuickNav
+                slug={currentShow.slug}
+                accessSlug="shows-dashboard"
+                currentView="dashboard"
+              />
+            </div>
+          ) : null}
+
           <header className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
               <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -1159,13 +1170,6 @@ export default function ShowsDashboardPage() {
 
                 <div className="flex flex-col items-stretch gap-3 sm:items-end">
                   <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("create")}
-                      className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-emerald-900 shadow-sm transition hover:bg-emerald-50"
-                    >
-                      Create New Show
-                    </button>
                     <ThemeToggle />
                   </div>
                   <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm text-emerald-50 backdrop-blur">
