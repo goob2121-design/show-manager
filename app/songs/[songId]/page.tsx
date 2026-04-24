@@ -2,7 +2,21 @@ import { notFound } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { SongRecord } from "@/lib/types";
 
+const SONG_AUDIO_BUCKET = "promo-materials";
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
+
+type SharedSongRecord = SongRecord & {
+  mp3_path?: string | null;
+  mp3_url?: string | null;
+  audio_url?: string | null;
+  audio_file_url?: string | null;
+  file_url?: string | null;
+};
+
+function extractMp3PathFromNotes(notes: string | null | undefined) {
+  const match = notes?.match(MP3_PATH_MARKER_PATTERN);
+  return match?.[1] ?? null;
+}
 
 function stripMp3MarkerFromNotes(notes: string | null | undefined) {
   if (!notes) {
@@ -19,6 +33,35 @@ function formatSongValue(value: string | null | undefined, fallback = "Not set")
   }
 
   return value;
+}
+
+function resolveSongAudioValue(song: SharedSongRecord) {
+  return (
+    song.mp3_url?.trim() ||
+    song.audio_url?.trim() ||
+    song.audio_file_url?.trim() ||
+    song.file_url?.trim() ||
+    song.mp3_path?.trim() ||
+    extractMp3PathFromNotes(song.notes) ||
+    null
+  );
+}
+
+function resolveSongAudioUrl(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  song: SharedSongRecord,
+) {
+  const audioValue = resolveSongAudioValue(song);
+
+  if (!audioValue) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(audioValue)) {
+    return audioValue;
+  }
+
+  return supabase.storage.from(SONG_AUDIO_BUCKET).getPublicUrl(audioValue).data.publicUrl || null;
 }
 
 type SongSharePageProps = {
@@ -38,9 +81,10 @@ export default async function SongSharePage({ params }: SongSharePageProps) {
     notFound();
   }
 
-  const song = data as SongRecord;
+  const song = data as SharedSongRecord;
   const notes = stripMp3MarkerFromNotes(song.notes);
   const lyrics = song.lyrics?.trim() || null;
+  const audioUrl = resolveSongAudioUrl(supabase, song);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-stone-100 via-stone-50 to-stone-100 px-4 py-8 text-stone-900 sm:px-6 sm:py-10">
@@ -84,6 +128,19 @@ export default async function SongSharePage({ params }: SongSharePageProps) {
 
         <section className="rounded-[2rem] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-6">
+            {audioUrl ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  Audio
+                </p>
+                <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                  <audio controls preload="none" src={audioUrl} className="w-full">
+                    Your browser does not support audio playback.
+                  </audio>
+                </div>
+              </div>
+            ) : null}
+
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Notes</p>
               <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-6 text-stone-700">
@@ -91,16 +148,18 @@ export default async function SongSharePage({ params }: SongSharePageProps) {
               </div>
             </div>
 
-            {lyrics ? (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                  Lyrics
-                </p>
-                <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-700">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                Lyrics
+              </p>
+              <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-700">
+                {lyrics ? (
                   <p className="whitespace-pre-wrap">{lyrics}</p>
-                </div>
+                ) : (
+                  <p>No lyrics added.</p>
+                )}
               </div>
-            ) : null}
+            </div>
           </div>
         </section>
       </section>

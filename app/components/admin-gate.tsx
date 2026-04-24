@@ -12,26 +12,48 @@ type AdminGateProps = {
   children: ReactNode;
 };
 
+const ADMIN_ACCESS_GRANTED_VALUE = "granted";
+const ADMIN_ACCESS_CHANGE_EVENT = "cmms-admin-access-change";
+
 export function getAdminAccessStorageKey(slug: string) {
   return `cmms-admin-access:${slug}`;
 }
 
-function readAdminAccess(slug: string) {
+export function readAdminAccess(slug: string) {
   const storageKey = getAdminAccessStorageKey(slug);
   const sessionValue = window.sessionStorage.getItem(storageKey);
 
-  if (sessionValue === "granted") {
+  if (sessionValue === ADMIN_ACCESS_GRANTED_VALUE) {
     return true;
   }
 
-  return window.localStorage.getItem(storageKey) === "granted";
+  return window.localStorage.getItem(storageKey) === ADMIN_ACCESS_GRANTED_VALUE;
 }
 
-function persistAdminAccess(slug: string) {
+function dispatchAdminAccessChange(slug: string) {
+  window.dispatchEvent(new CustomEvent(ADMIN_ACCESS_CHANGE_EVENT, { detail: { slug } }));
+}
+
+export function persistAdminAccess(slug: string) {
   const storageKey = getAdminAccessStorageKey(slug);
 
-  window.sessionStorage.setItem(storageKey, "granted");
-  window.localStorage.setItem(storageKey, "granted");
+  window.sessionStorage.setItem(storageKey, ADMIN_ACCESS_GRANTED_VALUE);
+  window.localStorage.setItem(storageKey, ADMIN_ACCESS_GRANTED_VALUE);
+  dispatchAdminAccessChange(slug);
+}
+
+export function subscribeToAdminAccess(callback: () => void) {
+  window.addEventListener("focus", callback);
+  window.addEventListener("pageshow", callback);
+  window.addEventListener("storage", callback);
+  window.addEventListener(ADMIN_ACCESS_CHANGE_EVENT, callback);
+
+  return () => {
+    window.removeEventListener("focus", callback);
+    window.removeEventListener("pageshow", callback);
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(ADMIN_ACCESS_CHANGE_EVENT, callback);
+  };
 }
 
 export function AdminGate({
@@ -57,8 +79,14 @@ export function AdminGate({
       return;
     }
 
-    setIsAuthorized(readAdminAccess(slug));
-    setIsReady(true);
+    const syncAccessState = () => {
+      setIsAuthorized(readAdminAccess(slug));
+      setIsReady(true);
+    };
+
+    syncAccessState();
+
+    return subscribeToAdminAccess(syncAccessState);
   }, [isGateEnabled, slug]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

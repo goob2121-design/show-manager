@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
-import { getAdminAccessStorageKey } from "@/app/components/admin-gate";
+import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 
 type AdminQuickNavProps = {
   slug: string;
@@ -18,22 +18,10 @@ const quickNavLinks = [
   { key: "guest", label: "Guest", href: (slug: string) => `/guest/${slug}` },
 ] as const;
 
-function subscribeToAdminAccess(callback: () => void) {
-  window.addEventListener("focus", callback);
-  window.addEventListener("pageshow", callback);
-  window.addEventListener("storage", callback);
-
-  return () => {
-    window.removeEventListener("focus", callback);
-    window.removeEventListener("pageshow", callback);
-    window.removeEventListener("storage", callback);
-  };
-}
-
 export function AdminQuickNav({ slug, currentView, accessSlug = slug }: AdminQuickNavProps) {
   const isVisible = useSyncExternalStore(
     subscribeToAdminAccess,
-    () => window.sessionStorage.getItem(getAdminAccessStorageKey(accessSlug)) === "granted",
+    () => readAdminAccess(accessSlug),
     () => false,
   );
 
