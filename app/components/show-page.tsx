@@ -1540,6 +1540,7 @@ export function ShowPage({
   const [promoMaterialMessage, setPromoMaterialMessage] = useState<string | null>(null);
   const [promoMaterialError, setPromoMaterialError] = useState<string | null>(null);
   const [copiedPromoTextKey, setCopiedPromoTextKey] = useState<string | null>(null);
+  const [copiedSongLinkId, setCopiedSongLinkId] = useState<string | null>(null);
 
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
@@ -2818,6 +2819,32 @@ export function ShowPage({
               songA.title.localeCompare(songB.title),
             ),
           );
+
+          const adminUrl = buildAdminShowUrl(show.slug);
+          const submittedByLabel =
+            normalizedSubmittedByRole === "admin"
+              ? "Admin"
+              : normalizedSubmittedByRole === "band"
+              ? "Band Member"
+              : "Unknown";
+
+          void sendAdminNotification({
+            subject: `New Library Song Added - ${show.name} - ${savedLibrarySong.title}`,
+            html: buildNotificationHtml({
+              heading: "New Library Song Added",
+              intro: "A new song was added to the main song library.",
+              rows: [
+                { label: "Show Name", value: show.name },
+                { label: "Submitted Via", value: submittedByLabel },
+                { label: "Song Title", value: savedLibrarySong.title },
+                { label: "Key", value: savedLibrarySong.key },
+                { label: "Tempo", value: savedLibrarySong.tempo },
+                { label: "Song Type", value: savedLibrarySong.song_type },
+                { label: "Notes", value: stripMp3MarkerFromNotes(savedLibrarySong.notes) },
+              ],
+              adminUrl,
+            }),
+          });
         } else if (songMp3File) {
           const uploadedMp3Path = await uploadSongMp3File({
             file: songMp3File,
@@ -2845,25 +2872,6 @@ export function ShowPage({
           );
         }
 
-        if (normalizedSubmittedByRole === "band") {
-          const adminUrl = buildAdminShowUrl(show.slug);
-          void sendAdminNotification({
-            subject: `Band Song Submission - ${show.name}`,
-            html: buildNotificationHtml({
-              heading: "Band Song Submission",
-              intro: "A band member submitted a new song to the library.",
-              rows: [
-                { label: "Show Name", value: show.name },
-                { label: "Song Title", value: title },
-                { label: "Key", value: key },
-                { label: "Tempo", value: tempo },
-                { label: "Song Type", value: songType },
-                { label: "Notes", value: formState.notes },
-              ],
-              adminUrl,
-            }),
-          });
-        }
       }
 
       setFormState(initialFormState);
@@ -4100,6 +4108,24 @@ export function ShowPage({
       await loadShowData(false);
     } finally {
       setActiveSetlistActionId(null);
+    }
+  }
+
+  async function handleCopySongLink(songId: string) {
+    const routePath = `/songs/${songId}`;
+    const absoluteUrl =
+      typeof window === "undefined" ? routePath : `${window.location.origin}${routePath}`;
+
+    try {
+      await navigator.clipboard.writeText(absoluteUrl);
+      setActionError(null);
+      setCopiedSongLinkId(songId);
+
+      window.setTimeout(() => {
+        setCopiedSongLinkId((currentSongId) => (currentSongId === songId ? null : currentSongId));
+      }, 1800);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
     }
   }
 
@@ -7872,18 +7898,6 @@ export function ShowPage({
                                   >
                                     Edit Song
                                   </button>
-                                  {viewMode === "admin" && isUsedInSetlist ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveGuestSongFromAnySetlist(song)}
-                                      disabled={activeSetlistActionId === song.id}
-                                      className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                                    >
-                                      {activeSetlistActionId === song.id
-                                        ? "Removing from Setlist..."
-                                        : "Remove from Any Setlist"}
-                                    </button>
-                                  ) : null}
                                 </div>
                               ) : null}
 
@@ -7917,19 +7931,33 @@ export function ShowPage({
                               ) : null}
 
                               {viewMode === "admin" ? (
-                                <div className="flex flex-col gap-3 sm:flex-row">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      normalizeSubmittedByRole(song.submitted_by_role) === "guest"
-                                        ? handleDeleteGuestSong(song.id)
-                                        : handleDeleteFromSongPool(song.id)
-                                    }
-                                    disabled={activePendingActionId === song.id}
-                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                                  >
-                                    Delete Song
-                                  </button>
+                                <div className="border-t border-stone-200 pt-3">
+                                  <div className="flex flex-col gap-3 sm:flex-row">
+                                    {isUsedInSetlist ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveGuestSongFromAnySetlist(song)}
+                                        disabled={activeSetlistActionId === song.id}
+                                        className="rounded-xl border border-stone-300 bg-stone-100 px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        {activeSetlistActionId === song.id
+                                          ? "Removing from Setlist..."
+                                          : "Remove from Any Setlist"}
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        normalizeSubmittedByRole(song.submitted_by_role) === "guest"
+                                          ? handleDeleteGuestSong(song.id)
+                                          : handleDeleteFromSongPool(song.id)
+                                      }
+                                      disabled={activePendingActionId === song.id}
+                                      className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Delete Song
+                                    </button>
+                                  </div>
                                 </div>
                               ) : null}
                             </div>
@@ -8156,10 +8184,10 @@ export function ShowPage({
                           </div>
                         ) : null}
 
-                        {canEditLibrarySong(song) || viewMode === "admin" ? (
+                        {viewMode === "band" || canEditLibrarySong(song) || viewMode === "admin" ? (
                           <div className="mt-4 flex flex-col gap-3">
-                            {canEditLibrarySong(song) ? (
-                              <div className="flex flex-col gap-3 sm:flex-row">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                              {canEditLibrarySong(song) ? (
                                 <button
                                   type="button"
                                   onClick={() => handleStartEditingLibrarySong(song.id)}
@@ -8170,36 +8198,29 @@ export function ShowPage({
                                 >
                                   Edit Song
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleLibraryLyrics(song.id)}
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                >
-                                  {openLibraryLyricsSongId === song.id ? "Hide Lyrics" : "View Lyrics"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handlePrintLibrarySong(song)}
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                >
-                                  Print Lyrics
-                                </button>
-                                {viewMode === "admin" && isUsedInSetlist ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveLibrarySongFromAnySetlist(song)}
-                                    disabled={
-                                      activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
-                                    }
-                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                                  >
-                                    {activeSetlistActionId === song.id
-                                      ? "Removing from Setlist..."
-                                      : "Remove from Any Setlist"}
-                                  </button>
-                                ) : null}
-                              </div>
-                            ) : null}
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleLibraryLyrics(song.id)}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                {openLibraryLyricsSongId === song.id ? "Hide Lyrics" : "View Lyrics"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePrintLibrarySong(song)}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Print Lyrics
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCopySongLink(song.id)}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                {copiedSongLinkId === song.id ? "Copied Song Link!" : "Copy Song Link"}
+                              </button>
+                            </div>
 
                             {viewMode === "admin" ? (
                               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -8233,16 +8254,37 @@ export function ShowPage({
                                 >
                                   Add to Encore
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteLibrarySong(song)}
-                                  disabled={
-                                    activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
-                                  }
-                                  className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                                >
-                                  {activeLibraryDeleteSongId === song.id ? "Deleting Song..." : "Delete Song"}
-                                </button>
+                              </div>
+                            ) : null}
+
+                            {viewMode === "admin" ? (
+                              <div className="border-t border-stone-200 pt-3">
+                                <div className="flex flex-col gap-3 sm:flex-row">
+                                  {isUsedInSetlist ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveLibrarySongFromAnySetlist(song)}
+                                      disabled={
+                                        activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-stone-100 px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {activeSetlistActionId === song.id
+                                        ? "Removing from Setlist..."
+                                        : "Remove from Any Setlist"}
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteLibrarySong(song)}
+                                    disabled={
+                                      activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                                    }
+                                    className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {activeLibraryDeleteSongId === song.id ? "Deleting Song..." : "Delete Song"}
+                                  </button>
+                                </div>
                               </div>
                             ) : null}
                           </div>
