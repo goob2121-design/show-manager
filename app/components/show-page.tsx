@@ -7671,7 +7671,6 @@ export function ShowPage({
                             />
                           </label>
 
-<<<<<<< HEAD
                           <div className="grid gap-4 sm:grid-cols-2">
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                               Tempo
@@ -7680,82 +7679,6 @@ export function ShowPage({
                                 value={poolSongEditFormState.tempo}
                                 onChange={handlePoolSongEditChange}
                                 className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-=======
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Song Type
-                          <select
-                            name="songType"
-                            value={poolSongEditFormState.songType}
-                            onChange={handlePoolSongEditChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="vocal">Vocal</option>
-                            <option value="instrumental">Instrumental</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="flex flex-col gap-3 sm:flex-row">
-                        <button
-                          type="button"
-                          onClick={() => handleSavePoolSong(song.id)}
-                          disabled={activePendingActionId === song.id}
-                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                        >
-                          Save Song
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCancelPoolSongEdit}
-                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex flex-col gap-1">
-                        <h3 className="text-base font-semibold text-stone-900">
-                          {song.title}
-                        </h3>
-                        <p className="text-sm text-stone-700">
-                          {getDisplaySingerName(song.artist)}
-                        </p>
-                      </div>
-
-                      <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
-                        {song.song_key ? <p>Key: {song.song_key}</p> : null}
-                        {song.notes ? (
-                          <p className="whitespace-pre-wrap">
-                            Notes: {renderTextWithLinks(song.notes)}
-                          </p>
-                        ) : null}
-                      </div>
-
-                      {song.mp3_path ? (
-                        <div className="mt-3">
-                          <SongMp3DownloadButton title={song.title} mp3Path={song.mp3_path} />
-                        </div>
-                      ) : null}
-
-                      {song.lyrics ? (
-                        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                          Lyrics included
-                        </p>
-                      ) : null}
-
-                      {canEditPoolSong() || viewMode === "admin" ? (
-                        <div className="mt-4 flex flex-col gap-3">
-                          {canEditPoolSong() ? (
-                            <div className="flex flex-col gap-3 sm:flex-row">
-                              <button
-                                type="button"
-                                onClick={() => handleStartEditingPoolSong(song.id)}
-                                disabled={activePendingActionId === song.id}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
->>>>>>> 01f42bd2dfc1bc1c59c89e7cfafacf407ceec7f8
                               >
                                 <option value="">Not set</option>
                                 <option value="fast">Fast</option>
@@ -7778,6 +7701,42 @@ export function ShowPage({
                               </select>
                             </label>
                           </div>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Notes
+                            <textarea
+                              name="notes"
+                              value={poolSongEditFormState.notes ?? ""}
+                              onChange={handlePoolSongEditChange}
+                              className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Optional notes for the setlist side"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Lyrics
+                            <textarea
+                              name="lyrics"
+                              value={poolSongEditFormState.lyrics ?? ""}
+                              onChange={handlePoolSongEditChange}
+                              className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Optional lyrics"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Optional MP3
+                            <input
+                              key={poolSongMp3InputKey}
+                              type="file"
+                              accept="audio/mpeg,.mp3"
+                              onChange={handlePoolSongMp3Change}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                            />
+                            <span className="text-xs font-normal text-stone-500">
+                              Optional. Upload a new MP3 attachment.
+                            </span>
+                          </label>
 
                           <div className="flex flex-col gap-3 sm:flex-row">
                             <button
@@ -7823,6 +7782,12 @@ export function ShowPage({
                               </p>
                             ) : null}
                           </div>
+
+                          {song.mp3_path ? (
+                            <div className="mt-3">
+                              <SongMp3DownloadButton title={song.title} mp3Path={song.mp3_path} />
+                            </div>
+                          ) : null}
 
                           {song.lyrics ? (
                             <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
