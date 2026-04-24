@@ -1127,8 +1127,8 @@ export default function ShowsDashboardPage() {
       resourceLabel="the show management dashboard"
       continueLabel="Continue to Dashboard"
     >
-      <main className="min-h-screen bg-gradient-to-b from-stone-100 via-stone-50 to-stone-100 px-4 py-8 text-stone-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100 sm:px-6 sm:py-10">
-        <section className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+      <main className="min-h-screen bg-gradient-to-b from-stone-100 via-stone-50 to-stone-100 px-4 py-8 text-stone-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100 sm:px-6 sm:py-10 lg:px-8">
+        <section className="mx-auto flex w-full max-w-7xl flex-col gap-8">
           {currentShow ? (
             <div className="sticky top-3 z-30">
               <AdminQuickNav

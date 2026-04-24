@@ -4429,8 +4429,8 @@ export function ShowPage({
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
-        <section className="mx-auto w-full max-w-3xl rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8">
+        <section className="mx-auto w-full max-w-7xl rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-medium text-stone-600">Loading show data...</p>
         </section>
       </main>
@@ -4439,8 +4439,8 @@ export function ShowPage({
 
   if (!show) {
     return (
-      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
-        <section className="mx-auto w-full max-w-3xl rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8">
+        <section className="mx-auto w-full max-w-7xl rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-medium text-rose-700">
             {errorMessage || "The show could not be loaded."}
           </p>
@@ -4452,9 +4452,9 @@ export function ShowPage({
   return (
     <main
       data-print-mode={printMode}
-      className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6"
+      className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8"
     >
-      <section className="mx-auto flex w-full max-w-3xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
+      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
         <AdminQuickNav slug={showSlug} currentView={viewMode} />
 
         <header className="print-hidden flex flex-col gap-4 border-b border-stone-200 pb-6">
@@ -8184,7 +8184,7 @@ export function ShowPage({
                           </div>
                         ) : null}
 
-                        {viewMode === "band" || canEditLibrarySong(song) || viewMode === "admin" ? (
+                        {isBandView || canEditLibrarySong(song) || isAdminView ? (
                           <div className="mt-4 flex flex-col gap-3">
                             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                               {canEditLibrarySong(song) ? (
@@ -8222,7 +8222,7 @@ export function ShowPage({
                               </button>
                             </div>
 
-                            {viewMode === "admin" ? (
+                            {isAdminView ? (
                               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                                 <button
                                   type="button"
@@ -8257,23 +8257,23 @@ export function ShowPage({
                               </div>
                             ) : null}
 
-                            {viewMode === "admin" ? (
+                            {isAdminView ? (
                               <div className="border-t border-stone-200 pt-3">
                                 <div className="flex flex-col gap-3 sm:flex-row">
-                                  {isUsedInSetlist ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveLibrarySongFromAnySetlist(song)}
-                                      disabled={
-                                        activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
-                                      }
-                                      className="rounded-xl border border-stone-300 bg-stone-100 px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                      {activeSetlistActionId === song.id
-                                        ? "Removing from Setlist..."
-                                        : "Remove from Any Setlist"}
-                                    </button>
-                                  ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveLibrarySongFromAnySetlist(song)}
+                                    disabled={
+                                      !isUsedInSetlist ||
+                                      activeSetlistActionId === song.id ||
+                                      activeLibraryDeleteSongId === song.id
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-stone-100 px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {activeSetlistActionId === song.id
+                                      ? "Removing from Setlist..."
+                                      : "Remove from Any Setlist"}
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => handleDeleteLibrarySong(song)}

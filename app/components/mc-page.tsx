@@ -855,8 +855,8 @@ export function McPage({
 
   if (!show) {
     return (
-      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
-        <section className="mx-auto w-full max-w-3xl rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8">
+        <section className="mx-auto w-full max-w-7xl rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-medium text-rose-700">The MC portal could not be loaded.</p>
         </section>
       </main>
@@ -864,8 +864,8 @@ export function McPage({
   }
 
   return (
-    <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
-      <section className="mx-auto flex w-full max-w-5xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
+    <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8">
+      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
         <header className="print-hidden flex flex-col gap-4 border-b border-stone-200 pb-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-3">
