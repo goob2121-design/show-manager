@@ -1533,6 +1533,7 @@ export function ShowPage({
   const [activeMcBlockActionId, setActiveMcBlockActionId] = useState<string | null>(null);
   const [activePendingActionId, setActivePendingActionId] = useState<string | null>(null);
   const [activeSetlistActionId, setActiveSetlistActionId] = useState<string | null>(null);
+  const [activeLibraryDeleteSongId, setActiveLibraryDeleteSongId] = useState<string | null>(null);
   const [activeSponsorActionId, setActiveSponsorActionId] = useState<string | null>(null);
   const [activePromoMaterialActionId, setActivePromoMaterialActionId] = useState<string | null>(null);
   const [isSavingPromoMaterial, setIsSavingPromoMaterial] = useState(false);
@@ -4099,6 +4100,70 @@ export function ShowPage({
       await loadShowData(false);
     } finally {
       setActiveSetlistActionId(null);
+    }
+  }
+
+  async function handleDeleteLibrarySong(song: SongLibrarySong) {
+    const shouldDelete = window.confirm(
+      `Delete "${song.title}" from the main Song Library? This permanently deletes the library song and removes any linked setlist entries. Guest songs will not be affected.`,
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    const currentShowSetlistEntryIdsToRemove = setlist
+      .filter((setlistSong) => setlistSong.source_type === "library" && setlistSong.song_id === song.id)
+      .map((setlistSong) => setlistSong.id);
+
+    setActionError(null);
+    setActiveLibraryDeleteSongId(song.id);
+
+    try {
+      const supabase = createClient();
+      const { error: setlistDeleteError } = await supabase
+        .from("setlist_entries")
+        .delete()
+        .eq("song_id", song.id);
+
+      if (setlistDeleteError) {
+        throw setlistDeleteError;
+      }
+
+      const { error: songDeleteError } = await supabase.from("songs").delete().eq("id", song.id);
+
+      if (songDeleteError) {
+        throw songDeleteError;
+      }
+
+      setSongLibrary((currentSongs) => currentSongs.filter((librarySong) => librarySong.id !== song.id));
+      setSetlist((currentSetlist) =>
+        currentSetlist.filter(
+          (setlistSong) =>
+            !(setlistSong.source_type === "library" && setlistSong.song_id === song.id),
+        ),
+      );
+      setEditingLibrarySongId((currentSongId) => (currentSongId === song.id ? null : currentSongId));
+      setOpenLibraryLyricsSongId((currentSongId) => (currentSongId === song.id ? null : currentSongId));
+      setEditingSetlistSongId((currentSongId) =>
+        currentSongId && currentShowSetlistEntryIdsToRemove.includes(currentSongId) ? null : currentSongId,
+      );
+      setMcBlockNotes((currentNotes) =>
+        currentNotes.filter((note) => !currentShowSetlistEntryIdsToRemove.includes(note.anchor_song_id)),
+      );
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((sponsor) =>
+          sponsor.mc_anchor_song_id &&
+          currentShowSetlistEntryIdsToRemove.includes(sponsor.mc_anchor_song_id)
+            ? { ...sponsor, mc_anchor_song_id: null }
+            : sponsor,
+        ),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+      await loadShowData(false);
+    } finally {
+      setActiveLibraryDeleteSongId(null);
     }
   }
 
@@ -8037,13 +8102,15 @@ export function ShowPage({
                         </label>
 
                         <div className="flex flex-col gap-3 sm:flex-row">
-                          <button
-                            type="button"
-                            onClick={() => handleSaveLibrarySong(song.id)}
-                            disabled={activeSetlistActionId === song.id}
-                            className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                          >
-                            Save Song
+                            <button
+                              type="button"
+                              onClick={() => handleSaveLibrarySong(song.id)}
+                              disabled={
+                                activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                              }
+                              className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                            >
+                              Save Song
                           </button>
                           <button
                             type="button"
@@ -8096,7 +8163,9 @@ export function ShowPage({
                                 <button
                                   type="button"
                                   onClick={() => handleStartEditingLibrarySong(song.id)}
-                                  disabled={activeSetlistActionId === song.id}
+                                  disabled={
+                                    activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                                  }
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Edit Song
@@ -8119,7 +8188,9 @@ export function ShowPage({
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveLibrarySongFromAnySetlist(song)}
-                                    disabled={activeSetlistActionId === song.id}
+                                    disabled={
+                                      activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                                    }
                                     className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
                                   >
                                     {activeSetlistActionId === song.id
@@ -8135,7 +8206,9 @@ export function ShowPage({
                                 <button
                                   type="button"
                                   onClick={() => handleAddLibrarySongToSection(song, "set1")}
-                                  disabled={activeSetlistActionId === song.id}
+                                  disabled={
+                                    activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                                  }
                                   className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                                 >
                                   Add to Set 1
@@ -8143,7 +8216,9 @@ export function ShowPage({
                                 <button
                                   type="button"
                                   onClick={() => handleAddLibrarySongToSection(song, "set2")}
-                                  disabled={activeSetlistActionId === song.id}
+                                  disabled={
+                                    activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                                  }
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Add to Set 2
@@ -8151,10 +8226,22 @@ export function ShowPage({
                                 <button
                                   type="button"
                                   onClick={() => handleAddLibrarySongToSection(song, "encore")}
-                                  disabled={activeSetlistActionId === song.id}
+                                  disabled={
+                                    activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                                  }
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Add to Encore
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteLibrarySong(song)}
+                                  disabled={
+                                    activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
+                                  }
+                                  className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                >
+                                  {activeLibraryDeleteSongId === song.id ? "Deleting Song..." : "Delete Song"}
                                 </button>
                               </div>
                             ) : null}
