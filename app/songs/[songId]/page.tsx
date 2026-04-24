@@ -87,9 +87,9 @@ export default async function SongSharePage({ params }: SongSharePageProps) {
   const audioUrl = resolveSongAudioUrl(supabase, song);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-stone-100 via-stone-50 to-stone-100 px-4 py-8 text-stone-900 sm:px-6 sm:py-10">
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 px-4 py-8 text-slate-100 sm:px-6 sm:py-10">
       <section className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-        <header className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
+        <header className="overflow-hidden rounded-[2rem] border border-slate-800 bg-slate-900 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.8)]">
           <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
             <div className="max-w-2xl space-y-2">
               <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-100">
@@ -102,38 +102,38 @@ export default async function SongSharePage({ params }: SongSharePageProps) {
             </div>
           </div>
 
-          <div className="grid gap-3 border-t border-stone-200 bg-stone-50/70 px-6 py-5 sm:grid-cols-3 sm:px-8">
-            <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Key</p>
-              <p className="mt-2 text-sm font-semibold text-stone-900">
+          <div className="grid gap-3 border-t border-slate-800 bg-slate-900/80 px-6 py-5 sm:grid-cols-3 sm:px-8">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Key</p>
+              <p className="mt-2 text-sm font-semibold text-slate-100">
                 {formatSongValue(song.key)}
               </p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Tempo</p>
-              <p className="mt-2 text-sm font-semibold capitalize text-stone-900">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Tempo</p>
+              <p className="mt-2 text-sm font-semibold capitalize text-slate-100">
                 {formatSongValue(song.tempo)}
               </p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Song Type
               </p>
-              <p className="mt-2 text-sm font-semibold capitalize text-stone-900">
+              <p className="mt-2 text-sm font-semibold capitalize text-slate-100">
                 {formatSongValue(song.song_type)}
               </p>
             </div>
           </div>
         </header>
 
-        <section className="rounded-[2rem] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+        <section className="rounded-[2rem] border border-slate-800 bg-slate-900 p-5 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.8)] sm:p-6">
           <div className="flex flex-col gap-6">
             {audioUrl ? (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                   Audio
                 </p>
-                <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-4">
                   <audio controls preload="none" src={audioUrl} className="w-full">
                     Your browser does not support audio playback.
                   </audio>
@@ -142,17 +142,17 @@ export default async function SongSharePage({ params }: SongSharePageProps) {
             ) : null}
 
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Notes</p>
-              <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-6 text-stone-700">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Notes</p>
+              <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-4 text-sm leading-6 text-slate-200">
                 {notes ? <p className="whitespace-pre-wrap">{notes}</p> : <p>No notes added yet.</p>}
               </div>
             </div>
 
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Lyrics
               </p>
-              <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-700">
+              <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-4 text-sm leading-7 text-slate-200">
                 {lyrics ? (
                   <p className="whitespace-pre-wrap">{lyrics}</p>
                 ) : (
