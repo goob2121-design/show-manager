@@ -54,6 +54,7 @@ type PendingSubmission = ShowGuestSong & {
   song_key: string | null;
   notes: string | null;
   lyrics: string | null;
+  mp3_path: string | null;
   submitted_by_role: "guest";
 };
 
@@ -62,6 +63,7 @@ type SongLibrarySong = SongRecord & {
   song_key: string | null;
   notes: string | null;
   lyrics: string | null;
+  mp3_path: string | null;
   source_role: SongRecord["created_by_role"];
 };
 
@@ -71,6 +73,7 @@ type SetlistSong = SetlistEntry & {
   song_key: string | null;
   notes: string | null;
   lyrics: string | null;
+  mp3_path: string | null;
   source_role: string | null;
 };
 
@@ -199,6 +202,9 @@ const promoMaterialCategoryOptions: Array<{
 ];
 
 const defaultSingerName = "CMMS Band";
+const SONG_AUDIO_BUCKET = "promo-materials";
+const MAX_SONG_MP3_BYTES = 30 * 1024 * 1024;
+const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
 const urlPattern = /(https?:\/\/[^\s]+)/g;
 const urlOnlyPattern = /^https?:\/\/[^\s]+$/;
 
@@ -481,6 +487,11 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
   const resolvedSongType = librarySong?.song_type ?? guestSong?.song_type ?? song.song_type ?? null;
   const resolvedNotes = librarySong?.notes ?? guestSong?.notes ?? song.notes ?? null;
   const resolvedLyrics = librarySong?.lyrics ?? guestSong?.lyrics ?? song.lyrics ?? null;
+  const resolvedMp3Path =
+    extractMp3PathFromNotes(librarySong?.notes) ??
+    extractMp3PathFromNotes(guestSong?.notes) ??
+    extractMp3PathFromNotes(song.notes) ??
+    null;
   const resolvedPerformer =
     guestSong?.submitted_by_name?.trim() ||
     ("performer_name" in song ? song.performer_name : null) ||
@@ -498,8 +509,9 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     set_section: normalizeSetSection(song.section),
     artist: resolvedPerformer,
     song_key: resolvedKey,
-    notes: resolvedNotes,
+    notes: stripMp3MarkerFromNotes(resolvedNotes),
     lyrics: resolvedLyrics,
+    mp3_path: resolvedMp3Path,
     source_role: song.source_type === "guest" ? "guest" : "band",
   };
 }
@@ -567,6 +579,64 @@ function sanitizeFileName(value: string) {
     .replace(/^-+|-+$/g, "");
 
   return sanitized || "promo-material";
+}
+
+function validateSongMp3File(file: File | null) {
+  if (!file) {
+    return null;
+  }
+
+  const lowerName = file.name.toLowerCase();
+  const isMp3File = file.type === "audio/mpeg" || lowerName.endsWith(".mp3");
+
+  if (!isMp3File) {
+    return "Only MP3 files are supported.";
+  }
+
+  if (file.size > MAX_SONG_MP3_BYTES) {
+    return "MP3 files must be 30 MB or smaller.";
+  }
+
+  return null;
+}
+
+function buildSongMp3StoragePath(showSlug: string, songId: string) {
+  const safeShowSlug = sanitizeFileName(showSlug || "show");
+  return `song-audio/shows/${safeShowSlug}/songs/${songId}-${Date.now()}.mp3`;
+}
+
+function extractMp3PathFromNotes(notes: string | null | undefined) {
+  const match = notes?.match(MP3_PATH_MARKER_PATTERN);
+  return match?.[1] ?? null;
+}
+
+function stripMp3MarkerFromNotes(notes: string | null | undefined) {
+  if (!notes) {
+    return null;
+  }
+
+  const cleanedNotes = notes.replace(MP3_PATH_MARKER_PATTERN, "").trim();
+  return cleanedNotes || null;
+}
+
+function appendMp3MarkerToNotes(notes: string | null | undefined, path: string | null | undefined) {
+  const cleanedNotes = stripMp3MarkerFromNotes(notes);
+
+  if (!path) {
+    return cleanedNotes;
+  }
+
+  return cleanedNotes ? `${cleanedNotes}\n\n[[MP3_PATH:${path}]]` : `[[MP3_PATH:${path}]]`;
+}
+
+function getSongMp3DownloadUrl(path: string | null | undefined) {
+  if (!path) {
+    return null;
+  }
+
+  const supabase = createClient();
+  const { data } = supabase.storage.from(SONG_AUDIO_BUCKET).getPublicUrl(path);
+  return data.publicUrl || null;
 }
 
 function escapeHtml(value: string) {
@@ -719,6 +789,8 @@ function canBandEditSharedSong(role: string | null | undefined) {
 function normalizePendingSubmission(
   submission: PendingSubmission,
 ): PendingSubmission {
+  const mp3Path = extractMp3PathFromNotes(submission.notes);
+
   return {
     ...submission,
     key: submission.key ?? null,
@@ -727,8 +799,9 @@ function normalizePendingSubmission(
     submitted_by_name: submission.submitted_by_name ?? null,
     artist: submission.submitted_by_name ?? null,
     song_key: submission.key ?? null,
-    notes: submission.notes ?? null,
+    notes: stripMp3MarkerFromNotes(submission.notes),
     lyrics: submission.lyrics ?? null,
+    mp3_path: mp3Path,
     submitted_by_role: "guest",
   };
 }
@@ -750,6 +823,8 @@ function formatSubmittedByRole(role: SongLibrarySong["created_by_role"]) {
 function normalizeSongLibrarySong(
   song: SongLibrarySong,
 ): SongLibrarySong {
+  const mp3Path = extractMp3PathFromNotes(song.notes);
+
   return {
     ...song,
     key: song.key ?? null,
@@ -759,8 +834,9 @@ function normalizeSongLibrarySong(
     created_by_name: song.created_by_name ?? null,
     artist: null,
     song_key: song.key ?? null,
-    notes: song.notes ?? null,
+    notes: stripMp3MarkerFromNotes(song.notes),
     lyrics: song.lyrics ?? null,
+    mp3_path: mp3Path,
     source_role: normalizeSubmittedByRole(song.created_by_role),
   };
 }
@@ -842,6 +918,72 @@ async function uploadPromoMaterialFile({
     file_mime_type: file.type || null,
     file_size: file.size,
   };
+}
+
+async function uploadSongMp3File({
+  file,
+  showSlug,
+  songId,
+}: {
+  file: File;
+  showSlug: string;
+  songId: string;
+}) {
+  const validationError = validateSongMp3File(file);
+
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const supabase = createClient();
+  const filePath = buildSongMp3StoragePath(showSlug, songId);
+  const { error: uploadError } = await supabase.storage
+    .from(SONG_AUDIO_BUCKET)
+    .upload(filePath, file, {
+      upsert: false,
+      contentType: file.type,
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  return filePath;
+}
+
+async function deletePromoMaterialFile(filePath: string | null | undefined) {
+  if (!filePath) {
+    return;
+  }
+
+  const supabase = createClient();
+  await supabase.storage.from(SONG_AUDIO_BUCKET).remove([filePath]);
+}
+
+async function updateSongNotesField<RowType>({
+  table,
+  rowId,
+  notes,
+}: {
+  table: "songs" | "show_guest_songs";
+  rowId: string;
+  notes: string | null;
+}) {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from(table)
+    .update({
+      notes,
+    })
+    .eq("id", rowId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as RowType;
 }
 
 function getSponsorInitials(name: string) {
@@ -1073,6 +1215,26 @@ function buildAdminMcFlowItems(
   return items;
 }
 
+function getSetlistSongMp3Path(
+  song: SetlistSong,
+  songLibrary: SongLibrarySong[],
+  pendingSongs: PendingSubmission[],
+) {
+  if (song.mp3_path) {
+    return song.mp3_path;
+  }
+
+  if (song.source_type === "library" && song.song_id) {
+    return songLibrary.find((librarySong) => librarySong.id === song.song_id)?.mp3_path ?? null;
+  }
+
+  if (song.source_type === "guest" && song.guest_song_id) {
+    return pendingSongs.find((pendingSong) => pendingSong.id === song.guest_song_id)?.mp3_path ?? null;
+  }
+
+  return null;
+}
+
 function getMcSponsorPlacementFromNeighbor(
   neighbor: McFlowRenderableItem,
   direction: "up" | "down",
@@ -1204,6 +1366,33 @@ function ShowInfoCard({
   );
 }
 
+function SongMp3DownloadButton({
+  title,
+  mp3Path,
+}: {
+  title: string;
+  mp3Path: string | null | undefined;
+}) {
+  const downloadUrl = getSongMp3DownloadUrl(mp3Path);
+
+  if (!downloadUrl) {
+    return null;
+  }
+
+  return (
+    <a
+      href={downloadUrl}
+      target="_blank"
+      rel="noreferrer"
+      download
+      className="print-hidden inline-flex w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+    >
+      Download MP3
+      <span className="sr-only"> for {title}</span>
+    </a>
+  );
+}
+
 function SectionLoadWarning({ message }: { message: string | undefined }) {
   if (!message) {
     return null;
@@ -1253,6 +1442,8 @@ export function ShowPage({
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [setlist, setSetlist] = useState<SetlistSong[]>([]);
   const [formState, setFormState] = useState<SongFormState>(initialFormState);
+  const [songMp3File, setSongMp3File] = useState<File | null>(null);
+  const [songMp3InputKey, setSongMp3InputKey] = useState(0);
   const [showDetailsFormState, setShowDetailsFormState] = useState<ShowDetailsFormState>(
     initialShowDetailsFormState,
   );
@@ -1282,9 +1473,13 @@ export function ShowPage({
   const [editingPoolSongId, setEditingPoolSongId] = useState<string | null>(null);
   const [editingSetlistSongId, setEditingSetlistSongId] = useState<string | null>(null);
   const [editingLibrarySongId, setEditingLibrarySongId] = useState<string | null>(null);
+  const [librarySongMp3File, setLibrarySongMp3File] = useState<File | null>(null);
+  const [librarySongMp3InputKey, setLibrarySongMp3InputKey] = useState(0);
   const [openLibraryLyricsSongId, setOpenLibraryLyricsSongId] = useState<string | null>(null);
   const [isBandSongFormOpen, setIsBandSongFormOpen] = useState(false);
   const [isGuestSongFormOpen, setIsGuestSongFormOpen] = useState(false);
+  const [poolSongMp3File, setPoolSongMp3File] = useState<File | null>(null);
+  const [poolSongMp3InputKey, setPoolSongMp3InputKey] = useState(0);
   const [editingSponsorLibraryId, setEditingSponsorLibraryId] = useState<string | null>(null);
   const [editingShowSponsorId, setEditingShowSponsorId] = useState<string | null>(null);
   const [poolSongEditFormState, setPoolSongEditFormState] = useState<SongEditFormState>({
@@ -1733,6 +1928,15 @@ export function ShowPage({
       ...currentState,
       [name]: value,
     }));
+  }
+
+  function handleSongMp3Change(event: ChangeEvent<HTMLInputElement>) {
+    setSongMp3File(event.target.files?.[0] ?? null);
+  }
+
+  function resetSongMp3Input() {
+    setSongMp3File(null);
+    setSongMp3InputKey((currentKey) => currentKey + 1);
   }
 
   function handleShowDetailsChange(
@@ -2485,6 +2689,13 @@ export function ShowPage({
       return;
     }
 
+    const mp3ValidationError = validateSongMp3File(songMp3File);
+
+    if (mp3ValidationError) {
+      setActionError(mp3ValidationError);
+      return;
+    }
+
     setActionError(null);
     setIsSubmitting(true);
 
@@ -2510,7 +2721,28 @@ export function ShowPage({
           throw error;
         }
 
-        setPendingSongs((currentSongs) => [...currentSongs, normalizePendingSubmission(data)]);
+        let savedGuestSong = data as PendingSubmission;
+
+        if (songMp3File) {
+          const uploadedMp3Path = await uploadSongMp3File({
+            file: songMp3File,
+            showSlug: show.slug,
+            songId: savedGuestSong.id,
+          });
+
+          try {
+            savedGuestSong = await updateSongNotesField<PendingSubmission>({
+              table: "show_guest_songs",
+              rowId: savedGuestSong.id,
+              notes: appendMp3MarkerToNotes(savedGuestSong.notes, uploadedMp3Path),
+            });
+          } catch (error) {
+            await deletePromoMaterialFile(uploadedMp3Path);
+            throw error;
+          }
+        }
+
+        setPendingSongs((currentSongs) => [...currentSongs, normalizePendingSubmission(savedGuestSong)]);
 
         const adminUrl = buildAdminShowUrl(show.slug);
         void sendAdminNotification({
@@ -2521,11 +2753,11 @@ export function ShowPage({
             rows: [
               { label: "Show Name", value: show.name },
               { label: "Who's Singing", value: guestSingerName || "Guest" },
-              { label: "Song Title", value: data.title },
-              { label: "Key", value: data.key },
-              { label: "Tempo", value: data.tempo },
-              { label: "Song Type", value: data.song_type },
-              { label: "Notes", value: data.notes },
+              { label: "Song Title", value: savedGuestSong.title },
+              { label: "Key", value: savedGuestSong.key },
+              { label: "Tempo", value: savedGuestSong.tempo },
+              { label: "Song Type", value: savedGuestSong.song_type },
+              { label: "Notes", value: stripMp3MarkerFromNotes(savedGuestSong.notes) },
             ],
             adminUrl,
           }),
@@ -2559,10 +2791,56 @@ export function ShowPage({
             throw error;
           }
 
+          let savedLibrarySong = data as SongLibrarySong;
+
+          if (songMp3File) {
+            const uploadedMp3Path = await uploadSongMp3File({
+              file: songMp3File,
+              showSlug: show.slug,
+              songId: savedLibrarySong.id,
+            });
+
+            try {
+              savedLibrarySong = await updateSongNotesField<SongLibrarySong>({
+                table: "songs",
+                rowId: savedLibrarySong.id,
+                notes: appendMp3MarkerToNotes(savedLibrarySong.notes, uploadedMp3Path),
+              });
+            } catch (error) {
+              await deletePromoMaterialFile(uploadedMp3Path);
+              throw error;
+            }
+          }
+
           setSongLibrary((currentSongs) =>
-            [...currentSongs, normalizeSongLibrarySong(data)].sort((songA, songB) =>
+            [...currentSongs, normalizeSongLibrarySong(savedLibrarySong)].sort((songA, songB) =>
               songA.title.localeCompare(songB.title),
             ),
+          );
+        } else if (songMp3File) {
+          const uploadedMp3Path = await uploadSongMp3File({
+            file: songMp3File,
+            showSlug: show.slug,
+            songId: existingLibrarySong.id,
+          });
+
+          let updatedLibrarySong: SongLibrarySong;
+
+          try {
+            updatedLibrarySong = await updateSongNotesField<SongLibrarySong>({
+              table: "songs",
+              rowId: existingLibrarySong.id,
+              notes: appendMp3MarkerToNotes(existingLibrarySong.notes, uploadedMp3Path),
+            });
+          } catch (error) {
+            await deletePromoMaterialFile(uploadedMp3Path);
+            throw error;
+          }
+
+          setSongLibrary((currentSongs) =>
+            currentSongs
+              .map((song) => (song.id === existingLibrarySong.id ? normalizeSongLibrarySong(updatedLibrarySong) : song))
+              .sort((songA, songB) => songA.title.localeCompare(songB.title)),
           );
         }
 
@@ -2588,6 +2866,7 @@ export function ShowPage({
       }
 
       setFormState(initialFormState);
+      resetSongMp3Input();
       if (normalizedSubmittedByRole === "band") {
         setIsBandSongFormOpen(false);
       }
@@ -3184,6 +3463,15 @@ export function ShowPage({
     }));
   }
 
+  function handlePoolSongMp3Change(event: ChangeEvent<HTMLInputElement>) {
+    setPoolSongMp3File(event.target.files?.[0] ?? null);
+  }
+
+  function resetPoolSongMp3Input() {
+    setPoolSongMp3File(null);
+    setPoolSongMp3InputKey((currentKey) => currentKey + 1);
+  }
+
   function handleStartEditingPoolSong(songId: string) {
     const songToEdit = pendingSongs.find((song) => song.id === songId);
 
@@ -3192,11 +3480,13 @@ export function ShowPage({
     }
 
     setEditingPoolSongId(songId);
+    resetPoolSongMp3Input();
     setPoolSongEditFormState(buildSongEditFormState(songToEdit));
   }
 
   function handleCancelPoolSongEdit() {
     setEditingPoolSongId(null);
+    resetPoolSongMp3Input();
     setPoolSongEditFormState({
       title: "",
       key: "",
@@ -3225,6 +3515,13 @@ export function ShowPage({
 
     if (viewMode === "guest" && !guestAssociationName) {
       setActionError("Choose the correct guest before saving this song.");
+      return;
+    }
+
+    const mp3ValidationError = validateSongMp3File(poolSongMp3File);
+
+    if (mp3ValidationError) {
+      setActionError(mp3ValidationError);
       return;
     }
 
@@ -3258,9 +3555,30 @@ export function ShowPage({
         return;
       }
 
+      let savedGuestSong = data as PendingSubmission;
+
+      if (poolSongMp3File) {
+        const uploadedMp3Path = await uploadSongMp3File({
+          file: poolSongMp3File,
+          showSlug: show?.slug ?? showSlug,
+          songId,
+        });
+
+        try {
+          savedGuestSong = await updateSongNotesField<PendingSubmission>({
+            table: "show_guest_songs",
+            rowId: songId,
+            notes: appendMp3MarkerToNotes(songToUpdate.notes, uploadedMp3Path),
+          });
+        } catch (error) {
+          await deletePromoMaterialFile(uploadedMp3Path);
+          throw error;
+        }
+      }
+
       setPendingSongs((currentSongs) =>
         currentSongs.map((song) =>
-          song.id === songId ? normalizePendingSubmission(data as PendingSubmission) : song,
+          song.id === songId ? normalizePendingSubmission(savedGuestSong) : song,
         ),
       );
       handleCancelPoolSongEdit();
@@ -3282,6 +3600,15 @@ export function ShowPage({
     }));
   }
 
+  function handleLibrarySongMp3Change(event: ChangeEvent<HTMLInputElement>) {
+    setLibrarySongMp3File(event.target.files?.[0] ?? null);
+  }
+
+  function resetLibrarySongMp3Input() {
+    setLibrarySongMp3File(null);
+    setLibrarySongMp3InputKey((currentKey) => currentKey + 1);
+  }
+
   function handleStartEditingLibrarySong(songId: string) {
     const songToEdit = songLibrary.find((song) => song.id === songId);
 
@@ -3290,11 +3617,13 @@ export function ShowPage({
     }
 
     setEditingLibrarySongId(songId);
+    resetLibrarySongMp3Input();
     setLibrarySongEditFormState(buildSongEditFormState(songToEdit));
   }
 
   function handleCancelLibrarySongEdit() {
     setEditingLibrarySongId(null);
+    resetLibrarySongMp3Input();
     setLibrarySongEditFormState({
       title: "",
       key: "",
@@ -3358,6 +3687,13 @@ export function ShowPage({
       return;
     }
 
+    const mp3ValidationError = validateSongMp3File(librarySongMp3File);
+
+    if (mp3ValidationError) {
+      setActionError(mp3ValidationError);
+      return;
+    }
+
     setActionError(null);
     setActiveSetlistActionId(songId);
 
@@ -3370,7 +3706,10 @@ export function ShowPage({
           key: normalizeOptionalField(librarySongEditFormState.key),
           tempo: librarySongEditFormState.tempo || null,
           song_type: librarySongEditFormState.songType || null,
-          notes: normalizeOptionalField(librarySongEditFormState.notes ?? ""),
+          notes: appendMp3MarkerToNotes(
+            normalizeOptionalField(librarySongEditFormState.notes ?? ""),
+            songToUpdate.mp3_path,
+          ),
           lyrics: normalizeOptionalField(librarySongEditFormState.lyrics ?? ""),
         })
         .eq("id", songId)
@@ -3381,9 +3720,30 @@ export function ShowPage({
         throw error;
       }
 
+      let savedLibrarySong = data as SongLibrarySong;
+
+      if (librarySongMp3File) {
+        const uploadedMp3Path = await uploadSongMp3File({
+          file: librarySongMp3File,
+          showSlug: show?.slug ?? showSlug,
+          songId,
+        });
+
+        try {
+          savedLibrarySong = await updateSongNotesField<SongLibrarySong>({
+            table: "songs",
+            rowId: songId,
+            notes: appendMp3MarkerToNotes(savedLibrarySong.notes, uploadedMp3Path),
+          });
+        } catch (error) {
+          await deletePromoMaterialFile(uploadedMp3Path);
+          throw error;
+        }
+      }
+
       setSongLibrary((currentSongs) =>
         currentSongs
-          .map((song) => (song.id === songId ? normalizeSongLibrarySong(data) : song))
+          .map((song) => (song.id === songId ? normalizeSongLibrarySong(savedLibrarySong) : song))
           .sort((songA, songB) => songA.title.localeCompare(songB.title)),
       );
       setSetlist((currentSongs) =>
@@ -3394,7 +3754,7 @@ export function ShowPage({
 
           return normalizeSetlistSong({
             ...setlistSong,
-            library_song: data as SongLibrarySong,
+            library_song: savedLibrarySong,
           });
         }),
       );
@@ -5909,6 +6269,15 @@ export function ShowPage({
                               </p>
                             ) : null}
 
+                            {getSetlistSongMp3Path(song, songLibrary, pendingSongs) ? (
+                              <div className="mt-3">
+                                <SongMp3DownloadButton
+                                  title={song.title}
+                                  mp3Path={getSetlistSongMp3Path(song, songLibrary, pendingSongs)}
+                                />
+                              </div>
+                            ) : null}
+
                             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                               {canEditSetlistSong() ? (
                                 <button
@@ -6590,6 +6959,20 @@ export function ShowPage({
                             </select>
                           </label>
 
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Optional MP3
+                            <input
+                              key={poolSongMp3InputKey}
+                              type="file"
+                              accept="audio/mpeg,.mp3"
+                              onChange={handlePoolSongMp3Change}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                            />
+                            <span className="text-xs font-normal text-stone-500">
+                              Optional. Upload a new MP3 attachment.
+                            </span>
+                          </label>
+
                           <div className="flex flex-col gap-3 sm:flex-row">
                             <button
                               type="button"
@@ -6743,6 +7126,20 @@ export function ShowPage({
                   className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                   placeholder="Optional lyrics"
                 />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Optional MP3
+                <input
+                  key={songMp3InputKey}
+                  type="file"
+                  accept="audio/mpeg,.mp3"
+                  onChange={handleSongMp3Change}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                />
+                <span className="text-xs font-normal text-stone-500">
+                  Optional. MP3 only, up to 30 MB.
+                </span>
               </label>
 
               <div className="flex justify-start">
@@ -7028,6 +7425,20 @@ export function ShowPage({
                     />
                   </label>
 
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Optional MP3
+                    <input
+                      key={songMp3InputKey}
+                      type="file"
+                      accept="audio/mpeg,.mp3"
+                      onChange={handleSongMp3Change}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                    />
+                    <span className="text-xs font-normal text-stone-500">
+                      Optional. MP3 only, up to 30 MB.
+                    </span>
+                  </label>
+
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <button
                       type="submit"
@@ -7161,6 +7572,20 @@ export function ShowPage({
                     </label>
                   </div>
 
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Optional MP3
+                    <input
+                      key={songMp3InputKey}
+                      type="file"
+                      accept="audio/mpeg,.mp3"
+                      onChange={handleSongMp3Change}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                    />
+                    <span className="text-xs font-normal text-stone-500">
+                      Optional. MP3 only, up to 30 MB.
+                    </span>
+                  </label>
+
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <button
                       type="submit"
@@ -7246,6 +7671,7 @@ export function ShowPage({
                             />
                           </label>
 
+<<<<<<< HEAD
                           <div className="grid gap-4 sm:grid-cols-2">
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                               Tempo
@@ -7254,6 +7680,82 @@ export function ShowPage({
                                 value={poolSongEditFormState.tempo}
                                 onChange={handlePoolSongEditChange}
                                 className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+=======
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Song Type
+                          <select
+                            name="songType"
+                            value={poolSongEditFormState.songType}
+                            onChange={handlePoolSongEditChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          >
+                            <option value="">Not set</option>
+                            <option value="vocal">Vocal</option>
+                            <option value="instrumental">Instrumental</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => handleSavePoolSong(song.id)}
+                          disabled={activePendingActionId === song.id}
+                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                        >
+                          Save Song
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelPoolSongEdit}
+                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex flex-col gap-1">
+                        <h3 className="text-base font-semibold text-stone-900">
+                          {song.title}
+                        </h3>
+                        <p className="text-sm text-stone-700">
+                          {getDisplaySingerName(song.artist)}
+                        </p>
+                      </div>
+
+                      <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
+                        {song.song_key ? <p>Key: {song.song_key}</p> : null}
+                        {song.notes ? (
+                          <p className="whitespace-pre-wrap">
+                            Notes: {renderTextWithLinks(song.notes)}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      {song.mp3_path ? (
+                        <div className="mt-3">
+                          <SongMp3DownloadButton title={song.title} mp3Path={song.mp3_path} />
+                        </div>
+                      ) : null}
+
+                      {song.lyrics ? (
+                        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                          Lyrics included
+                        </p>
+                      ) : null}
+
+                      {canEditPoolSong() || viewMode === "admin" ? (
+                        <div className="mt-4 flex flex-col gap-3">
+                          {canEditPoolSong() ? (
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditingPoolSong(song.id)}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+>>>>>>> 01f42bd2dfc1bc1c59c89e7cfafacf407ceec7f8
                               >
                                 <option value="">Not set</option>
                                 <option value="fast">Fast</option>
@@ -7555,6 +8057,20 @@ export function ShowPage({
                           />
                         </label>
 
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Optional MP3
+                          <input
+                            key={librarySongMp3InputKey}
+                            type="file"
+                            accept="audio/mpeg,.mp3"
+                            onChange={handleLibrarySongMp3Change}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                          />
+                          <span className="text-xs font-normal text-stone-500">
+                            Optional. Upload a new MP3 attachment.
+                          </span>
+                        </label>
+
                         <div className="flex flex-col gap-3 sm:flex-row">
                           <button
                             type="button"
@@ -7601,6 +8117,12 @@ export function ShowPage({
                             </p>
                           ) : null}
                         </div>
+
+                        {song.mp3_path ? (
+                          <div className="mt-3">
+                            <SongMp3DownloadButton title={song.title} mp3Path={song.mp3_path} />
+                          </div>
+                        ) : null}
 
                         {canEditLibrarySong(song) || viewMode === "admin" ? (
                           <div className="mt-4 flex flex-col gap-3">
