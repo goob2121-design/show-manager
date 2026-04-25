@@ -22,7 +22,7 @@ type ShowFormState = {
   slug: string;
 };
 
-type DashboardTab = "active" | "create" | "archived";
+type DashboardSection = "active" | "create" | "archived";
 
 type PrefillSource = "" | string;
 type CopyLinkRole = "guest" | "band" | "admin" | "mc";
@@ -30,6 +30,9 @@ type CopyMenuDirection = "up" | "down";
 
 type CurrentShowDashboardMetrics = {
   songLibraryCount: number | null;
+  totalGuestProfilesCount: number | null;
+  totalGuestSongsCount: number | null;
+  promoMaterialsCount: number | null;
   guestSongs: ShowGuestSong[];
   guestProfiles: GuestProfile[];
   setlistEntries: Array<Pick<SetlistEntry, "id" | "guest_song_id" | "section">>;
@@ -42,8 +45,8 @@ const initialFormState: ShowFormState = {
   slug: "",
 };
 
-const dashboardTabs: Array<{
-  id: DashboardTab;
+const dashboardSections: Array<{
+  id: DashboardSection;
   label: string;
   description: string;
 }> = [
@@ -163,7 +166,13 @@ export default function ShowsDashboardPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
   const [showLogo, setShowLogo] = useState(true);
-  const [activeTab, setActiveTab] = useState<DashboardTab>("active");
+  const [expandedDashboardSections, setExpandedDashboardSections] = useState<
+    Record<DashboardSection, boolean>
+  >({
+    active: false,
+    create: false,
+    archived: false,
+  });
   const [editingShowId, setEditingShowId] = useState<string | null>(null);
   const [editFormState, setEditFormState] = useState<ShowFormState>(initialFormState);
   const [duplicatingShowId, setDuplicatingShowId] = useState<string | null>(null);
@@ -171,11 +180,15 @@ export default function ShowsDashboardPage() {
     buildDuplicateFormState(),
   );
   const [activeShowActionId, setActiveShowActionId] = useState<string | null>(null);
+  const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
   const [prefillSourceShowId, setPrefillSourceShowId] = useState<PrefillSource>("");
   const [openCopyMenuShowId, setOpenCopyMenuShowId] = useState<string | null>(null);
   const [copyMenuDirection, setCopyMenuDirection] = useState<CopyMenuDirection>("down");
   const [currentShowMetrics, setCurrentShowMetrics] = useState<CurrentShowDashboardMetrics>({
     songLibraryCount: null,
+    totalGuestProfilesCount: null,
+    totalGuestSongsCount: null,
+    promoMaterialsCount: null,
     guestSongs: [],
     guestProfiles: [],
     setlistEntries: [],
@@ -184,10 +197,10 @@ export default function ShowsDashboardPage() {
   const activeShows = shows.filter((show) => !show.is_archived);
   const archivedShows = shows.filter((show) => show.is_archived);
   const today = new Date().toISOString().slice(0, 10);
-  const currentShow = getCurrentShow(shows, today);
-  const upcomingShowsCount = activeShows.filter(
+  const upcomingShows = activeShows.filter(
     (show) => show.show_date && show.show_date >= today,
-  ).length;
+  );
+  const currentShow = upcomingShows[0] ?? null;
   const guestSongIdsInSetlist = useMemo(
     () =>
       new Set(
@@ -244,6 +257,9 @@ export default function ShowsDashboardPage() {
         ]
       : []),
   ].slice(0, 6);
+  const nextShowSetlistTotal = currentShowMetrics.setlistEntries.length;
+  const nextShowPreviewGuests = currentShowMetrics.guestProfiles.slice(0, 4);
+  const nextShowPreviewSongs = currentShowMetrics.guestSongs.slice(0, 4);
 
   const loadShows = useCallback(async () => {
     setIsLoading(true);
@@ -261,20 +277,45 @@ export default function ShowsDashboardPage() {
         throw error;
       }
 
-      const nextShows = data ?? [];
-      const nextCurrentShow = getCurrentShow(nextShows, new Date().toISOString().slice(0, 10));
-      const { count: songLibraryCount, error: songLibraryCountError } = await supabase
-        .from("songs")
-        .select("id", { count: "exact", head: true });
+      const nextShows = (data ?? []) as ShowRecord[];
+      const nextCurrentShow =
+        nextShows.find((show) => !show.is_archived && show.show_date && show.show_date >= new Date().toISOString().slice(0, 10)) ??
+        null;
+      const [
+        { count: songLibraryCount, error: songLibraryCountError },
+        { count: totalGuestProfilesCount, error: totalGuestProfilesCountError },
+        { count: totalGuestSongsCount, error: totalGuestSongsCountError },
+        { count: promoMaterialsCount, error: promoMaterialsCountError },
+      ] = await Promise.all([
+        supabase.from("songs").select("id", { count: "exact", head: true }),
+        supabase.from("guest_profiles").select("id", { count: "exact", head: true }),
+        supabase.from("show_guest_songs").select("id", { count: "exact", head: true }),
+        supabase.from("promo_materials").select("id", { count: "exact", head: true }),
+      ]);
 
       if (songLibraryCountError) {
         throw songLibraryCountError;
+      }
+
+      if (totalGuestProfilesCountError) {
+        throw totalGuestProfilesCountError;
+      }
+
+      if (totalGuestSongsCountError) {
+        throw totalGuestSongsCountError;
+      }
+
+      if (promoMaterialsCountError) {
+        throw promoMaterialsCountError;
       }
 
       if (!nextCurrentShow) {
         setShows(nextShows);
         setCurrentShowMetrics({
           songLibraryCount: songLibraryCount ?? 0,
+          totalGuestProfilesCount: totalGuestProfilesCount ?? 0,
+          totalGuestSongsCount: totalGuestSongsCount ?? 0,
+          promoMaterialsCount: promoMaterialsCount ?? 0,
           guestSongs: [],
           guestProfiles: [],
           setlistEntries: [],
@@ -316,6 +357,9 @@ export default function ShowsDashboardPage() {
       setShows(nextShows);
       setCurrentShowMetrics({
         songLibraryCount: songLibraryCount ?? 0,
+        totalGuestProfilesCount: totalGuestProfilesCount ?? 0,
+        totalGuestSongsCount: totalGuestSongsCount ?? 0,
+        promoMaterialsCount: promoMaterialsCount ?? 0,
         guestSongs: (guestSongs ?? []) as ShowGuestSong[],
         guestProfiles: (guestProfiles ?? []) as GuestProfile[],
         setlistEntries: (setlistEntries ?? []) as Array<Pick<SetlistEntry, "id" | "guest_song_id" | "section">>,
@@ -780,34 +824,61 @@ export default function ShowsDashboardPage() {
     }
   }
 
+  function jumpToSection(sectionId: string) {
+    window.setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  }
+
+  function openDashboardTab(section: DashboardSection, sectionId?: string) {
+    setExpandedDashboardSections((currentSections) => ({
+      ...currentSections,
+      [section]: true,
+    }));
+
+    if (sectionId) {
+      jumpToSection(sectionId);
+    }
+  }
+
+  function toggleDashboardSection(section: DashboardSection) {
+    setExpandedDashboardSections((currentSections) => ({
+      ...currentSections,
+      [section]: !currentSections[section],
+    }));
+  }
+
   function renderPortalLinks(show: ShowRecord) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <>
         <Link
           href={`/guest/${show.slug}`}
-          className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          className="inline-flex min-w-[105px] shrink-0 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
         >
           Guest
         </Link>
         <Link
           href={`/band/${show.slug}`}
-          className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          className="inline-flex min-w-[105px] shrink-0 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
         >
           Band
         </Link>
         <Link
           href={`/mc/${show.slug}`}
-          className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          className="inline-flex min-w-[105px] shrink-0 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
         >
           MC
         </Link>
         <Link
           href={`/admin/${show.slug}`}
-          className="flex min-h-11 items-center justify-center rounded-xl bg-emerald-700 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-emerald-800"
+          className="inline-flex min-w-[105px] shrink-0 items-center justify-center rounded-xl bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-emerald-800"
         >
           Admin
         </Link>
-      </div>
+      </>
     );
   }
 
@@ -971,11 +1042,13 @@ export default function ShowsDashboardPage() {
     const isDuplicating = duplicatingShowId === show.id;
     const tone = getShowCardTone(isArchived);
     const isCopyMenuOpen = openCopyMenuShowId === show.id;
+    const isExpanded = expandedShowId === show.id;
+    const timeLabel = show.show_start_time?.trim() || null;
 
     return (
       <article
         key={show.id}
-        className={`rounded-3xl border p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg sm:p-6 ${tone.card}`}
+        className={`rounded-3xl border p-5 shadow-sm transition duration-200 hover:shadow-lg sm:p-6 ${tone.card}`}
       >
         {isEditing
           ? renderEditForm(
@@ -991,12 +1064,12 @@ export default function ShowsDashboardPage() {
                 isArchived
                   ? "Build a fresh active show from this archived template."
                   : "Create a new active show with the same itinerary, settings, and official setlist.",
-              )
-            : (
+            )
+          : (
               <>
                 <div className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-stretch sm:justify-between">
-                    <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${tone.badge}`}
@@ -1007,114 +1080,144 @@ export default function ShowsDashboardPage() {
                           {show.slug}
                         </span>
                       </div>
-                      <h4 className="max-w-[18ch] text-2xl font-semibold leading-tight tracking-tight text-stone-900 sm:max-w-none">
+                      <h4 className="mt-3 text-xl font-semibold leading-tight tracking-tight text-stone-900">
                         {show.name}
                       </h4>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-stone-600">
+                        <span>{formatShowDate(show.show_date)}</span>
+                        {timeLabel ? <span>{timeLabel}</span> : null}
+                        {show.venue ? <span>{show.venue}</span> : null}
+                      </div>
                     </div>
 
-                    <div
-                      className={`flex min-h-[5.5rem] min-w-[9.5rem] items-center justify-center rounded-2xl border px-4 py-3 text-center text-sm font-medium leading-5 text-stone-600 ${tone.metaCard}`}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedShowId((currentId) => (currentId === show.id ? null : show.id))}
+                      className="min-h-12 min-w-[10rem] rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
                     >
-                      {formatShowDate(show.show_date)}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className={`flex min-h-[5.25rem] flex-col justify-center rounded-2xl border px-4 py-3 ${tone.metaCard}`}>
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
-                        Venue
-                      </p>
-                      <p className="mt-1 text-sm text-stone-700">{show.venue || "Venue not set"}</p>
-                    </div>
-
-                    <div className={`flex min-h-[5.25rem] flex-col justify-center rounded-2xl border px-4 py-3 ${tone.metaCard}`}>
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
-                        Slug
-                      </p>
-                      <p className="mt-1 text-sm text-stone-700">{show.slug}</p>
-                    </div>
+                      {isExpanded ? "Hide Tools" : "Open Tools"}
+                    </button>
                   </div>
                 </div>
 
-                <div className={`mt-5 grid gap-3 border-t pt-5 ${tone.divider}`}>
-                  {renderPortalLinks(show)}
+                {isExpanded ? (
+                  <div className={`mt-5 grid gap-4 border-t pt-5 ${tone.divider}`}>
+                    <div className="flex flex-wrap gap-3">
+                      <Link
+                        href={`/admin/${show.slug}`}
+                        className="flex min-h-12 min-w-[9rem] items-center justify-center rounded-xl bg-emerald-700 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-emerald-800"
+                      >
+                        Admin
+                      </Link>
+                      <Link
+                        href={`/band/${show.slug}`}
+                        className="flex min-h-12 min-w-[9rem] items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Band
+                      </Link>
+                      <Link
+                        href={`/guest/${show.slug}`}
+                        className="flex min-h-12 min-w-[9rem] items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Guest
+                      </Link>
+                      <Link
+                        href={`/admin/${show.slug}?tab=setlist`}
+                        className="flex min-h-12 min-w-[9rem] items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Setlist
+                      </Link>
+                      <Link
+                        href={`/admin/${show.slug}?tab=show-details`}
+                        className="flex min-h-12 min-w-[9rem] items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Itinerary
+                      </Link>
+                      <Link
+                        href={`/admin/${show.slug}?tab=promo-materials`}
+                        className="flex min-h-12 min-w-[9rem] items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Promo
+                      </Link>
+                    </div>
 
-                  <div className="grid gap-3 sm:grid-cols-4">
-                    <button
-                      type="button"
-                      onClick={() => startEditingShow(show)}
-                      className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => startDuplicatingShow(show)}
-                      className="flex min-h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                    >
-                      Duplicate Show
-                    </button>
-                    <div className="relative">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={(event) => handleToggleCopyMenu(event, show.id)}
+                          className="flex min-h-12 w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Copy Links
+                        </button>
+
+                        {isCopyMenuOpen ? (
+                          <div
+                            className={`absolute left-0 z-20 w-full min-w-[12rem] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                              copyMenuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(show.slug, "guest")}
+                              className="flex w-full items-center justify-center px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                              {copiedLinkKey === `guest-${show.slug}` ? "Copied Guest Link" : "Copy Guest Link"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(show.slug, "band")}
+                              className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                              {copiedLinkKey === `band-${show.slug}` ? "Copied Band Link" : "Copy Band Link"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(show.slug, "mc")}
+                              className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                              {copiedLinkKey === `mc-${show.slug}` ? "Copied MC Link" : "Copy MC Link"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(show.slug, "admin")}
+                              className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                              {copiedLinkKey === `admin-${show.slug}` ? "Copied Admin Link" : "Copy Admin Link"}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+
                       <button
                         type="button"
-                        onClick={(event) => handleToggleCopyMenu(event, show.id)}
-                        className="flex min-h-11 w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        onClick={() => startEditingShow(show)}
+                        className="flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                       >
-                        Copy Links
+                        Edit
                       </button>
-
-                      {isCopyMenuOpen ? (
-                        <div
-                          className={`absolute left-0 z-20 w-full min-w-[12rem] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                            copyMenuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2"
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLink(show.slug, "guest")}
-                            className="flex w-full items-center justify-center px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                          >
-                            {copiedLinkKey === `guest-${show.slug}` ? "Copied Guest Link" : "Copy Guest Link"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLink(show.slug, "band")}
-                            className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-                          >
-                            {copiedLinkKey === `band-${show.slug}` ? "Copied Band Link" : "Copy Band Link"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLink(show.slug, "mc")}
-                            className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-                          >
-                            {copiedLinkKey === `mc-${show.slug}` ? "Copied MC Link" : "Copy MC Link"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLink(show.slug, "admin")}
-                            className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-                          >
-                            {copiedLinkKey === `admin-${show.slug}` ? "Copied Admin Link" : "Copy Admin Link"}
-                          </button>
-                        </div>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => startDuplicatingShow(show)}
+                        className="flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetArchived(show.id, !isArchived)}
+                        disabled={activeShowActionId === show.id}
+                        className={`flex min-h-12 items-center justify-center rounded-xl px-4 py-2.5 text-center text-sm font-semibold text-white transition disabled:cursor-not-allowed ${
+                          isArchived
+                            ? "bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400"
+                            : "bg-stone-800 hover:bg-black disabled:bg-stone-500"
+                        }`}
+                      >
+                        {isArchived ? "Restore" : "Archive"}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleSetArchived(show.id, !isArchived)}
-                      disabled={activeShowActionId === show.id}
-                      className={`flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 text-center text-sm font-semibold text-white transition disabled:cursor-not-allowed ${
-                        isArchived
-                          ? "bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400"
-                          : "bg-stone-800 hover:bg-black disabled:bg-stone-500"
-                      }`}
-                    >
-                      {isArchived ? "Restore" : "Archive"}
-                    </button>
                   </div>
-
-                </div>
+                ) : null}
               </>
             )}
       </article>
@@ -1157,13 +1260,13 @@ export default function ShowsDashboardPage() {
 
                   <div className="max-w-2xl space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-100">
-                      CMMS Control Center
+                      Control Center
                     </p>
                     <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                      Show Manager
+                      Show Manager Control Center
                     </h1>
                     <p className="text-sm leading-6 text-emerald-50/90 sm:text-base">
-                      Manage your shows, guests, and setlists.
+                      Shows, songs, setlists, guests, rehearsal tools, and promo materials in one place.
                     </p>
                   </div>
                 </div>
@@ -1187,197 +1290,405 @@ export default function ShowsDashboardPage() {
           ) : null}
 
           <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-                  Current Show Command Center
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
-                  Current Show Snapshot
-                </h2>
-                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
-                  The next active show gets priority here, with setup signals pulled from the
-                  guest, song, and setlist data already in the app.
-                </p>
-              </div>
-
-              {currentShow ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-100">
-                  {formatShowDate(currentShow.show_date)}
+            <div className="grid gap-6">
+              <section className="grid gap-4">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                    Quick Actions
+                  </p>
+                  <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                    Move Fast
+                  </h2>
+                  <p className="text-sm text-stone-600 dark:text-slate-300">
+                    Jump into the most common admin tasks without hunting through the dashboard first.
+                  </p>
                 </div>
-              ) : null}
-            </div>
 
-            {isLoading ? (
-              <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
-                Loading current show snapshot...
-              </div>
-            ) : currentShow ? (
-              <div className="mt-5 grid gap-5">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    {
-                      label: "Current Show",
-                      value: currentShow.name,
-                      detail: currentShow.venue || "Venue not set",
-                    },
-                    {
-                      label: "Songs in Library",
-                      value: currentShowMetrics.songLibraryCount?.toString() ?? "0",
-                      detail: "Reusable songs available to build from",
-                    },
-                    {
-                      label: "Guest Songs Submitted",
-                      value: currentShowMetrics.guestSongs.length.toString(),
-                      detail: "Guest song choices attached to this show",
-                    },
-                    {
-                      label: "Guests Ready",
-                      value: `${guestsReadyCount}/${currentShowMetrics.guestProfiles.length}`,
-                      detail: "Profiles with permission and a promo photo",
-                    },
-                    {
-                      label: "Missing Promo Photos",
-                      value: guestsMissingPhotos.length.toString(),
-                      detail: "Guest profiles still missing photo assets",
-                    },
-                    {
-                      label: "Pending Review",
-                      value: pendingGuestSongs.length.toString(),
-                      detail: "Guest songs not yet placed in the setlist",
-                    },
-                  ].map((card) => (
-                    <div
-                      key={card.label}
-                      className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60"
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={() => openDashboardTab("create", "create-show-section")}
+                    className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
+                  >
+                    <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Create Show</p>
+                    <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
+                      Open the existing show-creation workflow and start the next event.
+                    </p>
+                  </button>
+
+                  {currentShow ? (
+                    <Link
+                      href={`/admin/${currentShow.slug}?tab=songs`}
+                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
                     >
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
-                        {card.label}
+                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Add Song</p>
+                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
+                        Jump straight into the song tools for {currentShow.name}.
                       </p>
-                      <p className="mt-2 break-words text-2xl font-semibold text-stone-900 dark:text-slate-100">
-                        {card.value}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openDashboardTab("create", "create-show-section")}
+                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
+                    >
+                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Add Song</p>
+                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
+                        Create a show first, then jump into that show&apos;s song tools.
                       </p>
-                      <p className="mt-1 text-sm leading-5 text-stone-600 dark:text-slate-300">
-                        {card.detail}
+                    </button>
+                  )}
+
+                  {currentShow ? (
+                    <Link
+                      href={`/admin/${currentShow.slug}?tab=guests`}
+                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
+                    >
+                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Add Guest / Guest Info</p>
+                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
+                        Review guest profiles, bios, and submissions for the next show.
                       </p>
-                    </div>
-                  ))}
+                    </Link>
+                  ) : null}
+
+                  {currentShow ? (
+                    <Link
+                      href={`/admin/${currentShow.slug}?tab=setlist`}
+                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
+                    >
+                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Create / Manage Setlist</p>
+                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
+                        Open the active show&apos;s setlist builder and official song order.
+                      </p>
+                    </Link>
+                  ) : null}
+
+                  {currentShow ? (
+                    <Link
+                      href={`/admin/${currentShow.slug}?tab=promo-materials`}
+                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
+                    >
+                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Upload Promo Material</p>
+                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
+                        Add flyers, graphics, and show assets for the current event.
+                      </p>
+                    </Link>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={() => jumpToSection("next-show-links")}
+                    className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
+                  >
+                    <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Copy Links</p>
+                    <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
+                      Jump to the existing portal link actions for the next show.
+                    </p>
+                  </button>
+                </div>
+              </section>
+
+              <section className="grid gap-4">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                    What Matters Right Now
+                  </p>
+                  <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                    Upcoming Shows
+                  </h2>
+                  <p className="text-sm text-stone-600 dark:text-slate-300">
+                    A quick operations view of the next show, nearby upcoming events, and anything that still needs attention.
+                  </p>
                 </div>
 
-                <div className="grid gap-5">
-                  <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5">
-                    <div className="flex flex-col gap-1">
-                      <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
-                        Needs Attention
-                      </h3>
-                      <p className="text-sm text-stone-600 dark:text-slate-300">
-                        A short punch list for the current show.
-                      </p>
-                    </div>
-
-                    {needsAttentionItems.length === 0 ? (
-                      <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-100">
-                        Everything for this show is looking good.
-                      </div>
-                    ) : (
-                      <div className="mt-4 grid gap-3">
-                        {needsAttentionItems.map((item) => (
-                          <article
-                            key={`${item.title}-${item.detail}`}
-                            className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900"
-                          >
-                            <h4 className="text-sm font-semibold text-stone-900 dark:text-slate-100">
-                              {item.title}
-                            </h4>
-                            <p className="mt-1 text-sm leading-5 text-stone-600 dark:text-slate-300">
-                              {item.detail}
+                {isLoading ? (
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
+                    Loading control-center highlights...
+                  </div>
+                ) : currentShow ? (
+                  <div className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
+                    <section className="rounded-3xl border border-stone-200 bg-gradient-to-br from-white via-stone-50 to-emerald-50 p-5 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-emerald-950/20 sm:p-6">
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
+                              Next Show
                             </p>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </section>
+                            <h3 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                              {currentShow.name}
+                            </h3>
+                            <div className="mt-2 grid gap-1 text-sm text-stone-600 dark:text-slate-300">
+                              <p>{formatShowDate(currentShow.show_date)}</p>
+                              <p>{currentShow.venue || "Venue not set"}</p>
+                            </div>
+                          </div>
 
-                  <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5">
-                    <div className="flex flex-col gap-1">
-                      <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
-                        Show Details
-                      </h3>
-                      <p className="text-sm text-stone-600 dark:text-slate-300">
-                        A quick read on who is booked and how the setlist is shaping up.
-                      </p>
-                    </div>
+                          <Link
+                            href={`/admin/${currentShow.slug}`}
+                            className="w-fit rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                          >
+                            Open Admin Portal
+                          </Link>
+                        </div>
 
-                    <div className="mt-4 grid gap-4">
-                      <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
-                          Show
-                        </p>
-                        <Link
-                          href={`/admin/${currentShow.slug}?tab=show-details`}
-                          className="mt-2 block text-base font-semibold text-stone-900 underline-offset-4 transition hover:text-emerald-700 hover:underline dark:text-slate-100 dark:hover:text-emerald-300"
-                        >
-                          {currentShow.name}
-                        </Link>
-                        <div className="mt-2 grid gap-1 text-sm text-stone-600 dark:text-slate-300">
-                          <p>{formatShowDate(currentShow.show_date)}</p>
-                          <p>{currentShow.venue || "Venue not set"}</p>
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                          {[
+                            {
+                              label: "Song Library",
+                              value: currentShowMetrics.songLibraryCount?.toString() ?? "0",
+                              detail: "Reusable songs ready for planning",
+                            },
+                            {
+                              label: "Guest Songs",
+                              value: currentShowMetrics.guestSongs.length.toString(),
+                              detail: "Submitted for this show",
+                            },
+                            {
+                              label: "Guests Ready",
+                              value: `${guestsReadyCount}/${currentShowMetrics.guestProfiles.length}`,
+                              detail: "Permission granted and photo added",
+                            },
+                            {
+                              label: "Setlist Entries",
+                              value: nextShowSetlistTotal.toString(),
+                              detail: "Official songs already placed",
+                            },
+                          ].map((card) => (
+                            <div
+                              key={card.label}
+                              className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60"
+                            >
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                                {card.label}
+                              </p>
+                              <p className="mt-2 text-2xl font-semibold text-stone-900 dark:text-slate-100">
+                                {card.value}
+                              </p>
+                              <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
+                                {card.detail}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div id="next-show-links" className="grid gap-4 lg:grid-cols-[1fr_auto]">
+                          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                              Portal Access
+                            </p>
+                            <div className="mt-4 flex flex-row flex-wrap items-center justify-center gap-3">
+                              {renderPortalLinks(currentShow)}
+                            </div>
+                          </div>
+
+                          <div className="relative rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                              Copy Links
+                            </p>
+                            <button
+                              type="button"
+                              onClick={(event) => handleToggleCopyMenu(event, currentShow.id)}
+                              className="mt-4 w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                              Open Copy Menu
+                            </button>
+
+                            {openCopyMenuShowId === currentShow.id ? (
+                              <div
+                                className={`absolute left-4 right-4 z-20 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                                  copyMenuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2"
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyLink(currentShow.slug, "guest")}
+                                  className="flex w-full items-center justify-center px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                  {copiedLinkKey === `guest-${currentShow.slug}` ? "Copied Guest Link" : "Copy Guest Link"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyLink(currentShow.slug, "band")}
+                                  className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                  {copiedLinkKey === `band-${currentShow.slug}` ? "Copied Band Link" : "Copy Band Link"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyLink(currentShow.slug, "mc")}
+                                  className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                  {copiedLinkKey === `mc-${currentShow.slug}` ? "Copied MC Link" : "Copy MC Link"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyLink(currentShow.slug, "admin")}
+                                  className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                  {copiedLinkKey === `admin-${currentShow.slug}` ? "Copied Admin Link" : "Copy Admin Link"}
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 lg:grid-cols-3">
+                          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                              Guests
+                            </p>
+                            {nextShowPreviewGuests.length === 0 ? (
+                              <p className="mt-3 text-sm text-stone-500 dark:text-slate-400">
+                                No guest profiles added yet.
+                              </p>
+                            ) : (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {nextShowPreviewGuests.map((guest) => (
+                                  <Link
+                                    key={guest.id}
+                                    href={`/admin/${currentShow.slug}?tab=guests`}
+                                    className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-sm font-medium text-stone-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-emerald-900 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-100"
+                                  >
+                                    {guest.name || "Unnamed guest"}
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                              Submitted Songs
+                            </p>
+                            {nextShowPreviewSongs.length === 0 ? (
+                              <p className="mt-3 text-sm text-stone-500 dark:text-slate-400">
+                                No guest songs submitted yet.
+                              </p>
+                            ) : (
+                              <div className="mt-3 grid gap-2">
+                                {nextShowPreviewSongs.map((song) => (
+                                  <Link
+                                    key={song.id}
+                                    href={`/admin/${currentShow.slug}?tab=songs`}
+                                    className="rounded-xl bg-stone-50 px-3 py-2 text-sm text-stone-700 transition hover:bg-emerald-50 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-emerald-950/40"
+                                  >
+                                    <span className="font-medium">{song.title}</span>
+                                    {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                              Setlist Preview
+                            </p>
+                            {nextShowSetlistTotal === 0 ? (
+                              <p className="mt-3 text-sm text-stone-500 dark:text-slate-400">
+                                No setlist entries added yet.
+                              </p>
+                            ) : (
+                              <div className="mt-3 grid gap-2">
+                                {setlistSectionCounts.map((item) => (
+                                  <Link
+                                    key={item.section}
+                                    href={`/admin/${currentShow.slug}?tab=setlist`}
+                                    className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-sm transition hover:bg-emerald-50 dark:bg-slate-950 dark:hover:bg-emerald-950/40"
+                                  >
+                                    <span className="font-medium text-stone-700 dark:text-slate-200">
+                                      {getSetlistSectionLabel(item.section)}
+                                    </span>
+                                    <span className="font-semibold text-stone-900 dark:text-slate-100">
+                                      {item.count}
+                                    </span>
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
+                    </section>
 
-                      <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
-                          Guests
-                        </p>
-                        {guestNames.length === 0 ? (
-                          <p className="mt-2 text-sm text-stone-500 dark:text-slate-400">
-                            No guest names added yet.
+                    <div className="grid gap-5">
+                      <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5">
+                        <div className="flex flex-col gap-1">
+                          <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
+                            Nearby Upcoming Shows
+                          </h3>
+                          <p className="text-sm text-stone-600 dark:text-slate-300">
+                            Keep the next few events visible without losing the larger focus card.
                           </p>
-                        ) : (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {guestNames.map((guestName, guestIndex) => (
-                              <Link
-                                key={`${guestName}-${guestIndex}`}
-                                href={`/admin/${currentShow.slug}?tab=guests`}
-                                className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-sm font-medium text-stone-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-emerald-900 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-100"
-                              >
-                                {guestName}
-                              </Link>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                        </div>
 
-                      <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
-                          Setlist Songs
-                        </p>
-                        <div className="mt-3 grid gap-2">
-                          {setlistSectionCounts.map((item) => (
+                        <div className="mt-4 grid gap-3">
+                          {(upcomingShows.length > 0 ? upcomingShows : activeShows).slice(0, 4).map((show) => (
                             <Link
-                              key={item.section}
-                              href={`/admin/${currentShow.slug}?tab=setlist`}
-                              className="flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2 text-sm transition hover:bg-emerald-50 dark:bg-slate-950 dark:hover:bg-emerald-950/40"
+                              key={show.id}
+                              href={`/admin/${show.slug}`}
+                              className="rounded-2xl border border-stone-200 bg-white px-4 py-4 transition hover:-translate-y-0.5 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-900"
                             >
-                              <span className="font-medium text-stone-700 dark:text-slate-200">
-                                {getSetlistSectionLabel(item.section)}
-                              </span>
-                              <span className="font-semibold text-stone-900 dark:text-slate-100">
-                                {item.count} {item.count === 1 ? "song" : "songs"}
-                              </span>
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-base font-semibold text-stone-900 dark:text-slate-100">
+                                    {show.name}
+                                  </p>
+                                  <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
+                                    {formatShowDate(show.show_date)}
+                                  </p>
+                                </div>
+                                <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 dark:bg-slate-950 dark:text-slate-300">
+                                  {show.id === currentShow.id ? "Next" : "Upcoming"}
+                                </span>
+                              </div>
                             </Link>
                           ))}
                         </div>
-                      </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5">
+                        <div className="flex flex-col gap-1">
+                          <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
+                            Needs Attention
+                          </h3>
+                          <p className="text-sm text-stone-600 dark:text-slate-300">
+                            A short punch list for the next show.
+                          </p>
+                        </div>
+
+                        {needsAttentionItems.length === 0 ? (
+                          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-100">
+                            Everything for this show is looking good.
+                          </div>
+                        ) : (
+                          <div className="mt-4 grid gap-3">
+                            {needsAttentionItems.map((item) => (
+                              <article
+                                key={`${item.title}-${item.detail}`}
+                                className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900"
+                              >
+                                <h4 className="text-sm font-semibold text-stone-900 dark:text-slate-100">
+                                  {item.title}
+                                </h4>
+                                <p className="mt-1 text-sm leading-5 text-stone-600 dark:text-slate-300">
+                                  {item.detail}
+                                </p>
+                              </article>
+                            ))}
+                          </div>
+                        )}
+                      </section>
                     </div>
-                  </section>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-400">
-                No active show is available yet. Create a show to light up the command center.
-              </div>
-            )}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-400">
+                    No active show is available yet. Create a show to light up the control center.
+                  </div>
+                )}
+              </section>
+
+            </div>
           </section>
 
           <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
@@ -1385,231 +1696,186 @@ export default function ShowsDashboardPage() {
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">Dashboard</h2>
                 <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
-                  Switch between active shows, new show setup, and archived cleanup without
-                  digging through one long page.
+                  Open only the workspace you need and keep the rest of the dashboard compact.
                 </p>
               </div>
-
-              <div className="flex flex-wrap gap-2 rounded-2xl bg-stone-100 p-2 dark:bg-slate-950/70">
-                {dashboardTabs.map((tab) => {
-                  const isActive = activeTab === tab.id;
+            </div>
+            <div className="pt-6">
+              <div className="grid gap-4">
+                {dashboardSections.map((section) => {
+                  const isExpanded = expandedDashboardSections[section.id];
 
                   return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex min-w-[10rem] flex-1 flex-col rounded-xl px-4 py-3 text-left transition sm:min-w-[11rem] ${
-                        isActive
-                          ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-200"
-                          : "text-stone-600 hover:bg-white/80 hover:text-stone-900"
-                      }`}
+                    <section
+                      key={section.id}
+                      id={section.id === "create" ? "create-show-section" : undefined}
+                      className="rounded-3xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5"
                     >
-                      <span className="text-sm font-semibold">{tab.label}</span>
-                      <span className="mt-1 text-xs leading-5 text-stone-500">
-                        {tab.description}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleDashboardSection(section.id)}
+                        className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-2xl text-left"
+                      >
+                        <div>
+                          <h3 className="text-xl font-semibold text-stone-900 dark:text-slate-100">
+                            {section.label}
+                          </h3>
+                          <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
+                            {section.description}
+                          </p>
+                        </div>
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                          {isExpanded ? "-" : "+"}
+                        </span>
+                      </button>
+
+                      <div
+                        className={`overflow-hidden transition-all duration-200 ${
+                          isExpanded ? "mt-5 max-h-[240rem] border-t border-stone-200 pt-5 opacity-100 dark:border-slate-800" : "max-h-0 opacity-0"
+                        }`}
+                      >
+                        {section.id === "active" ? (
+                          isLoading ? (
+                            <div className="rounded-2xl border border-stone-200 bg-white px-4 py-6 text-sm text-stone-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                              Loading shows...
+                            </div>
+                          ) : activeShows.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-8 text-sm text-stone-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                              No active shows yet. Open Create Show to get the next event started.
+                            </div>
+                          ) : (
+                            <div className="grid gap-5 xl:grid-cols-2 2xl:grid-cols-3">
+                              {activeShows.map((show) => renderShowCard(show, false))}
+                            </div>
+                          )
+                        ) : null}
+
+                        {section.id === "create" ? (
+                          <div className="mx-auto max-w-2xl rounded-3xl border border-stone-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+                            <div className="flex flex-col gap-1">
+                              <h4 className="text-xl font-semibold text-stone-900 dark:text-slate-100">Create New Show</h4>
+                              <p className="text-sm text-stone-600 dark:text-slate-300">
+                                Start a new show record here, then jump straight into the admin portal to finish setup.
+                              </p>
+                            </div>
+
+                            <form className="mt-5 grid gap-4" onSubmit={handleSubmit}>
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 dark:text-slate-200">
+                                Duplicate Existing Show
+                                <select
+                                  value={prefillSourceShowId}
+                                  onChange={handlePrefillFromExistingShow}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                >
+                                  <option value="">Start from a blank show</option>
+                                  {shows.map((show) => (
+                                    <option key={show.id} value={show.id}>
+                                      {show.name} ({show.slug})
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="text-xs font-normal text-stone-500 dark:text-slate-400">
+                                  Optional: prefill the venue from an existing show to speed up setup.
+                                </span>
+                              </label>
+
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 dark:text-slate-200">
+                                  Show Name
+                                  <input
+                                    type="text"
+                                    name="name"
+                                    value={formState.name}
+                                    onChange={handleChange}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                    placeholder="Cumberland Mountain Music Show"
+                                    required
+                                  />
+                                </label>
+
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 dark:text-slate-200">
+                                    Show Date
+                                    <input
+                                      type="date"
+                                      name="showDate"
+                                      value={formState.showDate}
+                                      onChange={handleChange}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                    />
+                                  </label>
+
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 dark:text-slate-200">
+                                    Venue
+                                    <input
+                                      type="text"
+                                      name="venue"
+                                      value={formState.venue}
+                                      onChange={handleChange}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                      placeholder="Optional venue"
+                                    />
+                                  </label>
+                                </div>
+
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 dark:text-slate-200">
+                                  Slug
+                                  <input
+                                    type="text"
+                                    name="slug"
+                                    value={formState.slug}
+                                    onChange={handleChange}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                    placeholder="cmms-april-27"
+                                    required
+                                  />
+                                </label>
+
+                                <div className="flex flex-wrap items-center gap-3 pt-2">
+                                  <button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    {isSubmitting ? "Creating Show..." : "Create Show"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPrefillSourceShowId("");
+                                      setFormState(initialFormState);
+                                    }}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+                                  >
+                                    Clear Form
+                                  </button>
+                                </div>
+                              </form>
+                          </div>
+                        ) : null}
+
+                        {section.id === "archived" ? (
+                          isLoading ? (
+                            <div className="rounded-2xl border border-stone-200 bg-white px-4 py-6 text-sm text-stone-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                              Loading archived shows...
+                            </div>
+                          ) : archivedShows.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-8 text-sm text-stone-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                              No archived shows yet.
+                            </div>
+                          ) : (
+                            <div className="grid gap-5 xl:grid-cols-2 2xl:grid-cols-3">
+                              {archivedShows.map((show) => renderShowCard(show, true))}
+                            </div>
+                          )
+                        ) : null}
+                      </div>
+                    </section>
                   );
                 })}
               </div>
             </div>
-
-            {activeTab === "active" ? (
-              <section className="pt-6">
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-xl font-semibold text-stone-900">Active Shows</h3>
-                  <p className="text-sm text-stone-600">
-                    Jump into any portal, copy links for the team, or make quick show-management
-                    changes from one place.
-                  </p>
-                </div>
-
-                {isLoading ? (
-                  <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600">
-                    Loading shows...
-                  </div>
-                ) : activeShows.length === 0 ? (
-                  <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500">
-                    No active shows yet. Open the Create Show tab to get the next event started.
-                  </div>
-                ) : (
-                  <div className="mt-5 grid gap-5 xl:grid-cols-2 2xl:grid-cols-3">
-                    {activeShows.map((show) => renderShowCard(show, false))}
-                  </div>
-                )}
-              </section>
-            ) : null}
-
-            {activeTab === "create" ? (
-              <section className="pt-6">
-                <div className="mx-auto max-w-2xl rounded-3xl border border-stone-200 bg-stone-50 p-5 sm:p-6">
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-xl font-semibold text-stone-900">Create New Show</h3>
-                    <p className="text-sm text-stone-600">
-                      Start a new show record here, then jump straight into the admin portal to
-                      finish setup.
-                    </p>
-                  </div>
-
-                  <form className="mt-5 grid gap-4" onSubmit={handleSubmit}>
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Duplicate Existing Show
-                      <select
-                        value={prefillSourceShowId}
-                        onChange={handlePrefillFromExistingShow}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      >
-                        <option value="">Start from a blank show</option>
-                        {shows.map((show) => (
-                          <option key={show.id} value={show.id}>
-                            {show.name} ({show.slug})
-                          </option>
-                        ))}
-                      </select>
-                      <span className="text-xs font-normal text-stone-500">
-                        Optional: prefill the venue from an existing show to speed up setup.
-                      </span>
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Show Name
-                      <input
-                        type="text"
-                        name="name"
-                        value={formState.name}
-                        onChange={handleChange}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Cumberland Mountain Music Show"
-                        required
-                      />
-                    </label>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Show Date
-                        <input
-                          type="date"
-                          name="showDate"
-                          value={formState.showDate}
-                          onChange={handleChange}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Venue
-                        <input
-                          type="text"
-                          name="venue"
-                          value={formState.venue}
-                          onChange={handleChange}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional venue"
-                        />
-                      </label>
-                    </div>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Slug
-                      <input
-                        type="text"
-                        name="slug"
-                        value={formState.slug}
-                        onChange={handleChange}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="cmms-april-27"
-                        required
-                      />
-                    </label>
-
-                    <div className="flex flex-wrap items-center gap-3 pt-2">
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                      >
-                        {isSubmitting ? "Creating Show..." : "Create Show"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPrefillSourceShowId("");
-                          setFormState(initialFormState);
-                        }}
-                        className="rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Clear Form
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </section>
-            ) : null}
-
-            {activeTab === "archived" ? (
-              <section className="pt-6">
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-xl font-semibold text-stone-900">Archived Shows</h3>
-                  <p className="text-sm text-stone-600">
-                    Hide old or mistaken shows from the main control center while keeping them
-                    fully restorable.
-                  </p>
-                </div>
-
-                {isLoading ? (
-                  <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600">
-                    Loading archived shows...
-                  </div>
-                ) : archivedShows.length === 0 ? (
-                  <div className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500">
-                    No archived shows yet.
-                  </div>
-                ) : (
-                  <div className="mt-5 grid gap-5 xl:grid-cols-2 2xl:grid-cols-3">
-                    {archivedShows.map((show) => renderShowCard(show, true))}
-                  </div>
-                )}
-              </section>
-            ) : null}
           </section>
 
-          <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
-                Archive & Totals
-              </h2>
-              <p className="text-sm text-stone-600 dark:text-slate-300">
-                The original show counts are still here, just out of the main command-center lane.
-              </p>
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
-                  Active Shows
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{activeShows.length}</p>
-                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Shows currently visible and in rotation</p>
-              </div>
-
-              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
-                  Archived Shows
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{archivedShows.length}</p>
-                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Stored safely for later reference or restore</p>
-              </div>
-
-              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-slate-400">
-                  Upcoming Shows
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-stone-900 dark:text-slate-100">{upcomingShowsCount}</p>
-                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Active shows with a date still ahead</p>
-              </div>
-            </div>
-          </section>
         </section>
       </main>
     </AdminGate>

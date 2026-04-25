@@ -1477,6 +1477,7 @@ export function ShowPage({
   const [librarySongMp3InputKey, setLibrarySongMp3InputKey] = useState(0);
   const [openLibraryLyricsSongId, setOpenLibraryLyricsSongId] = useState<string | null>(null);
   const [isBandSongFormOpen, setIsBandSongFormOpen] = useState(false);
+  const [isAdminSongFormOpen, setIsAdminSongFormOpen] = useState(false);
   const [isGuestSongFormOpen, setIsGuestSongFormOpen] = useState(false);
   const [poolSongMp3File, setPoolSongMp3File] = useState<File | null>(null);
   const [poolSongMp3InputKey, setPoolSongMp3InputKey] = useState(0);
@@ -2876,6 +2877,9 @@ export function ShowPage({
 
       setFormState(initialFormState);
       resetSongMp3Input();
+      if (normalizedSubmittedByRole === "admin") {
+        setIsAdminSongFormOpen(false);
+      }
       if (normalizedSubmittedByRole === "band") {
         setIsBandSongFormOpen(false);
       }
@@ -7130,119 +7134,140 @@ export function ShowPage({
 
         {shouldShowSongSubmissionForm ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">{formHeading}</h2>
-              <p className="text-sm text-stone-600">Add a reusable song to the library.</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">{formHeading}</h2>
+                <p className="text-sm text-stone-600">
+                  Open the song suggestion form when you want to add a reusable library song.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAdminSongFormOpen((currentValue) => !currentValue)}
+                className="w-full rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 sm:w-auto"
+              >
+                Suggest a Song
+              </button>
             </div>
 
-            <form
-              className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-              onSubmit={handleSubmit}
-            >
-              <div className="grid gap-4">
+            {isAdminSongFormOpen ? (
+              <form
+                className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+                onSubmit={handleSubmit}
+              >
+                <div className="grid gap-4">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Song Title
+                    <input
+                      type="text"
+                      name="title"
+                      value={formState.title}
+                      onChange={handleChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Enter song title"
+                      required
+                    />
+                  </label>
+                </div>
+
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Song Title
+                  Key
                   <input
                     type="text"
-                    name="title"
-                    value={formState.title}
+                    name="key"
+                    value={formState.key}
                     onChange={handleChange}
                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder="Enter song title"
-                    required
+                    placeholder="Optional key"
                   />
                 </label>
-              </div>
 
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Key
-                <input
-                  type="text"
-                  name="key"
-                  value={formState.key}
-                  onChange={handleChange}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Optional key"
-                />
-              </label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Tempo
+                    <select
+                      name="tempo"
+                      value={formState.tempo}
+                      onChange={handleChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    >
+                      <option value="">Not set</option>
+                      <option value="fast">Fast</option>
+                      <option value="medium">Medium</option>
+                      <option value="slow">Slow</option>
+                    </select>
+                  </label>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Song Type
+                    <select
+                      name="songType"
+                      value={formState.songType}
+                      onChange={handleChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    >
+                      <option value="">Not set</option>
+                      <option value="vocal">Vocal</option>
+                      <option value="instrumental">Instrumental</option>
+                    </select>
+                  </label>
+                </div>
+
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Tempo
-                  <select
-                    name="tempo"
-                    value={formState.tempo}
+                  Notes
+                  <textarea
+                    name="notes"
+                    value={formState.notes}
                     onChange={handleChange}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  >
-                    <option value="">Not set</option>
-                    <option value="fast">Fast</option>
-                    <option value="medium">Medium</option>
-                    <option value="slow">Slow</option>
-                  </select>
+                    className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="Optional notes for the setlist side"
+                  />
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Song Type
-                  <select
-                    name="songType"
-                    value={formState.songType}
+                  Lyrics
+                  <textarea
+                    name="lyrics"
+                    value={formState.lyrics}
                     onChange={handleChange}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  >
-                    <option value="">Not set</option>
-                    <option value="vocal">Vocal</option>
-                    <option value="instrumental">Instrumental</option>
-                  </select>
+                    className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="Optional lyrics"
+                  />
                 </label>
-              </div>
 
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Notes
-                <textarea
-                  name="notes"
-                  value={formState.notes}
-                  onChange={handleChange}
-                  className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Optional notes for the setlist side"
-                />
-              </label>
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Optional MP3
+                  <input
+                    key={songMp3InputKey}
+                    type="file"
+                    accept="audio/mpeg,.mp3"
+                    onChange={handleSongMp3Change}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                  />
+                  <span className="text-xs font-normal text-stone-500">
+                    Optional. MP3 only, up to 30 MB.
+                  </span>
+                </label>
 
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Lyrics
-                <textarea
-                  name="lyrics"
-                  value={formState.lyrics}
-                  onChange={handleChange}
-                  className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Optional lyrics"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Optional MP3
-                <input
-                  key={songMp3InputKey}
-                  type="file"
-                  accept="audio/mpeg,.mp3"
-                  onChange={handleSongMp3Change}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                />
-                <span className="text-xs font-normal text-stone-500">
-                  Optional. MP3 only, up to 30 MB.
-                </span>
-              </label>
-
-              <div className="flex justify-start">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                >
-                  {isSubmitting ? "Submitting..." : "Add to Library"}
-                </button>
-              </div>
-            </form>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                  >
+                    {isSubmitting ? "Submitting..." : "Add to Library"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAdminSongFormOpen(false)}
+                    className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : null}
 
             {false ? (
               <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">

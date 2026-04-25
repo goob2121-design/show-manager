@@ -42,16 +42,17 @@ export function ThemeToggle() {
     window.dispatchEvent(new Event("cmms-theme-change"));
   }
 
-  const nextThemeLabel = mounted ? (theme === "dark" ? "light" : "dark") : null;
+  const isDarkMode = mounted ? theme === "dark" : false;
 
   return (
     <button
       type="button"
       onClick={handleToggle}
-      className="rounded-full border border-stone-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 transition hover:bg-stone-100 dark:border-stone-600 dark:bg-slate-900 dark:text-stone-100 dark:hover:bg-slate-800"
-      aria-label={mounted ? `Switch to ${nextThemeLabel} mode` : "Toggle theme"}
+      title="Toggle theme"
+      className="rounded-lg p-2 text-base text-stone-700 opacity-70 transition hover:bg-zinc-700 hover:opacity-100 dark:text-stone-100"
+      aria-label="Toggle theme"
     >
-      {mounted ? `${nextThemeLabel === "light" ? "Light" : "Dark"} Mode` : "Theme"}
+      {isDarkMode ? "🌙" : "☀️"}
     </button>
   );
 }
