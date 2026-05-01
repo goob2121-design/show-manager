@@ -147,6 +147,7 @@ const initialFormState: SongFormState = {
   songType: "",
   notes: "",
   lyrics: "",
+  chartUrl: "",
 };
 
 const initialGuestProfileFormState: GuestProfileFormState = {
@@ -207,6 +208,7 @@ const MAX_SONG_MP3_BYTES = 30 * 1024 * 1024;
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
 const urlPattern = /(https?:\/\/[^\s]+)/g;
 const urlOnlyPattern = /^https?:\/\/[^\s]+$/;
+const chartUrlPattern = /^https?:\/\/[^\s]+$/i;
 
 function getDisplaySingerName(value: string | null | undefined) {
   return value?.trim() || defaultSingerName;
@@ -264,6 +266,7 @@ type SongEditFormState = {
   artist?: string;
   notes?: string;
   lyrics?: string;
+  chartUrl?: string;
 };
 
 type SetlistSongEditFormState = {
@@ -363,6 +366,7 @@ function buildSongEditFormState(song: {
   song_type: SongType | null;
   notes?: string | null;
   lyrics?: string | null;
+  chart_url?: string | null;
 }): SongEditFormState {
   return {
     title: song.title,
@@ -371,6 +375,7 @@ function buildSongEditFormState(song: {
     songType: song.song_type ?? "",
     notes: song.notes ?? "",
     lyrics: song.lyrics ?? "",
+    chartUrl: song.chart_url ?? "",
   };
 }
 
@@ -555,6 +560,28 @@ function isGuestSongForProfile(song: PendingSubmission, profileName: string | nu
 function normalizeOptionalField(value: string) {
   const trimmedValue = value.trim();
   return trimmedValue ? trimmedValue : null;
+}
+
+function normalizeChartUrl(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  return chartUrlPattern.test(trimmedValue) ? trimmedValue : null;
+}
+
+function getChartUrlValidationMessage(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  return normalizeChartUrl(trimmedValue)
+    ? null
+    : "Chart link must start with http:// or https://.";
 }
 
 function normalizePromoMaterialCategory(value: string | null | undefined): PromoMaterialCategory {
@@ -830,6 +857,7 @@ function normalizeSongLibrarySong(
     key: song.key ?? null,
     tempo: normalizeSongTempo(song.tempo),
     song_type: normalizeSongType(song.song_type),
+    chart_url: normalizeChartUrl(song.chart_url),
     created_by_role: normalizeSubmittedByRole(song.created_by_role) as SongLibrarySong["created_by_role"],
     created_by_name: song.created_by_name ?? null,
     artist: null,
@@ -1501,6 +1529,7 @@ export function ShowPage({
     songType: "",
     notes: "",
     lyrics: "",
+    chartUrl: "",
   });
   const [sponsorLibraryFormState, setSponsorLibraryFormState] = useState<SponsorLibraryFormState>(
     initialSponsorLibraryFormState,
@@ -2699,6 +2728,15 @@ export function ShowPage({
       return;
     }
 
+    const chartUrlValidationMessage = getChartUrlValidationMessage(formState.chartUrl);
+
+    if (chartUrlValidationMessage) {
+      setActionError(chartUrlValidationMessage);
+      return;
+    }
+
+    const normalizedChartUrl = normalizeChartUrl(formState.chartUrl);
+
     setActionError(null);
     setIsSubmitting(true);
 
@@ -2779,14 +2817,15 @@ export function ShowPage({
             .from("songs")
             .insert({
               title,
-              key,
-              tempo,
-              song_type: songType,
-              notes: normalizeOptionalField(formState.notes),
-              lyrics: normalizeOptionalField(formState.lyrics),
-              created_by_role: normalizedSubmittedByRole,
-              created_by_name: null,
-            })
+            key,
+            tempo,
+            song_type: songType,
+            notes: normalizeOptionalField(formState.notes),
+            lyrics: normalizeOptionalField(formState.lyrics),
+            chart_url: normalizedChartUrl,
+            created_by_role: normalizedSubmittedByRole,
+            created_by_name: null,
+          })
             .select("*")
             .single();
 
@@ -2846,29 +2885,55 @@ export function ShowPage({
               adminUrl,
             }),
           });
-        } else if (songMp3File) {
-          const uploadedMp3Path = await uploadSongMp3File({
-            file: songMp3File,
-            showSlug: show.slug,
-            songId: existingLibrarySong.id,
-          });
+        } else if (
+          songMp3File ||
+          normalizedChartUrl !== normalizeChartUrl(existingLibrarySong.chart_url)
+        ) {
+          let updatedLibrarySong = existingLibrarySong;
 
-          let updatedLibrarySong: SongLibrarySong;
+          if (normalizedChartUrl !== normalizeChartUrl(existingLibrarySong.chart_url)) {
+            const { data, error } = await supabase
+              .from("songs")
+              .update({
+                chart_url: normalizedChartUrl,
+              })
+              .eq("id", existingLibrarySong.id)
+              .select("*")
+              .single();
 
-          try {
-            updatedLibrarySong = await updateSongNotesField<SongLibrarySong>({
-              table: "songs",
-              rowId: existingLibrarySong.id,
-              notes: appendMp3MarkerToNotes(existingLibrarySong.notes, uploadedMp3Path),
+            if (error) {
+              throw error;
+            }
+
+            updatedLibrarySong = data as SongLibrarySong;
+          }
+
+          if (songMp3File) {
+            const uploadedMp3Path = await uploadSongMp3File({
+              file: songMp3File,
+              showSlug: show.slug,
+              songId: existingLibrarySong.id,
             });
-          } catch (error) {
-            await deletePromoMaterialFile(uploadedMp3Path);
-            throw error;
+
+            try {
+              updatedLibrarySong = await updateSongNotesField<SongLibrarySong>({
+                table: "songs",
+                rowId: existingLibrarySong.id,
+                notes: appendMp3MarkerToNotes(updatedLibrarySong.notes, uploadedMp3Path),
+              });
+            } catch (error) {
+              await deletePromoMaterialFile(uploadedMp3Path);
+              throw error;
+            }
           }
 
           setSongLibrary((currentSongs) =>
             currentSongs
-              .map((song) => (song.id === existingLibrarySong.id ? normalizeSongLibrarySong(updatedLibrarySong) : song))
+              .map((song) =>
+                song.id === existingLibrarySong.id
+                  ? normalizeSongLibrarySong(updatedLibrarySong)
+                  : song,
+              )
               .sort((songA, songB) => songA.title.localeCompare(songB.title)),
           );
         }
@@ -3644,6 +3709,7 @@ export function ShowPage({
       songType: "",
       notes: "",
       lyrics: "",
+      chartUrl: "",
     });
   }
 
@@ -3707,6 +3773,15 @@ export function ShowPage({
       return;
     }
 
+    const chartUrlValidationMessage = getChartUrlValidationMessage(librarySongEditFormState.chartUrl);
+
+    if (chartUrlValidationMessage) {
+      setActionError(chartUrlValidationMessage);
+      return;
+    }
+
+    const normalizedChartUrl = normalizeChartUrl(librarySongEditFormState.chartUrl);
+
     setActionError(null);
     setActiveSetlistActionId(songId);
 
@@ -3724,6 +3799,7 @@ export function ShowPage({
             songToUpdate.mp3_path,
           ),
           lyrics: normalizeOptionalField(librarySongEditFormState.lyrics ?? ""),
+          chart_url: normalizedChartUrl,
         })
         .eq("id", songId)
         .select("*")
@@ -7237,6 +7313,18 @@ export function ShowPage({
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Chart Link / Nashville Chart URL
+                  <input
+                    type="url"
+                    name="chartUrl"
+                    value={formState.chartUrl}
+                    onChange={handleChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="https://..."
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                   Optional MP3
                   <input
                     key={songMp3InputKey}
@@ -7538,6 +7626,18 @@ export function ShowPage({
                       onChange={handleChange}
                       className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                       placeholder="Optional lyrics"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Chart Link / Nashville Chart URL
+                    <input
+                      type="url"
+                      name="chartUrl"
+                      value={formState.chartUrl}
+                      onChange={handleChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="https://..."
                     />
                   </label>
 
@@ -8047,6 +8147,7 @@ export function ShowPage({
                 {filteredSongLibrary.map((song) => {
                   const setlistUsageCount = librarySongSetlistUsageCounts[song.id] ?? 0;
                   const isUsedInSetlist = setlistUsageCount > 0;
+                  const chartUrl = normalizeChartUrl(song.chart_url);
 
                   return (
                   <article
@@ -8137,6 +8238,18 @@ export function ShowPage({
                             onChange={handleLibrarySongEditChange}
                             className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                             placeholder="Optional lyrics"
+                          />
+                        </label>
+
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Chart Link / Nashville Chart URL
+                          <input
+                            type="url"
+                            name="chartUrl"
+                            value={librarySongEditFormState.chartUrl ?? ""}
+                            onChange={handleLibrarySongEditChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="https://..."
                           />
                         </label>
 
@@ -8238,6 +8351,16 @@ export function ShowPage({
                               >
                                 Print Lyrics
                               </button>
+                              {chartUrl ? (
+                                <a
+                                  href={chartUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  View Chart
+                                </a>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() => handleCopySongLink(song.id)}

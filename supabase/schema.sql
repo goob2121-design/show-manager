@@ -47,10 +47,14 @@ create table if not exists public.songs (
   song_type text check (song_type in ('vocal', 'instrumental')),
   notes text,
   lyrics text,
+  chart_url text,
   created_by_role text not null check (created_by_role in ('band', 'admin')),
   created_by_name text,
   created_at timestamptz not null default now()
 );
+
+alter table public.songs
+  add column if not exists chart_url text;
 
 create table if not exists public.show_guest_songs (
   id uuid primary key default gen_random_uuid(),

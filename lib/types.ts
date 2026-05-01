@@ -50,6 +50,7 @@ export type SongRecord = {
   song_type: SongType | null;
   notes?: string | null;
   lyrics?: string | null;
+  chart_url?: string | null;
   created_by_role: Extract<SubmittedByRole, "band" | "admin"> | string;
   created_by_name: string | null;
   created_at: string;
@@ -179,6 +180,7 @@ export type SongFormState = {
   songType: "" | SongType;
   notes: string;
   lyrics: string;
+  chartUrl: string;
 };
 
 export type GuestProfileFormState = {

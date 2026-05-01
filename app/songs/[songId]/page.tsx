@@ -4,6 +4,7 @@ import type { SongRecord } from "@/lib/types";
 
 const SONG_AUDIO_BUCKET = "promo-materials";
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
+const chartUrlPattern = /^https?:\/\/[^\s]+$/i;
 
 type SharedSongRecord = SongRecord & {
   mp3_path?: string | null;
@@ -33,6 +34,16 @@ function formatSongValue(value: string | null | undefined, fallback = "Not set")
   }
 
   return value;
+}
+
+function normalizeChartUrl(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  return chartUrlPattern.test(trimmedValue) ? trimmedValue : null;
 }
 
 function resolveSongAudioValue(song: SharedSongRecord) {
@@ -85,6 +96,7 @@ export default async function SongSharePage({ params }: SongSharePageProps) {
   const notes = stripMp3MarkerFromNotes(song.notes);
   const lyrics = song.lyrics?.trim() || null;
   const audioUrl = resolveSongAudioUrl(supabase, song);
+  const chartUrl = normalizeChartUrl(song.chart_url);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 px-4 py-8 text-slate-100 sm:px-6 sm:py-10">
@@ -128,6 +140,19 @@ export default async function SongSharePage({ params }: SongSharePageProps) {
 
         <section className="rounded-[2rem] border border-slate-800 bg-slate-900 p-5 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.8)] sm:p-6">
           <div className="flex flex-col gap-6">
+            {chartUrl ? (
+              <div className="flex justify-start">
+                <a
+                  href={chartUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-slate-700"
+                >
+                  View Chart
+                </a>
+              </div>
+            ) : null}
+
             {audioUrl ? (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
