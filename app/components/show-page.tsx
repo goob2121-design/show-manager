@@ -767,6 +767,269 @@ function buildSongPrintHtml(song: SongLibrarySong) {
   `;
 }
 
+function normalizeLyricsBlockForRepeatCheck(block: string) {
+  return block
+    .split("\n")
+    .map((line) => line.trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .join("\n")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizePrintableLyricsSpacing(lyrics: string | null | undefined) {
+  const trimmedLyrics = lyrics?.trim();
+
+  if (!trimmedLyrics) {
+    return null;
+  }
+
+  return trimmedLyrics.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function isClearlyMarkedChorusBlock(block: string) {
+  const firstLine = block
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  if (!firstLine) {
+    return false;
+  }
+
+  return /^(\[|\()?(chorus|refrain)(\]|\))?(:)?$/i.test(firstLine);
+}
+
+function collapseRepeatedChorusBlocks(lyrics: string | null | undefined) {
+  const trimmedLyrics = normalizePrintableLyricsSpacing(lyrics);
+
+  if (!trimmedLyrics) {
+    return "No lyrics available";
+  }
+
+  const blocks = trimmedLyrics
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (blocks.length === 0) {
+    return "No lyrics available";
+  }
+
+  const seenChorusBlocks = new Set<string>();
+
+  return blocks
+    .map((block) => {
+      if (!isClearlyMarkedChorusBlock(block)) {
+        return block;
+      }
+
+      const normalizedBlock = normalizeLyricsBlockForRepeatCheck(block);
+
+      if (!normalizedBlock) {
+        return block;
+      }
+
+      if (seenChorusBlocks.has(normalizedBlock)) {
+        return "[Repeat Chorus]";
+      }
+
+      seenChorusBlocks.add(normalizedBlock);
+      return block;
+    })
+    .join("\n\n");
+}
+
+function formatPrintableLyricsHtml(lyrics: string | null | undefined) {
+  const collapsedLyrics = collapseRepeatedChorusBlocks(lyrics);
+  const blocks = collapsedLyrics
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (blocks.length === 0) {
+    return `<p class="lyrics-block">No lyrics available</p>`;
+  }
+
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n");
+      const firstLine = lines[0]?.trim() ?? "";
+
+      if (!isClearlyMarkedChorusBlock(block)) {
+        return `<p class="lyrics-block">${escapeHtml(block)}</p>`;
+      }
+
+      if (/^\[repeat chorus\]$/i.test(firstLine)) {
+        return `<p class="lyrics-block chorus-repeat">${escapeHtml(block)}</p>`;
+      }
+
+      const chorusBody = lines.slice(1).join("\n").trim();
+
+      return `
+        <div class="lyrics-block chorus-block">
+          <p class="chorus-label">${escapeHtml(firstLine)}</p>
+          ${chorusBody ? `<p class="chorus-body">${escapeHtml(chorusBody)}</p>` : ""}
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function buildSetLyricsSongBody(song: SetlistSong) {
+  if (song.song_type === "instrumental") {
+    return `
+      <div class="lyrics instrumental-shell">
+        <p class="instrumental-label">Instrumental</p>
+      </div>
+    `;
+  }
+
+  if (!song.lyrics?.trim()) {
+    return `
+      <div class="lyrics">
+        <p class="lyrics-block">No lyrics available</p>
+      </div>
+    `;
+  }
+
+  return `<div class="lyrics">${formatPrintableLyricsHtml(song.lyrics)}</div>`;
+}
+
+function getSetLyricsSectionLabel(section: SetSection) {
+  if (section === "set2") {
+    return "Set 2";
+  }
+
+  if (section === "encore") {
+    return "Encore";
+  }
+
+  return "Set 1";
+}
+
+function buildSetLyricsPrintHtml(showName: string, showDate: string | null, songs: SetlistSong[]) {
+  const formattedShowDate = formatShowDate(showDate);
+  const songSections = songs
+    .map((song) => {
+      const printableLyrics = buildSetLyricsSongBody(song);
+      const pageHeader = `${showName} — ${formattedShowDate} — ${getSetLyricsSectionLabel(song.section)} Lyrics`;
+
+      return `
+        <section class="song">
+          <p class="page-header">${escapeHtml(pageHeader)}</p>
+          <h2>${escapeHtml(song.title || "Untitled Song")}</h2>
+          ${printableLyrics}
+        </section>
+      `;
+    })
+    .join("");
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(`${showName} - Set Lyrics`)}</title>
+        <style>
+          @page { margin: 0.5in; }
+          html, body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: #000000;
+            font-family: Arial, sans-serif;
+          }
+          body { padding: 0; }
+          .shell {
+            max-width: 9.5in;
+            margin: 0 auto;
+          }
+          .song {
+            break-before: page;
+            page-break-before: always;
+            margin: 0;
+            padding: 0;
+            border: 0;
+          }
+          .song:first-of-type {
+            break-before: auto;
+            page-break-before: auto;
+          }
+          .page-header {
+            margin: 0 0 0.14in;
+            font-size: 13px;
+            line-height: 1.2;
+            font-weight: 500;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          h2 {
+            margin: 0 0 0.16in;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1.2;
+            page-break-after: avoid;
+            break-after: avoid;
+          }
+          .lyrics {
+            font-size: 18px;
+            line-height: 1.2;
+          }
+          .lyrics-block,
+          .chorus-label,
+          .chorus-body,
+          .chorus-repeat {
+            margin-top: 0;
+            margin-bottom: 0.25em;
+            white-space: pre-wrap;
+            line-height: 1.2;
+          }
+          .lyrics-block:last-child,
+          .chorus-block:last-child .chorus-body,
+          .chorus-repeat:last-child {
+            margin-bottom: 0;
+          }
+          .chorus-block {
+            margin-top: 0;
+            margin-bottom: 0.35em;
+            padding: 0;
+          }
+          .chorus-label {
+            font-weight: 700;
+            margin-top: 0.35em;
+            margin-bottom: 0.1em;
+          }
+          .chorus-body,
+          .chorus-repeat {
+            font-weight: 700;
+          }
+          .instrumental-shell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 55vh;
+          }
+          .instrumental-label {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 600;
+            text-align: center;
+          }
+        </style>
+      </head>
+      <body>
+        <main class="shell">
+          ${songSections || `<section class="song"><p class="page-header">${escapeHtml(`${showName} — ${formattedShowDate} — Set Lyrics`)}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
+        </main>
+      </body>
+    </html>
+  `;
+}
+
 async function sendAdminNotification(payload: { subject: string; html: string }) {
   try {
     const response = await fetch("/api/notify", {
@@ -1670,6 +1933,39 @@ export function ShowPage({
     window.setTimeout(() => {
       window.print();
     }, 50);
+  }
+
+  function handlePrintSetLyrics() {
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      window.alert("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+
+    const printHtml = buildSetLyricsPrintHtml(show?.name ?? "Show", show?.show_date ?? null, setlist);
+    const triggerPrint = () => {
+      if (printWindow.closed) {
+        return;
+      }
+
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    printWindow.onload = triggerPrint;
+    printWindow.onafterprint = () => {
+      printWindow.close();
+    };
+
+    const { document } = printWindow;
+    document.open();
+    document.write(printHtml);
+    document.close();
+
+    if (document.readyState === "complete") {
+      triggerPrint();
+    }
   }
 
   const loadShowData = useCallback(
@@ -6395,6 +6691,13 @@ export function ShowPage({
               className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
             >
               Print Standard Copy
+            </button>
+            <button
+              type="button"
+              onClick={handlePrintSetLyrics}
+              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+            >
+              Print Set Lyrics
             </button>
           </div>
 
