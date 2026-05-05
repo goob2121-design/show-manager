@@ -79,7 +79,7 @@ type SetlistSong = SetlistEntry & {
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab = "setlist" | "songs" | "guests" | "promo-materials" | "sponsors" | "mc-builder" | "show-details";
 type BandTab = "setlist" | "songs" | "itinerary" | "promo-materials";
-type GuestTab = "welcome" | "songs" | "artist-info" | "itinerary" | "promo-materials";
+type GuestTab = "songs" | "artist-info" | "itinerary" | "promo-materials";
 type SponsorAdminTab = "library" | "show";
 type SetlistSectionConfig = {
   key: SetSection;
@@ -109,7 +109,6 @@ const bandTabItems: Array<{ key: BandTab; label: string }> = [
 ];
 
 const guestTabItems: Array<{ key: GuestTab; label: string }> = [
-  { key: "welcome", label: "Welcome" },
   { key: "artist-info", label: "Artist Info" },
   { key: "itinerary", label: "Itinerary" },
   { key: "songs", label: "Songs" },
@@ -182,8 +181,8 @@ const initialShowDetailsFormState: ShowDetailsFormState = {
   ticketLink: "",
 };
 
-const DEFAULT_GUEST_WELCOME_MESSAGE_INTRO =
-  "Welcome to the Cumberland Mountain Music Show!";
+const DEFAULT_GUEST_WELCOME_MESSAGE =
+  "Thank you for being part of the Cumberland Mountain Music Show. We’re excited to have you with us.";
 
 const initialPromoMaterialFormState: PromoMaterialFormState = {
   title: "",
@@ -329,37 +328,6 @@ function formatShowDate(showDate: string | null) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${showDate}T00:00:00`));
-}
-
-function formatShowDateWithOrdinal(showDate: string | null) {
-  if (!showDate) {
-    return null;
-  }
-
-  const date = new Date(`${showDate}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  const day = date.getUTCDate();
-  const ordinalSuffix =
-    day % 100 >= 11 && day % 100 <= 13
-      ? "th"
-      : day % 10 === 1
-        ? "st"
-        : day % 10 === 2
-          ? "nd"
-          : day % 10 === 3
-            ? "rd"
-            : "th";
-
-  const month = new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    timeZone: "UTC",
-  }).format(date);
-
-  return `${month} ${day}${ordinalSuffix}`;
 }
 
 function getErrorMessage(error: unknown) {
@@ -1898,7 +1866,7 @@ export function ShowPage({
     requestedAdminTab ?? "setlist",
   );
   const [activeBandTab, setActiveBandTab] = useState<BandTab>("setlist");
-  const [activeGuestTab, setActiveGuestTab] = useState<GuestTab>("welcome");
+  const [activeGuestTab, setActiveGuestTab] = useState<GuestTab>("artist-info");
   const [activeSponsorAdminTab, setActiveSponsorAdminTab] = useState<SponsorAdminTab>("library");
   const [printMode, setPrintMode] = useState<PrintMode>("standard");
   const [show, setShow] = useState<ShowRecord | null>(null);
@@ -2016,7 +1984,6 @@ export function ShowPage({
   const shouldShowAdminSongSubmission =
     isAdminView && activeAdminTab === "songs";
   const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
-  const shouldShowGuestWelcomeTab = isGuestView && activeGuestTab === "welcome";
   const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
   const shouldShowGuestArtistInfoTab = isGuestView && activeGuestTab === "artist-info";
   const shouldShowGuestItineraryTab = isGuestView && activeGuestTab === "itinerary";
@@ -2390,7 +2357,7 @@ export function ShowPage({
     }
 
     if (viewMode === "guest") {
-      setActiveGuestTab("welcome");
+      setActiveGuestTab("artist-info");
     }
   }, [requestedAdminTab, viewMode]);
 
@@ -4916,19 +4883,7 @@ export function ShowPage({
     : [];
 
   const guestMessage = show?.guest_message?.trim() ?? "";
-  const formattedGuestShowDate = formatShowDateWithOrdinal(show?.show_date ?? null);
-  const guestWelcomeMessage =
-    guestMessage ||
-    [
-      DEFAULT_GUEST_WELCOME_MESSAGE_INTRO,
-      formattedGuestShowDate
-        ? `We’re truly honored to have you as part of our ${formattedGuestShowDate} Show! This event is built around great music, great people, and the rich tradition of mountain and acoustic sound, and we’re excited for you to help us bring that to life on stage.`
-        : "We’re truly honored to have you as part of the show!",
-      "This portal is here to make your experience as smooth as possible. You’ll find everything you need in one place — from submitting your song choices, to reviewing the show itinerary, to sharing any promo materials we may need.",
-      "Our goal is simple: take care of the details so you can focus on what you do best — making great music.",
-      "If you need anything at all, don’t hesitate to reach out. We’re looking forward to working with you and putting on a great show together.",
-      "— Bryan Turner & The Cumberland Mountain Music Show Team",
-    ].join("\n\n");
+  const guestWelcomeMessage = guestMessage || DEFAULT_GUEST_WELCOME_MESSAGE;
   const autoSelectedGuestProfile =
     guestProfiles.length === 1 ? guestProfiles[0] : null;
   const selectedGuestProfile =
@@ -4990,7 +4945,7 @@ export function ShowPage({
   const activeBandTabLabel =
     bandTabItems.find((tab) => tab.key === activeBandTab)?.label ?? "Setlist";
   const activeGuestTabLabel =
-    guestTabItems.find((tab) => tab.key === activeGuestTab)?.label ?? "Welcome";
+    guestTabItems.find((tab) => tab.key === activeGuestTab)?.label ?? "Artist Info";
 
   if (isLoading) {
     return (
@@ -5197,16 +5152,22 @@ export function ShowPage({
           </section>
         ) : null}
 
-        {shouldShowGuestWelcomeTab ? (
+        {isGuestView ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
                 Welcome
               </h2>
+              <p className="text-sm text-stone-600">
+                A note from the Cumberland Mountain Music Show team before you dive in.
+              </p>
             </div>
 
             <div className="rounded-3xl border border-emerald-900/60 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-5 py-5 text-slate-100 shadow-sm sm:px-6">
-              <p className="mx-auto max-w-4xl whitespace-pre-wrap text-center text-sm leading-8 text-slate-100 sm:text-base">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">
+                Guest Welcome
+              </p>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-100 sm:text-base">
                 {guestWelcomeMessage}
               </p>
             </div>
@@ -5223,7 +5184,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-5"
+              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-4"
               role="tablist"
               aria-label="Guest portal sections"
             >

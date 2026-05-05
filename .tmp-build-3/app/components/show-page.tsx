@@ -182,8 +182,8 @@ const initialShowDetailsFormState: ShowDetailsFormState = {
   ticketLink: "",
 };
 
-const DEFAULT_GUEST_WELCOME_MESSAGE_INTRO =
-  "Welcome to the Cumberland Mountain Music Show!";
+const DEFAULT_GUEST_WELCOME_MESSAGE =
+  "Thank you for being part of the Cumberland Mountain Music Show. We’re excited to have you with us. This portal is where you can review your show information, submit songs, check itinerary details, and upload any promo materials we may need. We appreciate you helping us keep the show organized and running smoothly.";
 
 const initialPromoMaterialFormState: PromoMaterialFormState = {
   title: "",
@@ -329,37 +329,6 @@ function formatShowDate(showDate: string | null) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${showDate}T00:00:00`));
-}
-
-function formatShowDateWithOrdinal(showDate: string | null) {
-  if (!showDate) {
-    return null;
-  }
-
-  const date = new Date(`${showDate}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  const day = date.getUTCDate();
-  const ordinalSuffix =
-    day % 100 >= 11 && day % 100 <= 13
-      ? "th"
-      : day % 10 === 1
-        ? "st"
-        : day % 10 === 2
-          ? "nd"
-          : day % 10 === 3
-            ? "rd"
-            : "th";
-
-  const month = new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    timeZone: "UTC",
-  }).format(date);
-
-  return `${month} ${day}${ordinalSuffix}`;
 }
 
 function getErrorMessage(error: unknown) {
@@ -4916,19 +4885,7 @@ export function ShowPage({
     : [];
 
   const guestMessage = show?.guest_message?.trim() ?? "";
-  const formattedGuestShowDate = formatShowDateWithOrdinal(show?.show_date ?? null);
-  const guestWelcomeMessage =
-    guestMessage ||
-    [
-      DEFAULT_GUEST_WELCOME_MESSAGE_INTRO,
-      formattedGuestShowDate
-        ? `We’re truly honored to have you as part of our ${formattedGuestShowDate} Show! This event is built around great music, great people, and the rich tradition of mountain and acoustic sound, and we’re excited for you to help us bring that to life on stage.`
-        : "We’re truly honored to have you as part of the show!",
-      "This portal is here to make your experience as smooth as possible. You’ll find everything you need in one place — from submitting your song choices, to reviewing the show itinerary, to sharing any promo materials we may need.",
-      "Our goal is simple: take care of the details so you can focus on what you do best — making great music.",
-      "If you need anything at all, don’t hesitate to reach out. We’re looking forward to working with you and putting on a great show together.",
-      "— Bryan Turner & The Cumberland Mountain Music Show Team",
-    ].join("\n\n");
+  const guestWelcomeMessage = guestMessage || DEFAULT_GUEST_WELCOME_MESSAGE;
   const autoSelectedGuestProfile =
     guestProfiles.length === 1 ? guestProfiles[0] : null;
   const selectedGuestProfile =
@@ -5206,7 +5163,7 @@ export function ShowPage({
             </div>
 
             <div className="rounded-3xl border border-emerald-900/60 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-5 py-5 text-slate-100 shadow-sm sm:px-6">
-              <p className="mx-auto max-w-4xl whitespace-pre-wrap text-center text-sm leading-8 text-slate-100 sm:text-base">
+              <p className="whitespace-pre-wrap text-sm leading-7 text-slate-100 sm:text-base">
                 {guestWelcomeMessage}
               </p>
             </div>

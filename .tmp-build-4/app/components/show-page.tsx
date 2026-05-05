@@ -354,12 +354,15 @@ function formatShowDateWithOrdinal(showDate: string | null) {
             ? "rd"
             : "th";
 
-  const month = new Intl.DateTimeFormat("en-US", {
+  const monthAndYear = new Intl.DateTimeFormat("en-US", {
     month: "long",
+    year: "numeric",
     timeZone: "UTC",
   }).format(date);
 
-  return `${month} ${day}${ordinalSuffix}`;
+  const [month, year] = monthAndYear.split(" ");
+
+  return `${month} ${day}${ordinalSuffix}, ${year}`;
 }
 
 function getErrorMessage(error: unknown) {
