@@ -7510,18 +7510,18 @@ export function ShowPage({
 
             <div className="rounded-2xl border border-emerald-900/30 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-4 py-4 text-sm leading-7 text-slate-100 sm:px-5">
               <p>
-                The Cumberland Mountain Music Show features a house band, and
-                rehearsal time is limited. If possible, please select
-                songs that are widely known or commonly performed.
+                The Cumberland Mountain Music Show includes a house band, and rehearsal
+                time is limited. If possible, please choose songs that are familiar or
+                easy for the band to follow.
               </p>
               <p className="mt-3">
-                Original material is always welcome. If submitting an original
-                song, it is very helpful to provide a reference such as an MP3,
-                YouTube link, chart, or any notes that will help the band prepare.
+                Original material is welcome, but it helps us greatly if you can provide
+                something for the band to reference, such as an MP3, YouTube link, chart,
+                or notes.
               </p>
               <p className="mt-3">
-                If you have a recording, chart, or any special arrangement
-                details, please include them with your submission.
+                If you have a recording, chart, or any special arrangement details, please
+                include them with your song submission.
               </p>
             </div>
 
@@ -8086,66 +8086,58 @@ export function ShowPage({
                     />
                   </label>
 
-                  <details className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-stone-800">
-                      Other Information
-                    </summary>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Tempo
+                      <select
+                        name="tempo"
+                        value={formState.tempo}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Not set</option>
+                        <option value="fast">Fast</option>
+                        <option value="medium">Medium</option>
+                        <option value="slow">Slow</option>
+                      </select>
+                    </label>
 
-                    <div className="mt-4 grid gap-4">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Tempo
-                          <select
-                            name="tempo"
-                            value={formState.tempo}
-                            onChange={handleChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="fast">Fast</option>
-                            <option value="medium">Medium</option>
-                            <option value="slow">Slow</option>
-                          </select>
-                        </label>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Song Type
+                      <select
+                        name="songType"
+                        value={formState.songType}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Not set</option>
+                        <option value="vocal">Vocal</option>
+                        <option value="instrumental">Instrumental</option>
+                      </select>
+                    </label>
+                  </div>
 
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Song Type
-                          <select
-                            name="songType"
-                            value={formState.songType}
-                            onChange={handleChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="vocal">Vocal</option>
-                            <option value="instrumental">Instrumental</option>
-                          </select>
-                        </label>
-                      </div>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Notes / YouTube Link / Chart Link
+                    <textarea
+                      name="notes"
+                      value={formState.notes}
+                      onChange={handleChange}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional YouTube link, chart link, arrangement notes, key notes, capo notes, or anything the band should know"
+                    />
+                  </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Notes / YouTube Link / Chart Link
-                        <textarea
-                          name="notes"
-                          value={formState.notes}
-                          onChange={handleChange}
-                          className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional YouTube link, chart link, arrangement notes, key notes, capo notes, or anything the band should know"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Lyrics
-                        <textarea
-                          name="lyrics"
-                          value={formState.lyrics}
-                          onChange={handleChange}
-                          className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional lyrics"
-                        />
-                      </label>
-                    </div>
-                  </details>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Lyrics
+                    <textarea
+                      name="lyrics"
+                      value={formState.lyrics}
+                      onChange={handleChange}
+                      className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional lyrics"
+                    />
+                  </label>
 
                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                     Chart Link / Nashville Chart URL
@@ -8275,66 +8267,36 @@ export function ShowPage({
                     />
                   </label>
 
-                  <details className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-stone-800">
-                      Other Information
-                    </summary>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Tempo
+                      <select
+                        name="tempo"
+                        value={formState.tempo}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Not set</option>
+                        <option value="fast">Fast</option>
+                        <option value="medium">Medium</option>
+                        <option value="slow">Slow</option>
+                      </select>
+                    </label>
 
-                    <div className="mt-4 grid gap-4">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Tempo
-                          <select
-                            name="tempo"
-                            value={formState.tempo}
-                            onChange={handleChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="fast">Fast</option>
-                            <option value="medium">Medium</option>
-                            <option value="slow">Slow</option>
-                          </select>
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Song Type
-                          <select
-                            name="songType"
-                            value={formState.songType}
-                            onChange={handleChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="vocal">Vocal</option>
-                            <option value="instrumental">Instrumental</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Notes / YouTube Link / Chart Link
-                        <textarea
-                          name="notes"
-                          value={formState.notes}
-                          onChange={handleChange}
-                          className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional YouTube link, chart link, arrangement notes, key notes, capo notes, or anything the band should know"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Lyrics
-                        <textarea
-                          name="lyrics"
-                          value={formState.lyrics}
-                          onChange={handleChange}
-                          className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional lyrics"
-                        />
-                      </label>
-                    </div>
-                  </details>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Song Type
+                      <select
+                        name="songType"
+                        value={formState.songType}
+                        onChange={handleChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Not set</option>
+                        <option value="vocal">Vocal</option>
+                        <option value="instrumental">Instrumental</option>
+                      </select>
+                    </label>
+                  </div>
 
                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                     Optional MP3
