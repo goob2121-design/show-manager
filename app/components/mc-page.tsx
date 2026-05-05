@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { useMemo, useState } from "react";
-import { ThemeToggle } from "@/app/components/theme-toggle";
 import type {
   GuestProfile,
   McBlockNote,
@@ -872,19 +871,22 @@ export function McPage({
               {showLogo ? (
                 <div className="w-fit">
                   <Image
-                    src="/cmms-logo.png"
-                    alt="CMMS logo"
-                    width={180}
-                    height={64}
+                    src="/stageflow-logo-v2.png"
+                    alt="StageFlow logo"
+                    width={420}
+                    height={210}
                     priority
-                    className="h-auto w-full max-w-[150px] object-contain"
+                    className="h-auto w-full max-w-[88vw] object-contain sm:max-w-[300px] lg:max-w-[340px]"
                     onError={() => setShowLogo(false)}
                   />
                 </div>
               ) : null}
               <div className="flex flex-col gap-2">
                 <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                  CMMS Show Flow
+                  StageFlow
+                </p>
+                <p className="text-xs font-medium text-stone-500">
+                  by Pinnacle Recording Studio
                 </p>
                 <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-500">
                   MC Portal
@@ -898,7 +900,6 @@ export function McPage({
             </div>
 
             <div className="flex flex-col items-start gap-3 sm:items-end">
-              <ThemeToggle />
               <button
                 type="button"
                 onClick={handlePrintPacket}

@@ -4,13 +4,11 @@ import "./globals.css";
 
 const themeInitScript = `
   try {
-    const storedTheme = window.localStorage.getItem("cmms-theme");
-    const theme = storedTheme === "dark" ? "dark" : "light";
-    document.documentElement.classList.toggle("dark", theme === "dark");
-    document.documentElement.style.colorScheme = theme;
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.colorScheme = "dark";
   } catch (error) {
-    document.documentElement.classList.remove("dark");
-    document.documentElement.style.colorScheme = "light";
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.colorScheme = "dark";
   }
 `;
 
@@ -25,8 +23,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Show Manager",
-  description: "Cumberland Mountain Music Show portal for managing shows, guests, band details, and setlists.",
+  title: "StageFlow — Pinnacle Recording Studio",
+  description: "StageFlow by Pinnacle Recording Studio for managing shows, guests, band details, and setlists.",
 };
 
 export default function RootLayout({
@@ -37,13 +35,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
       suppressHydrationWarning
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex min-h-full flex-col bg-slate-950 text-slate-100">{children}</body>
     </html>
   );
 }

@@ -7,7 +7,6 @@ import type { ChangeEvent, FormEvent, MouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
-import { ThemeToggle } from "@/app/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import type { GuestProfile, SetlistEntry, ShowGuestSong, ShowRecord } from "@/lib/types";
 
@@ -1248,23 +1247,20 @@ export default function ShowsDashboardPage() {
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
                   {showLogo ? (
                     <Image
-                      src="/cmms-logo.png"
-                      alt="CMMS logo"
-                      width={88}
-                      height={88}
-                      className="h-16 w-auto rounded-2xl bg-white/95 p-2 object-contain shadow-sm"
+                      src="/stageflow-logo-v2.png"
+                      alt="StageFlow logo"
+                      width={320}
+                      height={160}
+                      className="h-auto w-full max-w-[320px] object-contain p-2"
                       onError={() => setShowLogo(false)}
                       priority
                     />
                   ) : null}
 
                   <div className="max-w-2xl space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-100">
+                    <p className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
                       Control Center
                     </p>
-                    <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                      Show Manager Control Center
-                    </h1>
                     <p className="text-sm leading-6 text-emerald-50/90 sm:text-base">
                       Shows, songs, setlists, guests, rehearsal tools, and promo materials in one place.
                     </p>
@@ -1272,9 +1268,6 @@ export default function ShowsDashboardPage() {
                 </div>
 
                 <div className="flex flex-col items-stretch gap-3 sm:items-end">
-                  <div className="flex items-center justify-end gap-3">
-                    <ThemeToggle />
-                  </div>
                   <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm text-emerald-50 backdrop-blur">
                     Dashboard access stays protected by the admin password gate.
                   </div>

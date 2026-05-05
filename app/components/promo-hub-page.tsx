@@ -73,11 +73,11 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
           <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
               <Image
-                src="/cmms-logo.png"
-                alt="CMMS logo"
-                width={88}
-                height={88}
-                className="h-16 w-auto rounded-2xl bg-white/95 p-2 object-contain shadow-sm"
+                src="/stageflow-logo-v2.png"
+                alt="StageFlow logo"
+                width={240}
+                height={120}
+                className="h-auto w-full max-w-[200px] object-contain"
                 priority
               />
 

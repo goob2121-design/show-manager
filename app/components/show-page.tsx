@@ -25,7 +25,6 @@ import {
   PromoMaterialsView,
 } from "@/app/components/promo-materials-view";
 import { createClient } from "@/lib/supabase/client";
-import { ThemeToggle } from "@/app/components/theme-toggle";
 import type {
   GuestProfile,
   GuestProfileFormState,
@@ -741,10 +740,11 @@ function buildSongPrintHtml(song: SongLibrarySong) {
     <html lang="en">
       <head>
         <meta charset="utf-8" />
-        <title>${escapeHtml(song.title)}</title>
+        <title>StageFlow &mdash; Pinnacle Recording Studio</title>
         <style>
           body { font-family: Arial, sans-serif; color: #1f2937; margin: 32px; }
           h1 { margin: 0 0 12px; font-size: 28px; }
+          .brand { margin: 0 0 16px; font-size: 12px; color: #6b7280; }
           .meta { margin: 0 0 24px; font-size: 14px; color: #4b5563; }
           .section { margin-top: 24px; }
           .label { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #6b7280; }
@@ -752,6 +752,7 @@ function buildSongPrintHtml(song: SongLibrarySong) {
         </style>
       </head>
       <body>
+        <p class="brand">StageFlow &mdash; by Pinnacle Recording Studio</p>
         <h1>${escapeHtml(song.title)}</h1>
         <p class="meta">${songKey ? `Key: ${escapeHtml(songKey)}` : "Key: Not set"}</p>
         <section class="section">
@@ -1024,6 +1025,141 @@ function buildSetLyricsPrintHtml(showName: string, showDate: string | null, song
       <body>
         <main class="shell">
           ${songSections || `<section class="song"><p class="page-header">${escapeHtml(`${showName} — ${formattedShowDate} — Set Lyrics`)}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
+        </main>
+      </body>
+    </html>
+  `;
+}
+
+function buildStageFlowSetLyricsPrintHtml(
+  showName: string,
+  showDate: string | null,
+  songs: SetlistSong[],
+) {
+  const formattedShowDate = formatShowDate(showDate);
+  const songSections = songs
+    .map((song) => {
+      const printableLyrics = buildSetLyricsSongBody(song);
+      const pageHeader = [showName, formattedShowDate, `${getSetLyricsSectionLabel(song.section)} Lyrics`].join(" — ");
+
+      return `
+        <section class="song">
+          <p class="brand-mark">StageFlow &mdash; by Pinnacle Recording Studio</p>
+          <p class="page-header">${escapeHtml(pageHeader)}</p>
+          <h2>${escapeHtml(song.title || "Untitled Song")}</h2>
+          ${printableLyrics}
+        </section>
+      `;
+    })
+    .join("");
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>StageFlow &mdash; Pinnacle Recording Studio</title>
+        <style>
+          @page { margin: 0.5in; }
+          html, body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: #000000;
+            font-family: Arial, sans-serif;
+          }
+          body { padding: 0; }
+          .shell {
+            max-width: 9.5in;
+            margin: 0 auto;
+          }
+          .song {
+            break-before: page;
+            page-break-before: always;
+            margin: 0;
+            padding: 0;
+            border: 0;
+          }
+          .song:first-of-type {
+            break-before: auto;
+            page-break-before: auto;
+          }
+          .brand-mark {
+            margin: 0 0 0.08in;
+            font-size: 10px;
+            line-height: 1.1;
+            font-weight: 500;
+            text-align: center;
+            color: #4b5563;
+          }
+          .page-header {
+            margin: 0 0 0.14in;
+            font-size: 13px;
+            line-height: 1.2;
+            font-weight: 500;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          h2 {
+            margin: 0 0 0.16in;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1.2;
+            page-break-after: avoid;
+            break-after: avoid;
+          }
+          .lyrics {
+            font-size: 18px;
+            line-height: 1.2;
+          }
+          .lyrics-block,
+          .chorus-label,
+          .chorus-body,
+          .chorus-repeat {
+            margin-top: 0;
+            margin-bottom: 0.25em;
+            white-space: pre-wrap;
+            line-height: 1.2;
+          }
+          .lyrics-block:last-child,
+          .chorus-block:last-child .chorus-body,
+          .chorus-repeat:last-child {
+            margin-bottom: 0;
+          }
+          .chorus-block {
+            margin-top: 0;
+            margin-bottom: 0.35em;
+            padding: 0;
+          }
+          .chorus-label {
+            font-weight: 700;
+            margin-top: 0.35em;
+            margin-bottom: 0.1em;
+          }
+          .chorus-body,
+          .chorus-repeat {
+            font-weight: 700;
+          }
+          .instrumental-shell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 55vh;
+          }
+          .instrumental-label {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 600;
+            text-align: center;
+          }
+        </style>
+      </head>
+      <body>
+        <main class="shell">
+          ${songSections || `<section class="song"><p class="brand-mark">StageFlow &mdash; by Pinnacle Recording Studio</p><p class="page-header">${escapeHtml([showName, formattedShowDate, "Set Lyrics"].join(" — "))}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
         </main>
       </body>
     </html>
@@ -1838,7 +1974,7 @@ export function ShowPage({
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
   const portalLabel = getPortalLabel(viewMode);
-  const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band";
+  const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band" || viewMode === "admin";
   const isAdminView = viewMode === "admin";
   const isBandView = viewMode === "band";
   const isGuestView = viewMode === "guest";
@@ -1943,7 +2079,11 @@ export function ShowPage({
       return;
     }
 
-    const printHtml = buildSetLyricsPrintHtml(show?.name ?? "Show", show?.show_date ?? null, setlist);
+    const printHtml = buildStageFlowSetLyricsPrintHtml(
+      show?.name ?? "Show",
+      show?.show_date ?? null,
+      setlist,
+    );
     const triggerPrint = () => {
       if (printWindow.closed) {
         return;
@@ -4834,31 +4974,26 @@ export function ShowPage({
         <AdminQuickNav slug={showSlug} currentView={viewMode} />
 
         <header className="print-hidden flex flex-col gap-4 border-b border-stone-200 pb-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               {shouldShowPortalLogo ? (
-                <div className="mb-2">
+                <div className="mb-3">
                   <Image
-                    src="/cmms-logo.png"
-                    alt="CMMS logo"
-                    width={180}
-                    height={64}
+                    src="/stageflow-logo-v2.png"
+                    alt="StageFlow logo"
+                    width={420}
+                    height={210}
                     priority
-                    className="h-auto w-full max-w-[140px] sm:max-w-[180px]"
+                    className="h-auto w-full max-w-[90vw] object-contain p-1 sm:max-w-[320px] lg:max-w-[360px]"
                   />
                 </div>
               ) : null}
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                Live Music Show Manager
-              </p>
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-500">
                 {portalLabel}
               </p>
               <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{show.name}</h1>
               <p className="text-base text-stone-600">{formatShowDate(show.show_date)}</p>
             </div>
-
-            <ThemeToggle />
           </div>
         </header>
 

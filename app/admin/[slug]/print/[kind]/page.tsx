@@ -179,6 +179,9 @@ function PrintShell({
         </div>
 
         <header className="mb-6 border-b border-stone-300 pb-5">
+          <p className="text-[10px] font-medium text-stone-500 print:text-[9px]">
+            StageFlow — by Pinnacle Recording Studio
+          </p>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 print:text-[10px]">
             {title}
           </p>

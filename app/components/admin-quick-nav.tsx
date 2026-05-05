@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
-import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
+import {
+  clearAllAdminAccess,
+  readAdminAccess,
+  subscribeToAdminAccess,
+} from "@/app/components/admin-gate";
 
 type AdminQuickNavProps = {
   slug: string;
@@ -24,6 +28,12 @@ export function AdminQuickNav({ slug, currentView, accessSlug = slug }: AdminQui
     () => readAdminAccess(accessSlug),
     () => false,
   );
+
+  function handleLogout() {
+    clearAllAdminAccess();
+
+    window.location.href = currentView === "dashboard" ? "/shows" : `/admin/${slug}`;
+  }
 
   if (!isVisible) {
     return null;
@@ -56,6 +66,13 @@ export function AdminQuickNav({ slug, currentView, accessSlug = slug }: AdminQui
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="rounded-full bg-white px-3 py-1.5 text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 dark:bg-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+        >
+          Logout
+        </button>
       </div>
     </nav>
   );

@@ -3,7 +3,6 @@
 import Image from "next/image";
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { ThemeToggle } from "@/app/components/theme-toggle";
 
 type AdminGateProps = {
   slug: string;
@@ -40,6 +39,39 @@ export function persistAdminAccess(slug: string) {
   window.sessionStorage.setItem(storageKey, ADMIN_ACCESS_GRANTED_VALUE);
   window.localStorage.setItem(storageKey, ADMIN_ACCESS_GRANTED_VALUE);
   dispatchAdminAccessChange(slug);
+}
+
+export function clearAdminAccess(slug: string) {
+  const storageKey = getAdminAccessStorageKey(slug);
+
+  window.sessionStorage.removeItem(storageKey);
+  window.localStorage.removeItem(storageKey);
+  dispatchAdminAccessChange(slug);
+}
+
+export function clearAllAdminAccess() {
+  const storagePrefix = "cmms-admin-access:";
+  const slugs = new Set<string>();
+
+  for (let index = 0; index < window.sessionStorage.length; index += 1) {
+    const key = window.sessionStorage.key(index);
+
+    if (key?.startsWith(storagePrefix)) {
+      slugs.add(key.slice(storagePrefix.length));
+    }
+  }
+
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+
+    if (key?.startsWith(storagePrefix)) {
+      slugs.add(key.slice(storagePrefix.length));
+    }
+  }
+
+  slugs.forEach((slug) => {
+    clearAdminAccess(slug);
+  });
 }
 
 export function subscribeToAdminAccess(callback: () => void) {
@@ -109,9 +141,9 @@ export function AdminGate({
 
   if (!isReady) {
     return (
-      <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
-        <section className="mx-auto w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-          <p className="text-sm font-medium text-stone-600">Checking admin access...</p>
+      <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-stone-950 px-4 py-10 text-slate-100 sm:px-6">
+        <section className="mx-auto w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.85)] backdrop-blur sm:p-8">
+          <p className="text-sm font-medium text-slate-300">Checking admin access...</p>
         </section>
       </main>
     );
@@ -122,57 +154,55 @@ export function AdminGate({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-stone-100 px-4 py-10 text-stone-900 sm:px-6">
-      <section className="w-full max-w-md rounded-[2rem] border border-stone-200 bg-white p-6 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.35)] sm:p-8">
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-stone-950 px-4 py-10 text-slate-100 sm:px-6">
+      <section className="w-full max-w-2xl rounded-[2rem] border border-slate-800 bg-slate-900/92 p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.85)] backdrop-blur sm:p-10">
         <div className="flex flex-col gap-6 text-center">
-          <div className="flex justify-center sm:justify-end">
-            <ThemeToggle />
-          </div>
-
           <header className="flex flex-col items-center gap-4">
             {showLogo ? (
               <Image
-                src="/cmms-logo.png"
-                alt="CMMS logo"
-                width={144}
-                height={144}
+                src="/stageflow-logo-v2.png"
+                alt="StageFlow logo"
+                width={580}
+                height={290}
                 priority
-                className="h-auto w-full max-w-[112px] object-contain sm:max-w-[144px]"
+                className="h-auto w-full max-w-[90%] object-contain px-2 sm:max-w-[500px]"
                 onError={() => setShowLogo(false)}
               />
             ) : null}
 
             <div className="flex flex-col gap-2">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
+              <p className="text-sm font-medium text-slate-400 sm:text-base">
+                Run the show. Don’t chase it.
+              </p>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">
                 Admin Access
               </p>
-              <h1 className="text-3xl font-semibold tracking-tight text-stone-950 sm:text-4xl">
-                Show Manager
+              <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                StageFlow
               </h1>
-              <p className="text-sm leading-6 text-stone-600 sm:text-base">
-                Enter the admin password to continue.
+              <p className="text-sm text-slate-400 sm:text-base">
+                by Pinnacle Recording Studio
               </p>
-              <p className="text-xs leading-5 text-stone-500 sm:text-sm">
-                This protects{" "}
-                <span className="font-medium">{resourceLabel ?? `the admin portal for ${slug}`}</span>.
+              <p className="text-sm leading-6 text-slate-300 sm:text-base">
+                Enter the admin password to continue.
               </p>
             </div>
           </header>
 
           {errorMessage ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left text-sm text-rose-700">
+            <div className="rounded-2xl border border-rose-900/60 bg-rose-950/50 px-4 py-3 text-left text-sm text-rose-200">
               {errorMessage}
             </div>
           ) : null}
 
           <form className="flex flex-col gap-4 text-left" onSubmit={handleSubmit}>
-            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+            <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
               Password
               <input
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-emerald-500"
                 placeholder="Enter admin password"
                 required
               />
