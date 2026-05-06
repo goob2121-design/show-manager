@@ -5372,27 +5372,6 @@ export function ShowPage({
           : null,
       ].filter((detail): detail is string => Boolean(detail))
     : [];
-  const privateGuestWelcomeInformation = isPrivateGuestPortal
-    ? {
-        intro: formattedGuestShowDate
-          ? `We’re excited to have you as part of the Cumberland Mountain Music Show on ${formattedGuestShowDate}!`
-          : "We’re excited to have you as part of the Cumberland Mountain Music Show!",
-        summary:
-          "This portal contains everything you’ll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes.",
-        portalSections: [
-          "Songs — Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare.",
-          "Artist Info — Add your bio, hometown, photo, social media links, and other information for promo materials and introductions.",
-          "Itinerary — Contains show-day details including call times, arrival information, show schedule, and other important notes.",
-        ],
-        showInformation: [
-          "Our shows typically consist of approximately 45 minutes of music, followed by a short intermission, and then another 45 minutes to finish the evening.",
-          "Guest performers are generally scheduled for 2 songs per set, and we ask that you have an additional song prepared if needed.",
-          "Our house band has limited rehearsal time, so familiar songs are always helpful. Original material is absolutely welcome, and charts, MP3s, YouTube links, lyrics, or arrangement notes are always appreciated.",
-          "Concessions are usually available before the show, including pizza, hot dogs, water, soft drinks, and coffee. There are also several restaurants within walking distance of the Cumberland Gap Convention Center.",
-          "Guests are welcome to bring merchandise to sell during the event.",
-        ],
-      }
-    : null;
   const guestSingerName =
     viewMode === "guest"
       ? selectedGuestProfile?.name?.trim() || guestProfileFormState.name.trim() || ""
@@ -5672,35 +5651,14 @@ export function ShowPage({
 
             <div className="rounded-3xl border border-emerald-900/60 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-5 py-5 text-slate-100 shadow-sm sm:px-6">
               <div className="mx-auto flex max-w-4xl flex-col gap-4 text-center">
-                {isPrivateGuestPortal && privateGuestWelcomeInformation ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-left">
-                    <div className="mt-3 flex flex-col gap-4 text-sm leading-7 text-slate-100">
-                      {privateGuestGreeting ? (
-                        <p className="text-base font-semibold text-emerald-100 sm:text-lg">
-                          {privateGuestGreeting}
-                        </p>
-                      ) : null}
-                      <p>{privateGuestWelcomeInformation.intro}</p>
-                      <p>{privateGuestWelcomeInformation.summary}</p>
-                      <div className="flex flex-col gap-2">
-                        <h4 className="text-sm font-semibold text-emerald-100">Portal Sections</h4>
-                        {privateGuestWelcomeInformation.portalSections.map((detail) => (
-                          <p key={detail}>&bull; {detail}</p>
-                        ))}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <h4 className="text-sm font-semibold text-emerald-100">Show Information</h4>
-                        {privateGuestWelcomeInformation.showInformation.map((detail) => (
-                          <p key={detail}>&bull; {detail}</p>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : !isPrivateGuestPortal ? (
-                  <p className="whitespace-pre-wrap text-sm leading-8 text-slate-100 sm:text-base">
-                    {guestWelcomeMessage}
+                {privateGuestGreeting ? (
+                  <p className="text-base font-semibold text-emerald-100 sm:text-lg">
+                    {privateGuestGreeting}
                   </p>
                 ) : null}
+                <p className="whitespace-pre-wrap text-sm leading-8 text-slate-100 sm:text-base">
+                  {guestWelcomeMessage}
+                </p>
                 {privateGuestAppearanceDetails.length > 0 ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-left">
                     <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-100">
