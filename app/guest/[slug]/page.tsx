@@ -5,6 +5,12 @@ import { headers } from "next/headers";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+type MarkOpenedPayload = {
+  success?: boolean;
+  error?: string;
+  details?: unknown;
+};
+
 export default async function GuestShowPage({
   params,
 }: {
@@ -51,19 +57,15 @@ export default async function GuestShowPage({
         });
 
         const responseBodyText = await response.text();
-        let payload: {
-          success?: boolean;
-          error?: string;
-          details?: unknown;
-        } | null = null;
+        let payload: MarkOpenedPayload | null = null;
 
         try {
-          payload = responseBodyText ? (JSON.parse(responseBodyText) as typeof payload) : null;
+          payload = responseBodyText ? (JSON.parse(responseBodyText) as MarkOpenedPayload) : null;
         } catch {
           payload = null;
         }
 
-        if (!response.ok || !payload.success) {
+        if (!response.ok || !payload?.success) {
           const typedError = payload?.details as {
             message?: unknown;
             code?: unknown;
