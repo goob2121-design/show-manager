@@ -50,53 +50,20 @@ export default async function GuestShowPage({
           cache: "no-store",
         });
 
-        const responseBodyText = await response.text();
-        let payload: {
+        const payload = (await response.json()) as {
           success?: boolean;
           error?: string;
           details?: unknown;
-        } | null = null;
-
-        try {
-          payload = responseBodyText ? (JSON.parse(responseBodyText) as typeof payload) : null;
-        } catch {
-          payload = null;
-        }
+        };
 
         if (!response.ok || !payload.success) {
-          const typedError = payload?.details as {
-            message?: unknown;
-            code?: unknown;
-            details?: unknown;
-            hint?: unknown;
-          } | null | undefined;
-
-          console.error("Failed to update guest portal opened timestamp.");
-          console.error("Opened timestamp API status:", response.status);
-          console.error("Opened timestamp API body:", responseBodyText);
-          console.error("Error message:", typedError?.message ?? payload?.error ?? "no message");
-          console.error("Error code:", typedError?.code ?? "no code");
-          console.error("Error details:", typedError?.details ?? "no details");
-          console.error("Error hint:", typedError?.hint ?? "no hint");
           console.error(
-            "Full error JSON:",
-            JSON.stringify(payload?.details ?? payload?.error ?? payload, null, 2),
+            "Failed to update guest portal opened timestamp.",
+            payload.details ?? payload.error ?? payload,
           );
         }
       } catch (error) {
-        const typedError = error as {
-          message?: unknown;
-          code?: unknown;
-          details?: unknown;
-          hint?: unknown;
-        } | null;
-
-        console.error("Failed to update guest portal opened timestamp.");
-        console.error("Error message:", typedError?.message ?? "no message");
-        console.error("Error code:", typedError?.code ?? "no code");
-        console.error("Error details:", typedError?.details ?? "no details");
-        console.error("Error hint:", typedError?.hint ?? "no hint");
-        console.error("Full error JSON:", JSON.stringify(error, null, 2));
+        console.error("Failed to update guest portal opened timestamp.", error);
       }
 
       const { data: showRecord, error: showError } = await supabase

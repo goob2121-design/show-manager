@@ -1,9 +1,28 @@
 import { ShowPage } from "@/app/components/show-page";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { headers } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function createServiceRoleSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Missing server-side Supabase environment variables. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to your environment.",
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
 
 export default async function GuestShowPage({
   params,
@@ -31,72 +50,18 @@ export default async function GuestShowPage({
 
     if (fallbackGuestProfile) {
       try {
-        const headerStore = await headers();
-        const protocol = headerStore.get("x-forwarded-proto") ?? "http";
-        const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+        const serviceRoleSupabase = createServiceRoleSupabaseClient();
+        const { error: portalOpenedUpdateError } = await serviceRoleSupabase
+          .from("guest_profiles")
+          .update({ portal_opened_at: new Date().toISOString() })
+          .eq("id", fallbackGuestProfile.id)
+          .is("portal_opened_at", null);
 
-        if (!host) {
-          throw new Error("Missing request host header for guest portal opened route.");
-        }
-
-        const response = await fetch(`${protocol}://${host}/api/guest-profiles/mark-opened`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            guestProfileId: fallbackGuestProfile.id,
-          }),
-          cache: "no-store",
-        });
-
-        const responseBodyText = await response.text();
-        let payload: {
-          success?: boolean;
-          error?: string;
-          details?: unknown;
-        } | null = null;
-
-        try {
-          payload = responseBodyText ? (JSON.parse(responseBodyText) as typeof payload) : null;
-        } catch {
-          payload = null;
-        }
-
-        if (!response.ok || !payload.success) {
-          const typedError = payload?.details as {
-            message?: unknown;
-            code?: unknown;
-            details?: unknown;
-            hint?: unknown;
-          } | null | undefined;
-
-          console.error("Failed to update guest portal opened timestamp.");
-          console.error("Opened timestamp API status:", response.status);
-          console.error("Opened timestamp API body:", responseBodyText);
-          console.error("Error message:", typedError?.message ?? payload?.error ?? "no message");
-          console.error("Error code:", typedError?.code ?? "no code");
-          console.error("Error details:", typedError?.details ?? "no details");
-          console.error("Error hint:", typedError?.hint ?? "no hint");
-          console.error(
-            "Full error JSON:",
-            JSON.stringify(payload?.details ?? payload?.error ?? payload, null, 2),
-          );
+        if (portalOpenedUpdateError) {
+          console.error("Failed to update guest portal opened timestamp.", portalOpenedUpdateError);
         }
       } catch (error) {
-        const typedError = error as {
-          message?: unknown;
-          code?: unknown;
-          details?: unknown;
-          hint?: unknown;
-        } | null;
-
-        console.error("Failed to update guest portal opened timestamp.");
-        console.error("Error message:", typedError?.message ?? "no message");
-        console.error("Error code:", typedError?.code ?? "no code");
-        console.error("Error details:", typedError?.details ?? "no details");
-        console.error("Error hint:", typedError?.hint ?? "no hint");
-        console.error("Full error JSON:", JSON.stringify(error, null, 2));
+        console.error("Failed to update guest portal opened timestamp.", error);
       }
 
       const { data: showRecord, error: showError } = await supabase
