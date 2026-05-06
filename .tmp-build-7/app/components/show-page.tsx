@@ -4162,12 +4162,6 @@ export function ShowPage({
       const supabase = createClient();
       const relatedSongIds = relatedGuestSongs.map((song) => song.id);
 
-      console.log("Deleting guest profile", {
-        guestId: profileToDelete.id,
-        guestName: profileToDelete.name,
-        table: "guest_profiles",
-      });
-
       if (relatedSongIds.length > 0) {
         const { error: deleteSongsError } = await supabase
           .from("show_guest_songs")
@@ -4175,47 +4169,21 @@ export function ShowPage({
           .in("id", relatedSongIds);
 
         if (deleteSongsError) {
-          console.error("Failed to delete guest songs for guest profile.", deleteSongsError);
           throw deleteSongsError;
         }
       }
 
-      const deleteProfileResponse = await fetch("/api/guest-profiles/delete", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          guestProfileId: profileToDelete.id,
-        }),
-      });
+      const { error: deleteProfileError } = await supabase
+        .from("guest_profiles")
+        .delete()
+        .eq("id", profileId)
+        .eq("show_id", show.id);
 
-      const deleteProfilePayload = (await deleteProfileResponse.json()) as {
-        success?: boolean;
-        data?: unknown;
-        error?: string;
-        details?: unknown;
-      };
-
-      console.log("Guest profile delete result", {
-        data: deleteProfilePayload.data,
-        error: deleteProfilePayload.error ?? null,
-        errorJson: JSON.stringify(deleteProfilePayload.error ?? null, null, 2),
-      });
-
-      if (!deleteProfileResponse.ok || !deleteProfilePayload.success) {
-        if (deleteProfilePayload.details) {
-          console.error("Failed to delete guest profile.", deleteProfilePayload.details);
-        } else {
-          console.error("Failed to delete guest profile.", deleteProfilePayload.error);
-        }
-
-        throw new Error(deleteProfilePayload.error || "Failed to delete guest profile.");
+      if (deleteProfileError) {
+        throw deleteProfileError;
       }
 
-      setGuestProfiles((currentProfiles) =>
-        currentProfiles.filter((profile) => profile.id !== profileId),
-      );
+      setGuestProfiles((currentProfiles) => currentProfiles.filter((profile) => profile.id !== profileId));
       setPendingSongs((currentSongs) =>
         currentSongs.filter((song) => !relatedSongIds.includes(song.id)),
       );
@@ -4227,8 +4195,6 @@ export function ShowPage({
       if (selectedGuestProfileId === profileId) {
         setSelectedGuestProfileId("");
       }
-
-      await loadShowData(false);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
