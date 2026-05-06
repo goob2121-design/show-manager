@@ -4985,24 +4985,6 @@ export function ShowPage({
     }
   }
 
-  function handleOpenGuestProfileLink(profile: GuestProfile) {
-    try {
-      const guestIdentifier = profile.guest_token ?? profile.id;
-      const guestUrl =
-        typeof window === "undefined"
-          ? `/guest/${guestIdentifier}`
-          : `${window.location.origin}/guest/${guestIdentifier}`;
-
-      if (typeof window !== "undefined") {
-        window.open(guestUrl, "_blank", "noopener,noreferrer");
-      }
-
-      setActionError(null);
-    } catch (error) {
-      setActionError(getErrorMessage(error));
-    }
-  }
-
   async function handleSaveGuestAppearanceDetails(profileId: string) {
     const profileToSave = guestProfiles.find((profile) => profile.id === profileId);
 
@@ -8124,14 +8106,6 @@ export function ShowPage({
                             {copiedGuestProfileLinkId === profile.id
                               ? "Copied Guest Link"
                               : "Copy Guest Link"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenGuestProfileLink(profile)}
-                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                          >
-                            Open Guest Link
                           </button>
 
                           <button

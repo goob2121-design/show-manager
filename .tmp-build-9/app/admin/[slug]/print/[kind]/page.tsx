@@ -19,12 +19,6 @@ type AnchorRow = {
   guest_song?: { title: string | null } | Array<{ title: string | null }> | null;
 };
 
-type GuestSongRow = {
-  id: string;
-  title: string | null;
-  submitted_by_name: string | null;
-};
-
 type PrintPageProps = {
   params: Promise<{ slug: string; kind: string }>;
 };
@@ -107,10 +101,6 @@ function getSponsorReadText(sponsor: SponsorRow) {
     sponsor.custom_note?.trim() ||
     ""
   );
-}
-
-function normalizeGuestProfileName(value: string | null | undefined) {
-  return value?.trim().toLowerCase() ?? "";
 }
 
 function logPrintLoadError(sectionName: string, error: unknown) {
@@ -308,13 +298,7 @@ function SponsorRundownPrintView({
   );
 }
 
-function GuestInfoPrintView({
-  guests,
-  guestSongsByProfileId,
-}: {
-  guests: GuestProfile[];
-  guestSongsByProfileId: Record<string, string[]>;
-}) {
+function GuestInfoPrintView({ guests }: { guests: GuestProfile[] }) {
   if (guests.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-sm text-stone-500">
@@ -331,24 +315,6 @@ function GuestInfoPrintView({
           { label: "Facebook", value: guest.facebook },
           { label: "Instagram", value: guest.instagram },
         ].filter((link) => link.value?.trim());
-        const appearanceFields = [
-          { label: "Agreed Fee", value: guest.agreed_fee },
-          {
-            label: "Planned Song Count",
-            value:
-              guest.planned_song_count === null || guest.planned_song_count === undefined
-                ? null
-                : String(guest.planned_song_count),
-          },
-          {
-            label: "Backup Song Count",
-            value:
-              guest.backup_song_count === null || guest.backup_song_count === undefined
-                ? null
-                : String(guest.backup_song_count),
-          },
-        ];
-        const submittedSongs = guestSongsByProfileId[guest.id] ?? [];
 
         return (
           <article
@@ -368,13 +334,6 @@ function GuestInfoPrintView({
               <PrintField label="Full Bio" value={guest.full_bio} />
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 print:grid-cols-2">
-              {appearanceFields.map((field) => (
-                <PrintField key={field.label} label={field.label} value={field.value} />
-              ))}
-              <PrintField label="Appearance Notes" value={guest.appearance_notes} />
-            </div>
-
             {links.length > 0 ? (
               <div className="mt-4 grid gap-2">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
@@ -385,19 +344,6 @@ function GuestInfoPrintView({
                     <span className="font-semibold">{link.label}:</span> {link.value}
                   </p>
                 ))}
-              </div>
-            ) : null}
-
-            {submittedSongs.length > 0 ? (
-              <div className="mt-4 rounded-xl border border-stone-200 px-4 py-3 print:rounded-none print:border-stone-300">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
-                  Submitted Songs
-                </p>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-stone-800 print:text-[12px] print:leading-5">
-                  {submittedSongs.map((songTitle) => (
-                    <li key={`${guest.id}-${songTitle}`}>{songTitle}</li>
-                  ))}
-                </ul>
               </div>
             ) : null}
           </article>
@@ -478,21 +424,6 @@ async function loadGuests(showId: string) {
   return (data ?? []) as GuestProfile[];
 }
 
-async function loadGuestSongs(showId: string) {
-  const supabase = await createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from("show_guest_songs")
-    .select("id, title, submitted_by_name")
-    .eq("show_id", showId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []) as GuestSongRow[];
-}
-
 export default async function AdminPrintPage({ params }: PrintPageProps) {
   const { slug, kind } = await params;
   const printKind = normalizePrintKind(kind);
@@ -514,29 +445,6 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
       ? await safeLoad("setlist anchors", () => loadAnchorTitles(show.id), {})
       : {};
   const guests = printKind === "guests" ? await safeLoad("guests", () => loadGuests(show.id), []) : [];
-  const guestSongs =
-    printKind === "guests" ? await safeLoad("guest songs", () => loadGuestSongs(show.id), []) : [];
-  const guestSongsByProfileId =
-    printKind === "guests"
-      ? guests.reduce<Record<string, string[]>>((lookup, guest) => {
-          const normalizedGuestName = normalizeGuestProfileName(guest.name);
-
-          if (!normalizedGuestName) {
-            lookup[guest.id] = [];
-            return lookup;
-          }
-
-          lookup[guest.id] = guestSongs
-            .filter(
-              (song) =>
-                normalizeGuestProfileName(song.submitted_by_name) === normalizedGuestName &&
-                song.title?.trim(),
-            )
-            .map((song) => song.title!.trim());
-
-          return lookup;
-        }, {})
-      : {};
 
   return (
     <AdminGate slug={slug} resourceLabel={`print pages for ${show.name}`} continueLabel="Continue to Print View">
@@ -545,9 +453,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         {printKind === "sponsors" ? (
           <SponsorRundownPrintView sponsors={sponsors} anchorTitles={anchorTitles} />
         ) : null}
-        {printKind === "guests" ? (
-          <GuestInfoPrintView guests={guests} guestSongsByProfileId={guestSongsByProfileId} />
-        ) : null}
+        {printKind === "guests" ? <GuestInfoPrintView guests={guests} /> : null}
       </PrintShell>
     </AdminGate>
   );
