@@ -63,9 +63,15 @@ create table if not exists public.show_guest_songs (
   key text,
   tempo text check (tempo in ('fast', 'medium', 'slow')),
   song_type text check (song_type in ('vocal', 'instrumental')),
+  notes text,
+  lyrics text,
   submitted_by_name text,
   created_at timestamptz not null default now()
 );
+
+alter table public.show_guest_songs
+  add column if not exists notes text,
+  add column if not exists lyrics text;
 
 create table if not exists public.setlist_entries (
   id uuid primary key default gen_random_uuid(),
@@ -95,6 +101,9 @@ create table if not exists public.guest_profiles (
   instagram text,
   website text,
   photo_url text,
+  guest_token text,
+  portal_opened_at timestamptz,
+  last_reminder_sent_at timestamptz,
   permission_granted boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -227,6 +236,10 @@ create unique index if not exists mc_block_notes_show_id_anchor_unique
 
 create unique index if not exists guest_profiles_show_id_name_unique
   on public.guest_profiles(show_id, lower(name));
+
+create unique index if not exists guest_profiles_guest_token_unique
+  on public.guest_profiles(guest_token)
+  where guest_token is not null;
 
 insert into storage.buckets (id, name, public)
 values ('guest-photos', 'guest-photos', true)

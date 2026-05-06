@@ -579,6 +579,111 @@ function normalizeGuestProfileName(name: string) {
   return name.trim().toLowerCase();
 }
 
+function getGuestFirstName(name: string | null | undefined) {
+  const trimmedName = name?.trim() ?? "";
+
+  if (!trimmedName) {
+    return null;
+  }
+
+  const [firstName] = trimmedName.split(/\s+/);
+  return firstName || null;
+}
+
+function buildGuestProfileRecord(
+  profilePayload: {
+    show_id: string;
+    name: string | null;
+    short_bio: string | null;
+    full_bio: string | null;
+    hometown: string | null;
+    instruments: string | null;
+    facebook: string | null;
+    instagram: string | null;
+    website: string | null;
+    photo_url: string | null;
+    guest_token?: string | null;
+    permission_granted: boolean;
+  },
+  overrides?: Partial<GuestProfile>,
+): GuestProfile {
+  return {
+    id: overrides?.id ?? crypto.randomUUID(),
+    show_id: profilePayload.show_id,
+    name: profilePayload.name,
+    short_bio: profilePayload.short_bio,
+    full_bio: profilePayload.full_bio,
+    hometown: profilePayload.hometown,
+    instruments: profilePayload.instruments,
+    facebook: profilePayload.facebook,
+    instagram: profilePayload.instagram,
+    website: profilePayload.website,
+    photo_url: profilePayload.photo_url,
+    guest_token: profilePayload.guest_token ?? null,
+    portal_opened_at: overrides?.portal_opened_at ?? null,
+    last_reminder_sent_at: overrides?.last_reminder_sent_at ?? null,
+    permission_granted: profilePayload.permission_granted,
+    created_at: overrides?.created_at ?? new Date().toISOString(),
+  };
+}
+
+function formatPortalStatusDateTime(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function getGuestProfilePortalStatus(
+  profile: GuestProfile,
+  submissions: PendingSubmission[],
+): GuestPortalStatus {
+  const submittedSongsCount = submissions.filter((song) =>
+    isGuestSongForProfile(song, profile.name),
+  ).length;
+
+  if (submittedSongsCount > 0) {
+    return {
+      key: "submitted",
+      label: "Songs submitted",
+      openedAt: profile.portal_opened_at,
+      lastReminderSentAt: profile.last_reminder_sent_at,
+      submittedSongsCount,
+    };
+  }
+
+  if (profile.portal_opened_at) {
+    return {
+      key: "opened",
+      label: "Opened, no songs submitted",
+      openedAt: profile.portal_opened_at,
+      lastReminderSentAt: profile.last_reminder_sent_at,
+      submittedSongsCount,
+    };
+  }
+
+  return {
+    key: "not-opened",
+    label: "Not opened yet",
+    openedAt: null,
+    lastReminderSentAt: profile.last_reminder_sent_at,
+    submittedSongsCount,
+  };
+}
+
 function isGuestSongForProfile(song: PendingSubmission, profileName: string | null | undefined) {
   const normalizedProfileName = normalizeGuestProfileName(profileName ?? "");
 
@@ -663,7 +768,7 @@ function validateSongMp3File(file: File | null) {
 
 function buildSongMp3StoragePath(showSlug: string, songId: string) {
   const safeShowSlug = sanitizeFileName(showSlug || "show");
-  return `song-audio/shows/${safeShowSlug}/songs/${songId}-${Date.now()}.mp3`;
+  return `song-audio/shows/${safeShowSlug}/songs/${songId}.mp3`;
 }
 
 function extractMp3PathFromNotes(notes: string | null | undefined) {
@@ -729,6 +834,13 @@ function buildAdminShowUrl(showSlug: string) {
   const siteBaseUrl = getSiteBaseUrl();
 
   return siteBaseUrl ? `${siteBaseUrl}${adminPath}` : adminPath;
+}
+
+function buildGuestPrivatePortalUrl(guestIdentifier: string) {
+  const guestPath = `/guest/${encodeURIComponent(guestIdentifier)}`;
+  const siteBaseUrl = getSiteBaseUrl();
+
+  return siteBaseUrl ? `${siteBaseUrl}${guestPath}` : guestPath;
 }
 
 function buildNotificationHtml({
@@ -1249,8 +1361,9 @@ function canBandEditSharedSong(role: string | null | undefined) {
 
 function normalizePendingSubmission(
   submission: PendingSubmission,
+  fallbackMp3Path: string | null = null,
 ): PendingSubmission {
-  const mp3Path = extractMp3PathFromNotes(submission.notes);
+  const mp3Path = extractMp3PathFromNotes(submission.notes) ?? fallbackMp3Path;
 
   return {
     ...submission,
@@ -1426,26 +1539,29 @@ async function updateSongNotesField<RowType>({
   table,
   rowId,
   notes,
+  currentRow,
 }: {
   table: "songs" | "show_guest_songs";
   rowId: string;
   notes: string | null;
+  currentRow: RowType;
 }) {
   const supabase = createClient();
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from(table)
     .update({
       notes,
     })
-    .eq("id", rowId)
-    .select("*")
-    .single();
+    .eq("id", rowId);
 
   if (error) {
     throw error;
   }
 
-  return data as RowType;
+  return {
+    ...currentRow,
+    notes,
+  } as RowType;
 }
 
 function getSponsorInitials(name: string) {
@@ -1872,6 +1988,16 @@ type ShowPageProps = {
   initialRole?: ViewMode;
   initialAdminTab?: string | null;
   showRoleToggle?: boolean;
+  lockedGuestProfileId?: string | null;
+  isPrivateGuestPortal?: boolean;
+};
+
+type GuestPortalStatus = {
+  key: "not-opened" | "opened" | "submitted";
+  label: string;
+  openedAt: string | null;
+  lastReminderSentAt: string | null;
+  submittedSongsCount: number;
 };
 
 function getPortalLabel(role: ViewMode) {
@@ -1891,6 +2017,8 @@ export function ShowPage({
   initialRole = "guest",
   initialAdminTab = null,
   showRoleToggle = true,
+  lockedGuestProfileId = null,
+  isPrivateGuestPortal = false,
 }: ShowPageProps) {
   const requestedAdminTab = normalizeAdminTab(initialAdminTab);
   const [viewMode, setViewMode] = useState<ViewMode>(initialRole);
@@ -1914,7 +2042,9 @@ export function ShowPage({
   );
   const [guestPhotoFile, setGuestPhotoFile] = useState<File | null>(null);
   const [editingGuestProfileId, setEditingGuestProfileId] = useState<string | null>(null);
-  const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>("");
+  const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>(
+    lockedGuestProfileId ?? "",
+  );
   const [guestProfiles, setGuestProfiles] = useState<GuestProfile[]>([]);
   const [mcBlockNotes, setMcBlockNotes] = useState<McBlockNote[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
@@ -2005,6 +2135,23 @@ export function ShowPage({
   const [promoMaterialError, setPromoMaterialError] = useState<string | null>(null);
   const [copiedPromoTextKey, setCopiedPromoTextKey] = useState<string | null>(null);
   const [copiedSongLinkId, setCopiedSongLinkId] = useState<string | null>(null);
+  const [copiedGuestProfileLinkId, setCopiedGuestProfileLinkId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (viewMode !== "guest" || !lockedGuestProfileId) {
+      return;
+    }
+
+    const lockedProfile = guestProfiles.find((profile) => profile.id === lockedGuestProfileId);
+
+    if (!lockedProfile) {
+      return;
+    }
+
+    setSelectedGuestProfileId(lockedProfile.id);
+    setEditingGuestProfileId(lockedProfile.id);
+    setGuestProfileFormState(buildGuestProfileFormStateFromProfile(lockedProfile));
+  }, [guestProfiles, lockedGuestProfileId, viewMode]);
 
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
@@ -2330,6 +2477,33 @@ export function ShowPage({
           ),
         ]);
 
+        const guestSongStoragePathById = new Map<string, string>();
+        const guestSongStoragePrefix = `song-audio/shows/${sanitizeFileName(showRecord.slug || "show")}/songs`;
+
+        try {
+          const { data: guestSongMp3Objects, error: guestSongMp3ListError } = await supabase.storage
+            .from(SONG_AUDIO_BUCKET)
+            .list(guestSongStoragePrefix, { limit: 1000 });
+
+          if (guestSongMp3ListError) {
+            logDataSectionError("guest song MP3 attachments", guestSongMp3ListError);
+          } else {
+            for (const guestSongMp3Object of guestSongMp3Objects ?? []) {
+              const objectName = guestSongMp3Object.name ?? "";
+              const match = objectName.match(/^([0-9a-f-]+)\.mp3$/i);
+
+              if (match) {
+                guestSongStoragePathById.set(
+                  match[1],
+                  `${guestSongStoragePrefix}/${objectName}`,
+                );
+              }
+            }
+          }
+        } catch (error) {
+          logDataSectionError("guest song MP3 attachments", error);
+        }
+
         setSetlist(
           sortSetlistSongs(
             (setlistRows ?? []).map((song: SetlistEntryQueryRow) =>
@@ -2339,7 +2513,10 @@ export function ShowPage({
         );
         setPendingSongs(
           (pendingRows ?? []).map((submission: PendingSubmission) =>
-            normalizePendingSubmission(submission),
+            normalizePendingSubmission(
+              submission,
+              guestSongStoragePathById.get(submission.id) ?? null,
+            ),
           ),
         );
         setSongLibrary(
@@ -3217,25 +3394,37 @@ export function ShowPage({
       const normalizedSubmittedByRole = normalizeSubmittedByRole(viewMode);
 
       if (normalizedSubmittedByRole === "guest") {
-        const { data, error } = await supabase
+        const guestNotes = normalizeOptionalField(formState.notes);
+        const guestLyrics = normalizeOptionalField(formState.lyrics);
+
+        const nextGuestSongId = crypto.randomUUID();
+        const guestSongPayload = {
+          id: nextGuestSongId,
+          show_id: show.id,
+          title,
+          key,
+          tempo,
+          song_type: songType,
+          submitted_by_name: guestSingerName || null,
+        };
+        const { error } = await supabase
           .from("show_guest_songs")
-          .insert({
-            show_id: show.id,
-            title,
-            key,
-            tempo,
-            song_type: songType,
-            submitted_by_name: guestSingerName || null,
-            notes: normalizeOptionalField(formState.notes),
-          })
-          .select("*")
-          .single();
+          .insert(guestSongPayload);
 
         if (error) {
           throw error;
         }
 
-        let savedGuestSong = data as PendingSubmission;
+        let savedGuestSong: PendingSubmission = {
+          ...guestSongPayload,
+          artist: guestSongPayload.submitted_by_name,
+          song_key: guestSongPayload.key,
+          notes: guestNotes,
+          lyrics: guestLyrics,
+          mp3_path: null,
+          submitted_by_role: "guest",
+          created_at: new Date().toISOString(),
+        };
 
         if (songMp3File) {
           const uploadedMp3Path = await uploadSongMp3File({
@@ -3244,16 +3433,10 @@ export function ShowPage({
             songId: savedGuestSong.id,
           });
 
-          try {
-            savedGuestSong = await updateSongNotesField<PendingSubmission>({
-              table: "show_guest_songs",
-              rowId: savedGuestSong.id,
-              notes: appendMp3MarkerToNotes(savedGuestSong.notes, uploadedMp3Path),
-            });
-          } catch (error) {
-            await deletePromoMaterialFile(uploadedMp3Path);
-            throw error;
-          }
+          savedGuestSong = {
+            ...savedGuestSong,
+            mp3_path: uploadedMp3Path,
+          };
         }
 
         setPendingSongs((currentSongs) => [...currentSongs, normalizePendingSubmission(savedGuestSong)]);
@@ -3320,6 +3503,7 @@ export function ShowPage({
                 table: "songs",
                 rowId: savedLibrarySong.id,
                 notes: appendMp3MarkerToNotes(savedLibrarySong.notes, uploadedMp3Path),
+                currentRow: savedLibrarySong,
               });
             } catch (error) {
               await deletePromoMaterialFile(uploadedMp3Path);
@@ -3393,6 +3577,7 @@ export function ShowPage({
                 table: "songs",
                 rowId: existingLibrarySong.id,
                 notes: appendMp3MarkerToNotes(updatedLibrarySong.notes, uploadedMp3Path),
+                currentRow: updatedLibrarySong,
               });
             } catch (error) {
               await deletePromoMaterialFile(uploadedMp3Path);
@@ -3505,16 +3690,23 @@ export function ShowPage({
       };
 
       if (existingProfile) {
-        const { data: updatedProfile, error: updateError } = await supabase
+        const { error: updateError } = await supabase
           .from("guest_profiles")
           .update(profilePayload)
-          .eq("id", existingProfile.id)
-          .select("*")
-          .single();
+          .eq("id", existingProfile.id);
 
         if (updateError) {
           throw updateError;
         }
+
+        const updatedProfile = buildGuestProfileRecord(profilePayload, {
+          ...existingProfile,
+          id: existingProfile.id,
+          guest_token: existingProfile.guest_token,
+          created_at: existingProfile.created_at,
+          portal_opened_at: existingProfile.portal_opened_at,
+          last_reminder_sent_at: existingProfile.last_reminder_sent_at,
+        });
 
         setGuestProfiles((currentProfiles) =>
           currentProfiles.map((profile) =>
@@ -3540,11 +3732,18 @@ export function ShowPage({
           }),
         });
       } else {
-        const { data: insertedProfile, error: insertError } = await supabase
+        const insertedProfile = buildGuestProfileRecord(
+          {
+            ...profilePayload,
+            guest_token: null,
+          },
+        );
+        const { error: insertError } = await supabase
           .from("guest_profiles")
-          .insert(profilePayload)
-          .select("*")
-          .single();
+          .insert({
+            ...profilePayload,
+            id: insertedProfile.id,
+          });
 
         if (insertError) {
           throw insertError;
@@ -4088,25 +4287,23 @@ export function ShowPage({
         song_type: poolSongEditFormState.songType || null,
         submitted_by_name: guestAssociationName,
       };
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("show_guest_songs")
         .update(updatePayload)
-        .eq("id", songId)
-        .select("*")
-        .maybeSingle();
+        .eq("id", songId);
 
       if (error) {
         throw error;
       }
 
-      if (!data) {
-        if (editingPoolSongId === songId) {
-          handleCancelPoolSongEdit();
-        }
-        return;
-      }
-
-      let savedGuestSong = data as PendingSubmission;
+      let savedGuestSong: PendingSubmission = {
+        ...songToUpdate,
+        ...updatePayload,
+        artist: guestAssociationName,
+        song_key: updatePayload.key,
+        notes: normalizeOptionalField(poolSongEditFormState.notes ?? ""),
+        lyrics: normalizeOptionalField(poolSongEditFormState.lyrics ?? ""),
+      };
 
       if (poolSongMp3File) {
         const uploadedMp3Path = await uploadSongMp3File({
@@ -4115,16 +4312,10 @@ export function ShowPage({
           songId,
         });
 
-        try {
-          savedGuestSong = await updateSongNotesField<PendingSubmission>({
-            table: "show_guest_songs",
-            rowId: songId,
-            notes: appendMp3MarkerToNotes(songToUpdate.notes, uploadedMp3Path),
-          });
-        } catch (error) {
-          await deletePromoMaterialFile(uploadedMp3Path);
-          throw error;
-        }
+        savedGuestSong = {
+          ...savedGuestSong,
+          mp3_path: uploadedMp3Path,
+        };
       }
 
       setPendingSongs((currentSongs) =>
@@ -4296,6 +4487,7 @@ export function ShowPage({
             table: "songs",
             rowId: songId,
             notes: appendMp3MarkerToNotes(savedLibrarySong.notes, uploadedMp3Path),
+            currentRow: savedLibrarySong,
           });
         } catch (error) {
           await deletePromoMaterialFile(uploadedMp3Path);
@@ -4682,6 +4874,25 @@ export function ShowPage({
     }
   }
 
+  async function handleCopyGuestProfileLink(profile: GuestProfile) {
+    try {
+      const guestIdentifier = profile.guest_token ?? profile.id;
+      const guestUrl = buildGuestPrivatePortalUrl(guestIdentifier);
+
+      await navigator.clipboard.writeText(guestUrl);
+      setActionError(null);
+      setCopiedGuestProfileLinkId(profile.id);
+
+      window.setTimeout(() => {
+        setCopiedGuestProfileLinkId((currentProfileId) =>
+          currentProfileId === profile.id ? null : currentProfileId,
+        );
+      }, 1800);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    }
+  }
+
   async function handleDeleteLibrarySong(song: SongLibrarySong) {
     const shouldDelete = window.confirm(
       `Delete "${song.title}" from the main Song Library? This permanently deletes the library song and removes any linked setlist entries. Guest songs will not be affected.`,
@@ -4932,19 +5143,32 @@ export function ShowPage({
     ].join("\n\n");
   const autoSelectedGuestProfile =
     guestProfiles.length === 1 ? guestProfiles[0] : null;
+  const lockedGuestProfile =
+    viewMode === "guest" && lockedGuestProfileId
+      ? guestProfiles.find((profile) => profile.id === lockedGuestProfileId) ?? null
+      : null;
   const selectedGuestProfile =
     viewMode === "guest"
-      ? guestProfiles.find((profile) => profile.id === selectedGuestProfileId) ??
+      ? lockedGuestProfile ??
+        guestProfiles.find((profile) => profile.id === selectedGuestProfileId) ??
         autoSelectedGuestProfile
       : null;
+  const guestFirstName = getGuestFirstName(selectedGuestProfile?.name);
+  const privateGuestGreeting = isPrivateGuestPortal
+    ? guestFirstName
+      ? `Hello ${guestFirstName},`
+      : "Hello,"
+    : null;
   const guestSingerName =
     viewMode === "guest"
       ? selectedGuestProfile?.name?.trim() || guestProfileFormState.name.trim() || ""
       : "";
   const requiresGuestSelection = viewMode === "guest" && guestProfiles.length > 1 && !selectedGuestProfile;
   const isGuestSongSubmissionBlocked = viewMode === "guest" && guestProfiles.length === 0;
-  const shouldShowGuestProfileSelector = shouldShowGuestSongsTab && guestProfiles.length > 1;
-  const canOpenGuestSongForm = guestProfiles.length === 1 || Boolean(selectedGuestProfile);
+  const shouldShowGuestProfileSelector =
+    shouldShowGuestSongsTab && guestProfiles.length > 1 && !isPrivateGuestPortal;
+  const canOpenGuestSongForm =
+    guestProfiles.length === 1 || Boolean(selectedGuestProfile) || Boolean(lockedGuestProfile);
   const guestSubmittedSongs =
     viewMode === "guest"
       ? pendingSongs.filter((song) => {
@@ -4962,6 +5186,9 @@ export function ShowPage({
           return submittedByName === currentGuestName;
         })
       : [];
+  const hasGuestSubmissionSupportMaterial = Boolean(
+    formState.notes.trim() || formState.lyrics.trim() || songMp3File,
+  );
 
   const bandShowInfoItems: ShowInfoItem[] = show
     ? [
@@ -5207,9 +5434,16 @@ export function ShowPage({
             </div>
 
             <div className="rounded-3xl border border-emerald-900/60 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-5 py-5 text-slate-100 shadow-sm sm:px-6">
-              <p className="mx-auto max-w-4xl whitespace-pre-wrap text-center text-sm leading-8 text-slate-100 sm:text-base">
-                {guestWelcomeMessage}
-              </p>
+              <div className="mx-auto flex max-w-4xl flex-col gap-4 text-center">
+                {privateGuestGreeting ? (
+                  <p className="text-base font-semibold text-emerald-100 sm:text-lg">
+                    {privateGuestGreeting}
+                  </p>
+                ) : null}
+                <p className="whitespace-pre-wrap text-sm leading-8 text-slate-100 sm:text-base">
+                  {guestWelcomeMessage}
+                </p>
+              </div>
             </div>
           </section>
         ) : null}
@@ -7111,11 +7345,13 @@ export function ShowPage({
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Artist Info</h2>
               <p className="text-sm text-stone-600">
-                Share your promo bio and photo for this show, then come back anytime to update it.
+                {isPrivateGuestPortal
+                  ? "Share or update your promo bio and photo for this show."
+                  : "Share your promo bio and photo for this show, then come back anytime to update it."}
               </p>
             </div>
 
-            {guestProfiles.length > 0 ? (
+            {guestProfiles.length > 0 && !isPrivateGuestPortal ? (
               <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
                 <div className="flex flex-col gap-1">
                   <h3 className="text-base font-semibold text-stone-900">Submitted Guest Artists</h3>
@@ -7162,10 +7398,14 @@ export function ShowPage({
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm text-stone-600">
                   {editingGuestProfileId
-                    ? "Editing an existing artist entry."
-                    : "Add a new artist entry for this show."}
+                    ? isPrivateGuestPortal
+                      ? "Updating your artist entry for this show."
+                      : "Editing an existing artist entry."
+                    : isPrivateGuestPortal
+                      ? "Add your artist entry for this show."
+                      : "Add a new artist entry for this show."}
                 </div>
-                {editingGuestProfileId ? (
+                {editingGuestProfileId && !isPrivateGuestPortal ? (
                   <button
                     type="button"
                     onClick={resetGuestProfileForm}
@@ -7344,6 +7584,11 @@ export function ShowPage({
                 {guestProfiles.map((profile) => {
                   const missingBio = !profile.short_bio;
                   const missingPhoto = !profile.photo_url;
+                  const guestPortalStatus = getGuestProfilePortalStatus(profile, pendingSongs);
+                  const openedAtLabel = formatPortalStatusDateTime(guestPortalStatus.openedAt);
+                  const lastReminderLabel = formatPortalStatusDateTime(
+                    guestPortalStatus.lastReminderSentAt,
+                  );
 
                   return (
                     <article
@@ -7376,6 +7621,17 @@ export function ShowPage({
                                 Missing submission
                               </span>
                             ) : null}
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
+                                guestPortalStatus.key === "submitted"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : guestPortalStatus.key === "opened"
+                                    ? "bg-sky-100 text-sky-800"
+                                    : "bg-stone-200 text-stone-700"
+                              }`}
+                            >
+                              {guestPortalStatus.label}
+                            </span>
                           </div>
 
                           <p className="text-sm text-stone-700">
@@ -7388,6 +7644,15 @@ export function ShowPage({
                               <p>Instruments: {profile.instruments}</p>
                             ) : null}
                             {profile.full_bio ? <p>Full bio: {profile.full_bio}</p> : null}
+                            {openedAtLabel ? <p>Opened: {openedAtLabel}</p> : null}
+                            {lastReminderLabel ? (
+                              <p>Last reminder: {lastReminderLabel}</p>
+                            ) : null}
+                            {guestPortalStatus.submittedSongsCount > 0 ? (
+                              <p>
+                                Submitted songs: {guestPortalStatus.submittedSongsCount}
+                              </p>
+                            ) : null}
                           </div>
 
                           <div className="flex flex-wrap gap-3 text-sm">
@@ -7424,7 +7689,7 @@ export function ShowPage({
                           </div>
                         </div>
 
-                        <div className="flex w-full max-w-[180px] flex-col gap-3">
+                        <div className="flex w-full max-w-[220px] flex-col gap-3">
                           {profile.photo_url ? (
                             <img
                               src={profile.photo_url}
@@ -7436,6 +7701,16 @@ export function ShowPage({
                               No photo
                             </div>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleCopyGuestProfileLink(profile)}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                          >
+                            {copiedGuestProfileLinkId === profile.id
+                              ? "Copied Guest Link"
+                              : "Copy Guest Link"}
+                          </button>
 
                           <button
                             type="button"
@@ -7510,18 +7785,10 @@ export function ShowPage({
 
             <div className="rounded-2xl border border-emerald-900/30 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-4 py-4 text-sm leading-7 text-slate-100 sm:px-5">
               <p>
-                The Cumberland Mountain Music Show features a house band, and
-                rehearsal time is limited. If possible, please select
-                songs that are widely known or commonly performed.
-              </p>
-              <p className="mt-3">
-                Original material is always welcome. If submitting an original
-                song, it is very helpful to provide a reference such as an MP3,
-                YouTube link, chart, or any notes that will help the band prepare.
-              </p>
-              <p className="mt-3">
-                If you have a recording, chart, or any special arrangement
-                details, please include them with your submission.
+                Our house band has limited rehearsal time, so familiar songs are always helpful.
+                Original material is absolutely welcome, but if the song may not be familiar to
+                the band, please include anything that can help us prepare - an MP3, YouTube link,
+                chart, key notes, arrangement notes, or lyrics.
               </p>
             </div>
 
@@ -8092,6 +8359,13 @@ export function ShowPage({
                     </summary>
 
                     <div className="mt-4 grid gap-4">
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
+                        Our house band has limited rehearsal time, so familiar songs are always
+                        helpful. Original material is absolutely welcome, but if the song may not
+                        be familiar to the band, please include anything that can help us prepare -
+                        an MP3, YouTube link, chart, key notes, arrangement notes, or lyrics.
+                      </div>
+
                       <div className="grid gap-4 sm:grid-cols-2">
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                           Tempo
@@ -8172,6 +8446,12 @@ export function ShowPage({
                       Optional. MP3 only, up to 30 MB.
                     </span>
                   </label>
+
+                  {hasGuestSubmissionSupportMaterial ? (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                      Thanks - that will help the band prepare.
+                    </div>
+                  ) : null}
 
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <button

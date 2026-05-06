@@ -63,6 +63,8 @@ export type ShowGuestSong = {
   key: string | null;
   tempo: SongTempo | null;
   song_type: SongType | null;
+  notes?: string | null;
+  lyrics?: string | null;
   submitted_by_name: string | null;
   created_at: string;
 };
@@ -98,6 +100,9 @@ export type GuestProfile = {
   instagram: string | null;
   website: string | null;
   photo_url: string | null;
+  guest_token: string | null;
+  portal_opened_at: string | null;
+  last_reminder_sent_at: string | null;
   permission_granted: boolean;
   created_at: string;
 };
