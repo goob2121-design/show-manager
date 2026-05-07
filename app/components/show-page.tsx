@@ -872,6 +872,55 @@ function buildGuestPrivatePortalUrl(guestIdentifier: string) {
   return siteBaseUrl ? `${siteBaseUrl}${guestPath}` : guestPath;
 }
 
+function buildGuestReminderEmailText(profile: GuestProfile) {
+  const guestIdentifier = profile.guest_token ?? profile.id;
+  const guestLink = buildGuestPrivatePortalUrl(guestIdentifier);
+  const guestFirstName = getGuestFirstName(profile.name);
+  const greeting = guestFirstName ? `Hello ${guestFirstName},` : "Hello,";
+
+  return `Subject: Cumberland Mountain Music Show Guest Portal Reminder
+
+${greeting}
+
+Just a quick reminder to complete or update your Cumberland Mountain Music Show guest portal information when you get a chance.
+
+Your private guest portal link is below:
+
+${guestLink}
+
+This link is unique to you, and you can use it anytime to revisit the portal, submit songs, update artist information, upload or link materials, and review show-day details.
+
+Please make sure your song selections and artist information are submitted as soon as possible so we can prepare for the show.
+
+Thanks again — we’re looking forward to having you with us!
+
+— Bryan Turner
+Cumberland Mountain Music Show`;
+}
+
+function buildGuestReminderTextMessage(profile: GuestProfile) {
+  const guestIdentifier = profile.guest_token ?? profile.id;
+  const guestLink = buildGuestPrivatePortalUrl(guestIdentifier);
+  const guestFirstName = getGuestFirstName(profile.name);
+  const greeting = guestFirstName ? `Hey ${guestFirstName},` : "Hey,";
+
+  return `${greeting} here’s your private Cumberland Mountain Music Show guest portal link: ${guestLink}
+
+You can use it anytime to submit songs, update artist info, and review show-day details.`;
+}
+
+function buildBandSetlistMessage(showSlug: string) {
+  const bandPath = `/band/${encodeURIComponent(showSlug)}`;
+  const siteBaseUrl = getSiteBaseUrl();
+  const bandLink = siteBaseUrl ? `${siteBaseUrl}${bandPath}` : bandPath;
+
+  return `Hey everyone, here’s the setlist link for the show:
+
+${bandLink}
+
+You can use this to review songs, setlist order, itinerary, and show notes.`;
+}
+
 function buildNotificationHtml({
   heading,
   intro,
@@ -2165,6 +2214,9 @@ export function ShowPage({
   const [copiedPromoTextKey, setCopiedPromoTextKey] = useState<string | null>(null);
   const [copiedSongLinkId, setCopiedSongLinkId] = useState<string | null>(null);
   const [copiedGuestProfileLinkId, setCopiedGuestProfileLinkId] = useState<string | null>(null);
+  const [copiedBandSetlistLink, setCopiedBandSetlistLink] = useState(false);
+  const [copiedGuestReminderEmailId, setCopiedGuestReminderEmailId] = useState<string | null>(null);
+  const [copiedGuestShortTextId, setCopiedGuestShortTextId] = useState<string | null>(null);
   const [activeGuestAppearanceSaveId, setActiveGuestAppearanceSaveId] = useState<string | null>(null);
   const [activeGuestConfirmationSaveId, setActiveGuestConfirmationSaveId] = useState<string | null>(null);
 
@@ -2226,6 +2278,14 @@ export function ShowPage({
     const matchesSongType = !librarySongTypeFilter || song.song_type === librarySongTypeFilter;
     return matchesTempo && matchesSongType;
   });
+  const songLibraryById = useMemo(
+    () =>
+      songLibrary.reduce<Record<string, SongLibrarySong>>((lookup, song) => {
+        lookup[song.id] = song;
+        return lookup;
+      }, {}),
+    [songLibrary],
+  );
   const librarySongSetlistUsageCounts = useMemo(
     () =>
       setlist.reduce<Record<string, number>>((usageCounts, song) => {
@@ -4968,6 +5028,25 @@ export function ShowPage({
     }
   }
 
+  async function handleCopyBandSetlistLink() {
+    if (!show?.slug) {
+      setActionError("Band link is not available until this show has a valid slug.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildBandSetlistMessage(show.slug));
+      setActionError(null);
+      setCopiedBandSetlistLink(true);
+
+      window.setTimeout(() => {
+        setCopiedBandSetlistLink(false);
+      }, 1800);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    }
+  }
+
   async function handleCopyGuestProfileLink(profile: GuestProfile) {
     try {
       const guestIdentifier = profile.guest_token ?? profile.id;
@@ -4982,6 +5061,38 @@ export function ShowPage({
 
       window.setTimeout(() => {
         setCopiedGuestProfileLinkId((currentProfileId) =>
+          currentProfileId === profile.id ? null : currentProfileId,
+        );
+      }, 1800);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    }
+  }
+
+  async function handleCopyGuestReminderEmail(profile: GuestProfile) {
+    try {
+      await navigator.clipboard.writeText(buildGuestReminderEmailText(profile));
+      setActionError(null);
+      setCopiedGuestReminderEmailId(profile.id);
+
+      window.setTimeout(() => {
+        setCopiedGuestReminderEmailId((currentProfileId) =>
+          currentProfileId === profile.id ? null : currentProfileId,
+        );
+      }, 1800);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    }
+  }
+
+  async function handleCopyGuestShortText(profile: GuestProfile) {
+    try {
+      await navigator.clipboard.writeText(buildGuestReminderTextMessage(profile));
+      setActionError(null);
+      setCopiedGuestShortTextId(profile.id);
+
+      window.setTimeout(() => {
+        setCopiedGuestShortTextId((currentProfileId) =>
           currentProfileId === profile.id ? null : currentProfileId,
         );
       }, 1800);
@@ -7431,6 +7542,15 @@ export function ShowPage({
           </div>
 
           <div className="print-hidden flex flex-wrap gap-3">
+            {isAdminView ? (
+              <button
+                type="button"
+                onClick={handleCopyBandSetlistLink}
+                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+              >
+                {copiedBandSetlistLink ? "Band setlist link copied!" : "Copy Band Setlist Link"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => handlePrint("stage")}
@@ -7484,7 +7604,20 @@ export function ShowPage({
                     </div>
                   ) : (
                     <ol className="flex list-decimal flex-col gap-4 pl-6">
-                      {section.songs.map((song) => (
+                      {section.songs.map((song) => {
+                        const librarySong =
+                          song.source_type === "library" && song.song_id
+                            ? songLibraryById[song.song_id] ?? null
+                            : null;
+                        const setlistSongChartUrl = normalizeChartUrl(librarySong?.chart_url);
+                        const hasSetlistSongLyrics = Boolean(librarySong?.lyrics?.trim());
+                        const setlistSongMp3Path = getSetlistSongMp3Path(
+                          song,
+                          songLibrary,
+                          pendingSongs,
+                        );
+
+                        return (
                         <li key={song.id} className="pl-1">
                           <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
                             <p className="text-base font-medium text-stone-900 sm:text-lg">
@@ -7503,12 +7636,34 @@ export function ShowPage({
                               </p>
                             ) : null}
 
-                            {getSetlistSongMp3Path(song, songLibrary, pendingSongs) ? (
-                              <div className="mt-3">
+                            {hasSetlistSongLyrics || setlistSongChartUrl || setlistSongMp3Path ? (
+                              <div className="print-hidden mt-3 flex flex-wrap items-center gap-2">
+                                {hasSetlistSongLyrics && song.song_id ? (
+                                  <Link
+                                    href={`/songs/${song.song_id}`}
+                                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Lyrics
+                                  </Link>
+                                ) : null}
+                                {setlistSongChartUrl ? (
+                                  <a
+                                    href={setlistSongChartUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Chart
+                                  </a>
+                                ) : null}
+                                {setlistSongMp3Path ? (
+                                  <div className="min-w-0">
                                 <SongMp3DownloadButton
                                   title={song.title}
-                                  mp3Path={getSetlistSongMp3Path(song, songLibrary, pendingSongs)}
+                                  mp3Path={setlistSongMp3Path}
                                 />
+                                  </div>
+                                ) : null}
                               </div>
                             ) : null}
 
@@ -7624,7 +7779,8 @@ export function ShowPage({
                             ) : null}
                           </div>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ol>
                   )}
                 </section>
@@ -8232,6 +8388,26 @@ export function ShowPage({
                             {copiedGuestProfileLinkId === profile.id
                               ? "Copied Guest Link"
                               : "Copy Guest Link"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCopyGuestReminderEmail(profile)}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                          >
+                            {copiedGuestReminderEmailId === profile.id
+                              ? "Reminder Email Copied!"
+                              : "Copy Reminder Email"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCopyGuestShortText(profile)}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                          >
+                            {copiedGuestShortTextId === profile.id
+                              ? "Short Text Copied!"
+                              : "Copy Short Text"}
                           </button>
 
                           <button
