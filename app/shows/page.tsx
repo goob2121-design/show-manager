@@ -1273,9 +1273,6 @@ export default function ShowsDashboardPage() {
                   <div className="w-fit self-start rounded-full border border-white/15 bg-black/15 px-3 py-1 text-[11px] font-medium tracking-[0.12em] text-emerald-50/80 sm:self-end">
                     {stageflowDashboardVersion}
                   </div>
-                  <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm text-emerald-50 backdrop-blur">
-                    Dashboard access stays protected by the admin password gate.
-                  </div>
                 </div>
               </div>
             </div>
@@ -1632,9 +1629,13 @@ export default function ShowsDashboardPage() {
                                   <p className="text-base font-semibold text-stone-900 dark:text-slate-100">
                                     {show.name}
                                   </p>
-                                  <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
-                                    {formatShowDate(show.show_date)}
-                                  </p>
+                                  <div className="mt-1 flex flex-col gap-1 text-sm text-stone-600 dark:text-slate-300">
+                                    <p>{formatShowDate(show.show_date)}</p>
+                                    {show.venue ? <p>{show.venue}</p> : null}
+                                    <p className="text-xs uppercase tracking-[0.12em] text-stone-500 dark:text-slate-400">
+                                      {show.slug}
+                                    </p>
+                                  </div>
                                 </div>
                                 <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 dark:bg-slate-950 dark:text-slate-300">
                                   {show.id === currentShow.id ? "Next" : "Upcoming"}

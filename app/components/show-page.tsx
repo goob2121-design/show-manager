@@ -5849,6 +5849,15 @@ export function ShowPage({
 
             <div className="rounded-3xl border border-emerald-900/60 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-5 py-5 text-slate-100 shadow-sm sm:px-6">
               <div className="mx-auto flex max-w-4xl flex-col gap-4 text-center">
+                <div className="flex justify-center">
+                  <Image
+                    src="/cmms-logo.png"
+                    alt="Cumberland Mountain Music Show logo"
+                    width={360}
+                    height={120}
+                    className="h-auto max-h-[90px] w-full max-w-[280px] object-contain sm:max-h-[110px] sm:max-w-[340px]"
+                  />
+                </div>
                 {isPrivateGuestPortal && privateGuestWelcomeInformation ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-left">
                     <div className="mt-3 flex flex-col gap-4 text-sm leading-7 text-slate-100">
