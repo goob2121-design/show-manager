@@ -132,6 +132,70 @@ html.dark select {
   color-scheme: dark;
 }
 
+@layer components {
+  :is(button, a).bg-emerald-700 {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 10px 24px rgba(5, 20, 15, 0.18);
+  }
+
+  :is(button, a).bg-stone-800 {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 10px 22px rgba(8, 17, 31, 0.18);
+  }
+
+  :is(button, a).bg-rose-700 {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 10px 22px rgba(61, 18, 28, 0.18);
+  }
+
+  :is(button, a).border-stone-300.bg-white {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 8px 20px rgba(15, 23, 42, 0.06);
+  }
+
+  html.dark :is(button, a).border-stone-300.bg-white {
+    background-color: #162233 !important;
+    border-color: #364861 !important;
+    color: #e7edf5 !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 12px 24px rgba(2, 6, 23, 0.22);
+  }
+
+  html.dark :is(button, a).bg-stone-800 {
+    background-color: #1a2435 !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 12px 24px rgba(2, 6, 23, 0.24);
+  }
+
+  html.dark :is(button, a).bg-rose-700 {
+    background-color: #9d3148 !important;
+  }
+
+  html.dark :is(button, a).bg-emerald-700 {
+    background-color: #0f8b63 !important;
+  }
+
+  @media (hover: hover) {
+    :is(button, a).bg-emerald-700:hover,
+    :is(button, a).bg-stone-800:hover,
+    :is(button, a).bg-rose-700:hover,
+    :is(button, a).border-stone-300.bg-white:hover {
+      filter: brightness(1.04);
+    }
+  }
+
+  :is(button, a):focus-visible {
+    outline: 2px solid rgba(16, 185, 129, 0.45);
+    outline-offset: 2px;
+  }
+}
+
 .print-only {
   display: none;
 }

@@ -59,8 +59,8 @@ export function AdminQuickNav({ slug, currentView, accessSlug = slug }: AdminQui
               href={href}
               className={`rounded-full px-3 py-1.5 transition ${
                 isActive
-                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200"
-                  : "bg-white text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:bg-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+                  ? "border border-emerald-600 bg-emerald-700 text-white shadow-sm hover:bg-emerald-600 dark:border-emerald-500 dark:bg-emerald-700 dark:text-white dark:hover:bg-emerald-600"
+                  : "border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
               }`}
             >
               {link.label}
@@ -71,14 +71,14 @@ export function AdminQuickNav({ slug, currentView, accessSlug = slug }: AdminQui
           href={chartBuilderUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded-full bg-white px-3 py-1.5 text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 dark:bg-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+          className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
         >
           ChartBuilder
         </a>
         <button
           type="button"
           onClick={handleLogout}
-          className="rounded-full bg-white px-3 py-1.5 text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 dark:bg-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+          className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
         >
           Logout
         </button>

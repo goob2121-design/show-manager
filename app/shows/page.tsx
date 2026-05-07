@@ -681,6 +681,60 @@ export default function ShowsDashboardPage() {
     }
   }
 
+  async function handleDeleteShow(show: ShowRecord) {
+    const showDateLabel = formatShowDate(show.show_date);
+    const confirmation = window.prompt(
+      `Type DELETE to permanently delete "${show.name}" (${showDateLabel}).`,
+      "",
+    );
+
+    if (confirmation !== "DELETE") {
+      if (confirmation !== null) {
+        setErrorMessage('Show deletion cancelled. Type "DELETE" exactly to confirm.');
+      }
+
+      return;
+    }
+
+    setErrorMessage(null);
+    setActiveShowActionId(show.id);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from("shows").delete().eq("id", show.id);
+
+      if (error) {
+        console.error("Failed to delete show.", error);
+        throw error;
+      }
+
+      setShows((currentShows) => currentShows.filter((currentShow) => currentShow.id !== show.id));
+
+      if (editingShowId === show.id) {
+        cancelEditingShow();
+      }
+
+      if (duplicatingShowId === show.id) {
+        cancelDuplicatingShow();
+      }
+
+      if (expandedShowId === show.id) {
+        setExpandedShowId(null);
+      }
+
+      if (openCopyMenuShowId === show.id) {
+        setOpenCopyMenuShowId(null);
+      }
+
+      await loadShows();
+    } catch (error) {
+      console.error("Failed to delete show.", error);
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveShowActionId(null);
+    }
+  }
+
   async function handleDuplicateShow(event: FormEvent<HTMLFormElement>, sourceShow: ShowRecord) {
     event.preventDefault();
 
@@ -1049,7 +1103,9 @@ export default function ShowsDashboardPage() {
     return (
       <article
         key={show.id}
-        className={`rounded-3xl border p-5 shadow-sm transition duration-200 hover:shadow-lg sm:p-6 ${tone.card}`}
+        className={`relative overflow-visible rounded-3xl border p-5 shadow-sm transition duration-200 hover:shadow-lg sm:p-6 ${
+          isCopyMenuOpen ? "z-30" : ""
+        } ${tone.card}`}
       >
         {isEditing
           ? renderEditForm(
@@ -1102,7 +1158,7 @@ export default function ShowsDashboardPage() {
                 </div>
 
                 {isExpanded ? (
-                  <div className={`mt-5 grid gap-4 border-t pt-5 ${tone.divider}`}>
+                  <div className={`mt-5 grid gap-4 overflow-visible border-t pt-5 ${tone.divider}`}>
                     <div className="flex flex-wrap gap-3">
                       <Link
                         href={`/admin/${show.slug}`}
@@ -1142,21 +1198,19 @@ export default function ShowsDashboardPage() {
                       </Link>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
-                      <div className="relative">
+                    <div className="flex flex-wrap gap-3 overflow-visible">
+                      <div className="relative min-w-[11rem] flex-1 sm:flex-none">
                         <button
                           type="button"
                           onClick={(event) => handleToggleCopyMenu(event, show.id)}
-                          className="flex min-h-12 w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                          className="flex min-h-12 w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:min-w-[11rem]"
                         >
                           Copy Links
                         </button>
 
                         {isCopyMenuOpen ? (
                           <div
-                            className={`absolute left-0 z-20 w-full min-w-[12rem] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                              copyMenuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2"
-                            }`}
+                            className="absolute bottom-full left-0 z-50 min-w-[12rem] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg mb-2 dark:border-slate-700 dark:bg-slate-900"
                           >
                             <button
                               type="button"
@@ -1193,14 +1247,14 @@ export default function ShowsDashboardPage() {
                       <button
                         type="button"
                         onClick={() => startEditingShow(show)}
-                        className="flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        className="flex min-h-12 min-w-[9rem] flex-1 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:flex-none"
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => startDuplicatingShow(show)}
-                        className="flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        className="flex min-h-12 min-w-[9rem] flex-1 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:flex-none"
                       >
                         Duplicate
                       </button>
@@ -1208,13 +1262,21 @@ export default function ShowsDashboardPage() {
                         type="button"
                         onClick={() => handleSetArchived(show.id, !isArchived)}
                         disabled={activeShowActionId === show.id}
-                        className={`flex min-h-12 items-center justify-center rounded-xl px-4 py-2.5 text-center text-sm font-semibold text-white transition disabled:cursor-not-allowed ${
+                        className={`flex min-h-12 min-w-[9rem] flex-1 items-center justify-center rounded-xl px-4 py-2.5 text-center text-sm font-semibold text-white transition disabled:cursor-not-allowed sm:flex-none ${
                           isArchived
                             ? "bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400"
                             : "bg-stone-800 hover:bg-black disabled:bg-stone-500"
                         }`}
                       >
                         {isArchived ? "Restore" : "Archive"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteShow(show)}
+                        disabled={activeShowActionId === show.id}
+                        className="flex min-h-12 min-w-[9rem] flex-1 items-center justify-center rounded-xl bg-rose-700 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-rose-400 sm:flex-none"
+                      >
+                        Delete Show
                       </button>
                     </div>
                   </div>
