@@ -5616,6 +5616,12 @@ export function ShowPage({
           "Concessions are usually available before the show, including pizza, hot dogs, water, soft drinks, and coffee. There are also several restaurants within walking distance of the Cumberland Gap Convention Center.",
           "Guests are welcome to bring merchandise to sell during the event.",
         ],
+        stageAndSoundInformation: [
+          "Our shows typically use a traditional acoustic-style microphone setup featuring multiple condenser microphones for a natural, intimate live sound that works especially well for bluegrass, gospel, and acoustic music.",
+          "Because of this setup, floor monitors are sometimes limited in order to maintain the best possible sound quality and reduce feedback. In many cases, performers work directly around the microphones much like a traditional live acoustic stage setup.",
+          "In-ear monitor support is available for guests who prefer to use their own earbuds or in-ear monitors. Wireless body packs are provided by the show. A dedicated vocal monitor can also be arranged in some situations if needed.",
+          "If you have specific stage or monitoring needs, please feel free to let us know ahead of time so we can prepare as best as possible.",
+        ],
       }
     : null;
   const guestSingerName =
@@ -6093,6 +6099,14 @@ export function ShowPage({
                         <h4 className="text-sm font-semibold text-emerald-100">Show Information</h4>
                         {privateGuestWelcomeInformation.showInformation.map((detail) => (
                           <p key={detail}>&bull; {detail}</p>
+                        ))}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-sm font-semibold text-emerald-100">
+                          Stage &amp; Sound Information
+                        </h4>
+                        {privateGuestWelcomeInformation.stageAndSoundInformation.map((detail) => (
+                          <p key={detail}>{detail}</p>
                         ))}
                       </div>
                     </div>
