@@ -700,12 +700,29 @@ export default function ShowsDashboardPage() {
     setActiveShowActionId(show.id);
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.from("shows").delete().eq("id", show.id);
+      const response = await fetch("/api/shows/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          showId: show.id,
+        }),
+      });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        data?: Array<{ id?: string }>;
+        error?: string;
+        details?: unknown;
+      };
 
-      if (error) {
-        console.error("Failed to delete show.", error);
-        throw error;
+      if (!response.ok || !payload.success) {
+        console.error("Failed to delete show.", payload.details ?? payload.error ?? payload);
+        throw new Error(payload.error || "Failed to delete show.");
+      }
+
+      if (!payload.data || payload.data.length === 0) {
+        throw new Error("No show was deleted.");
       }
 
       setShows((currentShows) => currentShows.filter((currentShow) => currentShow.id !== show.id));
