@@ -77,7 +77,15 @@ type SetlistSong = SetlistEntry & {
 };
 
 type PrintMode = "stage" | "band" | "standard";
-type AdminTab = "setlist" | "songs" | "guests" | "promo-materials" | "sponsors" | "mc-builder" | "show-details";
+type AdminTab =
+  | "overview"
+  | "setlist"
+  | "songs"
+  | "guests"
+  | "promo-materials"
+  | "sponsors"
+  | "mc-builder"
+  | "show-details";
 type BandTab = "setlist" | "songs" | "itinerary" | "promo-materials";
 type GuestTab = "welcome" | "songs" | "artist-info" | "itinerary" | "promo-materials";
 type SponsorAdminTab = "library" | "show";
@@ -88,6 +96,7 @@ type SetlistSectionConfig = {
 };
 
 const adminTabItems: Array<{ key: AdminTab; label: string }> = [
+  { key: "overview", label: "Overview" },
   { key: "setlist", label: "Setlist" },
   { key: "songs", label: "Songs" },
   { key: "guests", label: "Guests" },
@@ -207,6 +216,7 @@ const promoMaterialCategoryOptions: Array<{
 ];
 
 const defaultSingerName = "CMMS Band";
+const stageflowPortalVersion = "StageFlow v0.9.15";
 const SONG_AUDIO_BUCKET = "promo-materials";
 const MAX_SONG_MP3_BYTES = 30 * 1024 * 1024;
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
@@ -2101,7 +2111,7 @@ export function ShowPage({
   const requestedAdminTab = normalizeAdminTab(initialAdminTab);
   const [viewMode, setViewMode] = useState<ViewMode>(initialRole);
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(
-    requestedAdminTab ?? "setlist",
+    requestedAdminTab ?? "overview",
   );
   const [activeBandTab, setActiveBandTab] = useState<BandTab>("setlist");
   const [activeGuestTab, setActiveGuestTab] = useState<GuestTab>("welcome");
@@ -2307,6 +2317,31 @@ export function ShowPage({
         return usageCounts;
       }, {}),
     [setlist],
+  );
+  const submittedGuestSongsCount = useMemo(
+    () =>
+      pendingSongs.filter(
+        (song) => normalizeSubmittedByRole(song.submitted_by_role) === "guest",
+      ).length,
+    [pendingSongs],
+  );
+  const guestsMissingSongsCount = useMemo(
+    () =>
+      guestProfiles.filter(
+        (profile) => getGuestProfilePortalStatus(profile, pendingSongs).submittedSongsCount === 0,
+      ).length,
+    [guestProfiles, pendingSongs],
+  );
+  const guestsMissingPromoInfoCount = useMemo(
+    () =>
+      guestProfiles.filter(
+        (profile) => !profile.short_bio?.trim() || !profile.photo_url?.trim(),
+      ).length,
+    [guestProfiles],
+  );
+  const unconfirmedGuestsCount = useMemo(
+    () => guestProfiles.filter((profile) => !profile.is_confirmed).length,
+    [guestProfiles],
   );
 
   function canEditPoolSong() {
@@ -2650,7 +2685,7 @@ export function ShowPage({
 
   useEffect(() => {
     if (viewMode === "admin") {
-      setActiveAdminTab(requestedAdminTab ?? "setlist");
+      setActiveAdminTab(requestedAdminTab ?? "overview");
     }
 
     if (viewMode === "band") {
@@ -2782,6 +2817,19 @@ export function ShowPage({
     setSelectedGuestProfileId(profileId);
     setGuestPhotoFile(null);
     setGuestProfileFormState(buildGuestProfileFormStateFromProfile(profileToEdit));
+  }
+
+  function startEditingAdminGuestArtistInfo(profileId: string) {
+    startEditingGuestProfile(profileId);
+
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        document.getElementById("admin-guest-artist-info-form")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 0);
+    }
   }
 
   function resetGuestProfileForm() {
@@ -5628,7 +5676,7 @@ export function ShowPage({
     : [];
 
   const activeAdminTabLabel =
-    adminTabItems.find((tab) => tab.key === activeAdminTab)?.label ?? "Setlist";
+    adminTabItems.find((tab) => tab.key === activeAdminTab)?.label ?? "Overview";
   const activeBandTabLabel =
     bandTabItems.find((tab) => tab.key === activeBandTab)?.label ?? "Setlist";
   const activeGuestTabLabel =
@@ -5773,7 +5821,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-3 xl:grid-cols-7"
+              className="flex flex-nowrap gap-4 overflow-x-auto rounded-2xl bg-stone-100 p-2 whitespace-nowrap sm:justify-center"
               role="tablist"
               aria-label="Admin portal sections"
             >
@@ -5784,7 +5832,7 @@ export function ShowPage({
                   role="tab"
                   aria-selected={activeAdminTab === tab.key}
                   onClick={() => setActiveAdminTab(tab.key)}
-                  className={`rounded-xl px-3 py-3 text-sm font-semibold transition ${
+                  className={`shrink-0 rounded-2xl px-6 py-4 text-base font-semibold leading-none transition ${
                     activeAdminTab === tab.key
                       ? "bg-emerald-700 text-white shadow-sm"
                       : "bg-white text-stone-700 hover:bg-stone-50"
@@ -5798,6 +5846,173 @@ export function ShowPage({
             <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
               Active section: <span className="font-semibold text-emerald-700">{activeAdminTabLabel}</span>
             </div>
+          </section>
+        ) : null}
+
+        {isAdminView && activeAdminTab === "overview" ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-stone-900">
+                  Admin Overview
+                </h2>
+                <p className="text-sm text-stone-600">
+                  Quick show snapshot and shortcuts into the existing admin tools.
+                </p>
+              </div>
+              <div className="w-fit rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium tracking-[0.12em] text-stone-500">
+                {stageflowPortalVersion}
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                    Current Show
+                  </p>
+                  <h3 className="text-xl font-semibold text-stone-900">{show.name}</h3>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Show Date
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">{formatShowDate(show.show_date)}</p>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Venue
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">{show.venue || "Venue not set"}</p>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Guests
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">{guestProfiles.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Setlist Entries
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">{setlist.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Guest Songs Submitted
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">{submittedGuestSongsCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Slug
+                    </p>
+                    <p className="mt-1 break-all text-sm text-stone-700">{show.slug}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                    Needs Attention
+                  </p>
+                  <h3 className="text-lg font-semibold text-stone-900">At a Glance</h3>
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Guests Missing Songs
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">{guestsMissingSongsCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Guests Missing Bio or Photo
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">{guestsMissingPromoInfoCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Unconfirmed Guests
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">{unconfirmedGuestsCount}</p>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                  Quick Actions
+                </p>
+                <h3 className="text-lg font-semibold text-stone-900">Jump Into a Section</h3>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveAdminTab("setlist")}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
+                >
+                  <p className="text-sm font-semibold text-stone-900">Setlist</p>
+                  <p className="mt-1 text-sm text-stone-600">Open the official setlist and print tools.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAdminTab("guests")}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
+                >
+                  <p className="text-sm font-semibold text-stone-900">Guests</p>
+                  <p className="mt-1 text-sm text-stone-600">Review bios, links, and guest readiness.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAdminTab("songs")}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
+                >
+                  <p className="text-sm font-semibold text-stone-900">Songs</p>
+                  <p className="mt-1 text-sm text-stone-600">Manage the song library and show suggestions.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAdminTab("show-details")}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
+                >
+                  <p className="text-sm font-semibold text-stone-900">Itinerary</p>
+                  <p className="mt-1 text-sm text-stone-600">Open timing, venue, and show logistics.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAdminTab("promo-materials")}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
+                >
+                  <p className="text-sm font-semibold text-stone-900">Promo Materials</p>
+                  <p className="mt-1 text-sm text-stone-600">View and manage flyers, graphics, and assets.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAdminTab("setlist")}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
+                >
+                  <p className="text-sm font-semibold text-stone-900">Print Center</p>
+                  <p className="mt-1 text-sm text-stone-600">Use the existing print buttons in the setlist tools.</p>
+                </button>
+                <a
+                  href="https://charts.pinnaclestudiotn.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
+                >
+                  <p className="text-sm font-semibold text-stone-900">ChartBuilder</p>
+                  <p className="mt-1 text-sm text-stone-600">Open the external chart tool in a new tab.</p>
+                </a>
+              </div>
+            </section>
           </section>
         ) : null}
 
@@ -8100,6 +8315,177 @@ export function ShowPage({
 
             <SectionLoadWarning message={dataSectionErrors.guestProfiles} />
 
+            {editingGuestProfileId ? (
+              <form
+                id="admin-guest-artist-info-form"
+                className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+                onSubmit={handleGuestProfileSubmit}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-stone-900">Edit Artist Info</h3>
+                    <p className="text-sm text-stone-600">
+                      Update this guest&apos;s promo bio, links, and photo from the admin portal.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetGuestProfileForm}
+                    className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Name
+                    <input
+                      type="text"
+                      name="name"
+                      value={guestProfileFormState.name}
+                      onChange={handleGuestProfileChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Guest name"
+                      required
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Hometown
+                    <input
+                      type="text"
+                      name="hometown"
+                      value={guestProfileFormState.hometown}
+                      onChange={handleGuestProfileChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="City, State"
+                    />
+                  </label>
+                </div>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Short Bio
+                  <textarea
+                    name="shortBio"
+                    value={guestProfileFormState.shortBio}
+                    onChange={handleGuestProfileChange}
+                    className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="Short promo bio"
+                    required
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Full Bio
+                  <textarea
+                    name="fullBio"
+                    value={guestProfileFormState.fullBio}
+                    onChange={handleGuestProfileChange}
+                    className="min-h-32 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="Optional longer bio"
+                  />
+                </label>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Instruments
+                    <input
+                      type="text"
+                      name="instruments"
+                      value={guestProfileFormState.instruments}
+                      onChange={handleGuestProfileChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Banjo, guitar, vocals"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Email
+                    <input
+                      type="email"
+                      name="email"
+                      value={guestProfileFormState.email}
+                      onChange={handleGuestProfileChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="name@example.com"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Website
+                    <input
+                      type="text"
+                      name="website"
+                      value={guestProfileFormState.website}
+                      onChange={handleGuestProfileChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="https://your-site.com"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Facebook
+                    <input
+                      type="text"
+                      name="facebook"
+                      value={guestProfileFormState.facebook}
+                      onChange={handleGuestProfileChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Facebook profile or page"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Instagram
+                    <input
+                      type="text"
+                      name="instagram"
+                      value={guestProfileFormState.instagram}
+                      onChange={handleGuestProfileChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Instagram handle or URL"
+                    />
+                  </label>
+                </div>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Photo Upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleGuestPhotoChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
+                  />
+                </label>
+
+                <label className="flex items-start gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700">
+                  <input
+                    type="checkbox"
+                    name="permissionGranted"
+                    checked={guestProfileFormState.permissionGranted}
+                    onChange={handleGuestProfileChange}
+                    className="mt-1"
+                  />
+                  <span>I give permission to use this for promotion</span>
+                </label>
+
+                <div className="flex justify-start">
+                  <button
+                    type="submit"
+                    disabled={isSavingGuestProfile}
+                    className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                  >
+                    {isSavingGuestProfile ? "Saving Artist Info..." : "Save Artist Info Changes"}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+
             {guestProfiles.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
                 No guest profiles submitted yet.
@@ -8388,6 +8774,14 @@ export function ShowPage({
                               No photo
                             </div>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() => startEditingAdminGuestArtistInfo(profile.id)}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                          >
+                            Edit Artist Info
+                          </button>
 
                           <button
                             type="button"

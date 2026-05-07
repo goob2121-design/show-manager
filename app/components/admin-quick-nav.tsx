@@ -21,6 +21,7 @@ const quickNavLinks = [
   { key: "band", label: "Band", href: (slug: string) => `/band/${slug}` },
   { key: "guest", label: "Guest", href: (slug: string) => `/guest/${slug}` },
 ] as const;
+const chartBuilderUrl = "https://charts.pinnaclestudiotn.com";
 
 export function AdminQuickNav({ slug, currentView, accessSlug = slug }: AdminQuickNavProps) {
   const isVisible = useSyncExternalStore(
@@ -66,6 +67,14 @@ export function AdminQuickNav({ slug, currentView, accessSlug = slug }: AdminQui
             </Link>
           );
         })}
+        <a
+          href={chartBuilderUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-full bg-white px-3 py-1.5 text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 dark:bg-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+        >
+          ChartBuilder
+        </a>
         <button
           type="button"
           onClick={handleLogout}
