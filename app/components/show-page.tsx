@@ -305,6 +305,23 @@ type McFlowRenderableItem =
       marker: "before-intermission" | "after-intermission" | "closing" | "flexible";
     };
 
+type McSponsorPlacementRenderableItem =
+  | {
+      kind: "song";
+      id: string;
+      song: SetlistSong;
+    }
+  | {
+      kind: "sponsor";
+      id: string;
+      sponsor: ShowSponsor;
+    }
+  | {
+      kind: "marker";
+      id: string;
+      marker: "before-intermission" | "after-intermission" | "closing" | "flexible";
+    };
+
 const initialSponsorLibraryFormState: SponsorLibraryFormState = {
   name: "",
   shortMessage: "",
@@ -371,6 +388,377 @@ function formatShowDateWithOrdinal(showDate: string | null) {
   }).format(date);
 
   return `${month} ${day}${ordinalSuffix}`;
+}
+
+function normalizeMcPlacementName(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function getMcFlowMarkerLabel(
+  marker: "before-intermission" | "after-intermission" | "closing" | "flexible",
+) {
+  switch (marker) {
+    case "before-intermission":
+      return "Before Intermission";
+    case "after-intermission":
+      return "After Intermission";
+    case "closing":
+      return "Closing Section";
+    case "flexible":
+      return "Flexible Placement";
+    default:
+      return "MC Marker";
+  }
+}
+
+function formatMcBlockSectionLabel(section: SetSection) {
+  switch (section) {
+    case "set1":
+      return "Set 1";
+    case "set2":
+      return "Set 2";
+    case "encore":
+      return "Encore";
+    default:
+      return "Set";
+  }
+}
+
+function sortShowSponsorsByPlacement(sponsors: ShowSponsor[]) {
+  return [...sponsors].sort((sponsorA, sponsorB) => {
+    if (sponsorA.placement_order !== sponsorB.placement_order) {
+      return sponsorA.placement_order - sponsorB.placement_order;
+    }
+
+    return sponsorA.created_at.localeCompare(sponsorB.created_at);
+  });
+}
+
+function findSetlistSongIndexByAnchorSongId(songs: SetlistSong[], anchorSongId: string | null) {
+  if (!anchorSongId) {
+    return null;
+  }
+
+  const matchIndex = songs.findIndex((song) => song.id === anchorSongId);
+  return matchIndex >= 0 ? matchIndex : null;
+}
+
+function findMatchingSetlistSongIndex(
+  songs: SetlistSong[],
+  linkedPerformer: string | null,
+  fallbackIndex: number,
+) {
+  if (songs.length === 0) {
+    return null;
+  }
+
+  const normalizedPerformer = normalizeMcPlacementName(linkedPerformer);
+
+  if (!normalizedPerformer) {
+    return fallbackIndex;
+  }
+
+  const exactMatchIndex = songs.findIndex(
+    (song) => normalizeMcPlacementName(song.artist) === normalizedPerformer,
+  );
+
+  if (exactMatchIndex >= 0) {
+    return exactMatchIndex;
+  }
+
+  const partialMatchIndex = songs.findIndex((song) => {
+    const normalizedSongPerformer = normalizeMcPlacementName(song.artist);
+
+    return (
+      normalizedSongPerformer.includes(normalizedPerformer) ||
+      normalizedPerformer.includes(normalizedSongPerformer)
+    );
+  });
+
+  if (partialMatchIndex >= 0) {
+    return partialMatchIndex;
+  }
+
+  return fallbackIndex;
+}
+
+function buildAdminMcSponsorPlacementItems(setlist: SetlistSong[], sponsors: ShowSponsor[]) {
+  const orderedSongs = sortSetlistSongs(setlist);
+  const orderedSponsors = sortShowSponsorsByPlacement(sponsors);
+  const beforeBySongId: Record<string, ShowSponsor[]> = {};
+  const afterBySongId: Record<string, ShowSponsor[]> = {};
+  const beforeIntermission: ShowSponsor[] = [];
+  const afterIntermission: ShowSponsor[] = [];
+  const closing: ShowSponsor[] = [];
+  const flexible: ShowSponsor[] = [];
+
+  function appendSponsor(
+    lookup: Record<string, ShowSponsor[]>,
+    songId: string,
+    sponsor: ShowSponsor,
+  ) {
+    if (!lookup[songId]) {
+      lookup[songId] = [];
+    }
+
+    lookup[songId].push(sponsor);
+  }
+
+  orderedSponsors.forEach((sponsor) => {
+    const placementType = sponsor.placement_type;
+
+    if (placementType === "before_intermission") {
+      beforeIntermission.push(sponsor);
+      return;
+    }
+
+    if (placementType === "after_intermission") {
+      afterIntermission.push(sponsor);
+      return;
+    }
+
+    if (placementType === "closing") {
+      closing.push(sponsor);
+      return;
+    }
+
+    if (placementType === "before_performer") {
+      const targetIndex =
+        findSetlistSongIndexByAnchorSongId(orderedSongs, sponsor.mc_anchor_song_id) ??
+        findMatchingSetlistSongIndex(orderedSongs, sponsor.linked_performer, 0);
+
+      if (targetIndex === null) {
+        flexible.push(sponsor);
+        return;
+      }
+
+      appendSponsor(beforeBySongId, orderedSongs[targetIndex].id, sponsor);
+      return;
+    }
+
+    if (placementType === "after_performer") {
+      const targetIndex =
+        findSetlistSongIndexByAnchorSongId(orderedSongs, sponsor.mc_anchor_song_id) ??
+        findMatchingSetlistSongIndex(
+          orderedSongs,
+          sponsor.linked_performer,
+          Math.max(orderedSongs.length - 1, 0),
+        );
+
+      if (targetIndex === null) {
+        flexible.push(sponsor);
+        return;
+      }
+
+      appendSponsor(afterBySongId, orderedSongs[targetIndex].id, sponsor);
+      return;
+    }
+
+    flexible.push(sponsor);
+  });
+
+  const items: McSponsorPlacementRenderableItem[] = [];
+  const set1Songs = orderedSongs.filter((song) => song.section === "set1");
+  const set2Songs = orderedSongs.filter((song) => song.section === "set2");
+  const encoreSongs = orderedSongs.filter((song) => song.section === "encore");
+
+  function appendSongsWithSponsors(songs: SetlistSong[]) {
+    songs.forEach((song) => {
+      (beforeBySongId[song.id] ?? []).forEach((sponsor) => {
+        items.push({
+          kind: "sponsor",
+          id: `before-song-${song.id}-${sponsor.id}`,
+          sponsor,
+        });
+      });
+
+      items.push({
+        kind: "song",
+        id: song.id,
+        song,
+      });
+
+      (afterBySongId[song.id] ?? []).forEach((sponsor) => {
+        items.push({
+          kind: "sponsor",
+          id: `after-song-${song.id}-${sponsor.id}`,
+          sponsor,
+        });
+      });
+    });
+  }
+
+  appendSongsWithSponsors(set1Songs);
+
+  if (beforeIntermission.length > 0) {
+    items.push({
+      kind: "marker",
+      id: "placement-marker-before-intermission",
+      marker: "before-intermission",
+    });
+    beforeIntermission.forEach((sponsor) => {
+      items.push({
+        kind: "sponsor",
+        id: `before-intermission-${sponsor.id}`,
+        sponsor,
+      });
+    });
+  }
+
+  if (afterIntermission.length > 0) {
+    items.push({
+      kind: "marker",
+      id: "placement-marker-after-intermission",
+      marker: "after-intermission",
+    });
+    afterIntermission.forEach((sponsor) => {
+      items.push({
+        kind: "sponsor",
+        id: `after-intermission-${sponsor.id}`,
+        sponsor,
+      });
+    });
+  }
+
+  appendSongsWithSponsors(set2Songs);
+  appendSongsWithSponsors(encoreSongs);
+
+  if (closing.length > 0) {
+    items.push({
+      kind: "marker",
+      id: "placement-marker-closing",
+      marker: "closing",
+    });
+    closing.forEach((sponsor) => {
+      items.push({
+        kind: "sponsor",
+        id: `closing-${sponsor.id}`,
+        sponsor,
+      });
+    });
+  }
+
+  if (flexible.length > 0) {
+    items.push({
+      kind: "marker",
+      id: "placement-marker-flexible",
+      marker: "flexible",
+    });
+    flexible.forEach((sponsor) => {
+      items.push({
+        kind: "sponsor",
+        id: `flexible-${sponsor.id}`,
+        sponsor,
+      });
+    });
+  }
+
+  return items;
+}
+
+function getMcSponsorPlacementFromSongNeighbor(
+  neighbor: McSponsorPlacementRenderableItem,
+  direction: "up" | "down",
+) {
+  if (neighbor.kind === "song") {
+    return {
+      placement_type: direction === "up" ? "before_performer" : "after_performer",
+      mc_anchor_song_id: neighbor.song.id,
+      linked_performer: getDisplaySingerName(neighbor.song.artist),
+    };
+  }
+
+  if (neighbor.kind === "marker") {
+    if (neighbor.marker === "before-intermission") {
+      return {
+        placement_type: "before_intermission",
+        mc_anchor_song_id: null,
+        linked_performer: null,
+      };
+    }
+
+    if (neighbor.marker === "after-intermission") {
+      return {
+        placement_type: "after_intermission",
+        mc_anchor_song_id: null,
+        linked_performer: null,
+      };
+    }
+
+    if (neighbor.marker === "closing") {
+      return {
+        placement_type: "closing",
+        mc_anchor_song_id: null,
+        linked_performer: null,
+      };
+    }
+
+    return {
+      placement_type: null,
+      mc_anchor_song_id: null,
+      linked_performer: null,
+    };
+  }
+
+  return {
+    placement_type: neighbor.sponsor.placement_type,
+    mc_anchor_song_id: neighbor.sponsor.mc_anchor_song_id ?? null,
+    linked_performer: neighbor.sponsor.linked_performer ?? null,
+  };
+}
+
+function resolveMcSponsorPlacementFromSongFlow(
+  items: McSponsorPlacementRenderableItem[],
+  sponsorId: string,
+) {
+  const sponsorIndex = items.findIndex(
+    (item) => item.kind === "sponsor" && item.sponsor.id === sponsorId,
+  );
+
+  if (sponsorIndex < 0) {
+    return {
+      placement_type: null,
+      mc_anchor_song_id: null,
+      linked_performer: null,
+    };
+  }
+
+  const previousFixedItem = [...items.slice(0, sponsorIndex)]
+    .reverse()
+    .find((item) => item.kind === "song" || item.kind === "marker");
+  const nextFixedItem = items
+    .slice(sponsorIndex + 1)
+    .find((item) => item.kind === "song" || item.kind === "marker");
+
+  if (previousFixedItem?.kind === "song") {
+    return {
+      placement_type: "after_performer",
+      mc_anchor_song_id: previousFixedItem.song.id,
+      linked_performer: getDisplaySingerName(previousFixedItem.song.artist),
+    };
+  }
+
+  if (nextFixedItem?.kind === "song") {
+    return {
+      placement_type: "before_performer",
+      mc_anchor_song_id: nextFixedItem.song.id,
+      linked_performer: getDisplaySingerName(nextFixedItem.song.artist),
+    };
+  }
+
+  if (previousFixedItem?.kind === "marker") {
+    return getMcSponsorPlacementFromSongNeighbor(previousFixedItem, "down");
+  }
+
+  if (nextFixedItem?.kind === "marker") {
+    return getMcSponsorPlacementFromSongNeighbor(nextFixedItem, "up");
+  }
+
+  return {
+    placement_type: null,
+    mc_anchor_song_id: null,
+    linked_performer: null,
+  };
 }
 
 function getErrorMessage(error: unknown) {
@@ -2150,6 +2538,7 @@ export function ShowPage({
   const [promoMaterialEditFormState, setPromoMaterialEditFormState] =
     useState<PromoMaterialFormState>(initialPromoMaterialFormState);
   const [editingPromoMaterialFile, setEditingPromoMaterialFile] = useState<File | null>(null);
+  const [expandedMcBlockNoteIds, setExpandedMcBlockNoteIds] = useState<string[]>([]);
   const [editingPoolSongId, setEditingPoolSongId] = useState<string | null>(null);
   const [editingSetlistSongId, setEditingSetlistSongId] = useState<string | null>(null);
   const [editingLibrarySongId, setEditingLibrarySongId] = useState<string | null>(null);
@@ -2721,6 +3110,22 @@ export function ShowPage({
     () => buildAdminMcFlowItems(mcRunSections, mcRunSheetData),
     [mcRunSections, mcRunSheetData],
   );
+  const adminMcSponsorPlacementItems = useMemo(
+    () => buildAdminMcSponsorPlacementItems(setlist, showSponsors),
+    [setlist, showSponsors],
+  );
+  const populatedMcSections = useMemo(
+    () => mcRunSheetData.sectionItems.filter((section) => section.items.length > 0),
+    [mcRunSheetData],
+  );
+  const mcBlockLookup = useMemo(() => {
+    return mcRunSections
+      .flatMap((section) => section.blocks)
+      .reduce<Record<string, (typeof mcRunSections)[number]["blocks"][number]>>((lookup, block) => {
+        lookup[block.anchorSongId] = block;
+        return lookup;
+      }, {});
+  }, [mcRunSections]);
 
   useEffect(() => {
     setMcBlockNoteDrafts(buildBlockNoteDrafts(mcRunSections, mcBlockNotes));
@@ -3097,11 +3502,21 @@ export function ShowPage({
 
     setEditingShowSponsorId(sponsorId);
     setEditingShowSponsorFormState(buildShowSponsorAssignmentFormState(sponsorToEdit));
+    setActiveAdminTab("sponsors");
+    setActiveSponsorAdminTab("show");
   }
 
   function cancelEditingShowSponsor() {
     setEditingShowSponsorId(null);
     setEditingShowSponsorFormState(initialShowSponsorAssignmentFormState);
+  }
+
+  function toggleMcBlockNotes(anchorSongId: string) {
+    setExpandedMcBlockNoteIds((currentIds) =>
+      currentIds.includes(anchorSongId)
+        ? currentIds.filter((currentId) => currentId !== anchorSongId)
+        : [...currentIds, anchorSongId],
+    );
   }
 
   async function handleSaveShowSponsor(sponsorId: string) {
@@ -4138,6 +4553,109 @@ export function ShowPage({
 
     const movedSponsorPlacement = getMcSponsorPlacementFromNeighbor(neighborItem, direction);
 
+    const nextSponsors = showSponsors
+      .map((sponsor) => {
+        const nextOrder = sponsorSequence.findIndex((item) => item.sponsor.id === sponsor.id);
+
+        if (nextOrder < 0) {
+          return sponsor;
+        }
+
+        if (sponsor.id === sponsorId) {
+          return {
+            ...sponsor,
+            placement_order: nextOrder + 1,
+            placement_type: movedSponsorPlacement.placement_type,
+            mc_anchor_song_id: movedSponsorPlacement.mc_anchor_song_id,
+            linked_performer: movedSponsorPlacement.linked_performer,
+          };
+        }
+
+        return {
+          ...sponsor,
+          placement_order: nextOrder + 1,
+        };
+      })
+      .sort((sponsorA, sponsorB) => sponsorA.placement_order - sponsorB.placement_order);
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-${sponsorId}`);
+
+    try {
+      const supabase = createClient();
+
+      for (const sponsor of nextSponsors) {
+        const { error } = await supabase
+          .from("show_sponsors")
+          .update({
+            placement_order: sponsor.placement_order,
+            placement_type: sponsor.placement_type,
+            mc_anchor_song_id: sponsor.mc_anchor_song_id,
+            linked_performer: sponsor.linked_performer,
+          })
+          .eq("id", sponsor.id)
+          .eq("show_id", show.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      setShowSponsors(nextSponsors);
+      setMcStatusMessage("Sponsor flow order updated.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+      await loadShowData(false);
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleMoveMcSponsorBySong(sponsorId: string, direction: "up" | "down") {
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const currentIndex = adminMcSponsorPlacementItems.findIndex(
+      (item) => item.kind === "sponsor" && item.sponsor.id === sponsorId,
+    );
+
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= adminMcSponsorPlacementItems.length) {
+      return;
+    }
+
+    const currentItem = adminMcSponsorPlacementItems[currentIndex];
+    const neighborItem = adminMcSponsorPlacementItems[targetIndex];
+
+    if (!currentItem || currentItem.kind !== "sponsor" || !neighborItem) {
+      return;
+    }
+
+    const reorderedItems = [...adminMcSponsorPlacementItems];
+    [reorderedItems[currentIndex], reorderedItems[targetIndex]] = [
+      reorderedItems[targetIndex],
+      reorderedItems[currentIndex],
+    ];
+
+    const sponsorSequence = reorderedItems.filter(
+      (
+        item,
+      ): item is Extract<McSponsorPlacementRenderableItem, { kind: "sponsor" }> =>
+        item.kind === "sponsor",
+    );
+
+    const movedSponsorPlacement = resolveMcSponsorPlacementFromSongFlow(
+      reorderedItems,
+      sponsorId,
+    );
     const nextSponsors = showSponsors
       .map((sponsor) => {
         const nextOrder = sponsorSequence.findIndex((item) => item.sponsor.id === sponsor.id);
@@ -6304,8 +6822,8 @@ export function ShowPage({
               <div className="flex flex-col gap-1">
                 <h3 className="text-lg font-semibold text-stone-900">Sponsor Placement in MC Flow</h3>
                 <p className="text-sm text-stone-600">
-                  These reads appear inline in the run sheet below. Update exact placement in the
-                  Sponsors tab, then verify the result here in context.
+                  This ordered rundown follows the live setlist so sponsor reads can sit clearly
+                  between songs without changing the actual set order.
                 </p>
               </div>
 
@@ -6319,195 +6837,288 @@ export function ShowPage({
                 </button>
               </div>
 
-              {showSponsors.length === 0 ? (
+              {setlist.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                  No sponsors are assigned to this show yet.
+                  No official setlist is available yet, so the rundown can&apos;t show sponsor
+                  placement between songs.
                 </div>
               ) : (
                 <div className="grid gap-3">
-                  {showSponsors.map((sponsor) => (
-                    <article
-                      key={`mc-sponsor-${sponsor.id}`}
-                      className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
-                    >
-                      <div className="flex flex-col gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-base font-semibold text-stone-900">
-                            {sponsor.sponsor?.name ?? "Assigned sponsor"}
-                          </h4>
-                          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
-                            {formatSponsorPlacementType(sponsor.placement_type)}
-                          </span>
-                          <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
-                            Slot {sponsor.placement_order}
-                          </span>
-                        </div>
-                        {sponsor.linked_performer ? (
-                          <p className="text-sm text-stone-600">
-                            Linked performer: {sponsor.linked_performer}
+                  {adminMcSponsorPlacementItems.map((item, index) => {
+                    if (item.kind === "marker") {
+                      return (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-dashed border-stone-300 bg-stone-100/70 px-4 py-3"
+                        >
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600">
+                            {getMcFlowMarkerLabel(item.marker)}
                           </p>
-                        ) : null}
-                        {sponsor.custom_note ? (
-                          <p className="text-sm text-stone-600">MC note: {sponsor.custom_note}</p>
-                        ) : null}
-                        <p className="text-sm text-stone-700">{getSponsorReadText(sponsor)}</p>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
+                        </div>
+                      );
+                    }
 
-            <section className="flex flex-col gap-5">
-              <div className="flex flex-col gap-1">
-                <h3 className="text-lg font-semibold text-stone-900">MC Flow Preview</h3>
-                <p className="text-sm text-stone-600">
-                  Edit performer intro, sponsor mention, and transition notes directly in the flow.
-                </p>
-              </div>
+                    if (item.kind === "sponsor") {
+                      const sponsorIndex = adminMcSponsorPlacementItems.findIndex(
+                        (flowItem) =>
+                          flowItem.kind === "sponsor" && flowItem.sponsor.id === item.sponsor.id,
+                      );
+                      const canMoveUp = sponsorIndex > 0;
+                      const canMoveDown =
+                        sponsorIndex >= 0 &&
+                        sponsorIndex < adminMcSponsorPlacementItems.length - 1;
+                      const isMovingSponsor = activeSponsorActionId === `mc-${item.sponsor.id}`;
+                      const isEditingSponsor = activeSponsorActionId === `show-${item.sponsor.id}`;
 
-              <section className="flex flex-col gap-4">
-                <ScriptCard title="Opening Script" text={mcScriptFormState.openingScript} />
-              </section>
-
-              {mcRunSections.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                  No official setlist is available yet, so the MC flow is still empty.
-                </div>
-              ) : (
-                mcRunSheetData.sectionItems.map((section) => (
-                  <section key={`admin-mc-${section.key}`} className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-1">
-                      <h4 className="text-lg font-semibold text-stone-900">{section.title}</h4>
-                      <p className="text-sm text-stone-600">
-                        {section.items.filter((item) => item.kind === "block").length} performance{" "}
-                        {section.items.filter((item) => item.kind === "block").length === 1
-                          ? "block"
-                          : "blocks"}
-                      </p>
-                    </div>
-
-                    <div className="grid gap-4">
-                      {section.items.map((item) => {
-                        if (item.kind === "sponsor") {
-                          const sponsorIndex = adminMcFlowItems.findIndex(
-                            (flowItem) =>
-                              flowItem.kind === "sponsor" &&
-                              flowItem.sponsor.id === item.sponsor.id,
-                          );
-                          const canMoveUp = sponsorIndex > 0;
-                          const canMoveDown =
-                            sponsorIndex >= 0 && sponsorIndex < adminMcFlowItems.length - 1;
-
-                          return (
-                            <div key={item.id} className="grid gap-3">
+                      return (
+                        <div key={item.id} className="grid gap-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-200 text-sm font-semibold text-amber-950">
+                              {index + 1}
+                            </div>
+                            <div className="min-w-0 flex-1 grid gap-3">
                               <SponsorReadCard sponsor={item.sponsor} />
-                              <div className="flex flex-col gap-3 sm:flex-row">
+                              <div className="flex flex-wrap gap-3">
                                 <button
                                   type="button"
-                                  onClick={() => handleMoveMcSponsor(item.sponsor.id, "up")}
-                                  disabled={!canMoveUp || activeSponsorActionId === `mc-${item.sponsor.id}`}
+                                  onClick={() => handleMoveMcSponsorBySong(item.sponsor.id, "up")}
+                                  disabled={!canMoveUp || isMovingSponsor}
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Move Up
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleMoveMcSponsor(item.sponsor.id, "down")}
-                                  disabled={!canMoveDown || activeSponsorActionId === `mc-${item.sponsor.id}`}
+                                  onClick={() => handleMoveMcSponsorBySong(item.sponsor.id, "down")}
+                                  disabled={!canMoveDown || isMovingSponsor}
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Move Down
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingShowSponsor(item.sponsor.id)}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveShowSponsor(item.sponsor.id)}
+                                  disabled={isEditingSponsor}
+                                  className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                >
+                                  {isEditingSponsor ? "Removing..." : "Remove"}
+                                </button>
                               </div>
                             </div>
-                          );
-                        }
+                          </div>
+                        </div>
+                      );
+                    }
 
-                        const blockDraft = mcBlockNoteDrafts[item.block.anchorSongId] ?? {
+                    const priorSong = adminMcSponsorPlacementItems
+                      .slice(0, index)
+                      .reverse()
+                      .find(
+                        (
+                          flowItem,
+                        ): flowItem is Extract<McSponsorPlacementRenderableItem, { kind: "song" }> =>
+                          flowItem.kind === "song",
+                      );
+                    const shouldShowSectionHeader =
+                      !priorSong || priorSong.song.section !== item.song.section;
+                    const mcBlock = mcBlockLookup[item.song.id] ?? null;
+                    const blockDraft = mcBlock
+                      ? mcBlockNoteDrafts[mcBlock.anchorSongId] ?? {
                           introNote: "",
                           sponsorMention: "",
                           transitionNote: "",
-                        };
+                        }
+                      : null;
+                    const areMcBlockNotesExpanded = mcBlock
+                      ? expandedMcBlockNoteIds.includes(mcBlock.anchorSongId)
+                      : false;
 
-                        return (
-                          <div key={item.id} className="grid gap-4">
-                            <PerformerBlockCard
-                              block={item.block}
-                              blockDraft={blockDraft}
-                              upNext={item.upNext}
-                            />
+                    return (
+                      <div key={item.id} className="grid gap-3">
+                        {shouldShowSectionHeader ? (
+                          <div className="flex flex-col gap-1 pt-2">
+                            <h4 className="text-lg font-semibold text-stone-900">
+                              {formatMcBlockSectionLabel(item.song.section)}
+                            </h4>
+                            <p className="text-sm text-stone-600">
+                              Individual song anchors for sponsor placement
+                            </p>
+                          </div>
+                        ) : null}
 
-                            <div className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4 lg:grid-cols-3">
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Intro Note
-                                <textarea
-                                  value={blockDraft.introNote}
-                                  onChange={(event) =>
-                                    handleMcBlockDraftChange(
-                                      item.block.anchorSongId,
-                                      "introNote",
-                                      event.target.value,
-                                    )
-                                  }
-                                  className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  placeholder="Intro line before bringing this performer up"
-                                />
-                              </label>
-
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Sponsor Mention
-                                <textarea
-                                  value={blockDraft.sponsorMention}
-                                  onChange={(event) =>
-                                    handleMcBlockDraftChange(
-                                      item.block.anchorSongId,
-                                      "sponsorMention",
-                                      event.target.value,
-                                    )
-                                  }
-                                  className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  placeholder="Optional sponsor line tied to this performer"
-                                />
-                              </label>
-
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Transition Note
-                                <textarea
-                                  value={blockDraft.transitionNote}
-                                  onChange={(event) =>
-                                    handleMcBlockDraftChange(
-                                      item.block.anchorSongId,
-                                      "transitionNote",
-                                      event.target.value,
-                                    )
-                                  }
-                                  className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  placeholder="Changeover or wrap-up note after this block"
-                                />
-                              </label>
+                        <article className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-900">
+                                {item.song.position}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                                    Song
+                                  </span>
+                                  {item.song.source_type === "guest" ? (
+                                    <span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-900">
+                                      Guest
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <h5 className="mt-2 text-base font-semibold text-stone-900">
+                                  {item.song.title}
+                                  {item.song.song_key ? ` (${item.song.song_key})` : ""}
+                                </h5>
+                                <p className="mt-1 text-sm text-stone-600">
+                                  Performer: {getDisplaySingerName(item.song.artist)}
+                                </p>
+                              </div>
                             </div>
 
-                            <div className="flex justify-start">
+                            <div className="flex flex-wrap gap-3">
                               <button
                                 type="button"
-                                onClick={() => handleSaveMcBlockNote(item.block.anchorSongId)}
-                                disabled={activeMcBlockActionId === item.block.anchorSongId}
-                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                onClick={() => {
+                                  setShowSponsorAssignmentFormState({
+                                    sponsorId: "",
+                                    placementType: "before_performer",
+                                    linkedPerformer: getDisplaySingerName(item.song.artist),
+                                    customNote: "",
+                                  });
+                                  setActiveAdminTab("sponsors");
+                                }}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
-                                {activeMcBlockActionId === item.block.anchorSongId
-                                  ? "Saving Block Notes..."
-                                  : "Save Block Notes"}
+                                Add Sponsor Read Before
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowSponsorAssignmentFormState({
+                                    sponsorId: "",
+                                    placementType: "after_performer",
+                                    linkedPerformer: getDisplaySingerName(item.song.artist),
+                                    customNote: "",
+                                  });
+                                  setActiveAdminTab("sponsors");
+                                }}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Add Sponsor Read After
                               </button>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))
+
+                          {mcBlock && blockDraft ? (
+                            <div className="mt-4 grid gap-4 border-t border-stone-200 pt-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-col gap-1">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                    Performer Block Notes
+                                  </p>
+                                  <p className="text-sm text-stone-600">
+                                    These notes stay tied to the start of this performer block.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleMcBlockNotes(mcBlock.anchorSongId)}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  {areMcBlockNotesExpanded
+                                    ? "Hide Performer Notes"
+                                    : "Show Performer Notes"}
+                                </button>
+                              </div>
+
+                              {areMcBlockNotesExpanded ? (
+                                <>
+                                  <div className="grid gap-4 lg:grid-cols-3">
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      Intro Note
+                                      <textarea
+                                        value={blockDraft.introNote}
+                                        onChange={(event) =>
+                                          handleMcBlockDraftChange(
+                                            mcBlock.anchorSongId,
+                                            "introNote",
+                                            event.target.value,
+                                          )
+                                        }
+                                        className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        placeholder="Intro line before bringing this performer up"
+                                      />
+                                    </label>
+
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      Sponsor Mention
+                                      <textarea
+                                        value={blockDraft.sponsorMention}
+                                        onChange={(event) =>
+                                          handleMcBlockDraftChange(
+                                            mcBlock.anchorSongId,
+                                            "sponsorMention",
+                                            event.target.value,
+                                          )
+                                        }
+                                        className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        placeholder="Optional sponsor line tied to this performer"
+                                      />
+                                    </label>
+
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      Transition Note
+                                      <textarea
+                                        value={blockDraft.transitionNote}
+                                        onChange={(event) =>
+                                          handleMcBlockDraftChange(
+                                            mcBlock.anchorSongId,
+                                            "transitionNote",
+                                            event.target.value,
+                                          )
+                                        }
+                                        className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        placeholder="Changeover or wrap-up note after this block"
+                                      />
+                                    </label>
+                                  </div>
+
+                                  <div className="flex justify-start">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveMcBlockNote(mcBlock.anchorSongId)}
+                                      disabled={activeMcBlockActionId === mcBlock.anchorSongId}
+                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                    >
+                                      {activeMcBlockActionId === mcBlock.anchorSongId
+                                        ? "Saving Block Notes..."
+                                        : "Save Block Notes"}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </article>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
 
+              {showSponsors.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                  No sponsors are assigned to this show yet.
+                </div>
+              ) : null}
+            </section>
+
+            <section className="flex flex-col gap-5">
               {(mcScriptFormState.intermissionScript.trim() ||
                 mcRunSheetData.beforeIntermission.length > 0 ||
                 mcRunSheetData.afterIntermission.length > 0 ||
