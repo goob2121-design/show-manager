@@ -7843,6 +7843,7 @@ export function ShowPage({
                   ) : (
                     <ol className="flex list-decimal flex-col gap-4 pl-6">
                       {section.songs.map((song) => {
+                        const isGuestSetlistSong = song.source_type === "guest";
                         const librarySong =
                           song.source_type === "library" && song.song_id
                             ? songLibraryById[song.song_id] ?? null
@@ -7857,11 +7858,24 @@ export function ShowPage({
 
                         return (
                         <li key={song.id} className="pl-1">
-                          <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
-                            <p className="text-base font-medium text-stone-900 sm:text-lg">
-                              {song.title} - {getDisplaySingerName(song.artist)}
-                              {song.song_key ? ` (${song.song_key})` : ""}
-                            </p>
+                          <div
+                            className={`rounded-2xl border px-4 py-4 ${
+                              isGuestSetlistSong
+                                ? "border-cyan-500/80 bg-cyan-100/90 shadow-sm shadow-cyan-200/50 dark:border-cyan-600/80 dark:bg-cyan-950/45 dark:shadow-cyan-950/35"
+                                : "border-stone-200 bg-stone-50"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-start gap-2">
+                              <p className="text-base font-medium text-stone-900 sm:text-lg">
+                                {song.title} - {getDisplaySingerName(song.artist)}
+                                {song.song_key ? ` (${song.song_key})` : ""}
+                              </p>
+                              {isGuestSetlistSong ? (
+                                <span className="rounded-full border border-cyan-500/80 bg-cyan-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-950 dark:border-cyan-600/80 dark:bg-cyan-900/85 dark:text-cyan-100">
+                                  Guest
+                                </span>
+                              ) : null}
+                            </div>
                             <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                               <span>{song.source_type === "guest" ? "Guest Song" : "Library Song"}</span>
                               {song.tempo ? <span>Tempo: {song.tempo}</span> : null}
