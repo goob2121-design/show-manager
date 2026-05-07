@@ -844,15 +844,15 @@ function escapeHtml(value: string) {
 }
 
 function getSiteBaseUrl() {
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
   // NEXT_PUBLIC_SITE_URL is optional and used to build full admin links for emails.
   const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
 
   if (configuredSiteUrl) {
     return configuredSiteUrl.replace(/\/+$/, "");
-  }
-
-  if (typeof window !== "undefined") {
-    return window.location.origin;
   }
 
   return "";

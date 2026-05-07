@@ -156,6 +156,8 @@ function getShowCardTone(isArchived: boolean) {
   };
 }
 
+const stageflowDashboardVersion = "StageFlow v0.9.15";
+
 export default function ShowsDashboardPage() {
   const router = useRouter();
   const [shows, setShows] = useState<ShowRecord[]>([]);
@@ -1268,6 +1270,9 @@ export default function ShowsDashboardPage() {
                 </div>
 
                 <div className="flex flex-col items-stretch gap-3 sm:items-end">
+                  <div className="w-fit self-start rounded-full border border-white/15 bg-black/15 px-3 py-1 text-[11px] font-medium tracking-[0.12em] text-emerald-50/80 sm:self-end">
+                    {stageflowDashboardVersion}
+                  </div>
                   <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm text-emerald-50 backdrop-blur">
                     Dashboard access stays protected by the admin password gate.
                   </div>
