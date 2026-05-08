@@ -1107,11 +1107,37 @@ export function McPage({
     (sponsor, index, allSponsors) =>
       allSponsors.findIndex((candidate) => candidate.id === sponsor.id) === index,
   );
+  const performerSetLabelLookup = useMemo(() => {
+    const lookup = new Map<string, string>();
+
+    setlist.forEach((song) => {
+      const performerName = song.artist?.trim();
+
+      if (!performerName) {
+        return;
+      }
+
+      const normalizedPerformer = normalizeName(performerName);
+      const currentFlags = lookup.get(normalizedPerformer) ?? "";
+      const isSet1 = song.section !== "set2" && song.section !== "encore";
+      const isSet2 = song.section === "set2" || song.section === "encore";
+      const nextFlags = `${currentFlags}${isSet1 ? "1" : ""}${isSet2 ? "2" : ""}`;
+      const hasSet1 = nextFlags.includes("1");
+      const hasSet2 = nextFlags.includes("2");
+
+      lookup.set(
+        normalizedPerformer,
+        hasSet1 && hasSet2 ? "Sets 1 & 2" : hasSet2 ? "Set 2" : "Set 1",
+      );
+    });
+
+    return lookup;
+  }, [setlist]);
   const performerListEntries = useMemo(() => {
     const entries = runSections.flatMap((section) =>
       section.blocks.map((block) => ({
         performer: block.performer,
-        section: section.title,
+        section: performerSetLabelLookup.get(normalizeName(block.performer)) ?? section.title,
       })),
     );
 
@@ -1119,7 +1145,7 @@ export function McPage({
       (entry, index, allEntries) =>
         allEntries.findIndex((candidate) => candidate.performer === entry.performer) === index,
     );
-  }, [runSections]);
+  }, [performerSetLabelLookup, runSections]);
   const guestInfoEntries = useMemo(
     () =>
       guestProfiles
@@ -1134,6 +1160,7 @@ export function McPage({
           return {
             id: profile.id,
             performer: performerName,
+            setLabel: performerSetLabelLookup.get(normalizeName(performerName)) ?? null,
             guestIntro: getGuestIntroText(profile),
             hometown: getTrimmedValue(profile.hometown),
             instruments: getTrimmedValue(profile.instruments),
@@ -1149,7 +1176,7 @@ export function McPage({
             songs: submittedSongs.join(", "),
           };
         }),
-    [guestProfiles, setlist],
+    [guestProfiles, performerSetLabelLookup, setlist],
   );
   const mcFlowGroups = useMemo(() => {
     const groups: Record<
@@ -1604,6 +1631,9 @@ export function McPage({
                   className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
                 >
                   <h3 className="text-lg font-semibold text-stone-900">{entry.performer}</h3>
+                  {entry.setLabel ? (
+                    <p className="mt-1 text-sm font-medium text-stone-500">{entry.setLabel}</p>
+                  ) : null}
                   <div className="mt-3 grid gap-3">
                     {entry.photoUrl ? (
                       <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
@@ -1911,6 +1941,7 @@ export function McPage({
                   <section key={`intro-${entry.performer}`} className="mc-print-panel mc-print-intro-panel">
                     <div className="mc-print-panel-heading">
                       <h2>{entry.performer}</h2>
+                      {entry.setLabel ? <p>{entry.setLabel}</p> : null}
                     </div>
 
                     <div className="mc-print-note-stack mc-print-intro-notes">
