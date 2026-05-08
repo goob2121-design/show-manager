@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { createClient } from "@/lib/supabase/client";
-import type { GuestProfile, SetlistEntry, ShowGuestSong, ShowRecord } from "@/lib/types";
+import type { GuestProfile, SetlistEntry, ShowFinanceItem, ShowGuestSong, ShowRecord } from "@/lib/types";
 
 type SetlistEntryRow = SetlistEntry & {
   guest_song?: ShowGuestSong | ShowGuestSong[] | null;
@@ -22,6 +22,7 @@ type ShowFormState = {
 };
 
 type DashboardSection = "active" | "create" | "archived";
+type MainDashboardPanel = "quickActions" | "showSnapshot" | "yearlyFinanceSummary" | "dashboard";
 
 type PrefillSource = "" | string;
 type CopyLinkRole = "guest" | "band" | "admin" | "mc";
@@ -42,6 +43,19 @@ const initialFormState: ShowFormState = {
   showDate: "",
   venue: "",
   slug: "",
+};
+
+const dashboardPanelStorageKey = "stageflow-admin-dashboard-panels";
+const defaultMainDashboardPanels: Record<MainDashboardPanel, boolean> = {
+  quickActions: true,
+  showSnapshot: true,
+  yearlyFinanceSummary: true,
+  dashboard: true,
+};
+const defaultDashboardSections: Record<DashboardSection, boolean> = {
+  active: false,
+  create: false,
+  archived: false,
 };
 
 const dashboardSections: Array<{
@@ -77,6 +91,63 @@ function formatShowDate(showDate: string | null) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${showDate}T00:00:00`));
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatProfitMargin(income: number, net: number) {
+  if (income <= 0) {
+    return "N/A";
+  }
+
+  return `${((net / income) * 100).toFixed(1)}%`;
+}
+
+function getShowYear(showDate: string | null) {
+  if (!showDate) {
+    return null;
+  }
+
+  const parsedDate = new Date(`${showDate}T00:00:00`);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return parsedDate.getUTCFullYear();
+}
+
+function normalizeFinanceAmount(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsedValue = Number.parseFloat(value);
+    return Number.isFinite(parsedValue) ? parsedValue : 0;
+  }
+
+  return 0;
+}
+
+function normalizeShowFinanceItem(item: Partial<ShowFinanceItem> & { amount?: unknown }) {
+  return {
+    id: item.id ?? "",
+    show_id: item.show_id ?? "",
+    type: item.type === "expense" ? "expense" : "income",
+    category: item.category ?? null,
+    label: item.label ?? "",
+    amount: normalizeFinanceAmount(item.amount),
+    notes: item.notes ?? null,
+    created_at: item.created_at ?? "",
+  } satisfies ShowFinanceItem;
 }
 
 function getErrorMessage(error: unknown) {
@@ -167,13 +238,11 @@ export default function ShowsDashboardPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
   const [showLogo, setShowLogo] = useState(true);
-  const [expandedDashboardSections, setExpandedDashboardSections] = useState<
-    Record<DashboardSection, boolean>
-  >({
-    active: false,
-    create: false,
-    archived: false,
-  });
+  const [expandedMainPanels, setExpandedMainPanels] = useState<Record<MainDashboardPanel, boolean>>(
+    defaultMainDashboardPanels,
+  );
+  const [expandedDashboardSections, setExpandedDashboardSections] =
+    useState<Record<DashboardSection, boolean>>(defaultDashboardSections);
   const [editingShowId, setEditingShowId] = useState<string | null>(null);
   const [editFormState, setEditFormState] = useState<ShowFormState>(initialFormState);
   const [duplicatingShowId, setDuplicatingShowId] = useState<string | null>(null);
@@ -185,6 +254,9 @@ export default function ShowsDashboardPage() {
   const [prefillSourceShowId, setPrefillSourceShowId] = useState<PrefillSource>("");
   const [openCopyMenuShowId, setOpenCopyMenuShowId] = useState<string | null>(null);
   const [copyMenuDirection, setCopyMenuDirection] = useState<CopyMenuDirection>("down");
+  const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
+  const [selectedFinanceYear, setSelectedFinanceYear] = useState(() => new Date().getUTCFullYear());
+  const [financeSummaryErrorMessage, setFinanceSummaryErrorMessage] = useState<string | null>(null);
   const [currentShowMetrics, setCurrentShowMetrics] = useState<CurrentShowDashboardMetrics>({
     songLibraryCount: null,
     totalGuestProfilesCount: null,
@@ -261,10 +333,85 @@ export default function ShowsDashboardPage() {
   const nextShowSetlistTotal = currentShowMetrics.setlistEntries.length;
   const nextShowPreviewGuests = currentShowMetrics.guestProfiles.slice(0, 4);
   const nextShowPreviewSongs = currentShowMetrics.guestSongs.slice(0, 4);
+  const availableFinanceYears = useMemo(() => {
+    const years = new Set<number>([new Date().getUTCFullYear()]);
+
+    shows.forEach((show) => {
+      const showYear = getShowYear(show.show_date);
+
+      if (showYear !== null) {
+        years.add(showYear);
+      }
+    });
+
+    return Array.from(years).sort((left, right) => right - left);
+  }, [shows]);
+  const selectedYearShows = useMemo(
+    () => shows.filter((show) => getShowYear(show.show_date) === selectedFinanceYear),
+    [selectedFinanceYear, shows],
+  );
+  const yearlyFinanceSummary = useMemo(() => {
+    const itemsByShowId = new Map<string, ShowFinanceItem[]>();
+
+    financeItems.forEach((item) => {
+      const currentItems = itemsByShowId.get(item.show_id) ?? [];
+      currentItems.push(item);
+      itemsByShowId.set(item.show_id, currentItems);
+    });
+
+    const showBreakdown = selectedYearShows.map((show) => {
+      const showItems = itemsByShowId.get(show.id) ?? [];
+      const income = showItems
+        .filter((item) => item.type === "income")
+        .reduce((total, item) => total + item.amount, 0);
+      const expenses = showItems
+        .filter((item) => item.type === "expense")
+        .reduce((total, item) => total + item.amount, 0);
+
+      return {
+        show,
+        income,
+        expenses,
+        net: income - expenses,
+      };
+    });
+    const totalIncome = showBreakdown.reduce((total, item) => total + item.income, 0);
+    const totalExpenses = showBreakdown.reduce((total, item) => total + item.expenses, 0);
+    const net = totalIncome - totalExpenses;
+    const categoryTotals = financeItems.reduce<Record<string, number>>((totals, item) => {
+      const matchingShow = selectedYearShows.find((show) => show.id === item.show_id);
+
+      if (!matchingShow || !item.category?.trim()) {
+        return totals;
+      }
+
+      const key = `${item.type}:${item.category.trim()}`;
+      totals[key] = (totals[key] ?? 0) + item.amount;
+      return totals;
+    }, {});
+
+    return {
+      totalIncome,
+      totalExpenses,
+      net,
+      showBreakdown,
+      categoryTotals: Object.entries(categoryTotals)
+        .map(([key, amount]) => {
+          const separatorIndex = key.indexOf(":");
+          return {
+            type: key.slice(0, separatorIndex),
+            category: key.slice(separatorIndex + 1),
+            amount,
+          };
+        })
+        .sort((left, right) => right.amount - left.amount),
+    };
+  }, [financeItems, selectedFinanceYear, selectedYearShows]);
 
   const loadShows = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
+    setFinanceSummaryErrorMessage(null);
 
     try {
       const supabase = createClient();
@@ -287,11 +434,13 @@ export default function ShowsDashboardPage() {
         { count: totalGuestProfilesCount, error: totalGuestProfilesCountError },
         { count: totalGuestSongsCount, error: totalGuestSongsCountError },
         { count: promoMaterialsCount, error: promoMaterialsCountError },
+        { data: financeItemsData, error: financeItemsError },
       ] = await Promise.all([
         supabase.from("songs").select("id", { count: "exact", head: true }),
         supabase.from("guest_profiles").select("id", { count: "exact", head: true }),
         supabase.from("show_guest_songs").select("id", { count: "exact", head: true }),
         supabase.from("promo_materials").select("id", { count: "exact", head: true }),
+        supabase.from("show_finance_items").select("*"),
       ]);
 
       if (songLibraryCountError) {
@@ -308,6 +457,20 @@ export default function ShowsDashboardPage() {
 
       if (promoMaterialsCountError) {
         throw promoMaterialsCountError;
+      }
+
+      if (financeItemsError) {
+        console.error("Failed to load yearly finance summary items.", financeItemsError);
+        setFinanceItems([]);
+        setFinanceSummaryErrorMessage(getErrorMessage(financeItemsError));
+      } else {
+        setFinanceItems(
+          Array.isArray(financeItemsData)
+            ? financeItemsData.map((item) =>
+                normalizeShowFinanceItem(item as Partial<ShowFinanceItem> & { amount?: unknown }),
+              )
+            : [],
+        );
       }
 
       if (!nextCurrentShow) {
@@ -375,6 +538,59 @@ export default function ShowsDashboardPage() {
   useEffect(() => {
     void loadShows();
   }, [loadShows]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const rawValue = window.localStorage.getItem(dashboardPanelStorageKey);
+
+      if (!rawValue) {
+        return;
+      }
+
+      const parsedValue = JSON.parse(rawValue) as {
+        mainPanels?: Partial<Record<MainDashboardPanel, boolean>>;
+        dashboardSections?: Partial<Record<DashboardSection, boolean>>;
+      };
+
+      if (parsedValue.mainPanels) {
+        setExpandedMainPanels((currentPanels) => ({
+          ...currentPanels,
+          ...parsedValue.mainPanels,
+        }));
+      }
+
+      if (parsedValue.dashboardSections) {
+        setExpandedDashboardSections((currentSections) => ({
+          ...currentSections,
+          ...parsedValue.dashboardSections,
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to restore dashboard panel state.", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        dashboardPanelStorageKey,
+        JSON.stringify({
+          mainPanels: expandedMainPanels,
+          dashboardSections: expandedDashboardSections,
+        }),
+      );
+    } catch (error) {
+      console.error("Failed to persist dashboard panel state.", error);
+    }
+  }, [expandedDashboardSections, expandedMainPanels]);
 
   function handleChange(
     event: ChangeEvent<HTMLInputElement>,
@@ -923,6 +1139,13 @@ export default function ShowsDashboardPage() {
     }));
   }
 
+  function toggleMainDashboardPanel(panel: MainDashboardPanel) {
+    setExpandedMainPanels((currentPanels) => ({
+      ...currentPanels,
+      [panel]: !currentPanels[panel],
+    }));
+  }
+
   function renderPortalLinks(show: ShowRecord) {
     return (
       <>
@@ -1365,20 +1588,30 @@ export default function ShowsDashboardPage() {
 
           <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <div className="grid gap-6">
-              <section className="grid gap-4">
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-                    Quick Actions
-                  </p>
-                  <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
-                    Move Fast
-                  </h2>
-                  <p className="text-sm text-stone-600 dark:text-slate-300">
-                    Jump into the most common admin tasks without hunting through the dashboard first.
-                  </p>
-                </div>
+              <section className="rounded-3xl border border-stone-200 bg-stone-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:p-5">
+                <button
+                  type="button"
+                  onClick={() => toggleMainDashboardPanel("quickActions")}
+                  className="flex w-full items-start justify-between gap-4 text-left"
+                >
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                      Quick Actions
+                    </p>
+                    <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                      Move Fast
+                    </h2>
+                    <p className="text-sm text-stone-600 dark:text-slate-300">
+                      Jump into the most common admin tasks without hunting through the dashboard first.
+                    </p>
+                  </div>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    {expandedMainPanels.quickActions ? "-" : "+"}
+                  </span>
+                </button>
 
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {expandedMainPanels.quickActions ? (
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <button
                     type="button"
                     onClick={() => openDashboardTab("create", "create-show-section")}
@@ -1459,22 +1692,243 @@ export default function ShowsDashboardPage() {
                       Jump to the existing portal link actions for the next show.
                     </p>
                   </button>
-                </div>
+
+                  <button
+                    type="button"
+                    onClick={() => jumpToSection("yearly-finance-summary")}
+                    className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
+                  >
+                    <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Yearly Finance Summary</p>
+                    <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
+                      Review read-only yearly totals across all dated shows.
+                    </p>
+                  </button>
+                  </div>
+                ) : null}
               </section>
 
-              <section className="grid gap-4">
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-                    What Matters Right Now
-                  </p>
-                  <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
-                    Upcoming Shows
-                  </h2>
-                  <p className="text-sm text-stone-600 dark:text-slate-300">
-                    A quick operations view of the next show, nearby upcoming events, and anything that still needs attention.
-                  </p>
+              <section
+                id="yearly-finance-summary"
+                className="rounded-3xl border border-stone-200 bg-stone-50/80 p-5 dark:border-slate-800 dark:bg-slate-950/60 sm:p-6"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleMainDashboardPanel("yearlyFinanceSummary")}
+                  className="flex w-full items-start justify-between gap-4 text-left"
+                >
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                      Finance
+                    </p>
+                    <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                      Yearly Finance Summary
+                    </h2>
+                    <p className="text-sm text-stone-600 dark:text-slate-300">
+                      Read-only income and expense totals across all shows in the selected year.
+                    </p>
+                  </div>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    {expandedMainPanels.yearlyFinanceSummary ? "-" : "+"}
+                  </span>
+                </button>
+
+                {expandedMainPanels.yearlyFinanceSummary ? (
+                  <>
+                    <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                      <div />
+                      <label className="flex w-full max-w-[13rem] flex-col gap-2 text-sm font-medium text-stone-700 dark:text-slate-200">
+                        Year
+                        <select
+                          value={selectedFinanceYear}
+                          onChange={(event) => setSelectedFinanceYear(Number(event.target.value))}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                        >
+                          {availableFinanceYears.map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    {financeSummaryErrorMessage ? (
+                      <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
+                        Finance summary data could not be loaded: {financeSummaryErrorMessage}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    {
+                      label: "Total Income",
+                      value: formatCurrency(yearlyFinanceSummary.totalIncome),
+                      tone: "text-emerald-700 dark:text-emerald-300",
+                    },
+                    {
+                      label: "Total Expenses",
+                      value: formatCurrency(yearlyFinanceSummary.totalExpenses),
+                      tone: "text-rose-700 dark:text-rose-300",
+                    },
+                    {
+                      label: "Net Profit / Loss",
+                      value: formatCurrency(yearlyFinanceSummary.net),
+                      tone:
+                        yearlyFinanceSummary.net < 0
+                          ? "text-rose-700 dark:text-rose-300"
+                          : "text-stone-900 dark:text-slate-100",
+                    },
+                    {
+                      label: "Profit Margin",
+                      value: formatProfitMargin(
+                        yearlyFinanceSummary.totalIncome,
+                        yearlyFinanceSummary.net,
+                      ),
+                      tone: "text-stone-900 dark:text-slate-100",
+                    },
+                  ].map((card) => (
+                    <div
+                      key={card.label}
+                      className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                        {card.label}
+                      </p>
+                      <p className={`mt-2 text-2xl font-semibold ${card.tone}`}>{card.value}</p>
+                    </div>
+                  ))}
                 </div>
 
+                <div className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+                  <section className="rounded-2xl border border-stone-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
+                        Shows in {selectedFinanceYear}
+                      </h3>
+                      <p className="text-sm text-stone-600 dark:text-slate-300">
+                        Each dated show is included even if it has no finance items yet.
+                      </p>
+                    </div>
+
+                    {selectedYearShows.length === 0 ? (
+                      <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+                        No shows with dates were found for {selectedFinanceYear}.
+                      </div>
+                    ) : (
+                      <div className="mt-4 grid gap-3">
+                        {yearlyFinanceSummary.showBreakdown.map(({ show, income, expenses, net }) => (
+                          <article
+                            key={show.id}
+                            className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/70"
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <p className="text-base font-semibold text-stone-900 dark:text-slate-100">
+                                  {show.name}
+                                </p>
+                                <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
+                                  {formatShowDate(show.show_date)}
+                                </p>
+                              </div>
+
+                              <div className="grid gap-2 text-sm sm:text-right">
+                                <p className="text-stone-600 dark:text-slate-300">
+                                  <span className="font-medium text-stone-900 dark:text-slate-100">Income:</span>{" "}
+                                  {formatCurrency(income)}
+                                </p>
+                                <p className="text-stone-600 dark:text-slate-300">
+                                  <span className="font-medium text-stone-900 dark:text-slate-100">Expenses:</span>{" "}
+                                  {formatCurrency(expenses)}
+                                </p>
+                                <p
+                                  className={`font-semibold ${
+                                    net < 0
+                                      ? "text-rose-700 dark:text-rose-300"
+                                      : "text-stone-900 dark:text-slate-100"
+                                  }`}
+                                >
+                                  Net: {formatCurrency(net)}
+                                </p>
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-2xl border border-stone-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
+                        Category Totals
+                      </h3>
+                      <p className="text-sm text-stone-600 dark:text-slate-300">
+                        Optional rollup of saved income and expense categories for the year.
+                      </p>
+                    </div>
+
+                    {yearlyFinanceSummary.categoryTotals.length === 0 ? (
+                      <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+                        No categorized finance items found for {selectedFinanceYear}.
+                      </div>
+                    ) : (
+                      <div className="mt-4 grid gap-2">
+                        {yearlyFinanceSummary.categoryTotals.map((item) => (
+                          <div
+                            key={`${item.type}-${item.category}`}
+                            className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-950/70"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-stone-900 dark:text-slate-100">
+                                {item.category}
+                              </p>
+                              <p className="text-xs uppercase tracking-[0.12em] text-stone-500 dark:text-slate-400">
+                                {item.type}
+                              </p>
+                            </div>
+                            <p
+                              className={`text-sm font-semibold ${
+                                item.type === "expense"
+                                  ? "text-rose-700 dark:text-rose-300"
+                                  : "text-emerald-700 dark:text-emerald-300"
+                              }`}
+                            >
+                              {formatCurrency(item.amount)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </div>
+                  </>
+                ) : null}
+              </section>
+
+              <section className="rounded-3xl border border-stone-200 bg-stone-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:p-5">
+                <button
+                  type="button"
+                  onClick={() => toggleMainDashboardPanel("showSnapshot")}
+                  className="flex w-full items-start justify-between gap-4 text-left"
+                >
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                      What Matters Right Now
+                    </p>
+                    <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                      Upcoming Shows
+                    </h2>
+                    <p className="text-sm text-stone-600 dark:text-slate-300">
+                      A quick operations view of the next show, nearby upcoming events, and anything that still needs attention.
+                    </p>
+                  </div>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    {expandedMainPanels.showSnapshot ? "-" : "+"}
+                  </span>
+                </button>
+
+                {expandedMainPanels.showSnapshot ? (
+                  <div className="mt-5">
                 {isLoading ? (
                   <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
                     Loading control-center highlights...
@@ -1764,21 +2218,31 @@ export default function ShowsDashboardPage() {
                     No active show is available yet. Create a show to light up the control center.
                   </div>
                 )}
+                  </div>
+                ) : null}
               </section>
 
             </div>
           </section>
 
           <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-            <div className="flex flex-col gap-4 border-b border-stone-200 pb-5 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => toggleMainDashboardPanel("dashboard")}
+              className="flex w-full items-start justify-between gap-4 border-b border-stone-200 pb-5 text-left dark:border-slate-800"
+            >
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">Dashboard</h2>
                 <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
                   Open only the workspace you need and keep the rest of the dashboard compact.
                 </p>
               </div>
-            </div>
-            <div className="pt-6">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                {expandedMainPanels.dashboard ? "-" : "+"}
+              </span>
+            </button>
+            {expandedMainPanels.dashboard ? (
+              <div className="pt-6">
               <div className="grid gap-4">
                 {dashboardSections.map((section) => {
                   const isExpanded = expandedDashboardSections[section.id];
@@ -1951,7 +2415,8 @@ export default function ShowsDashboardPage() {
                   );
                 })}
               </div>
-            </div>
+              </div>
+            ) : null}
           </section>
 
         </section>

@@ -12,6 +12,7 @@ export type PromoMaterialCategory =
   | "logo"
   | "promo_photo"
   | "other";
+export type FinanceItemType = "income" | "expense";
 
 export type ShowRecord = {
   id: string;
@@ -152,6 +153,17 @@ export type PromoMaterial = {
   updated_at: string;
 };
 
+export type ShowFinanceItem = {
+  id: string;
+  show_id: string;
+  type: FinanceItemType;
+  category: string | null;
+  label: string;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+};
+
 export type PromoMaterialFormState = {
   title: string;
   description: string;
@@ -172,6 +184,13 @@ export type ShowSponsorAssignmentFormState = {
   placementType: string;
   linkedPerformer: string;
   customNote: string;
+};
+
+export type FinanceItemFormState = {
+  label: string;
+  category: string;
+  amount: string;
+  notes: string;
 };
 
 export type McBlockNote = {

@@ -27,6 +27,8 @@ import {
 } from "@/app/components/promo-materials-view";
 import { createClient } from "@/lib/supabase/client";
 import type {
+  FinanceItemFormState,
+  FinanceItemType,
   GuestProfile,
   GuestProfileFormState,
   McBlockNote,
@@ -36,6 +38,7 @@ import type {
   SetSection,
   SetlistEntry,
   ShowGuestSong,
+  ShowFinanceItem,
   ShowSponsor,
   SongRecord,
   SponsorLibraryEntry,
@@ -83,6 +86,7 @@ type AdminTab =
   | "setlist"
   | "songs"
   | "guests"
+  | "finance"
   | "promo-materials"
   | "sponsors"
   | "mc-builder"
@@ -101,6 +105,7 @@ const adminTabItems: Array<{ key: AdminTab; label: string }> = [
   { key: "setlist", label: "Setlist" },
   { key: "songs", label: "Songs" },
   { key: "guests", label: "Guests" },
+  { key: "finance", label: "Finance" },
   { key: "promo-materials", label: "Promo Materials" },
   { key: "sponsors", label: "Sponsors" },
   { key: "mc-builder", label: "MC Builder" },
@@ -203,6 +208,13 @@ const initialPromoMaterialFormState: PromoMaterialFormState = {
   isVisible: true,
 };
 
+const initialFinanceItemFormState: FinanceItemFormState = {
+  label: "",
+  category: "",
+  amount: "",
+  notes: "",
+};
+
 const promoMaterialCategoryOptions: Array<{
   value: PromoMaterialCategory;
   label: string;
@@ -215,6 +227,29 @@ const promoMaterialCategoryOptions: Array<{
   { value: "promo_photo", label: "Promo Photo" },
   { value: "other", label: "Other" },
 ];
+
+const financeCategoryOptions: Record<FinanceItemType, string[]> = {
+  income: [
+    "Presale Tickets",
+    "Door Sales",
+    "Sponsorships",
+    "Donations",
+    "Merch Percentage",
+    "Concessions",
+    "Misc Income",
+  ],
+  expense: [
+    "Guest / Talent Pay",
+    "House Band Pay",
+    "Facebook Ads",
+    "Printing",
+    "Sponsor Signs",
+    "Venue Costs",
+    "Concessions",
+    "Sound / Production",
+    "Misc Expense",
+  ],
+};
 
 const defaultSingerName = "CMMS Band";
 const stageflowPortalVersion = "StageFlow v0.9.15";
@@ -358,6 +393,23 @@ function formatShowDate(showDate: string | null) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${showDate}T00:00:00`));
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatProfitMargin(totalIncome: number, netProfit: number) {
+  if (totalIncome <= 0) {
+    return null;
+  }
+
+  return `${((netProfit / totalIncome) * 100).toFixed(1)}%`;
 }
 
 function formatShowDateWithOrdinal(showDate: string | null) {
@@ -846,6 +898,7 @@ type DataSectionKey =
   | "songLibrary"
   | "sponsorLibrary"
   | "showSponsors"
+  | "financeItems"
   | "promoMaterials"
   | "guestProfiles"
   | "mcBlockNotes";
@@ -884,6 +937,260 @@ function buildShowSponsorAssignmentFormState(sponsor: ShowSponsor): ShowSponsorA
     linkedPerformer: sponsor.linked_performer ?? "",
     customNote: sponsor.custom_note ?? "",
   };
+}
+
+function normalizeShowFinanceItem(
+  item: Omit<ShowFinanceItem, "amount"> & { amount: number | string | null },
+): ShowFinanceItem {
+  const parsedAmount =
+    typeof item.amount === "number"
+      ? item.amount
+      : typeof item.amount === "string"
+        ? Number.parseFloat(item.amount)
+        : 0;
+
+  return {
+    ...item,
+    amount: Number.isFinite(parsedAmount) ? parsedAmount : 0,
+  };
+}
+
+function buildFinanceItemFormState(item: ShowFinanceItem): FinanceItemFormState {
+  return {
+    label: item.label,
+    category: item.category ?? "",
+    amount: item.amount.toFixed(2),
+    notes: item.notes ?? "",
+  };
+}
+
+function sortFinanceItems(items: ShowFinanceItem[]) {
+  return [...items].sort((itemA, itemB) => itemB.created_at.localeCompare(itemA.created_at));
+}
+
+function buildFinanceReportHtml({
+  showName,
+  showDate,
+  venue,
+  financeItems,
+}: {
+  showName: string;
+  showDate: string | null;
+  venue: string | null;
+  financeItems: ShowFinanceItem[];
+}) {
+  const incomeItems = financeItems.filter((item) => item.type === "income");
+  const expenseItems = financeItems.filter((item) => item.type === "expense");
+  const totalIncome = incomeItems.reduce((sum, item) => sum + item.amount, 0);
+  const totalExpenses = expenseItems.reduce((sum, item) => sum + item.amount, 0);
+  const netProfit = totalIncome - totalExpenses;
+  const profitMargin = formatProfitMargin(totalIncome, netProfit);
+
+  const buildRows = (items: ShowFinanceItem[]) =>
+    items.length === 0
+      ? `<tr><td colspan="4" class="empty">No items added.</td></tr>`
+      : items
+          .map(
+            (item) => `
+              <tr>
+                <td>${escapeHtml(item.label)}</td>
+                <td>${escapeHtml(item.category ?? "Uncategorized")}</td>
+                <td class="amount">${escapeHtml(formatCurrency(item.amount))}</td>
+                <td>${escapeHtml(item.notes ?? "")}</td>
+              </tr>
+            `,
+          )
+          .join("");
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(`${showName} - Finance Report`)}</title>
+        <style>
+          :root {
+            color-scheme: light;
+          }
+          body {
+            margin: 32px;
+            color: #1f2937;
+            font-family: Arial, sans-serif;
+            background: #ffffff;
+          }
+          h1, h2, h3, p {
+            margin: 0;
+          }
+          .brand {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #047857;
+          }
+          .header {
+            margin-bottom: 24px;
+          }
+          .header h1 {
+            margin-top: 8px;
+            font-size: 28px;
+          }
+          .meta {
+            margin-top: 8px;
+            display: grid;
+            gap: 4px;
+            font-size: 14px;
+            color: #4b5563;
+          }
+          .summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+          }
+          .summary-card {
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            padding: 12px 14px;
+            background: #f9fafb;
+          }
+          .summary-card p:first-child {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #6b7280;
+          }
+          .summary-card p:last-child {
+            margin-top: 6px;
+            font-size: 22px;
+            font-weight: 700;
+          }
+          .negative {
+            color: #b91c1c;
+          }
+          .section {
+            margin-top: 24px;
+          }
+          .section h2 {
+            margin-bottom: 12px;
+            font-size: 20px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+          }
+          th, td {
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            vertical-align: top;
+            text-align: left;
+          }
+          th {
+            background: #f3f4f6;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #4b5563;
+          }
+          .amount {
+            text-align: right;
+            white-space: nowrap;
+          }
+          .totals {
+            margin-top: 16px;
+            display: grid;
+            gap: 6px;
+            font-size: 15px;
+          }
+          .empty {
+            text-align: center;
+            color: #6b7280;
+          }
+          @media print {
+            body {
+              margin: 18px;
+            }
+            .section {
+              break-inside: avoid;
+            }
+            table, tr, td, th {
+              break-inside: avoid;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <header class="header">
+          <p class="brand">Cumberland Mountain Music Show / StageFlow</p>
+          <h1>Show Finance Report</h1>
+          <div class="meta">
+            <p>${escapeHtml(showName)}</p>
+            <p>${escapeHtml(formatShowDate(showDate))}</p>
+            <p>${escapeHtml(venue?.trim() || "Venue TBD")}</p>
+          </div>
+        </header>
+
+        <section class="summary">
+          <div class="summary-card">
+            <p>Total Income</p>
+            <p>${escapeHtml(formatCurrency(totalIncome))}</p>
+          </div>
+          <div class="summary-card">
+            <p>Total Expenses</p>
+            <p>${escapeHtml(formatCurrency(totalExpenses))}</p>
+          </div>
+          <div class="summary-card">
+            <p>Net Profit / Loss</p>
+            <p class="${netProfit < 0 ? "negative" : ""}">${escapeHtml(formatCurrency(netProfit))}</p>
+          </div>
+          <div class="summary-card">
+            <p>Profit Margin</p>
+            <p>${escapeHtml(profitMargin ?? "N/A")}</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>Income Breakdown</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>${buildRows(incomeItems)}</tbody>
+          </table>
+        </section>
+
+        <section class="section">
+          <h2>Expense Breakdown</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>${buildRows(expenseItems)}</tbody>
+          </table>
+        </section>
+
+        <section class="section totals">
+          <p><strong>Total Income:</strong> ${escapeHtml(formatCurrency(totalIncome))}</p>
+          <p><strong>Total Expenses:</strong> ${escapeHtml(formatCurrency(totalExpenses))}</p>
+          <p><strong>Net Profit / Loss:</strong> ${escapeHtml(formatCurrency(netProfit))}</p>
+          <p><strong>Profit Margin:</strong> ${escapeHtml(profitMargin ?? "N/A")}</p>
+        </section>
+      </body>
+    </html>
+  `;
 }
 
 function normalizeSetSection(value: string | null | undefined): SetSection {
@@ -1116,6 +1423,17 @@ function normalizeOptionalField(value: string) {
 
 function normalizeOptionalInteger(value: number | null | undefined) {
   return Number.isInteger(value) ? value : null;
+}
+
+function parseFinanceAmountInput(value: string) {
+  const normalizedValue = value.replaceAll(",", "").trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const parsedValue = Number.parseFloat(normalizedValue);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
 }
 
 function parseOptionalIntegerInput(value: string) {
@@ -2530,6 +2848,14 @@ export function ShowPage({
   const [librarySongTypeFilter, setLibrarySongTypeFilter] = useState<"" | SongType>("");
   const [sponsorLibrary, setSponsorLibrary] = useState<SponsorLibraryEntry[]>([]);
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
+  const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
+  const [incomeFinanceFormState, setIncomeFinanceFormState] =
+    useState<FinanceItemFormState>(initialFinanceItemFormState);
+  const [expenseFinanceFormState, setExpenseFinanceFormState] =
+    useState<FinanceItemFormState>(initialFinanceItemFormState);
+  const [editingFinanceItemId, setEditingFinanceItemId] = useState<string | null>(null);
+  const [editingFinanceItemFormState, setEditingFinanceItemFormState] =
+    useState<FinanceItemFormState>(initialFinanceItemFormState);
   const [promoMaterials, setPromoMaterials] = useState<PromoMaterial[]>([]);
   const [promoMaterialFormState, setPromoMaterialFormState] = useState<PromoMaterialFormState>(
     initialPromoMaterialFormState,
@@ -2588,6 +2914,8 @@ export function ShowPage({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dataSectionErrors, setDataSectionErrors] = useState<DataSectionErrors>({});
   const [actionError, setActionError] = useState<string | null>(null);
+  const [financeStatusMessage, setFinanceStatusMessage] = useState<string | null>(null);
+  const [financeErrorMessage, setFinanceErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingShowDetails, setIsSavingShowDetails] = useState(false);
   const [isSavingGuestProfile, setIsSavingGuestProfile] = useState(false);
@@ -2604,6 +2932,7 @@ export function ShowPage({
   const [isSavingMcScripts, setIsSavingMcScripts] = useState(false);
   const [activeMcBlockActionId, setActiveMcBlockActionId] = useState<string | null>(null);
   const [activePendingActionId, setActivePendingActionId] = useState<string | null>(null);
+  const [activeFinanceActionId, setActiveFinanceActionId] = useState<string | null>(null);
   const [activeSetlistActionId, setActiveSetlistActionId] = useState<string | null>(null);
   const [activeLibraryDeleteSongId, setActiveLibraryDeleteSongId] = useState<string | null>(null);
   const [activeSponsorActionId, setActiveSponsorActionId] = useState<string | null>(null);
@@ -2652,8 +2981,33 @@ export function ShowPage({
   const shouldShowGuestItineraryTab = isGuestView && activeGuestTab === "itinerary";
   const shouldShowGuestPromoMaterialsTab = isGuestView && activeGuestTab === "promo-materials";
   const shouldShowBandPromoMaterialsTab = isBandView && activeBandTab === "promo-materials";
+  const shouldShowAdminFinanceTab = isAdminView && activeAdminTab === "finance";
   const shouldShowSongSubmissionForm = shouldShowAdminSongSubmission;
   const visiblePromoMaterials = promoMaterials.filter((material) => material.is_visible);
+  const totalIncome = useMemo(
+    () =>
+      financeItems
+        .filter((item) => item.type === "income")
+        .reduce((sum, item) => sum + item.amount, 0),
+    [financeItems],
+  );
+  const totalExpenses = useMemo(
+    () =>
+      financeItems
+        .filter((item) => item.type === "expense")
+        .reduce((sum, item) => sum + item.amount, 0),
+    [financeItems],
+  );
+  const netProfit = totalIncome - totalExpenses;
+  const profitMargin = formatProfitMargin(totalIncome, netProfit);
+  const incomeFinanceItems = useMemo(
+    () => financeItems.filter((item) => item.type === "income"),
+    [financeItems],
+  );
+  const expenseFinanceItems = useMemo(
+    () => financeItems.filter((item) => item.type === "expense"),
+    [financeItems],
+  );
   const generatedPromoPost = [
     show?.name ?? "",
     [formatShowDate(show?.show_date ?? null), show?.show_start_time ?? ""]
@@ -2807,6 +3161,250 @@ export function ShowPage({
     }
   }
 
+  function handleFinanceFormChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    type: FinanceItemType,
+    mode: "new" | "edit",
+  ) {
+    const { name, value } = event.target;
+
+    if (mode === "edit") {
+      setEditingFinanceItemFormState((currentState) => ({
+        ...currentState,
+        [name]: value,
+      }));
+      return;
+    }
+
+    const setState = type === "income" ? setIncomeFinanceFormState : setExpenseFinanceFormState;
+    setState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function startEditingFinanceItem(item: ShowFinanceItem) {
+    setEditingFinanceItemId(item.id);
+    setEditingFinanceItemFormState(buildFinanceItemFormState(item));
+    setFinanceErrorMessage(null);
+    setFinanceStatusMessage(null);
+  }
+
+  function cancelEditingFinanceItem() {
+    setEditingFinanceItemId(null);
+    setEditingFinanceItemFormState(initialFinanceItemFormState);
+  }
+
+  async function handleCreateFinanceItem(event: FormEvent<HTMLFormElement>, type: FinanceItemType) {
+    event.preventDefault();
+
+    if (!show) {
+      setFinanceErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const formState = type === "income" ? incomeFinanceFormState : expenseFinanceFormState;
+    const label = formState.label.trim();
+    const amount = parseFinanceAmountInput(formState.amount);
+
+    if (!label) {
+      setFinanceErrorMessage("Add a label or description for this finance item.");
+      return;
+    }
+
+    if (amount === null) {
+      setFinanceErrorMessage("Enter a valid dollar amount.");
+      return;
+    }
+
+    setFinanceErrorMessage(null);
+    setFinanceStatusMessage(null);
+    setActiveFinanceActionId(`create-${type}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_finance_items")
+        .insert({
+          show_id: show.id,
+          type,
+          category: normalizeOptionalField(formState.category),
+          label,
+          amount,
+          notes: normalizeOptionalField(formState.notes),
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setFinanceItems((currentItems) =>
+        sortFinanceItems([normalizeShowFinanceItem(data as ShowFinanceItem), ...currentItems]),
+      );
+
+      if (type === "income") {
+        setIncomeFinanceFormState(initialFinanceItemFormState);
+      } else {
+        setExpenseFinanceFormState(initialFinanceItemFormState);
+      }
+
+      setFinanceStatusMessage(
+        type === "income" ? "Income item added." : "Expense item added.",
+      );
+    } catch (error) {
+      setFinanceErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveFinanceActionId(null);
+    }
+  }
+
+  async function handleSaveFinanceItem(item: ShowFinanceItem) {
+    if (!show) {
+      setFinanceErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const label = editingFinanceItemFormState.label.trim();
+    const amount = parseFinanceAmountInput(editingFinanceItemFormState.amount);
+
+    if (!label) {
+      setFinanceErrorMessage("Add a label or description for this finance item.");
+      return;
+    }
+
+    if (amount === null) {
+      setFinanceErrorMessage("Enter a valid dollar amount.");
+      return;
+    }
+
+    setFinanceErrorMessage(null);
+    setFinanceStatusMessage(null);
+    setActiveFinanceActionId(`edit-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_finance_items")
+        .update({
+          category: normalizeOptionalField(editingFinanceItemFormState.category),
+          label,
+          amount,
+          notes: normalizeOptionalField(editingFinanceItemFormState.notes),
+        })
+        .eq("id", item.id)
+        .eq("show_id", show.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setFinanceItems((currentItems) =>
+        sortFinanceItems(
+          currentItems.map((currentItem) =>
+            currentItem.id === item.id
+              ? normalizeShowFinanceItem(data as ShowFinanceItem)
+              : currentItem,
+          ),
+        ),
+      );
+      cancelEditingFinanceItem();
+      setFinanceStatusMessage("Finance item updated.");
+    } catch (error) {
+      setFinanceErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveFinanceActionId(null);
+    }
+  }
+
+  async function handleDeleteFinanceItem(item: ShowFinanceItem) {
+    if (!show) {
+      setFinanceErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete this finance item?\n\n${item.label}\n${formatCurrency(item.amount)}`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setFinanceErrorMessage(null);
+    setFinanceStatusMessage(null);
+    setActiveFinanceActionId(`delete-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("show_finance_items")
+        .delete()
+        .eq("id", item.id)
+        .eq("show_id", show.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setFinanceItems((currentItems) =>
+        currentItems.filter((currentItem) => currentItem.id !== item.id),
+      );
+
+      if (editingFinanceItemId === item.id) {
+        cancelEditingFinanceItem();
+      }
+
+      setFinanceStatusMessage("Finance item deleted.");
+    } catch (error) {
+      setFinanceErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveFinanceActionId(null);
+    }
+  }
+
+  function handlePrintFinanceReport() {
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      window.alert("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+
+    const printHtml = buildFinanceReportHtml({
+      showName: show?.name ?? "Show",
+      showDate: show?.show_date ?? null,
+      venue: show?.venue ?? null,
+      financeItems,
+    });
+
+    const triggerPrint = () => {
+      if (printWindow.closed) {
+        return;
+      }
+
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    printWindow.onload = triggerPrint;
+    printWindow.onafterprint = () => {
+      printWindow.close();
+    };
+
+    const { document } = printWindow;
+    document.open();
+    document.write(printHtml);
+    document.close();
+
+    if (document.readyState === "complete") {
+      triggerPrint();
+    }
+  }
+
   const loadShowData = useCallback(
     async (showSpinner = true) => {
       if (showSpinner) {
@@ -2836,6 +3434,7 @@ export function ShowPage({
           setSongLibrary([]);
           setSponsorLibrary([]);
           setShowSponsors([]);
+          setFinanceItems([]);
           setPromoMaterials([]);
           setGuestProfiles([]);
           setMcBlockNotes([]);
@@ -2875,6 +3474,7 @@ export function ShowPage({
           libraryRows,
           sponsorLibraryRows,
           showSponsorRows,
+          financeItemRows,
           promoMaterialRows,
           guestProfileRows,
           mcBlockNoteRows,
@@ -2962,6 +3562,16 @@ export function ShowPage({
             [],
           ),
           loadSection(
+            "financeItems",
+            "finance items",
+            supabase
+              .from("show_finance_items")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("created_at", { ascending: false }),
+            [],
+          ),
+          loadSection(
             "promoMaterials",
             "promo materials",
             supabase
@@ -3044,6 +3654,13 @@ export function ShowPage({
         setSponsorLibrary(normalizedSponsorLibrary);
         setShowSponsors(
           mergeShowSponsorsWithLibrary((showSponsorRows ?? []) as ShowSponsor[], normalizedSponsorLibrary),
+        );
+        setFinanceItems(
+          sortFinanceItems(
+            ((financeItemRows ?? []) as Array<
+              Omit<ShowFinanceItem, "amount"> & { amount: number | string | null }
+            >).map((item) => normalizeShowFinanceItem(item)),
+          ),
         );
         setPromoMaterials((promoMaterialRows ?? []) as PromoMaterial[]);
         setGuestProfiles(guestProfileRows ?? []);
@@ -7534,6 +8151,511 @@ export function ShowPage({
                     ))}
                 </div>
               </div>
+            </div>
+          </section>
+        ) : null}
+
+        {shouldShowAdminFinanceTab ? (
+          <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Finance</h2>
+                <p className="text-sm text-stone-600">
+                  Simple per-show income and expense tracking for settlement reporting.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handlePrintFinanceReport}
+                className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+              >
+                Print Finance Report
+              </button>
+            </div>
+
+            <SectionLoadWarning message={dataSectionErrors.financeItems} />
+
+            {financeStatusMessage ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {financeStatusMessage}
+              </div>
+            ) : null}
+
+            {financeErrorMessage ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {financeErrorMessage}
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Total Income
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-emerald-700">
+                  {formatCurrency(totalIncome)}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Total Expenses
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-stone-900">
+                  {formatCurrency(totalExpenses)}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Net Profit / Loss
+                </p>
+                <p
+                  className={`mt-3 text-2xl font-semibold ${
+                    netProfit < 0 ? "text-rose-700" : "text-emerald-700"
+                  }`}
+                >
+                  {formatCurrency(netProfit)}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Overhead / Expenses
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-stone-900">
+                  {formatCurrency(totalExpenses)}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Profit Margin
+                </p>
+                <p
+                  className={`mt-3 text-2xl font-semibold ${
+                    netProfit < 0 ? "text-rose-700" : "text-stone-900"
+                  }`}
+                >
+                  {profitMargin ?? "N/A"}
+                </p>
+              </article>
+            </div>
+
+            <div className="grid gap-5 xl:grid-cols-2">
+              <section className="grid gap-4 rounded-2xl border border-emerald-900/40 bg-stone-900 p-4 shadow-sm">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-50">Income</h3>
+                  <p className="text-sm text-stone-300">
+                    Add manual income items for this show.
+                  </p>
+                </div>
+
+                <form className="grid gap-3" onSubmit={(event) => void handleCreateFinanceItem(event, "income")}>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                      Label / Description
+                      <input
+                        type="text"
+                        name="label"
+                        value={incomeFinanceFormState.label}
+                        onChange={(event) => handleFinanceFormChange(event, "income", "new")}
+                        className="rounded-xl border border-stone-700 bg-stone-950 px-3 py-2.5 text-sm text-stone-100 outline-none transition placeholder:text-stone-500 focus:border-emerald-500"
+                        placeholder="Presale Tickets"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                      Category
+                      <select
+                        name="category"
+                        value={incomeFinanceFormState.category}
+                        onChange={(event) => handleFinanceFormChange(event, "income", "new")}
+                        className="rounded-xl border border-stone-700 bg-stone-950 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-emerald-500"
+                      >
+                        <option value="">Choose a category</option>
+                        {financeCategoryOptions.income.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,11rem)]">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                      Notes
+                      <textarea
+                        name="notes"
+                        value={incomeFinanceFormState.notes}
+                        onChange={(event) => handleFinanceFormChange(event, "income", "new")}
+                        className="min-h-20 rounded-xl border border-stone-700 bg-stone-950 px-3 py-2.5 text-sm text-stone-100 outline-none transition placeholder:text-stone-500 focus:border-emerald-500"
+                        placeholder="Optional details"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                      Amount
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        name="amount"
+                        value={incomeFinanceFormState.amount}
+                        onChange={(event) => handleFinanceFormChange(event, "income", "new")}
+                        className="rounded-xl border border-stone-700 bg-stone-950 px-3 py-2.5 text-sm text-stone-100 outline-none transition placeholder:text-stone-500 focus:border-emerald-500"
+                        placeholder="0.00"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-start pt-1">
+                    <button
+                      type="submit"
+                      disabled={activeFinanceActionId === "create-income"}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {activeFinanceActionId === "create-income" ? "Adding Income..." : "Add Income Item"}
+                    </button>
+                  </div>
+                </form>
+
+                {incomeFinanceItems.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-stone-700 bg-stone-950 px-4 py-5 text-sm text-stone-400">
+                    No income items added yet.
+                  </div>
+                ) : (
+                  <div className="grid gap-2.5">
+                    {incomeFinanceItems.map((item) => (
+                      <article key={item.id} className="rounded-xl border border-stone-700 bg-stone-950 px-3.5 py-3">
+                        {editingFinanceItemId === item.id ? (
+                          <div className="grid gap-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                                Label / Description
+                                <input
+                                  type="text"
+                                  name="label"
+                                  value={editingFinanceItemFormState.label}
+                                  onChange={(event) => handleFinanceFormChange(event, item.type, "edit")}
+                                  className="rounded-xl border border-stone-700 bg-stone-900 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-emerald-500"
+                                  required
+                                />
+                              </label>
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                                Category
+                                <select
+                                  name="category"
+                                  value={editingFinanceItemFormState.category}
+                                  onChange={(event) => handleFinanceFormChange(event, item.type, "edit")}
+                                  className="rounded-xl border border-stone-700 bg-stone-900 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-emerald-500"
+                                >
+                                  <option value="">Choose a category</option>
+                                  {financeCategoryOptions[item.type].map((category) => (
+                                    <option key={category} value={category}>
+                                      {category}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,11rem)]">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                                Notes
+                                <textarea
+                                  name="notes"
+                                  value={editingFinanceItemFormState.notes}
+                                  onChange={(event) => handleFinanceFormChange(event, item.type, "edit")}
+                                  className="min-h-20 rounded-xl border border-stone-700 bg-stone-900 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-emerald-500"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                                Amount
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  min="0"
+                                  step="0.01"
+                                  name="amount"
+                                  value={editingFinanceItemFormState.amount}
+                                  onChange={(event) => handleFinanceFormChange(event, item.type, "edit")}
+                                  className="rounded-xl border border-stone-700 bg-stone-900 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-emerald-500"
+                                  required
+                                />
+                              </label>
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveFinanceItem(item)}
+                                disabled={activeFinanceActionId === `edit-${item.id}`}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                {activeFinanceActionId === `edit-${item.id}` ? "Saving..." : "Save Item"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingFinanceItem}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="text-sm font-semibold text-stone-100">{item.label}</h4>
+                                {item.category ? (
+                                  <span className="rounded-full border border-emerald-800/60 bg-emerald-950/60 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-200">
+                                    {item.category}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {item.notes?.trim() ? (
+                                <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-stone-400">{item.notes}</p>
+                              ) : null}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2.5 sm:justify-end">
+                              <p className="min-w-[7rem] text-sm font-semibold text-emerald-300 sm:text-right">
+                                {formatCurrency(item.amount)}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => startEditingFinanceItem(item)}
+                                className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-xs font-semibold text-stone-200 transition hover:bg-stone-800"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteFinanceItem(item)}
+                                disabled={activeFinanceActionId === `delete-${item.id}`}
+                                className="rounded-lg border border-rose-900/60 bg-rose-950/60 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {activeFinanceActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="grid gap-4 rounded-2xl border border-rose-900/40 bg-stone-900 p-4 shadow-sm">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-50">Expenses</h3>
+                  <p className="text-sm text-stone-300">
+                    Add manual expenses for this show.
+                  </p>
+                </div>
+
+                <form className="grid gap-3" onSubmit={(event) => void handleCreateFinanceItem(event, "expense")}>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                      Label / Description
+                      <input
+                        type="text"
+                        name="label"
+                        value={expenseFinanceFormState.label}
+                        onChange={(event) => handleFinanceFormChange(event, "expense", "new")}
+                        className="rounded-xl border border-stone-700 bg-stone-950 px-3 py-2.5 text-sm text-stone-100 outline-none transition placeholder:text-stone-500 focus:border-rose-500"
+                        placeholder="Facebook Ad"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                      Category
+                      <select
+                        name="category"
+                        value={expenseFinanceFormState.category}
+                        onChange={(event) => handleFinanceFormChange(event, "expense", "new")}
+                        className="rounded-xl border border-stone-700 bg-stone-950 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-rose-500"
+                      >
+                        <option value="">Choose a category</option>
+                        {financeCategoryOptions.expense.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,11rem)]">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                      Notes
+                      <textarea
+                        name="notes"
+                        value={expenseFinanceFormState.notes}
+                        onChange={(event) => handleFinanceFormChange(event, "expense", "new")}
+                        className="min-h-20 rounded-xl border border-stone-700 bg-stone-950 px-3 py-2.5 text-sm text-stone-100 outline-none transition placeholder:text-stone-500 focus:border-rose-500"
+                        placeholder="Optional details"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                      Amount
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        name="amount"
+                        value={expenseFinanceFormState.amount}
+                        onChange={(event) => handleFinanceFormChange(event, "expense", "new")}
+                        className="rounded-xl border border-stone-700 bg-stone-950 px-3 py-2.5 text-sm text-stone-100 outline-none transition placeholder:text-stone-500 focus:border-rose-500"
+                        placeholder="0.00"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-start pt-1">
+                    <button
+                      type="submit"
+                      disabled={activeFinanceActionId === "create-expense"}
+                      className="rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-rose-400"
+                    >
+                      {activeFinanceActionId === "create-expense" ? "Adding Expense..." : "Add Expense Item"}
+                    </button>
+                  </div>
+                </form>
+
+                {expenseFinanceItems.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-stone-700 bg-stone-950 px-4 py-5 text-sm text-stone-400">
+                    No expense items added yet.
+                  </div>
+                ) : (
+                  <div className="grid gap-2.5">
+                    {expenseFinanceItems.map((item) => (
+                      <article key={item.id} className="rounded-xl border border-stone-700 bg-stone-950 px-3.5 py-3">
+                        {editingFinanceItemId === item.id ? (
+                          <div className="grid gap-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                                Label / Description
+                                <input
+                                  type="text"
+                                  name="label"
+                                  value={editingFinanceItemFormState.label}
+                                  onChange={(event) => handleFinanceFormChange(event, item.type, "edit")}
+                                  className="rounded-xl border border-stone-700 bg-stone-900 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-rose-500"
+                                  required
+                                />
+                              </label>
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                                Category
+                                <select
+                                  name="category"
+                                  value={editingFinanceItemFormState.category}
+                                  onChange={(event) => handleFinanceFormChange(event, item.type, "edit")}
+                                  className="rounded-xl border border-stone-700 bg-stone-900 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-rose-500"
+                                >
+                                  <option value="">Choose a category</option>
+                                  {financeCategoryOptions[item.type].map((category) => (
+                                    <option key={category} value={category}>
+                                      {category}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,11rem)]">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                                Notes
+                                <textarea
+                                  name="notes"
+                                  value={editingFinanceItemFormState.notes}
+                                  onChange={(event) => handleFinanceFormChange(event, item.type, "edit")}
+                                  className="min-h-20 rounded-xl border border-stone-700 bg-stone-900 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-rose-500"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-200">
+                                Amount
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  min="0"
+                                  step="0.01"
+                                  name="amount"
+                                  value={editingFinanceItemFormState.amount}
+                                  onChange={(event) => handleFinanceFormChange(event, item.type, "edit")}
+                                  className="rounded-xl border border-stone-700 bg-stone-900 px-3 py-2.5 text-sm text-stone-100 outline-none transition focus:border-rose-500"
+                                  required
+                                />
+                              </label>
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveFinanceItem(item)}
+                                disabled={activeFinanceActionId === `edit-${item.id}`}
+                                className="rounded-xl bg-rose-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-rose-400"
+                              >
+                                {activeFinanceActionId === `edit-${item.id}` ? "Saving..." : "Save Item"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingFinanceItem}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="text-sm font-semibold text-stone-100">{item.label}</h4>
+                                {item.category ? (
+                                  <span className="rounded-full border border-rose-800/60 bg-rose-950/60 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-200">
+                                    {item.category}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {item.notes?.trim() ? (
+                                <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-stone-400">{item.notes}</p>
+                              ) : null}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2.5 sm:justify-end">
+                              <p className="min-w-[7rem] text-sm font-semibold text-rose-200 sm:text-right">
+                                {formatCurrency(item.amount)}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => startEditingFinanceItem(item)}
+                                className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-xs font-semibold text-stone-200 transition hover:bg-stone-800"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteFinanceItem(item)}
+                                disabled={activeFinanceActionId === `delete-${item.id}`}
+                                className="rounded-lg border border-rose-900/60 bg-rose-950/60 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {activeFinanceActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
             </div>
           </section>
         ) : null}
