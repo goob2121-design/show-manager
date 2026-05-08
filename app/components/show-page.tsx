@@ -7313,14 +7313,14 @@ export function ShowPage({
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               {shouldShowPortalLogo ? (
-                <div className="mb-3">
+                <div className="mb-1 overflow-hidden">
                   <Image
                     src="/stageflow-logo-v2.png"
                     alt="StageFlow logo"
                     width={420}
                     height={210}
                     priority
-                    className="h-auto w-full max-w-[90vw] object-contain p-1 sm:max-w-[320px] lg:max-w-[360px]"
+                    className="h-auto w-full max-w-[94vw] object-contain -translate-y-1.5 scale-[1.11] transform-gpu sm:max-w-[350px] lg:max-w-[390px]"
                   />
                 </div>
               ) : null}

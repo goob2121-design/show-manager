@@ -72,14 +72,16 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
         <header className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
           <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-              <Image
-                src="/stageflow-logo-v2.png"
-                alt="StageFlow logo"
-                width={240}
-                height={120}
-                className="h-auto w-full max-w-[200px] object-contain"
-                priority
-              />
+              <div className="w-full max-w-[220px] overflow-hidden sm:max-w-[240px]">
+                <Image
+                  src="/stageflow-logo-v2.png"
+                  alt="StageFlow logo"
+                  width={240}
+                  height={120}
+                  className="h-auto w-full object-contain -translate-y-1.5 scale-[1.11] transform-gpu"
+                  priority
+                />
+              </div>
 
               <div className="max-w-2xl space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-100">

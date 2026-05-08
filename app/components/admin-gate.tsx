@@ -159,15 +159,17 @@ export function AdminGate({
         <div className="flex flex-col gap-6 text-center">
           <header className="flex flex-col items-center gap-4">
             {showLogo ? (
-              <Image
-                src="/stageflow-logo-v2.png"
-                alt="StageFlow logo"
-                width={580}
-                height={290}
-                priority
-                className="h-auto w-full max-w-[90%] object-contain px-2 sm:max-w-[500px]"
-                onError={() => setShowLogo(false)}
-              />
+              <div className="w-full max-w-[88%] overflow-visible sm:max-w-[480px]">
+                <Image
+                  src="/stageflow-logo-v2.png"
+                  alt="StageFlow logo"
+                  width={580}
+                  height={290}
+                  priority
+                  className="h-auto w-full object-contain"
+                  onError={() => setShowLogo(false)}
+                />
+              </div>
             ) : null}
 
             <div className="flex flex-col gap-2">

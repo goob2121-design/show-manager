@@ -1389,7 +1389,7 @@ export function McPage({
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-3">
               {showLogo ? (
-                <div className="w-fit">
+                <div className="w-fit overflow-visible">
                   <Image
                     src="/stageflow-logo-v2.png"
                     alt="StageFlow logo"

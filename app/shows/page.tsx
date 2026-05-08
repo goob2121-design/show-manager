@@ -1547,18 +1547,20 @@ export default function ShowsDashboardPage() {
 
           <header className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
-              <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                  {showLogo ? (
-                    <Image
-                      src="/stageflow-logo-v2.png"
-                      alt="StageFlow logo"
-                      width={320}
-                      height={160}
-                      className="h-auto w-full max-w-[320px] object-contain p-2"
-                      onError={() => setShowLogo(false)}
-                      priority
-                    />
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                    {showLogo ? (
+                    <div className="w-full max-w-[250px] overflow-hidden sm:max-w-[350px]">
+                      <Image
+                        src="/stageflow-logo-v2.png"
+                        alt="StageFlow logo"
+                        width={320}
+                        height={160}
+                        className="h-auto w-full object-contain -translate-y-1.5 scale-[1.11] transform-gpu"
+                        onError={() => setShowLogo(false)}
+                        priority
+                      />
+                    </div>
                   ) : null}
 
                   <div className="max-w-2xl space-y-2">
