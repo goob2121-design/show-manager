@@ -358,12 +358,24 @@ type McSponsorPlacementRenderableItem =
       marker: "before-intermission" | "after-intermission" | "closing" | "flexible";
     };
 
+type SponsorDocumentFormState = {
+  sponsorshipLevel: string;
+  sponsorshipAmount: string;
+  paymentStatus: string;
+};
+
 const initialSponsorLibraryFormState: SponsorLibraryFormState = {
   name: "",
   shortMessage: "",
   fullMessage: "",
   website: "",
   logoUrl: "",
+};
+
+const initialSponsorDocumentFormState: SponsorDocumentFormState = {
+  sponsorshipLevel: "",
+  sponsorshipAmount: "",
+  paymentStatus: "prospect",
 };
 
 const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
@@ -380,6 +392,20 @@ const sponsorPlacementOptions = [
   { value: "before_intermission", label: "Before Intermission" },
   { value: "after_intermission", label: "After Intermission" },
   { value: "closing", label: "Closing Section" },
+] as const;
+
+const sponsorDocumentLevelOptions = [
+  { value: "Platinum Sponsor", label: "Platinum Sponsor" },
+  { value: "Gold Sponsor", label: "Gold Sponsor" },
+  { value: "Silver Sponsor", label: "Silver Sponsor" },
+  { value: "Custom", label: "Custom" },
+] as const;
+
+const sponsorPaymentStatusOptions = [
+  { value: "prospect", label: "Prospect" },
+  { value: "quoted", label: "Quoted" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "paid", label: "Paid" },
 ] as const;
 
 function formatShowDate(showDate: string | null) {
@@ -936,6 +962,17 @@ function buildShowSponsorAssignmentFormState(sponsor: ShowSponsor): ShowSponsorA
     placementType: sponsor.placement_type ?? "",
     linkedPerformer: sponsor.linked_performer ?? "",
     customNote: sponsor.custom_note ?? "",
+  };
+}
+
+function buildSponsorDocumentFormState(sponsor: SponsorLibraryEntry): SponsorDocumentFormState {
+  return {
+    sponsorshipLevel: sponsor.sponsorship_level ?? "",
+    sponsorshipAmount:
+      sponsor.sponsorship_amount === null || sponsor.sponsorship_amount === undefined
+        ? ""
+        : sponsor.sponsorship_amount.toFixed(2),
+    paymentStatus: sponsor.payment_status ?? "prospect",
   };
 }
 
@@ -2214,11 +2251,226 @@ function normalizeSongLibrarySong(
 function normalizeSponsorLibraryEntry(
   sponsor: SponsorLibraryEntry & { website?: string | null },
 ): SponsorLibraryEntry {
+  const parsedSponsorshipAmount =
+    typeof sponsor.sponsorship_amount === "number"
+      ? sponsor.sponsorship_amount
+      : typeof sponsor.sponsorship_amount === "string"
+        ? Number.parseFloat(sponsor.sponsorship_amount)
+        : null;
+
   return {
     ...sponsor,
     website: sponsor.website ?? null,
     logo_url: sponsor.logo_url ?? null,
+    sponsorship_level: sponsor.sponsorship_level ?? null,
+    sponsorship_amount: Number.isFinite(parsedSponsorshipAmount) ? parsedSponsorshipAmount : null,
+    payment_status: sponsor.payment_status ?? "prospect",
+    proposal_generated_at: sponsor.proposal_generated_at ?? null,
+    quote_generated_at: sponsor.quote_generated_at ?? null,
+    receipt_generated_at: sponsor.receipt_generated_at ?? null,
   };
+}
+
+function parseSponsorAmountInput(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  const normalizedValue = trimmedValue.replace(/[^0-9.-]/g, "");
+  const parsedValue = Number.parseFloat(normalizedValue);
+
+  return Number.isFinite(parsedValue) ? parsedValue : null;
+}
+
+function getSponsorTierBenefits(level: string | null | undefined) {
+  switch (level) {
+    case "Platinum Sponsor":
+      return [
+        "Large logo placement on flyers and promotional materials",
+        "Recognition on social media and online promotions",
+        "Website sponsor listing",
+        "Stage mentions during the show",
+        "Included in MC sponsor reads",
+        "Premium sponsor placement where available",
+      ];
+    case "Gold Sponsor":
+      return [
+        "Logo placement on selected promotional materials",
+        "Social media recognition",
+        "Website sponsor listing",
+        "Stage mention during the show",
+        "Included in sponsor thank-you mentions",
+      ];
+    case "Silver Sponsor":
+      return [
+        "Sponsor listing on promotional materials where space allows",
+        "Social media or website recognition",
+        "Stage thank-you mention during the show",
+      ];
+    default:
+      return [
+        "Sponsor recognition through Cumberland Mountain Music Show promotional and show materials",
+        "Stage thank-you mention during the show",
+      ];
+  }
+}
+
+function formatDocumentDate(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+
+  if (Number.isNaN(date.getTime())) {
+    return "Date TBD";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatSponsorPaymentStatusLabel(value: string | null | undefined) {
+  const normalizedValue = value?.trim().toLowerCase() ?? "prospect";
+  const option = sponsorPaymentStatusOptions.find((status) => status.value === normalizedValue);
+  return option?.label ?? "Prospect";
+}
+
+function buildSponsorOutreachEmail(sponsorName: string) {
+  return `Subject: Cumberland Mountain Music Show Sponsorship Opportunity
+
+Hello ${sponsorName},
+
+I wanted to reach out and invite you to be part of the Cumberland Mountain Music Show as a sponsor.
+
+Your support helps us continue bringing live bluegrass, gospel, traditional country, and acoustic music to our community, while also giving your business recognition through show promotions, social media, stage mentions, and sponsor materials.
+
+We currently have sponsorship options available at the Platinum, Gold, and Silver levels, and I’d be glad to send over more details.
+
+Thank you for considering being part of the show.
+
+— Bryan Turner
+Cumberland Mountain Music Show`;
+}
+
+function buildSponsorDocumentHtml({
+  kind,
+  sponsor,
+  showName,
+  showDate,
+  logoUrl,
+}: {
+  kind: "proposal" | "quote" | "receipt";
+  sponsor: SponsorLibraryEntry;
+  showName: string;
+  showDate: string | null;
+  logoUrl: string;
+}) {
+  const documentTitle =
+    kind === "proposal" ? "Sponsor Proposal" : kind === "quote" ? "Sponsor Quote" : "Sponsor Receipt";
+  const sponsorshipLevel = sponsor.sponsorship_level ?? "Custom";
+  const sponsorshipAmount =
+    sponsor.sponsorship_amount === null ? "To be determined" : formatCurrency(sponsor.sponsorship_amount);
+  const benefits = getSponsorTierBenefits(sponsorshipLevel);
+  const showDateLabel = formatShowDate(showDate);
+  const generatedDateLabel = formatDocumentDate(new Date());
+  const receiptReference = `${sponsor.id.slice(0, 8).toUpperCase()}-${new Date().getFullYear()}`;
+  const introParagraph =
+    "Thank you for considering support of the Cumberland Mountain Music Show. Your sponsorship helps us continue presenting live bluegrass, gospel, traditional country, and acoustic music in our region while giving local businesses meaningful visibility in front of an engaged community audience.";
+  const benefitsMarkup = benefits
+    .map((benefit) => `<li>${escapeHtml(benefit)}</li>`)
+    .join("");
+
+  const bodyMarkup =
+    kind === "proposal"
+      ? `
+        <p class="lead">${escapeHtml(introParagraph)}</p>
+        <p>We’re grateful for community-minded partners who help make each show possible. For this show, we would love to feature <strong>${escapeHtml(sponsor.name)}</strong> as a <strong>${escapeHtml(sponsorshipLevel)}</strong> supporter.</p>
+        <div class="summary-grid">
+          <div class="summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
+          <div class="summary-card"><span>Sponsorship amount</span><strong>${escapeHtml(sponsorshipAmount)}</strong></div>
+          <div class="summary-card"><span>Show</span><strong>${escapeHtml(showName)}</strong></div>
+          <div class="summary-card"><span>Show date</span><strong>${escapeHtml(showDateLabel)}</strong></div>
+        </div>
+        <h2>Included Benefits</h2>
+        <ul>${benefitsMarkup}</ul>
+        <p>Benefits may include logo placement on promotional materials and flyers where applicable, online and Facebook recognition, website listing where applicable, stage mentions during the show, and inclusion in sponsor reads and thank-yous.</p>
+        <p>Thank you again for considering support of the Cumberland Mountain Music Show. We truly appreciate every sponsor who helps us continue this music tradition in our community.</p>
+        <p class="signoff">Bryan Turner<br />Cumberland Mountain Music Show</p>
+      `
+      : kind === "quote"
+        ? `
+        <div class="summary-grid">
+          <div class="summary-card"><span>Sponsor</span><strong>${escapeHtml(sponsor.name)}</strong></div>
+          <div class="summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
+          <div class="summary-card"><span>Amount</span><strong>${escapeHtml(sponsorshipAmount)}</strong></div>
+          <div class="summary-card"><span>Quote date</span><strong>${escapeHtml(generatedDateLabel)}</strong></div>
+        </div>
+        <p class="lead">Thank you for considering sponsorship support for the Cumberland Mountain Music Show.</p>
+        <p><strong>Show:</strong> ${escapeHtml(showName)}${showDateLabel ? ` on ${escapeHtml(showDateLabel)}` : ""}</p>
+        <h2>Included Benefits</h2>
+        <ul>${benefitsMarkup}</ul>
+        <p>We appreciate the opportunity to partner with sponsors who support live acoustic music in our region.</p>
+      `
+        : `
+        <div class="summary-grid">
+          <div class="summary-card"><span>Sponsor</span><strong>${escapeHtml(sponsor.name)}</strong></div>
+          <div class="summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
+          <div class="summary-card"><span>Amount paid</span><strong>${escapeHtml(sponsorshipAmount)}</strong></div>
+          <div class="summary-card"><span>Receipt date</span><strong>${escapeHtml(generatedDateLabel)}</strong></div>
+        </div>
+        <p><strong>Show supported:</strong> ${escapeHtml(showName)}${showDateLabel ? ` on ${escapeHtml(showDateLabel)}` : ""}</p>
+        <p><strong>Payment status:</strong> ${escapeHtml(formatSponsorPaymentStatusLabel(sponsor.payment_status))}</p>
+        <p><strong>Receipt reference:</strong> ${escapeHtml(receiptReference)}</p>
+        <p class="lead">Thank you for supporting the Cumberland Mountain Music Show. Your partnership helps us continue bringing live music to our community.</p>
+      `;
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(`${sponsor.name} - ${documentTitle}`)}</title>
+        <style>
+          body { margin: 32px; color: #111827; font-family: Arial, sans-serif; background: #ffffff; }
+          h1, h2, p { margin: 0; }
+          .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+          .header img { display: block; width: 92px; height: auto; object-fit: contain; flex-shrink: 0; }
+          .brand { font-size: 14px; font-weight: 700; color: #047857; }
+          .title { margin-top: 4px; font-size: 28px; font-weight: 700; }
+          .meta { margin-top: 6px; color: #4b5563; font-size: 14px; }
+          .subtitle { display: none; }
+          .lead { margin: 18px 0; line-height: 1.6; }
+          .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 22px; }
+          .summary-card { border: 1px solid #d1d5db; border-radius: 12px; padding: 12px 14px; background: #f9fafb; }
+          .summary-card span { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; }
+          .summary-card strong { display: block; margin-top: 6px; font-size: 18px; }
+          h2 { margin: 18px 0 10px; font-size: 18px; }
+          p { line-height: 1.6; }
+          ul { margin: 0; padding-left: 20px; line-height: 1.6; }
+          .signoff { margin-top: 24px; }
+          @media print {
+            body { margin: 18px; }
+            img { display: block !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" />
+          <div>
+            <div class="brand">Cumberland Mountain Music Show</div>
+            <div class="title">${escapeHtml(documentTitle)}</div>
+            <div class="meta">${escapeHtml(sponsor.name)}</div>
+            <div class="subtitle">${escapeHtml(sponsor.name)}${showName ? ` • ${escapeHtml(showName)}` : ""}</div>
+          </div>
+        </div>
+        ${bodyMarkup}
+      </body>
+    </html>
+  `;
 }
 
 async function uploadSponsorLogoFile(
@@ -2878,6 +3130,7 @@ export function ShowPage({
   const [poolSongMp3File, setPoolSongMp3File] = useState<File | null>(null);
   const [poolSongMp3InputKey, setPoolSongMp3InputKey] = useState(0);
   const [editingSponsorLibraryId, setEditingSponsorLibraryId] = useState<string | null>(null);
+  const [expandedSponsorLibraryCardId, setExpandedSponsorLibraryCardId] = useState<string | null>(null);
   const [editingShowSponsorId, setEditingShowSponsorId] = useState<string | null>(null);
   const [poolSongEditFormState, setPoolSongEditFormState] = useState<SongEditFormState>({
     title: "",
@@ -2904,6 +3157,10 @@ export function ShowPage({
   );
   const [newSponsorLibraryFormState, setNewSponsorLibraryFormState] =
     useState<SponsorLibraryFormState>(initialSponsorLibraryFormState);
+  const [isAddSponsorFormOpen, setIsAddSponsorFormOpen] = useState(false);
+  const [sponsorDocumentFormStates, setSponsorDocumentFormStates] = useState<
+    Record<string, SponsorDocumentFormState>
+  >({});
   const [newSponsorLogoFile, setNewSponsorLogoFile] = useState<File | null>(null);
   const [editingSponsorLogoFile, setEditingSponsorLogoFile] = useState<File | null>(null);
   const [showSponsorAssignmentFormState, setShowSponsorAssignmentFormState] =
@@ -3691,6 +3948,18 @@ export function ShowPage({
   }, [show]);
 
   useEffect(() => {
+    setSponsorDocumentFormStates((currentStates) => {
+      const nextStates: Record<string, SponsorDocumentFormState> = {};
+
+      sponsorLibrary.forEach((sponsor) => {
+        nextStates[sponsor.id] = currentStates[sponsor.id] ?? buildSponsorDocumentFormState(sponsor);
+      });
+
+      return nextStates;
+    });
+  }, [sponsorLibrary]);
+
+  useEffect(() => {
     if (viewMode === "admin") {
       setActiveAdminTab(requestedAdminTab ?? "overview");
     }
@@ -3900,6 +4169,20 @@ export function ShowPage({
     }));
   }
 
+  function handleSponsorDocumentFormChange(
+    sponsorId: string,
+    field: keyof SponsorDocumentFormState,
+    value: string,
+  ) {
+    setSponsorDocumentFormStates((currentStates) => ({
+      ...currentStates,
+      [sponsorId]: {
+        ...(currentStates[sponsorId] ?? initialSponsorDocumentFormState),
+        [field]: value,
+      },
+    }));
+  }
+
   function handleSponsorLogoFileChange(
     event: ChangeEvent<HTMLInputElement>,
     mode: "new" | "edit",
@@ -3935,6 +4218,7 @@ export function ShowPage({
       return;
     }
 
+    setExpandedSponsorLibraryCardId(sponsorId);
     setEditingSponsorLibraryId(sponsorId);
     setSponsorLibraryFormState(buildSponsorLibraryFormState(sponsorToEdit));
     setEditingSponsorLogoFile(null);
@@ -3944,6 +4228,25 @@ export function ShowPage({
     setEditingSponsorLibraryId(null);
     setSponsorLibraryFormState(initialSponsorLibraryFormState);
     setEditingSponsorLogoFile(null);
+  }
+
+  function syncSponsorAcrossState(updatedSponsor: SponsorLibraryEntry) {
+    setSponsorLibrary((currentSponsors) =>
+      currentSponsors
+        .map((sponsor) => (sponsor.id === updatedSponsor.id ? updatedSponsor : sponsor))
+        .sort((sponsorA, sponsorB) => sponsorA.name.localeCompare(sponsorB.name)),
+    );
+    setShowSponsors((currentSponsors) =>
+      currentSponsors.map((sponsor) =>
+        sponsor.sponsor_id === updatedSponsor.id
+          ? { ...sponsor, sponsor: updatedSponsor }
+          : sponsor,
+      ),
+    );
+    setSponsorDocumentFormStates((currentStates) => ({
+      ...currentStates,
+      [updatedSponsor.id]: buildSponsorDocumentFormState(updatedSponsor),
+    }));
   }
 
   async function handleCreateSponsorLibraryEntry(event: FormEvent<HTMLFormElement>) {
@@ -3988,6 +4291,7 @@ export function ShowPage({
       );
       setNewSponsorLibraryFormState(initialSponsorLibraryFormState);
       setNewSponsorLogoFile(null);
+      setIsAddSponsorFormOpen(false);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -4030,24 +4334,175 @@ export function ShowPage({
       }
 
       const normalizedSponsor = normalizeSponsorLibraryEntry(data);
-
-      setSponsorLibrary((currentSponsors) =>
-        currentSponsors
-          .map((sponsor) => (sponsor.id === sponsorId ? normalizedSponsor : sponsor))
-          .sort((sponsorA, sponsorB) => sponsorA.name.localeCompare(sponsorB.name)),
-      );
-      setShowSponsors((currentSponsors) =>
-        currentSponsors.map((sponsor) =>
-          sponsor.sponsor_id === sponsorId
-            ? { ...sponsor, sponsor: normalizedSponsor }
-            : sponsor,
-        ),
-      );
+      syncSponsorAcrossState(normalizedSponsor);
       cancelEditingSponsorLibraryEntry();
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
       setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleSaveSponsorDocumentDetails(sponsorId: string) {
+    const currentFormState = sponsorDocumentFormStates[sponsorId] ?? initialSponsorDocumentFormState;
+    const sponsor = sponsorLibrary.find((entry) => entry.id === sponsorId);
+
+    if (!sponsor) {
+      setActionError("Sponsor not found.");
+      return;
+    }
+
+    const sponsorshipAmount = parseSponsorAmountInput(currentFormState.sponsorshipAmount);
+
+    if (currentFormState.sponsorshipAmount.trim() && sponsorshipAmount === null) {
+      setActionError("Enter a valid sponsor amount.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`documents-${sponsorId}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("sponsor_library")
+        .update({
+          sponsorship_level: normalizeOptionalField(currentFormState.sponsorshipLevel),
+          sponsorship_amount: sponsorshipAmount,
+          payment_status: normalizeOptionalField(currentFormState.paymentStatus) ?? "prospect",
+        })
+        .eq("id", sponsorId)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      syncSponsorAcrossState(normalizeSponsorLibraryEntry(data));
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handlePrintSponsorDocument(
+    sponsor: SponsorLibraryEntry,
+    kind: "proposal" | "quote" | "receipt",
+  ) {
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      window.alert("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`${kind}-${sponsor.id}`);
+
+    try {
+      const supabase = createClient();
+      const timestampField =
+        kind === "proposal"
+          ? "proposal_generated_at"
+          : kind === "quote"
+            ? "quote_generated_at"
+            : "receipt_generated_at";
+      const timestamp = new Date().toISOString();
+      const currentFormState = sponsorDocumentFormStates[sponsor.id] ?? buildSponsorDocumentFormState(sponsor);
+      const sponsorshipAmount = parseSponsorAmountInput(currentFormState.sponsorshipAmount);
+      const { data, error } = await supabase
+        .from("sponsor_library")
+        .update({
+          sponsorship_level: normalizeOptionalField(currentFormState.sponsorshipLevel),
+          sponsorship_amount: sponsorshipAmount,
+          payment_status: normalizeOptionalField(currentFormState.paymentStatus) ?? "prospect",
+          [timestampField]: timestamp,
+        })
+        .eq("id", sponsor.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const normalizedSponsor = normalizeSponsorLibraryEntry(data);
+      syncSponsorAcrossState(normalizedSponsor);
+
+      const printHtml = buildSponsorDocumentHtml({
+        kind,
+        sponsor: normalizedSponsor,
+        showName: show?.name ?? "Cumberland Mountain Music Show",
+        showDate: show?.show_date ?? null,
+        logoUrl: `${window.location.origin}/cmms-logo.png`,
+      });
+
+      const triggerPrint = () => {
+        if (printWindow.closed) {
+          return;
+        }
+
+        printWindow.focus();
+        printWindow.print();
+      };
+
+      const triggerPrintWhenReady = () => {
+        const { document } = printWindow;
+        const images = Array.from(document.images ?? []);
+
+        if (images.length === 0) {
+          window.setTimeout(triggerPrint, 150);
+          return;
+        }
+
+        let settledImages = 0;
+        const finishImageLoad = () => {
+          settledImages += 1;
+
+          if (settledImages >= images.length) {
+            window.setTimeout(triggerPrint, 150);
+          }
+        };
+
+        images.forEach((image) => {
+          if (image.complete) {
+            finishImageLoad();
+            return;
+          }
+
+          image.addEventListener("load", finishImageLoad, { once: true });
+          image.addEventListener("error", finishImageLoad, { once: true });
+        });
+      };
+
+      printWindow.onload = triggerPrintWhenReady;
+      printWindow.onafterprint = () => {
+        printWindow.close();
+      };
+
+      const { document } = printWindow;
+      document.open();
+      document.write(printHtml);
+      document.close();
+
+      if (document.readyState === "complete") {
+        triggerPrintWhenReady();
+      }
+    } catch (error) {
+      printWindow.close();
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleCopySponsorEmail(sponsor: SponsorLibraryEntry) {
+    try {
+      await navigator.clipboard.writeText(buildSponsorOutreachEmail(sponsor.name));
+    } catch (error) {
+      setActionError(getErrorMessage(error));
     }
   }
 
@@ -9026,79 +9481,91 @@ export function ShowPage({
                   </p>
                 </div>
 
-                <form className="grid gap-4" onSubmit={handleCreateSponsorLibraryEntry}>
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Sponsor Name
-                    <input
-                      type="text"
-                      name="name"
-                      value={newSponsorLibraryFormState.name}
-                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Business or organization name"
-                      required
-                    />
-                  </label>
+                <div className="flex justify-start">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddSponsorFormOpen((currentValue) => !currentValue)}
+                    className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                  >
+                    {isAddSponsorFormOpen ? "Hide Add Sponsor" : "Add Sponsor"}
+                  </button>
+                </div>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Short Message
-                    <textarea
-                      name="shortMessage"
-                      value={newSponsorLibraryFormState.shortMessage}
-                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Short sponsor thank-you or mention"
-                    />
-                  </label>
+                {isAddSponsorFormOpen ? (
+                  <form className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4" onSubmit={handleCreateSponsorLibraryEntry}>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Sponsor Name
+                      <input
+                        type="text"
+                        name="name"
+                        value={newSponsorLibraryFormState.name}
+                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Business or organization name"
+                        required
+                      />
+                    </label>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Full Message
-                    <textarea
-                      name="fullMessage"
-                      value={newSponsorLibraryFormState.fullMessage}
-                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                      className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Longer sponsor read for MC or printed packet"
-                    />
-                  </label>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Short Message
+                      <textarea
+                        name="shortMessage"
+                        value={newSponsorLibraryFormState.shortMessage}
+                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Short sponsor thank-you or mention"
+                      />
+                    </label>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Website
-                    <input
-                      type="url"
-                      name="website"
-                      value={newSponsorLibraryFormState.website}
-                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="https://example.com"
-                    />
-                  </label>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Full Message
+                      <textarea
+                        name="fullMessage"
+                        value={newSponsorLibraryFormState.fullMessage}
+                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                        className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Longer sponsor read for MC or printed packet"
+                      />
+                    </label>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Sponsor Logo
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(event) => handleSponsorLogoFileChange(event, "new")}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                    />
-                    <span className="text-xs font-normal text-stone-500">
-                      Optional. Upload a reusable sponsor logo once for all shows.
-                    </span>
-                  </label>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Website
+                      <input
+                        type="url"
+                        name="website"
+                        value={newSponsorLibraryFormState.website}
+                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="https://example.com"
+                      />
+                    </label>
 
-                  <div className="flex justify-start">
-                    <button
-                      type="submit"
-                      disabled={activeSponsorActionId === "new-library"}
-                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                    >
-                      {activeSponsorActionId === "new-library"
-                        ? "Adding Sponsor..."
-                        : "Add to Sponsor Library"}
-                    </button>
-                  </div>
-                </form>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Sponsor Logo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => handleSponsorLogoFileChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                      />
+                      <span className="text-xs font-normal text-stone-500">
+                        Optional. Upload a reusable sponsor logo once for all shows.
+                      </span>
+                    </label>
+
+                    <div className="flex justify-start">
+                      <button
+                        type="submit"
+                        disabled={activeSponsorActionId === "new-library"}
+                        className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                      >
+                        {activeSponsorActionId === "new-library"
+                          ? "Adding Sponsor..."
+                          : "Add to Sponsor Library"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
 
                 {sponsorLibrary.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
@@ -9111,7 +9578,91 @@ export function ShowPage({
                         key={sponsor.id}
                         className="rounded-2xl border border-stone-200 bg-white p-4"
                       >
-                        {editingSponsorLibraryId === sponsor.id ? (
+                        {(() => {
+                          const isEditing = editingSponsorLibraryId === sponsor.id;
+                          const isExpanded = isEditing || expandedSponsorLibraryCardId === sponsor.id;
+                          const sponsorshipLevel = sponsor.sponsorship_level?.trim() || null;
+                          const sponsorshipAmount =
+                            sponsor.sponsorship_amount === null ? null : formatCurrency(sponsor.sponsorship_amount);
+                          const paymentStatus = sponsor.payment_status
+                            ? formatSponsorPaymentStatusLabel(sponsor.payment_status)
+                            : null;
+
+                          return (
+                            <>
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0 flex flex-1 items-center gap-3">
+                                  <SponsorLogoThumbnail
+                                    logoUrl={sponsor.logo_url}
+                                    sponsorName={sponsor.name}
+                                    className="h-12 w-12"
+                                  />
+
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <h4 className="truncate text-base font-semibold text-stone-900">
+                                        {sponsor.name}
+                                      </h4>
+                                      {sponsorshipLevel ? (
+                                        <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-semibold text-stone-700">
+                                          {sponsorshipLevel}
+                                        </span>
+                                      ) : null}
+                                      {paymentStatus ? (
+                                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                                          {paymentStatus}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-stone-500">
+                                      {sponsorshipAmount ? <span>{sponsorshipAmount}</span> : null}
+                                      {sponsor.website ? <span className="truncate">{sponsor.website}</span> : null}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedSponsorLibraryCardId((currentId) =>
+                                        currentId === sponsor.id ? null : sponsor.id,
+                                      )
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    {isExpanded ? "Hide Details" : "Expand / Details"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handlePrintSponsorDocument(sponsor, "proposal")}
+                                    disabled={activeSponsorActionId === `proposal-${sponsor.id}`}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Proposal
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handlePrintSponsorDocument(sponsor, "quote")}
+                                    disabled={activeSponsorActionId === `quote-${sponsor.id}`}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Quote
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handlePrintSponsorDocument(sponsor, "receipt")}
+                                    disabled={activeSponsorActionId === `receipt-${sponsor.id}`}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Receipt
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isExpanded ? (
+                                <div className="mt-4 border-t border-stone-200 pt-4">
+                        {isEditing ? (
                           <div className="grid gap-4">
                             <div className="flex flex-wrap items-start gap-3">
                               <SponsorLogoThumbnail
@@ -9205,30 +9756,7 @@ export function ShowPage({
                           </div>
                         ) : (
                           <>
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="flex gap-3">
-                                <SponsorLogoThumbnail
-                                  logoUrl={sponsor.logo_url}
-                                  sponsorName={sponsor.name}
-                                />
-
-                                <div className="flex flex-col gap-1">
-                                <h4 className="text-base font-semibold text-stone-900">
-                                  {sponsor.name}
-                                </h4>
-                                {sponsor.website ? (
-                                  <a
-                                    href={sponsor.website}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-sm font-medium text-emerald-700 underline"
-                                  >
-                                    {sponsor.website}
-                                  </a>
-                                ) : null}
-                              </div>
-                              </div>
-
+                            <div className="flex justify-end">
                               <button
                                 type="button"
                                 onClick={() => startEditingSponsorLibraryEntry(sponsor.id)}
@@ -9242,8 +9770,141 @@ export function ShowPage({
                               {sponsor.short_message ? <p>Short: {sponsor.short_message}</p> : null}
                               {sponsor.full_message ? <p>Full: {sponsor.full_message}</p> : null}
                             </div>
+
+                            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                              <div className="flex flex-col gap-1">
+                                <h5 className="text-sm font-semibold uppercase tracking-[0.14em] text-stone-700">
+                                  Sponsor Documents
+                                </h5>
+                                <p className="text-xs text-stone-500">
+                                  Simple proposal, quote, and receipt details for this sponsor.
+                                </p>
+                              </div>
+
+                              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Sponsorship Level
+                                  <select
+                                    value={sponsorDocumentFormStates[sponsor.id]?.sponsorshipLevel ?? sponsor.sponsorship_level ?? ""}
+                                    onChange={(event) =>
+                                      handleSponsorDocumentFormChange(
+                                        sponsor.id,
+                                        "sponsorshipLevel",
+                                        event.target.value,
+                                      )
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  >
+                                    <option value="">Select level</option>
+                                    {sponsorDocumentLevelOptions.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Amount
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={sponsorDocumentFormStates[sponsor.id]?.sponsorshipAmount ?? (sponsor.sponsorship_amount?.toFixed(2) ?? "")}
+                                    onChange={(event) =>
+                                      handleSponsorDocumentFormChange(
+                                        sponsor.id,
+                                        "sponsorshipAmount",
+                                        event.target.value,
+                                      )
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder="500.00"
+                                  />
+                                </label>
+
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Payment Status
+                                  <select
+                                    value={sponsorDocumentFormStates[sponsor.id]?.paymentStatus ?? sponsor.payment_status ?? "prospect"}
+                                    onChange={(event) =>
+                                      handleSponsorDocumentFormChange(
+                                        sponsor.id,
+                                        "paymentStatus",
+                                        event.target.value,
+                                      )
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  >
+                                    {sponsorPaymentStatusOptions.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSaveSponsorDocumentDetails(sponsor.id)}
+                                  disabled={activeSponsorActionId === `documents-${sponsor.id}`}
+                                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                >
+                                  {activeSponsorActionId === `documents-${sponsor.id}` ? "Saving..." : "Save Sponsor Docs"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handlePrintSponsorDocument(sponsor, "proposal")}
+                                  disabled={activeSponsorActionId === `proposal-${sponsor.id}`}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Print Proposal
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handlePrintSponsorDocument(sponsor, "quote")}
+                                  disabled={activeSponsorActionId === `quote-${sponsor.id}`}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Print Quote
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handlePrintSponsorDocument(sponsor, "receipt")}
+                                  disabled={activeSponsorActionId === `receipt-${sponsor.id}`}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Print Receipt
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleCopySponsorEmail(sponsor)}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Copy Sponsor Email
+                                </button>
+                              </div>
+
+                              <div className="mt-4 grid gap-1 text-xs text-stone-500">
+                                {sponsor.proposal_generated_at ? (
+                                  <p>Proposal generated: {formatPortalStatusDateTime(sponsor.proposal_generated_at)}</p>
+                                ) : null}
+                                {sponsor.quote_generated_at ? (
+                                  <p>Quote generated: {formatPortalStatusDateTime(sponsor.quote_generated_at)}</p>
+                                ) : null}
+                                {sponsor.receipt_generated_at ? (
+                                  <p>Receipt generated: {formatPortalStatusDateTime(sponsor.receipt_generated_at)}</p>
+                                ) : null}
+                              </div>
+                            </div>
                           </>
                         )}
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
                       </article>
                     ))}
                   </div>
