@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import {
   buildBlockNoteDrafts,
+  buildMcFlowItems,
   buildMcRunSections,
   buildMcRunSheetData,
   buildScriptFormState,
@@ -3111,7 +3112,7 @@ export function ShowPage({
     [mcRunSections, mcRunSheetData],
   );
   const adminMcSponsorPlacementItems = useMemo(
-    () => buildAdminMcSponsorPlacementItems(setlist, showSponsors),
+    () => buildMcFlowItems(setlist, showSponsors),
     [setlist, showSponsors],
   );
   const populatedMcSections = useMemo(
@@ -7119,15 +7120,13 @@ export function ShowPage({
             </section>
 
             <section className="flex flex-col gap-5">
-              {(mcScriptFormState.intermissionScript.trim() ||
-                mcRunSheetData.beforeIntermission.length > 0 ||
-                mcRunSheetData.afterIntermission.length > 0 ||
-                mcRunSections.some((section) => section.key === "set2" || section.key === "encore")) ? (
+              {(mcRunSheetData.beforeIntermission.length > 0 ||
+                mcRunSheetData.afterIntermission.length > 0) ? (
                 <section className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1">
                     <h4 className="text-lg font-semibold text-stone-900">Intermission Preview</h4>
                     <p className="text-sm text-stone-600">
-                      Sponsor reads and script that will appear around the break.
+                      Sponsor reads that will appear around the break.
                     </p>
                   </div>
 
@@ -7135,8 +7134,6 @@ export function ShowPage({
                     {mcRunSheetData.beforeIntermission.map((sponsor) => (
                       <SponsorReadCard key={`admin-before-intermission-${sponsor.id}`} sponsor={sponsor} />
                     ))}
-
-                    <ScriptCard title="Intermission Script" text={mcScriptFormState.intermissionScript} />
 
                     {mcRunSheetData.afterIntermission.map((sponsor) => (
                       <SponsorReadCard key={`admin-after-intermission-${sponsor.id}`} sponsor={sponsor} />

@@ -88,6 +88,33 @@ export type McRunSheetData = {
   flexible: ShowSponsor[];
 };
 
+type McFlowSongBase = {
+  id: string;
+  section: SetSection;
+  position: number;
+  title: string;
+  artist: string | null;
+  song_key: string | null;
+  notes: string | null;
+};
+
+export type McFlowRenderableItem<TSong extends McFlowSongBase = McFlowSongBase> =
+  | {
+      kind: "song";
+      id: string;
+      song: TSong;
+    }
+  | {
+      kind: "sponsor";
+      id: string;
+      sponsor: ShowSponsor;
+    }
+  | {
+      kind: "marker";
+      id: string;
+      marker: "before-intermission" | "after-intermission" | "closing" | "flexible";
+    };
+
 const setSectionOrder: SetSection[] = ["set1", "set2", "encore"];
 const setSectionTitles: Record<SetSection, string> = {
   set1: "Set 1",
@@ -95,6 +122,7 @@ const setSectionTitles: Record<SetSection, string> = {
   encore: "Encore",
 };
 const defaultSingerName = "CMMS Band";
+const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/g;
 
 function normalizeSetSection(value: string | null | undefined): SetSection {
   if (value === "set2" || value === "encore") {
@@ -102,6 +130,15 @@ function normalizeSetSection(value: string | null | undefined): SetSection {
   }
 
   return "set1";
+}
+
+function stripMp3MarkerFromNotes(notes: string | null | undefined) {
+  if (!notes) {
+    return null;
+  }
+
+  const cleanedNotes = notes.replace(MP3_PATH_MARKER_PATTERN, "").trim();
+  return cleanedNotes || null;
 }
 
 function normalizeSetlistSong(song: SetlistEntryRow | SetlistSong): SetlistSong {
@@ -116,7 +153,7 @@ function normalizeSetlistSong(song: SetlistEntryRow | SetlistSong): SetlistSong 
       : song.guest_song
     : null;
   const resolvedKey = librarySong?.key ?? guestSong?.key ?? song.key ?? null;
-  const resolvedNotes = librarySong?.notes ?? song.notes ?? null;
+  const resolvedNotes = stripMp3MarkerFromNotes(librarySong?.notes ?? song.notes ?? null);
   const resolvedPerformer =
     guestSong?.submitted_by_name?.trim() ||
     ("performer_name" in song ? song.performer_name : null) ||
@@ -177,6 +214,10 @@ function formatShowDate(showDate: string | null) {
 }
 
 function normalizeName(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function normalizeMcPlacementName(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
 }
 
@@ -329,6 +370,247 @@ function getSectionPacketSubtitle(section: SetSection) {
     default:
       return "RUN SHEET";
   }
+}
+
+function findSetlistSongIndexByAnchorSongId<TSong extends McFlowSongBase>(
+  songs: TSong[],
+  anchorSongId: string | null,
+) {
+  if (!anchorSongId) {
+    return null;
+  }
+
+  const matchIndex = songs.findIndex((song) => song.id === anchorSongId);
+  return matchIndex >= 0 ? matchIndex : null;
+}
+
+function findMatchingSetlistSongIndex<TSong extends McFlowSongBase>(
+  songs: TSong[],
+  linkedPerformer: string | null,
+  fallbackIndex: number,
+) {
+  if (songs.length === 0) {
+    return null;
+  }
+
+  const normalizedPerformer = normalizeMcPlacementName(linkedPerformer);
+
+  if (!normalizedPerformer) {
+    return fallbackIndex;
+  }
+
+  const exactMatchIndex = songs.findIndex(
+    (song) => normalizeMcPlacementName(song.artist) === normalizedPerformer,
+  );
+
+  if (exactMatchIndex >= 0) {
+    return exactMatchIndex;
+  }
+
+  const partialMatchIndex = songs.findIndex((song) => {
+    const normalizedSongPerformer = normalizeMcPlacementName(song.artist);
+
+    return (
+      normalizedSongPerformer.includes(normalizedPerformer) ||
+      normalizedPerformer.includes(normalizedSongPerformer)
+    );
+  });
+
+  if (partialMatchIndex >= 0) {
+    return partialMatchIndex;
+  }
+
+  return fallbackIndex;
+}
+
+export function buildMcFlowItems<TSong extends McFlowSongBase>(
+  setlist: TSong[],
+  sponsors: ShowSponsor[],
+): McFlowRenderableItem<TSong>[] {
+  const orderedSongs = [...setlist].sort((songA, songB) => {
+    const sectionDifference =
+      setSectionOrder.indexOf(songA.section) - setSectionOrder.indexOf(songB.section);
+
+    if (sectionDifference !== 0) {
+      return sectionDifference;
+    }
+
+    if (songA.position !== songB.position) {
+      return songA.position - songB.position;
+    }
+
+    return songA.id.localeCompare(songB.id);
+  });
+  const orderedSponsors = sortSponsors(sponsors);
+  const beforeBySongId: Record<string, ShowSponsor[]> = {};
+  const afterBySongId: Record<string, ShowSponsor[]> = {};
+  const beforeIntermission: ShowSponsor[] = [];
+  const afterIntermission: ShowSponsor[] = [];
+  const closing: ShowSponsor[] = [];
+  const flexible: ShowSponsor[] = [];
+
+  function appendSponsor(
+    lookup: Record<string, ShowSponsor[]>,
+    songId: string,
+    sponsor: ShowSponsor,
+  ) {
+    if (!lookup[songId]) {
+      lookup[songId] = [];
+    }
+
+    lookup[songId].push(sponsor);
+  }
+
+  orderedSponsors.forEach((sponsor) => {
+    const placementType = sponsor.placement_type;
+
+    if (placementType === "before_intermission") {
+      beforeIntermission.push(sponsor);
+      return;
+    }
+
+    if (placementType === "after_intermission") {
+      afterIntermission.push(sponsor);
+      return;
+    }
+
+    if (placementType === "closing") {
+      closing.push(sponsor);
+      return;
+    }
+
+    if (placementType === "before_performer") {
+      const targetIndex =
+        findSetlistSongIndexByAnchorSongId(orderedSongs, sponsor.mc_anchor_song_id) ??
+        findMatchingSetlistSongIndex(orderedSongs, sponsor.linked_performer, 0);
+
+      if (targetIndex === null) {
+        flexible.push(sponsor);
+        return;
+      }
+
+      appendSponsor(beforeBySongId, orderedSongs[targetIndex].id, sponsor);
+      return;
+    }
+
+    if (placementType === "after_performer") {
+      const targetIndex =
+        findSetlistSongIndexByAnchorSongId(orderedSongs, sponsor.mc_anchor_song_id) ??
+        findMatchingSetlistSongIndex(
+          orderedSongs,
+          sponsor.linked_performer,
+          Math.max(orderedSongs.length - 1, 0),
+        );
+
+      if (targetIndex === null) {
+        flexible.push(sponsor);
+        return;
+      }
+
+      appendSponsor(afterBySongId, orderedSongs[targetIndex].id, sponsor);
+      return;
+    }
+
+    flexible.push(sponsor);
+  });
+
+  const items: McFlowRenderableItem<TSong>[] = [];
+  const set1Songs = orderedSongs.filter((song) => song.section === "set1");
+  const set2Songs = orderedSongs.filter((song) => song.section === "set2");
+  const encoreSongs = orderedSongs.filter((song) => song.section === "encore");
+
+  function appendSongsWithSponsors(songs: TSong[]) {
+    songs.forEach((song) => {
+      (beforeBySongId[song.id] ?? []).forEach((sponsor) => {
+        items.push({
+          kind: "sponsor",
+          id: `before-song-${song.id}-${sponsor.id}`,
+          sponsor,
+        });
+      });
+
+      items.push({
+        kind: "song",
+        id: song.id,
+        song,
+      });
+
+      (afterBySongId[song.id] ?? []).forEach((sponsor) => {
+        items.push({
+          kind: "sponsor",
+          id: `after-song-${song.id}-${sponsor.id}`,
+          sponsor,
+        });
+      });
+    });
+  }
+
+  appendSongsWithSponsors(set1Songs);
+
+  if (beforeIntermission.length > 0) {
+    items.push({
+      kind: "marker",
+      id: "placement-marker-before-intermission",
+      marker: "before-intermission",
+    });
+    beforeIntermission.forEach((sponsor) => {
+      items.push({
+        kind: "sponsor",
+        id: `before-intermission-${sponsor.id}`,
+        sponsor,
+      });
+    });
+  }
+
+  if (afterIntermission.length > 0) {
+    items.push({
+      kind: "marker",
+      id: "placement-marker-after-intermission",
+      marker: "after-intermission",
+    });
+    afterIntermission.forEach((sponsor) => {
+      items.push({
+        kind: "sponsor",
+        id: `after-intermission-${sponsor.id}`,
+        sponsor,
+      });
+    });
+  }
+
+  appendSongsWithSponsors(set2Songs);
+  appendSongsWithSponsors(encoreSongs);
+
+  if (closing.length > 0) {
+    items.push({
+      kind: "marker",
+      id: "placement-marker-closing",
+      marker: "closing",
+    });
+    closing.forEach((sponsor) => {
+      items.push({
+        kind: "sponsor",
+        id: `closing-${sponsor.id}`,
+        sponsor,
+      });
+    });
+  }
+
+  if (flexible.length > 0) {
+    items.push({
+      kind: "marker",
+      id: "placement-marker-flexible",
+      marker: "flexible",
+    });
+    flexible.forEach((sponsor) => {
+      items.push({
+        kind: "sponsor",
+        id: `flexible-${sponsor.id}`,
+        sponsor,
+      });
+    });
+  }
+
+  return items;
 }
 
 export function buildScriptFormState(show: ShowRecord | null): ScriptFormState {
@@ -671,11 +953,21 @@ export function PerformerBlockCard({
           ) : null}
         </div>
 
-        <p className="text-sm text-stone-600">
-          {block.songs
-            .map((song) => (song.song_key ? `${song.title} (${song.song_key})` : song.title))
-            .join(", ")}
-        </p>
+        <div className="grid gap-2">
+          {block.songs.map((song, index) => (
+            <div key={song.id} className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+              <p className="text-sm font-semibold text-stone-900">
+                {index + 1}. {song.title}
+                {song.song_key ? ` (${song.song_key})` : ""}
+              </p>
+              {song.notes?.trim() ? (
+                <p className="mt-2 whitespace-pre-wrap text-sm text-stone-600">
+                  {song.notes.trim()}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
 
         {upNext ? (
           <p className="print-hidden text-sm text-stone-500">
@@ -771,10 +1063,24 @@ export function McPage({
     () => buildMcRunSheetData(runSections, sponsors),
     [runSections, sponsors],
   );
+  const mcFlowItems = useMemo(() => buildMcFlowItems(setlist, sponsors), [setlist, sponsors]);
+  const mcBlockLookup = useMemo(
+    () =>
+      runSections.reduce<Record<string, McPerformanceBlock>>((lookup, section) => {
+        section.blocks.forEach((block) => {
+          lookup[block.anchorSongId] = block;
+        });
+
+        return lookup;
+      }, {}),
+    [runSections],
+  );
 
   function handlePrintPacket() {
     window.print();
   }
+
+  const showAnnouncements = getTrimmedValue(show?.announcements);
 
   const showOverviewItems = [
     { label: "Show Date", value: formatShowDate(show?.show_date ?? null) },
@@ -785,7 +1091,6 @@ export function McPage({
     { label: "Guest Arrival", value: show?.guest_arrival_time ?? "" },
     { label: "Contact", value: show?.contact_name ?? "" },
     { label: "Phone", value: show?.contact_phone ?? "" },
-    { label: "Announcements", value: show?.announcements ?? "" },
   ].filter((item) => item.value.trim());
 
   const hasIntermissionSection =
@@ -794,31 +1099,6 @@ export function McPage({
     runSheetData.afterIntermission.length > 0 ||
     runSections.some((section) => section.key === "set2" || section.key === "encore");
 
-  const hasClosingSection =
-    Boolean(scriptFormState.closingScript.trim()) ||
-    runSheetData.closing.length > 0 ||
-    runSheetData.flexible.length > 0;
-
-  const performerPacketEntries = useMemo(() => {
-    const entries = runSections.flatMap((section) =>
-      section.blocks
-        .filter((block) => block.guestProfile)
-        .map((block) => ({
-          performer: block.performer,
-          section: section.title,
-          songs: getPerformerSummary(block),
-          guestIntro: getGuestIntroText(block.guestProfile),
-          hometown: getTrimmedValue(block.guestProfile?.hometown),
-          instruments: getTrimmedValue(block.guestProfile?.instruments),
-          note: block.note,
-        })),
-    );
-
-    return entries.filter(
-      (entry, index, allEntries) =>
-        allEntries.findIndex((candidate) => candidate.performer === entry.performer) === index,
-    );
-  }, [runSections]);
 
   const sponsorSummaryNames = sponsors
     .map((sponsor) => sponsor.sponsor?.name?.trim() ?? "")
@@ -827,32 +1107,241 @@ export function McPage({
     (sponsor, index, allSponsors) =>
       allSponsors.findIndex((candidate) => candidate.id === sponsor.id) === index,
   );
-  const overviewScheduleItems = [
-    { label: "First Half", value: runSections.find((section) => section.key === "set1") ? "Set 1 run sheet ready" : "" },
-    {
-      label: "Intermission",
-      value: hasIntermissionSection ? "Intermission break and sponsor/script section included" : "",
-    },
-    { label: "Second Half", value: runSections.find((section) => section.key === "set2") ? "Set 2 run sheet ready" : "" },
-    { label: "Encore", value: runSections.find((section) => section.key === "encore") ? "Encore section included" : "" },
-  ].filter((item) => item.value);
-  const overviewInfoItems = [
-    { label: "Venue", value: getTrimmedValue(show?.venue) },
-    { label: "Address", value: getTrimmedValue(show?.venue_address) },
-    { label: "Show Start", value: getTrimmedValue(show?.show_start_time) },
-    { label: "Call Time", value: getTrimmedValue(show?.call_time) },
-    { label: "Band Arrival", value: getTrimmedValue(show?.band_arrival_time) },
-    { label: "Guest Arrival", value: getTrimmedValue(show?.guest_arrival_time) },
-    { label: "Soundcheck", value: getTrimmedValue(show?.soundcheck_time) },
-    { label: "Contact", value: getTrimmedValue(show?.contact_name) },
-    { label: "Phone", value: getTrimmedValue(show?.contact_phone) },
-    { label: "Directions", value: getTrimmedValue(show?.directions_url) },
-  ].filter((item) => item.value);
-  const overviewReminderItems = [
-    { label: "Announcements", value: getTrimmedValue(show?.announcements) },
-    { label: "Parking", value: getTrimmedValue(show?.parking_notes) },
-    { label: "Load-In", value: getTrimmedValue(show?.load_in_notes) },
-  ].filter((item) => item.value);
+  const performerListEntries = useMemo(() => {
+    const entries = runSections.flatMap((section) =>
+      section.blocks.map((block) => ({
+        performer: block.performer,
+        section: section.title,
+      })),
+    );
+
+    return entries.filter(
+      (entry, index, allEntries) =>
+        allEntries.findIndex((candidate) => candidate.performer === entry.performer) === index,
+    );
+  }, [runSections]);
+  const guestInfoEntries = useMemo(
+    () =>
+      guestProfiles
+        .filter((profile) => Boolean(profile.name?.trim()))
+        .map((profile) => {
+          const performerName = profile.name?.trim() ?? "Guest";
+          const submittedSongs = setlist
+            .filter((song) => normalizeName(song.artist) === normalizeName(performerName))
+            .map((song) => song.title)
+            .filter(Boolean);
+
+          return {
+            id: profile.id,
+            performer: performerName,
+            guestIntro: getGuestIntroText(profile),
+            hometown: getTrimmedValue(profile.hometown),
+            instruments: getTrimmedValue(profile.instruments),
+            photoUrl: getTrimmedValue(profile.photo_url),
+            facebook: getTrimmedValue(profile.facebook),
+            instagram: getTrimmedValue(profile.instagram),
+            website: getTrimmedValue(profile.website),
+            agreedFee: getTrimmedValue(profile.agreed_fee),
+            plannedSongCount: profile.planned_song_count ?? null,
+            backupSongCount: profile.backup_song_count ?? null,
+            appearanceNotes: getTrimmedValue(profile.appearance_notes),
+            note: null,
+            songs: submittedSongs.join(", "),
+          };
+        }),
+    [guestProfiles, setlist],
+  );
+  const mcFlowGroups = useMemo(() => {
+    const groups: Record<
+      "set1" | "intermission" | "set2" | "encore" | "closing",
+      McFlowRenderableItem<SetlistSong>[]
+    > = {
+      set1: [],
+      intermission: [],
+      set2: [],
+      encore: [],
+      closing: [],
+    };
+
+    let activeGroup: keyof typeof groups = "set1";
+
+    mcFlowItems.forEach((item) => {
+      if (item.kind === "marker") {
+        if (item.marker === "before-intermission" || item.marker === "after-intermission") {
+          activeGroup = "intermission";
+          groups.intermission.push(item);
+          return;
+        }
+
+        activeGroup = "closing";
+        groups.closing.push(item);
+        return;
+      }
+
+      if (item.kind === "song") {
+        activeGroup =
+          item.song.section === "set2"
+            ? "set2"
+            : item.song.section === "encore"
+              ? "encore"
+              : "set1";
+        groups[activeGroup].push(item);
+        return;
+      }
+
+      groups[activeGroup].push(item);
+    });
+
+    return groups;
+  }, [mcFlowItems]);
+
+  function renderSongFlowCard(song: SetlistSong, printMode = false) {
+    const mcBlock = mcBlockLookup[song.id] ?? null;
+    const blockDraft = mcBlock
+      ? blockNoteDrafts[mcBlock.anchorSongId] ?? {
+          introNote: "",
+          sponsorMention: "",
+          transitionNote: "",
+        }
+      : null;
+    const guestIntroText = mcBlock ? getGuestIntroText(mcBlock.guestProfile) : null;
+
+    return (
+      <article
+        key={song.id}
+        className={
+          printMode
+            ? "mc-print-flow-card mc-print-flow-card-compact"
+            : "rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+        }
+      >
+        <div className={printMode ? "grid gap-2" : "grid gap-3"}>
+          <h3 className={printMode ? "mc-print-song-line" : "text-lg font-semibold text-stone-900"}>
+            {song.title} - {song.artist || defaultSingerName}
+            {song.song_key ? ` (${song.song_key})` : ""}
+          </h3>
+
+          {blockDraft?.introNote.trim() ? (
+            <p className={printMode ? "mc-print-flow-note whitespace-pre-wrap" : "whitespace-pre-wrap text-sm text-stone-700"}>
+              Intro: {blockDraft.introNote.trim()}
+            </p>
+          ) : null}
+
+          {guestIntroText ? (
+            <p className={printMode ? "mc-print-flow-note whitespace-pre-wrap" : "whitespace-pre-wrap text-sm text-stone-700"}>
+              Guest intro: {guestIntroText}
+            </p>
+          ) : null}
+
+          {blockDraft?.sponsorMention.trim() ? (
+            <p className={printMode ? "mc-print-flow-note whitespace-pre-wrap" : "whitespace-pre-wrap text-sm text-stone-700"}>
+              Sponsor mention: {blockDraft.sponsorMention.trim()}
+            </p>
+          ) : null}
+
+          {blockDraft?.transitionNote.trim() ? (
+            <p className={printMode ? "mc-print-flow-note whitespace-pre-wrap" : "whitespace-pre-wrap text-sm text-stone-700"}>
+              Transition: {blockDraft.transitionNote.trim()}
+            </p>
+          ) : null}
+        </div>
+      </article>
+    );
+  }
+
+  function renderFlowItems(
+    items: McFlowRenderableItem<SetlistSong>[],
+    options?: { printMode?: boolean; numberSongs?: boolean },
+  ) {
+    const printMode = options?.printMode ?? false;
+    const numberSongs = options?.numberSongs ?? false;
+    let songNumber = 0;
+
+    return items
+      .filter((item) => item.kind !== "marker")
+      .map((item) => {
+        if (item.kind === "sponsor") {
+          return printMode ? (
+            <div
+              key={item.id}
+              className="border-t border-stone-400 pt-3 first:border-t-0 first:pt-0"
+            >
+              <article className="mc-print-flow-card mc-print-flow-card-sponsor mc-print-flow-card-compact">
+                <p className="mc-print-flow-type">Sponsor Read</p>
+                <h3>{item.sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
+                <p className="mc-print-flow-note">See Sponsor Reads</p>
+              </article>
+            </div>
+          ) : (
+            <div
+              key={item.id}
+              className="border-t border-stone-200 pt-4 first:border-t-0 first:pt-0"
+            >
+              <article className="rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5">
+                <div className="grid gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
+                    Sponsor Read
+                  </p>
+                  <h3 className="text-lg font-semibold text-stone-900">
+                    {item.sponsor.sponsor?.name ?? "Assigned sponsor"}
+                  </h3>
+                  <p className="text-sm text-stone-700">See Sponsor Reads</p>
+                </div>
+              </article>
+            </div>
+          );
+        }
+
+        songNumber += 1;
+        return (
+          <div
+            key={item.id}
+            className={
+              printMode
+                ? "border-t border-stone-400 pt-3 first:border-t-0 first:pt-0"
+                : "border-t border-stone-200 pt-4 first:border-t-0 first:pt-0"
+            }
+          >
+            {renderSongFlowCard(
+              {
+                ...item.song,
+                title: `${numberSongs ? `${songNumber}. ` : ""}${item.song.title}`,
+              },
+              printMode,
+            )}
+          </div>
+        );
+      });
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    const debugFlow = mcFlowItems.map((item) =>
+      item.kind === "song"
+        ? {
+            kind: "song",
+            id: item.song.id,
+            section: item.song.section,
+            title: item.song.title,
+            performer: item.song.artist,
+          }
+        : item.kind === "sponsor"
+          ? {
+              kind: "sponsor",
+              sponsorId: item.sponsor.id,
+              sponsor: item.sponsor.sponsor?.name ?? "Assigned sponsor",
+              placementType: item.sponsor.placement_type,
+              anchorSongId: item.sponsor.mc_anchor_song_id ?? null,
+            }
+          : {
+              kind: "marker",
+              marker: item.marker,
+            },
+    );
+
+    console.log("MC Builder ordered flow", debugFlow);
+    console.log("MC Readonly ordered flow", debugFlow);
+    console.log("Print MC Packet ordered flow", debugFlow);
+  }
 
   if (!show) {
     return (
@@ -941,131 +1430,289 @@ export function McPage({
           )}
         </section>
 
+        {showAnnouncements ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Announcements</h2>
+              <p className="text-sm text-stone-600">
+                Show detail announcements for the MC and production team.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <p className="whitespace-pre-wrap text-sm text-stone-700">{showAnnouncements}</p>
+            </div>
+          </section>
+        ) : null}
+
+        {sponsorSummaryNames.length > 0 ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Sponsor Summary</h2>
+              <p className="text-sm text-stone-600">
+                Quick sponsor roster for the packet front page and at-a-glance reference.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <ul className="grid gap-2 text-sm text-stone-700 sm:grid-cols-2">
+                {sponsorSummaryNames.map((name) => (
+                  <li key={name} className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        ) : null}
+
+        {performerListEntries.length > 0 ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Performers</h2>
+              <p className="text-sm text-stone-600">
+                Ordered performer list pulled directly from the current MC run sections.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <ul className="grid gap-2 text-sm text-stone-700 sm:grid-cols-2">
+                {performerListEntries.map((entry) => (
+                  <li
+                    key={entry.performer}
+                    className="rounded-xl border border-stone-200 bg-white px-3 py-3"
+                  >
+                    <span className="font-semibold">{entry.performer}</span>
+                    <span className="text-stone-500"> - {entry.section}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+          ) : null}
+
         <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
           <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">MC Scripts</h2>
+            <h2 className="text-xl font-semibold">Opening Script</h2>
             <p className="text-sm text-stone-600">
-              Opening, intermission, and closing scripts used in the final announcer packet.
+              Opening welcome used before the first run sheet section begins.
             </p>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            <ScriptCard title="Opening Script" text={scriptFormState.openingScript} />
-            <ScriptCard title="Intermission Script" text={scriptFormState.intermissionScript} />
-            <ScriptCard title="Closing Script" text={scriptFormState.closingScript} />
-          </div>
+          <ScriptCard title="Opening Script" text={scriptFormState.openingScript} />
         </section>
 
-        <section className="print-hidden mc-section flex flex-col gap-5 border-t border-stone-200 pt-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">Live Run Sheet</h2>
-            <p className="text-sm text-stone-600">
-              Read straight down this page during the show. Sponsor reads appear where they should
-              happen in the flow.
-            </p>
-          </div>
+        {mcFlowGroups.set1.length > 0 ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Live Run Sheet</h2>
+              <p className="text-sm text-stone-600">
+                Set 1 / First Half flow with songs numbered and sponsor reads in placed order.
+              </p>
+            </div>
 
-          <div className="flex flex-col gap-5">
             <section className="mc-run-section flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <h3 className="text-lg font-semibold text-stone-900">Opening</h3>
-                <p className="text-sm text-stone-600">Kickoff script before the first performer.</p>
+                <h3 className="text-lg font-semibold text-stone-900">Set 1 / First Half</h3>
               </div>
+              <div className="grid gap-4">{renderFlowItems(mcFlowGroups.set1, { numberSongs: true })}</div>
+            </section>
+          </section>
+        ) : null}
 
-              <ScriptCard title="Opening Script" text={scriptFormState.openingScript} />
+        <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-xl font-semibold">Intermission Script</h2>
+            <p className="text-sm text-stone-600">
+              Welcome-back script used during the intermission return.
+            </p>
+          </div>
+
+          <ScriptCard title="Intermission Script" text={scriptFormState.intermissionScript} />
+        </section>
+
+        {mcFlowGroups.set2.length > 0 ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Live Run Sheet</h2>
+              <p className="text-sm text-stone-600">
+                Set 2 / Second Half flow with songs numbered and sponsor reads in placed order.
+              </p>
+            </div>
+
+            <section className="mc-run-section flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-stone-900">Set 2 / Second Half</h3>
+              </div>
+              <div className="grid gap-4">{renderFlowItems(mcFlowGroups.set2, { numberSongs: true })}</div>
             </section>
 
-            {runSections.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                No official setlist is available yet, so the MC run sheet is still empty.
-              </div>
-            ) : (
-              runSheetData.sectionItems.map((section) => (
-                <section key={section.key} className="mc-run-section flex flex-col gap-4">
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-lg font-semibold text-stone-900">{section.title}</h3>
-                    <p className="text-sm text-stone-600">
-                      {section.items.filter((item) => item.kind === "block").length} performance{" "}
-                      {section.items.filter((item) => item.kind === "block").length === 1
-                        ? "block"
-                        : "blocks"}
-                    </p>
-                  </div>
-
-                  <div className="grid gap-4">
-                    {section.items.map((item) => {
-                      if (item.kind === "sponsor") {
-                        return <SponsorReadCard key={item.id} sponsor={item.sponsor} />;
-                      }
-
-                      const blockDraft = blockNoteDrafts[item.block.anchorSongId] ?? {
-                        introNote: "",
-                        sponsorMention: "",
-                        transitionNote: "",
-                      };
-
-                      return (
-                        <div key={item.id} className="grid gap-4">
-                          <PerformerBlockCard
-                            block={item.block}
-                            blockDraft={blockDraft}
-                            upNext={item.upNext}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))
-            )}
-
-            {hasIntermissionSection ? (
+            {mcFlowGroups.encore.length > 0 ? (
               <section className="mc-run-section flex flex-col gap-4">
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-lg font-semibold text-stone-900">Intermission</h3>
-                  <p className="text-sm text-stone-600">
-                    Mid-show sponsor reads and return script.
-                  </p>
+                  <h3 className="text-lg font-semibold text-stone-900">Encore</h3>
                 </div>
-
-                <div className="grid gap-4">
-                  {runSheetData.beforeIntermission.map((sponsor) => (
-                    <SponsorReadCard key={`before-intermission-${sponsor.id}`} sponsor={sponsor} />
-                  ))}
-
-                  <ScriptCard title="Intermission Script" text={scriptFormState.intermissionScript} />
-
-                  {runSheetData.afterIntermission.map((sponsor) => (
-                    <SponsorReadCard key={`after-intermission-${sponsor.id}`} sponsor={sponsor} />
-                  ))}
-                </div>
+                <div className="grid gap-4">{renderFlowItems(mcFlowGroups.encore, { numberSongs: true })}</div>
               </section>
             ) : null}
+          </section>
+        ) : null}
 
-            {hasClosingSection ? (
-              <section className="mc-run-section flex flex-col gap-4">
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-lg font-semibold text-stone-900">Closing</h3>
-                  <p className="text-sm text-stone-600">
-                    End-of-show thank-yous and sign-off.
-                  </p>
-                </div>
-
-                <div className="grid gap-4">
-                  {runSheetData.closing.map((sponsor) => (
-                    <SponsorReadCard key={`closing-${sponsor.id}`} sponsor={sponsor} />
-                  ))}
-
-                  <ScriptCard title="Closing Script" text={scriptFormState.closingScript} />
-
-                  {runSheetData.flexible.map((sponsor) => (
-                    <SponsorReadCard key={`flexible-${sponsor.id}`} sponsor={sponsor} />
-                  ))}
-                </div>
-              </section>
-            ) : null}
+        <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-xl font-semibold">Closing Script</h2>
+            <p className="text-sm text-stone-600">
+              Final sign-off script for the end of the show.
+            </p>
           </div>
+
+          <ScriptCard title="Closing Script" text={scriptFormState.closingScript} />
         </section>
+
+        {sponsorPageEntries.length > 0 ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Sponsor Reads</h2>
+              <p className="text-sm text-stone-600">
+                Full sponsor reads and notes for backup reference during the show.
+              </p>
+            </div>
+
+            {sponsorPageEntries.length > 0 ? (
+              <div className="grid gap-4">
+                {sponsorPageEntries.map((sponsor) => (
+                  <SponsorReadCard key={`screen-sponsor-${sponsor.id}`} sponsor={sponsor} />
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {guestInfoEntries.length > 0 ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Guest / Performer Info</h2>
+              <p className="text-sm text-stone-600">
+                Bio and performer notes available to support intros and transitions.
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              {guestInfoEntries.map((entry) => (
+                <article
+                  key={`screen-bio-${entry.performer}`}
+                  className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+                >
+                  <h3 className="text-lg font-semibold text-stone-900">{entry.performer}</h3>
+                  <div className="mt-3 grid gap-3">
+                    {entry.photoUrl ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={entry.photoUrl}
+                          alt={`${entry.performer} profile`}
+                          className="h-auto max-h-40 w-auto rounded-lg object-contain"
+                        />
+                      </div>
+                    ) : null}
+
+                    {entry.guestIntro ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Bio / Intro
+                        </p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
+                          {entry.guestIntro}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {entry.hometown ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Hometown
+                        </p>
+                        <p className="mt-2 text-sm text-stone-700">{entry.hometown}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.instruments ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Instruments
+                        </p>
+                        <p className="mt-2 text-sm text-stone-700">{entry.instruments}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.website ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Website
+                        </p>
+                        <p className="mt-2 text-sm text-stone-700 break-all">{entry.website}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.facebook ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Facebook
+                        </p>
+                        <p className="mt-2 text-sm text-stone-700 break-all">{entry.facebook}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.instagram ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Instagram
+                        </p>
+                        <p className="mt-2 text-sm text-stone-700 break-all">{entry.instagram}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.plannedSongCount ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Planned Songs
+                        </p>
+                        <p className="mt-2 text-sm text-stone-700">{entry.plannedSongCount}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.backupSongCount ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Backup Songs
+                        </p>
+                        <p className="mt-2 text-sm text-stone-700">{entry.backupSongCount}</p>
+                      </div>
+                    ) : null}
+
+                    {entry.appearanceNotes ? (
+                      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Appearance Details
+                        </p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
+                          {entry.appearanceNotes}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Submitted / Scheduled Songs
+                      </p>
+                      <p className="mt-2 text-sm text-stone-700">{entry.songs || "No songs listed yet."}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <div className="print-only mc-print-packet">
           <section className="mc-print-page mc-print-page-forced">
@@ -1082,11 +1729,11 @@ export function McPage({
                   <h2>Show Overview</h2>
                 </div>
 
-                {overviewScheduleItems.length > 0 ? (
+                {showOverviewItems.length > 0 ? (
                   <div className="mc-print-subsection">
-                    <h3>Show Schedule</h3>
+                    <h3>Show Overview</h3>
                     <div className="mc-print-grid">
-                      {overviewScheduleItems.map((item) => (
+                      {showOverviewItems.map((item) => (
                         <div key={item.label} className="mc-print-detail">
                           <p className="mc-print-detail-label">{item.label}</p>
                           <p>{item.value}</p>
@@ -1096,25 +1743,25 @@ export function McPage({
                   </div>
                 ) : null}
 
-                {overviewInfoItems.length > 0 ? (
+                {showAnnouncements ? (
                   <div className="mc-print-subsection">
-                    <h3>Show Info</h3>
-                    <div className="mc-print-grid">
-                      {overviewInfoItems.map((item) => (
-                        <div key={item.label} className="mc-print-detail">
-                          <p className="mc-print-detail-label">{item.label}</p>
-                          <p className="whitespace-pre-wrap">{item.value}</p>
-                        </div>
-                      ))}
-                    </div>
+                    <h3>Announcements</h3>
+                    <p className="mc-print-script">{showAnnouncements}</p>
                   </div>
                 ) : null}
 
-                {performerPacketEntries.length > 0 ? (
+                {sponsorSummaryNames.length > 0 ? (
+                  <div className="mc-print-subsection">
+                    <h3>Sponsor Summary</h3>
+                    <p className="mc-print-script">{sponsorSummaryNames.join(", ")}</p>
+                  </div>
+                ) : null}
+
+                {performerListEntries.length > 0 ? (
                   <div className="mc-print-subsection">
                     <h3>Performers</h3>
                     <ul className="mc-print-list">
-                      {performerPacketEntries.map((entry) => (
+                      {performerListEntries.map((entry) => (
                         <li key={entry.performer}>
                           <span className="font-semibold">{entry.performer}</span>
                           {entry.section ? ` - ${entry.section}` : ""}
@@ -1124,250 +1771,105 @@ export function McPage({
                   </div>
                 ) : null}
 
-                {sponsorSummaryNames.length > 0 ? (
-                  <div className="mc-print-subsection">
-                    <h3>Sponsors</h3>
-                    <ul className="mc-print-list">
-                      {sponsorSummaryNames.map((name) => (
-                        <li key={name}>{name}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {overviewReminderItems.length > 0 ? (
-                  <div className="mc-print-subsection">
-                    <h3>MC Reminders</h3>
-                    <div className="mc-print-note-stack">
-                      {overviewReminderItems.map((item) => (
-                        <div key={item.label} className="mc-print-note-card">
-                          <p className="mc-print-detail-label">{item.label}</p>
-                          <p className="whitespace-pre-wrap">{item.value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {!overviewScheduleItems.length &&
-                !overviewInfoItems.length &&
-                !performerPacketEntries.length &&
+                {!showOverviewItems.length &&
+                !performerListEntries.length &&
                 !sponsorSummaryNames.length &&
-                !overviewReminderItems.length ? (
+                !showAnnouncements ? (
                   <p className="mc-print-empty">No show overview details have been added yet.</p>
                 ) : null}
               </section>
             </div>
           </section>
 
-          {runSheetData.sectionItems.map((section) => (
-            <section key={`print-${section.key}`} className="mc-print-page mc-print-page-set">
-              <header className="mc-print-page-header">
-                <p className="mc-print-kicker">{getSectionPacketSubtitle(section.key)}</p>
-                <h1>{getSectionPacketTitle(section.key)}</h1>
-                <p>{show.name}</p>
-              </header>
-
-              <div className="mc-print-stack">
-                {section.key === "set1" && scriptFormState.openingScript.trim() ? (
-                  <section className="mc-print-panel">
-                    <div className="mc-print-panel-heading">
-                      <h2>Opening Script</h2>
-                    </div>
-                    <p className="mc-print-script">{scriptFormState.openingScript.trim()}</p>
-                  </section>
-                ) : null}
-
-                {section.key === "set2" && scriptFormState.intermissionScript.trim() ? (
-                  <section className="mc-print-panel">
-                    <div className="mc-print-panel-heading">
-                      <h2>Welcome Back / Intermission Return</h2>
-                    </div>
-                    <p className="mc-print-script">{scriptFormState.intermissionScript.trim()}</p>
-                  </section>
-                ) : null}
-
-                <section className="mc-print-panel mc-print-set-panel">
-                  <div className="mc-print-panel-heading">
-                    <h2>{section.title} Run Sheet</h2>
-                  </div>
-
-                  <div className="mc-print-flow mc-print-set-flow">
-                    {section.items.map((item) => {
-                      if (item.kind === "sponsor") {
-                        return (
-                          <article
-                            key={item.id}
-                            className="mc-print-flow-card mc-print-flow-card-sponsor mc-print-flow-card-compact"
-                          >
-                            <p className="mc-print-flow-type">Sponsor Read</p>
-                            <h3>{item.sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
-                            <p className="mc-print-flow-body whitespace-pre-wrap">
-                              {getSponsorReadText(item.sponsor)}
-                            </p>
-                            {item.sponsor.custom_note?.trim() ? (
-                              <p className="mc-print-flow-note">
-                                MC note: {item.sponsor.custom_note.trim()}
-                              </p>
-                            ) : null}
-                          </article>
-                        );
-                      }
-
-                      const blockDraft = blockNoteDrafts[item.block.anchorSongId] ?? {
-                        introNote: "",
-                        sponsorMention: "",
-                        transitionNote: "",
-                      };
-                      const guestIntroText = getGuestIntroText(item.block.guestProfile);
-
-                      return (
-                        <article
-                          key={item.id}
-                          className="mc-print-flow-card mc-print-flow-card-compact"
-                        >
-                          <div className="mc-print-song-list">
-                            {item.block.songs.map((song) => (
-                              <div key={song.id} className="mc-print-song-entry">
-                                <h3 className="mc-print-song-line">
-                                  {item.block.performer} - {song.title}
-                                  {song.song_key ? ` (${song.song_key})` : ""}
-                                </h3>
-                                {song.notes?.trim() ? (
-                                  <p className="mc-print-song-note whitespace-pre-wrap">
-                                    {song.notes.trim()}
-                                  </p>
-                                ) : null}
-                              </div>
-                            ))}
-                          </div>
-
-                          {item.upNext ? (
-                            <p className="mc-print-flow-upnext">
-                              Up next: {item.upNext.performer}
-                            </p>
-                          ) : null}
-
-                          {blockDraft.introNote.trim() ? (
-                            <p className="mc-print-flow-note whitespace-pre-wrap">
-                              Intro: {blockDraft.introNote.trim()}
-                            </p>
-                          ) : null}
-
-                          {guestIntroText ? (
-                            <p className="mc-print-flow-note whitespace-pre-wrap">
-                              Guest intro: {guestIntroText}
-                            </p>
-                          ) : null}
-
-                          {blockDraft.sponsorMention.trim() ? (
-                            <p className="mc-print-flow-note whitespace-pre-wrap">
-                              Sponsor mention: {blockDraft.sponsorMention.trim()}
-                            </p>
-                          ) : null}
-
-                          {blockDraft.transitionNote.trim() ? (
-                            <p className="mc-print-flow-note whitespace-pre-wrap">
-                              Transition: {blockDraft.transitionNote.trim()}
-                            </p>
-                          ) : null}
-                        </article>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {section.key === "set1" &&
-                (runSheetData.beforeIntermission.length > 0 ||
-                  scriptFormState.intermissionScript.trim()) ? (
-                  <section className="mc-print-panel">
-                    <div className="mc-print-panel-heading">
-                      <h2>Intermission Setup</h2>
-                    </div>
-
-                    <div className="mc-print-note-stack">
-                      {runSheetData.beforeIntermission.map((sponsor) => (
-                        <div key={`before-int-${sponsor.id}`} className="mc-print-note-card mc-print-flow-card-sponsor">
-                          <p className="mc-print-flow-type">Sponsor Read</p>
-                          <h3>{sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
-                          <p className="mc-print-flow-body whitespace-pre-wrap">
-                            {getSponsorReadText(sponsor)}
-                          </p>
-                        </div>
-                      ))}
-
-                      {scriptFormState.intermissionScript.trim() ? (
-                        <div className="mc-print-note-card">
-                          <p className="mc-print-detail-label">Intermission Script</p>
-                          <p className="whitespace-pre-wrap">
-                            {scriptFormState.intermissionScript.trim()}
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </section>
-                ) : null}
-
-                {section.key === "set2" &&
-                (runSheetData.afterIntermission.length > 0 ||
-                  runSheetData.closing.length > 0 ||
-                  scriptFormState.closingScript.trim()) ? (
-                  <section className="mc-print-panel">
-                    <div className="mc-print-panel-heading">
-                      <h2>Ending Notes</h2>
-                    </div>
-
-                    <div className="mc-print-note-stack">
-                      {runSheetData.afterIntermission.map((sponsor) => (
-                        <div key={`after-int-${sponsor.id}`} className="mc-print-note-card mc-print-flow-card-sponsor">
-                          <p className="mc-print-flow-type">Sponsor Read</p>
-                          <h3>{sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
-                          <p className="mc-print-flow-body whitespace-pre-wrap">
-                            {getSponsorReadText(sponsor)}
-                          </p>
-                        </div>
-                      ))}
-
-                      {runSheetData.closing.map((sponsor) => (
-                        <div key={`closing-${sponsor.id}`} className="mc-print-note-card mc-print-flow-card-sponsor">
-                          <p className="mc-print-flow-type">Closing Sponsor</p>
-                          <h3>{sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
-                          <p className="mc-print-flow-body whitespace-pre-wrap">
-                            {getSponsorReadText(sponsor)}
-                          </p>
-                        </div>
-                      ))}
-
-                      {scriptFormState.closingScript.trim() ? (
-                        <div className="mc-print-note-card">
-                          <p className="mc-print-detail-label">Closing Script</p>
-                          <p className="whitespace-pre-wrap">{scriptFormState.closingScript.trim()}</p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </section>
-                ) : null}
-              </div>
-            </section>
-          ))}
-
           <section className="mc-print-page mc-print-page-forced">
             <header className="mc-print-page-header">
-              <p className="mc-print-kicker">Page 4</p>
-              <h1>Sponsors</h1>
+              <p className="mc-print-kicker">Scripts</p>
+              <h1>Opening Script</h1>
               <p>{show.name}</p>
             </header>
 
             <div className="mc-print-stack">
-              {sponsorSummaryNames.length > 0 ? (
-                <section className="mc-print-panel">
-                  <div className="mc-print-panel-heading">
-                    <h2>Sponsor Summary</h2>
-                  </div>
-                  <p className="mc-print-script">{sponsorSummaryNames.join(", ")}</p>
-                </section>
-              ) : null}
+              <section className="mc-print-panel">
+                <p className="mc-print-script">
+                  {scriptFormState.openingScript.trim() || "No opening script added yet."}
+                </p>
+              </section>
+            </div>
+          </section>
 
+          {mcFlowGroups.set1.length > 0 ? (
+            <section className="mc-print-page mc-print-page-set">
+              <header className="mc-print-page-header">
+                <p className="mc-print-kicker">Live Run Sheet</p>
+                <h1>Set 1 / First Half</h1>
+                <p>{show.name}</p>
+              </header>
+              <div className="mc-print-stack">
+                <section className="mc-print-panel mc-print-set-panel">
+                  <div className="mc-print-flow mc-print-set-flow">
+                    {renderFlowItems(mcFlowGroups.set1, { printMode: true, numberSongs: true })}
+                  </div>
+                </section>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="mc-print-page mc-print-page-forced">
+            <header className="mc-print-page-header">
+              <p className="mc-print-kicker">Scripts</p>
+              <h1>Intermission Script</h1>
+              <p>{show.name}</p>
+            </header>
+            <div className="mc-print-stack">
+              <section className="mc-print-panel">
+                <p className="mc-print-script">
+                  {scriptFormState.intermissionScript.trim() || "No intermission script added yet."}
+                </p>
+              </section>
+            </div>
+          </section>
+
+          {mcFlowGroups.set2.length > 0 ? (
+            <section className="mc-print-page mc-print-page-set">
+              <header className="mc-print-page-header">
+                <p className="mc-print-kicker">Live Run Sheet</p>
+                <h1>Set 2 / Second Half</h1>
+                <p>{show.name}</p>
+              </header>
+              <div className="mc-print-stack">
+                <section className="mc-print-panel mc-print-set-panel">
+                  <div className="mc-print-flow mc-print-set-flow">
+                    {renderFlowItems(mcFlowGroups.set2, { printMode: true, numberSongs: true })}
+                  </div>
+                </section>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="mc-print-page mc-print-page-forced">
+            <header className="mc-print-page-header">
+              <p className="mc-print-kicker">Scripts</p>
+              <h1>Closing Script</h1>
+              <p>{show.name}</p>
+            </header>
+
+            <div className="mc-print-stack">
+              <section className="mc-print-panel">
+                <p className="mc-print-script">
+                  {scriptFormState.closingScript.trim() || "No closing script added yet."}
+                </p>
+              </section>
+            </div>
+          </section>
+
+          <section className="mc-print-page mc-print-page-forced">
+            <header className="mc-print-page-header">
+              <p className="mc-print-kicker">Sponsors</p>
+              <h1>Sponsor Reads / Sponsor Full Info</h1>
+              <p>{show.name}</p>
+            </header>
+
+            <div className="mc-print-stack">
               <section className="mc-print-panel">
                 <div className="mc-print-panel-heading">
                   <h2>Sponsor Reads</h2>
@@ -1396,22 +1898,33 @@ export function McPage({
             </div>
           </section>
 
-          {performerPacketEntries.length > 0 ? (
-            <section className="mc-print-page">
+          {guestInfoEntries.length > 0 ? (
+            <section className="mc-print-page mc-print-page-forced">
               <header className="mc-print-page-header">
-                <p className="mc-print-kicker">Performer Intros</p>
-                <h1>Performer Notes</h1>
+                <p className="mc-print-kicker">Performers</p>
+                <h1>Guest / Performer Profiles</h1>
                 <p>{show.name}</p>
               </header>
 
               <div className="mc-print-stack mc-print-intro-stack">
-                {performerPacketEntries.map((entry) => (
+                {guestInfoEntries.map((entry) => (
                   <section key={`intro-${entry.performer}`} className="mc-print-panel mc-print-intro-panel">
                     <div className="mc-print-panel-heading">
                       <h2>{entry.performer}</h2>
                     </div>
 
                     <div className="mc-print-note-stack mc-print-intro-notes">
+                      {entry.photoUrl ? (
+                        <div className="mc-print-note-card">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={entry.photoUrl}
+                            alt={`${entry.performer} profile`}
+                            className="h-auto max-h-40 w-auto object-contain"
+                          />
+                        </div>
+                      ) : null}
+
                       {entry.guestIntro ? (
                         <div className="mc-print-note-card">
                           <p className="mc-print-detail-label">Bio / Intro</p>
@@ -1433,30 +1946,61 @@ export function McPage({
                         </div>
                       ) : null}
 
-                      {entry.note?.intro_note?.trim() ? (
+                      {entry.website ? (
                         <div className="mc-print-note-card">
-                          <p className="mc-print-detail-label">MC Intro Note</p>
-                          <p className="whitespace-pre-wrap">{entry.note.intro_note.trim()}</p>
+                          <p className="mc-print-detail-label">Website</p>
+                          <p>{entry.website}</p>
                         </div>
                       ) : null}
 
-                      {entry.note?.transition_note?.trim() ? (
+                      {entry.facebook ? (
                         <div className="mc-print-note-card">
-                          <p className="mc-print-detail-label">Transition Note</p>
-                          <p className="whitespace-pre-wrap">{entry.note.transition_note.trim()}</p>
+                          <p className="mc-print-detail-label">Facebook</p>
+                          <p>{entry.facebook}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.instagram ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Instagram</p>
+                          <p>{entry.instagram}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.plannedSongCount ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Planned Songs</p>
+                          <p>{entry.plannedSongCount}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.backupSongCount ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Backup Songs</p>
+                          <p>{entry.backupSongCount}</p>
+                        </div>
+                      ) : null}
+
+                      {entry.appearanceNotes ? (
+                        <div className="mc-print-note-card">
+                          <p className="mc-print-detail-label">Appearance Details</p>
+                          <p className="whitespace-pre-wrap">{entry.appearanceNotes}</p>
                         </div>
                       ) : null}
 
                       <div className="mc-print-note-card">
-                        <p className="mc-print-detail-label">Scheduled Songs</p>
+                        <p className="mc-print-detail-label">Submitted / Scheduled Songs</p>
                         <p>{entry.songs || "No songs listed yet."}</p>
                       </div>
 
                       {!entry.guestIntro &&
                       !entry.hometown &&
                       !entry.instruments &&
-                      !entry.note?.intro_note?.trim() &&
-                      !entry.note?.transition_note?.trim() ? (
+                      !entry.website &&
+                      !entry.facebook &&
+                      !entry.instagram &&
+                      !entry.appearanceNotes &&
+                      !entry.songs ? (
                         <p className="mc-print-empty">No intro notes have been added for this performer yet.</p>
                       ) : null}
                     </div>
@@ -1466,42 +2010,6 @@ export function McPage({
             </section>
           ) : null}
 
-          <section className="mc-print-page mc-print-page-forced">
-            <header className="mc-print-page-header">
-              <p className="mc-print-kicker">Final Page</p>
-              <h1>MC Scripts</h1>
-              <p>{show.name}</p>
-            </header>
-
-            <div className="mc-print-stack">
-              <section className="mc-print-panel">
-                <div className="mc-print-panel-heading">
-                  <h2>Opening Welcome</h2>
-                </div>
-                <p className="mc-print-script">
-                  {scriptFormState.openingScript.trim() || "No opening script added yet."}
-                </p>
-              </section>
-
-              <section className="mc-print-panel">
-                <div className="mc-print-panel-heading">
-                  <h2>After Intermission / Welcome Back</h2>
-                </div>
-                <p className="mc-print-script">
-                  {scriptFormState.intermissionScript.trim() || "No intermission script added yet."}
-                </p>
-              </section>
-
-              <section className="mc-print-panel">
-                <div className="mc-print-panel-heading">
-                  <h2>Closing Script</h2>
-                </div>
-                <p className="mc-print-script">
-                  {scriptFormState.closingScript.trim() || "No closing script added yet."}
-                </p>
-              </section>
-            </div>
-          </section>
         </div>
 
         <style jsx>{`
@@ -1527,7 +2035,11 @@ export function McPage({
 
             .mc-print-page-header {
               border-bottom: 2px solid #111827;
+              break-after: avoid-page;
+              break-inside: avoid;
               margin-bottom: 20px;
+              page-break-after: avoid;
+              page-break-inside: avoid;
               padding-bottom: 14px;
             }
 
@@ -1572,6 +2084,8 @@ export function McPage({
               border: 1px solid #d6d3d1;
               border-radius: 0;
               color: #111827;
+              break-inside: avoid;
+              page-break-inside: avoid;
             }
 
             .mc-print-panel {
@@ -1613,6 +2127,14 @@ export function McPage({
               margin-top: 18px;
               padding-top: 16px;
               border-top: 1px solid #d6d3d1;
+            }
+
+            .mc-print-subsection,
+            .mc-print-note-stack,
+            .mc-print-intro-panel,
+            .mc-print-page-header {
+              break-inside: avoid;
+              page-break-inside: avoid;
             }
 
             .mc-print-subsection h3,
