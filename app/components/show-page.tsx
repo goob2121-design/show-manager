@@ -364,6 +364,14 @@ type SponsorDocumentFormState = {
   paymentStatus: string;
 };
 
+type SponsorProposalGeneratorFormState = {
+  businessName: string;
+  contactName: string;
+  sponsorshipLevel: string;
+  amount: string;
+  notes: string;
+};
+
 const initialSponsorLibraryFormState: SponsorLibraryFormState = {
   name: "",
   shortMessage: "",
@@ -376,6 +384,14 @@ const initialSponsorDocumentFormState: SponsorDocumentFormState = {
   sponsorshipLevel: "",
   sponsorshipAmount: "",
   paymentStatus: "prospect",
+};
+
+const initialSponsorProposalGeneratorFormState: SponsorProposalGeneratorFormState = {
+  businessName: "",
+  contactName: "",
+  sponsorshipLevel: "Gold Sponsor",
+  amount: "",
+  notes: "",
 };
 
 const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
@@ -407,6 +423,19 @@ const sponsorPaymentStatusOptions = [
   { value: "confirmed", label: "Confirmed" },
   { value: "paid", label: "Paid" },
 ] as const;
+
+function getDefaultSponsorTierAmount(level: string) {
+  switch (level) {
+    case "Platinum Sponsor":
+      return "500";
+    case "Gold Sponsor":
+      return "250";
+    case "Silver Sponsor":
+      return "100";
+    default:
+      return null;
+  }
+}
 
 function formatShowDate(showDate: string | null) {
   if (!showDate) {
@@ -2360,15 +2389,19 @@ function buildSponsorDocumentHtml({
   showName,
   showDate,
   logoUrl,
+  contactName,
+  proposalNotes,
 }: {
   kind: "proposal" | "quote" | "receipt";
   sponsor: SponsorLibraryEntry;
   showName: string;
   showDate: string | null;
   logoUrl: string;
+  contactName?: string | null;
+  proposalNotes?: string | null;
 }) {
   const documentTitle =
-    kind === "proposal" ? "Sponsor Proposal" : kind === "quote" ? "Sponsor Quote" : "Sponsor Receipt";
+    kind === "proposal" ? "Sponsorship Proposal" : kind === "quote" ? "Sponsor Quote" : "Sponsor Receipt";
   const sponsorshipLevel = sponsor.sponsorship_level ?? "Custom";
   const sponsorshipAmount =
     sponsor.sponsorship_amount === null ? "To be determined" : formatCurrency(sponsor.sponsorship_amount);
@@ -2376,31 +2409,156 @@ function buildSponsorDocumentHtml({
   const showDateLabel = formatShowDate(showDate);
   const generatedDateLabel = formatDocumentDate(new Date());
   const receiptReference = `${sponsor.id.slice(0, 8).toUpperCase()}-${new Date().getFullYear()}`;
-  const introParagraph =
-    "Thank you for considering support of the Cumberland Mountain Music Show. Your sponsorship helps us continue presenting live bluegrass, gospel, traditional country, and acoustic music in our region while giving local businesses meaningful visibility in front of an engaged community audience.";
-  const benefitsMarkup = benefits
-    .map((benefit) => `<li>${escapeHtml(benefit)}</li>`)
+  const benefitsMarkup = benefits.map((benefit) => `<li>${escapeHtml(benefit)}</li>`).join("");
+  const contactFirstName =
+    contactName?.trim().split(/\s+/).find(Boolean)?.replace(/[^A-Za-z'-]/g, "") ?? "";
+  const greetingLine = contactFirstName ? `${contactFirstName},` : "Hello,";
+  const contactMarkup = contactName?.trim()
+    ? `<div class="summary-card"><span>Contact</span><strong>${escapeHtml(contactName.trim())}</strong></div>`
+    : "";
+  const notesMarkup = proposalNotes?.trim()
+    ? `
+        <section class="notes-block">
+          <h2>Notes</h2>
+          <p>${escapeHtml(proposalNotes.trim())}</p>
+        </section>
+      `
+    : "";
+  const proposalTierDefinitions = [
+    {
+      title: "Platinum Sponsor",
+      amount: "$500",
+      benefits: [
+        "Large logo placement on flyers and promotional materials",
+        "Recognition on social media and online promotions",
+        "Website sponsor listing",
+        "Stage mentions during the show",
+        "Included in MC sponsor reads",
+        "Premium sponsor placement where available",
+        "Complimentary show tickets",
+      ],
+    },
+    {
+      title: "Gold Sponsor",
+      amount: "$250",
+      benefits: [
+        "Logo placement on selected promotional materials",
+        "Social media recognition",
+        "Website sponsor listing",
+        "Stage mention during the show",
+        "Included in sponsor thank-you mentions",
+        "Complimentary show tickets",
+      ],
+    },
+    {
+      title: "Silver Sponsor",
+      amount: "$100",
+      benefits: [
+        "Sponsor listing on promotional materials where space allows",
+        "Social media or website recognition",
+        "Stage thank-you mention during the show",
+        "Complimentary show tickets",
+      ],
+    },
+  ] as const;
+  const selectedProposalTier =
+    proposalTierDefinitions.find((tier) => tier.title === sponsorshipLevel) ?? null;
+  const selectedProposalBenefits =
+    sponsorshipLevel === "Custom"
+      ? benefits.length > 0
+        ? benefits
+        : [
+            "Recognition through show promotions where applicable",
+            "Stage thank-you mention",
+            "Support of local and regional live music",
+            "Complimentary show tickets if offered",
+          ]
+      : selectedProposalTier?.benefits ?? benefits;
+  const selectedProposalTitle = selectedProposalTier?.title ?? sponsorshipLevel;
+  const selectedProposalAmount =
+    sponsorshipLevel === "Custom"
+      ? sponsorshipAmount
+      : selectedProposalTier?.amount ?? sponsorshipAmount;
+  const additionalLevelsMarkup = proposalTierDefinitions
+    .filter((tier) => tier.title !== sponsorshipLevel)
+    .map(
+      (tier) =>
+        `<li><strong>${escapeHtml(tier.title)}</strong> — ${escapeHtml(tier.amount)}</li>`,
+    )
     .join("");
 
   const bodyMarkup =
     kind === "proposal"
       ? `
-        <p class="lead">${escapeHtml(introParagraph)}</p>
-        <p>We’re grateful for community-minded partners who help make each show possible. For this show, we would love to feature <strong>${escapeHtml(sponsor.name)}</strong> as a <strong>${escapeHtml(sponsorshipLevel)}</strong> supporter.</p>
-        <div class="summary-grid">
-          <div class="summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
-          <div class="summary-card"><span>Sponsorship amount</span><strong>${escapeHtml(sponsorshipAmount)}</strong></div>
-          <div class="summary-card"><span>Show</span><strong>${escapeHtml(showName)}</strong></div>
-          <div class="summary-card"><span>Show date</span><strong>${escapeHtml(showDateLabel)}</strong></div>
-        </div>
-        <h2>Included Benefits</h2>
-        <ul>${benefitsMarkup}</ul>
-        <p>Benefits may include logo placement on promotional materials and flyers where applicable, online and Facebook recognition, website listing where applicable, stage mentions during the show, and inclusion in sponsor reads and thank-yous.</p>
-        <p>Thank you again for considering support of the Cumberland Mountain Music Show. We truly appreciate every sponsor who helps us continue this music tradition in our community.</p>
-        <p class="signoff">Bryan Turner<br />Cumberland Mountain Music Show</p>
+        <section class="proposal-page">
+          <div class="header proposal-header">
+            <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" />
+            <div>
+              <div class="brand">Cumberland Mountain Music Show</div>
+              <div class="title">Sponsorship Proposal</div>
+              <div class="meta">${escapeHtml(sponsor.name)}</div>
+            </div>
+          </div>
+          <p class="greeting">${escapeHtml(greetingLine)}</p>
+          <div class="letter-copy">
+            <p>I would like to thank you for taking the time to consider support of the Cumberland Mountain Music Show.</p>
+            <p>The Cumberland Mountain Music Show was created to bring people together through live music, community, and the rich musical traditions of our region. Each show gives us the opportunity to showcase local talent, welcome regional guest artists, and provide a stage for young musicians who are learning, growing, and carrying this music forward.</p>
+            <p>This show is very personal to me. As a lifelong musician and part of the Turner family's musical roots here in Claiborne County - including the legacy of my Uncle Buster Turner - one of my biggest goals is to help keep that musical heritage alive while creating a place where families, musicians, and neighbors can gather and enjoy bluegrass, gospel, traditional country, and acoustic music in a welcoming environment.</p>
+            <p>As owner and coordinator of the Cumberland Mountain Music Show, I truly appreciate businesses and community partners who believe in supporting local music and hometown events. Your sponsorship directly supports the continued growth, promotion, production, and overall betterment of the show while helping us continue creating opportunities for musicians and entertainers throughout our area.</p>
+            <p>We are proud to partner with Lincoln Memorial University and thankful for the support of businesses and organizations such as DeRoyal, Hearthside Bank, Giles Industries, and many other local sponsors who help make the show possible.</p>
+            <p>We would be honored to have ${escapeHtml(sponsor.name)} become part of the Cumberland Mountain Music Show family.</p>
+          </div>
+          <p class="signoff">With sincere appreciation,</p>
+          <p class="signoff">Bryan Turner<br />Owner &amp; Coordinator<br />Cumberland Mountain Music Show</p>
+        </section>
+        <section class="proposal-page proposal-page-break">
+          <div class="header proposal-header">
+            <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" />
+            <div>
+              <div class="brand">Cumberland Mountain Music Show</div>
+              <div class="title">Sponsorship Proposal</div>
+              <div class="meta">${escapeHtml(sponsor.name)}</div>
+            </div>
+          </div>
+          <div class="summary-grid proposal-summary-grid">
+            <div class="summary-card"><span>Business</span><strong>${escapeHtml(sponsor.name)}</strong></div>
+            <div class="summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
+            <div class="summary-card"><span>Amount</span><strong>${escapeHtml(sponsorshipAmount)}</strong></div>
+            <div class="summary-card"><span>Show</span><strong>${escapeHtml(showName)}</strong></div>
+            <div class="summary-card"><span>Show date</span><strong>${escapeHtml(showDateLabel)}</strong></div>
+            ${contactMarkup}
+          </div>
+          <h2>Selected Sponsorship Level</h2>
+          <article class="tier-card selected-tier-card">
+            <div class="tier-header">
+              <h3>${escapeHtml(selectedProposalTitle)}</h3>
+              <p>${escapeHtml(selectedProposalAmount)}</p>
+            </div>
+            <ul>
+              ${selectedProposalBenefits.map((benefit) => `<li>${escapeHtml(benefit)}</li>`).join("")}
+            </ul>
+          </article>
+          <section class="additional-levels">
+            <h2>Other available sponsorship levels:</h2>
+            <ul>${additionalLevelsMarkup}</ul>
+          </section>
+          <section class="payment-note">
+            <p>If you decide to support the show, checks may be made payable to:</p>
+            <p><strong>The Cumberland Mountain Music Show</strong></p>
+          </section>
+          ${notesMarkup}
+        </section>
       `
       : kind === "quote"
         ? `
+        <div class="header">
+          <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" />
+          <div>
+            <div class="brand">Cumberland Mountain Music Show</div>
+            <div class="title">${escapeHtml(documentTitle)}</div>
+            <div class="meta">${escapeHtml(sponsor.name)}</div>
+          </div>
+        </div>
         <div class="summary-grid">
           <div class="summary-card"><span>Sponsor</span><strong>${escapeHtml(sponsor.name)}</strong></div>
           <div class="summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
@@ -2414,6 +2572,14 @@ function buildSponsorDocumentHtml({
         <p>We appreciate the opportunity to partner with sponsors who support live acoustic music in our region.</p>
       `
         : `
+        <div class="header">
+          <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" />
+          <div>
+            <div class="brand">Cumberland Mountain Music Show</div>
+            <div class="title">${escapeHtml(documentTitle)}</div>
+            <div class="meta">${escapeHtml(sponsor.name)}</div>
+          </div>
+        </div>
         <div class="summary-grid">
           <div class="summary-card"><span>Sponsor</span><strong>${escapeHtml(sponsor.name)}</strong></div>
           <div class="summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
@@ -2435,38 +2601,49 @@ function buildSponsorDocumentHtml({
         <title>${escapeHtml(`${sponsor.name} - ${documentTitle}`)}</title>
         <style>
           body { margin: 32px; color: #111827; font-family: Arial, sans-serif; background: #ffffff; }
-          h1, h2, p { margin: 0; }
+          h1, h2, h3, p { margin: 0; }
           .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
           .header img { display: block; width: 92px; height: auto; object-fit: contain; flex-shrink: 0; }
           .brand { font-size: 14px; font-weight: 700; color: #047857; }
           .title { margin-top: 4px; font-size: 28px; font-weight: 700; }
           .meta { margin-top: 6px; color: #4b5563; font-size: 14px; }
-          .subtitle { display: none; }
           .lead { margin: 18px 0; line-height: 1.6; }
+          .greeting { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+          .letter-copy { display: flex; flex-direction: column; gap: 16px; }
           .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 22px; }
           .summary-card { border: 1px solid #d1d5db; border-radius: 12px; padding: 12px 14px; background: #f9fafb; }
           .summary-card span { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; }
           .summary-card strong { display: block; margin-top: 6px; font-size: 18px; }
-          h2 { margin: 18px 0 10px; font-size: 18px; }
+          h2 { margin: 22px 0 12px; font-size: 20px; }
+          h3 { font-size: 18px; margin: 0; }
           p { line-height: 1.6; }
           ul { margin: 0; padding-left: 20px; line-height: 1.6; }
           .signoff { margin-top: 24px; }
+          .proposal-page { min-height: calc(100vh - 64px); }
+          .proposal-page-break { break-before: page; page-break-before: always; }
+          .proposal-header { margin-bottom: 28px; }
+          .proposal-summary-grid { margin-bottom: 24px; }
+          .tier-grid { display: grid; gap: 14px; }
+          .tier-card { border: 1px solid #d1d5db; border-radius: 14px; padding: 14px 16px; background: #ffffff; break-inside: avoid; page-break-inside: avoid; }
+          .selected-tier-card { margin-bottom: 18px; }
+          .tier-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+          .tier-header p { font-size: 16px; font-weight: 700; }
+          .additional-levels { margin-top: 18px; }
+          .additional-levels ul { margin-top: 8px; }
+          .payment-note { margin-top: 18px; }
+          .payment-note p + p { margin-top: 6px; }
+          .selected-benefits,
+          .additional-levels,
+          .payment-note,
+          .notes-block { break-inside: avoid; page-break-inside: avoid; }
           @media print {
             body { margin: 18px; }
             img { display: block !important; }
+            .proposal-page { min-height: auto; }
           }
         </style>
       </head>
       <body>
-        <div class="header">
-          <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" />
-          <div>
-            <div class="brand">Cumberland Mountain Music Show</div>
-            <div class="title">${escapeHtml(documentTitle)}</div>
-            <div class="meta">${escapeHtml(sponsor.name)}</div>
-            <div class="subtitle">${escapeHtml(sponsor.name)}${showName ? ` • ${escapeHtml(showName)}` : ""}</div>
-          </div>
-        </div>
         ${bodyMarkup}
       </body>
     </html>
@@ -3158,6 +3335,9 @@ export function ShowPage({
   const [newSponsorLibraryFormState, setNewSponsorLibraryFormState] =
     useState<SponsorLibraryFormState>(initialSponsorLibraryFormState);
   const [isAddSponsorFormOpen, setIsAddSponsorFormOpen] = useState(false);
+  const [isSponsorProposalGeneratorOpen, setIsSponsorProposalGeneratorOpen] = useState(false);
+  const [sponsorProposalGeneratorFormState, setSponsorProposalGeneratorFormState] =
+    useState<SponsorProposalGeneratorFormState>(initialSponsorProposalGeneratorFormState);
   const [sponsorDocumentFormStates, setSponsorDocumentFormStates] = useState<
     Record<string, SponsorDocumentFormState>
   >({});
@@ -4174,13 +4354,48 @@ export function ShowPage({
     field: keyof SponsorDocumentFormState,
     value: string,
   ) {
-    setSponsorDocumentFormStates((currentStates) => ({
-      ...currentStates,
-      [sponsorId]: {
+    setSponsorDocumentFormStates((currentStates) => {
+      const nextState = {
         ...(currentStates[sponsorId] ?? initialSponsorDocumentFormState),
         [field]: value,
-      },
-    }));
+      };
+
+      if (field === "sponsorshipLevel") {
+        const defaultAmount = getDefaultSponsorTierAmount(value);
+
+        if (defaultAmount !== null) {
+          nextState.sponsorshipAmount = defaultAmount;
+        }
+      }
+
+      return {
+        ...currentStates,
+        [sponsorId]: nextState,
+      };
+    });
+  }
+
+  function handleSponsorProposalGeneratorChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) {
+    const { name, value } = event.target;
+
+    setSponsorProposalGeneratorFormState((currentState) => {
+      const nextState = {
+        ...currentState,
+        [name]: value,
+      };
+
+      if (name === "sponsorshipLevel") {
+        const defaultAmount = getDefaultSponsorTierAmount(value);
+
+        if (defaultAmount !== null) {
+          nextState.amount = defaultAmount;
+        }
+      }
+
+      return nextState;
+    });
   }
 
   function handleSponsorLogoFileChange(
@@ -4247,6 +4462,95 @@ export function ShowPage({
       ...currentStates,
       [updatedSponsor.id]: buildSponsorDocumentFormState(updatedSponsor),
     }));
+  }
+
+  function buildProposalGeneratorSponsorDraft() {
+    const name = sponsorProposalGeneratorFormState.businessName.trim();
+    const sponsorshipAmount = parseSponsorAmountInput(sponsorProposalGeneratorFormState.amount);
+
+    return {
+      name,
+      sponsorshipAmount,
+      sponsor: {
+        id: crypto.randomUUID(),
+        name,
+        short_message: null,
+        full_message: null,
+        website: null,
+        logo_url: null,
+        sponsorship_level:
+          normalizeOptionalField(sponsorProposalGeneratorFormState.sponsorshipLevel) ?? "Custom",
+        sponsorship_amount: sponsorshipAmount,
+        payment_status: "prospect",
+        proposal_generated_at: null,
+        quote_generated_at: null,
+        receipt_generated_at: null,
+        created_at: new Date().toISOString(),
+      } satisfies SponsorLibraryEntry,
+    };
+  }
+
+  function openPrintDocumentWindow(printHtml: string) {
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      window.alert("The print window was blocked. Please allow pop-ups and try again.");
+      return false;
+    }
+
+    const triggerPrint = () => {
+      if (printWindow.closed) {
+        return;
+      }
+
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    const triggerPrintWhenReady = () => {
+      const { document } = printWindow;
+      const images = Array.from(document.images ?? []);
+
+      if (images.length === 0) {
+        window.setTimeout(triggerPrint, 150);
+        return;
+      }
+
+      let settledImages = 0;
+      const finishImageLoad = () => {
+        settledImages += 1;
+
+        if (settledImages >= images.length) {
+          window.setTimeout(triggerPrint, 150);
+        }
+      };
+
+      images.forEach((image) => {
+        if (image.complete) {
+          finishImageLoad();
+          return;
+        }
+
+        image.addEventListener("load", finishImageLoad, { once: true });
+        image.addEventListener("error", finishImageLoad, { once: true });
+      });
+    };
+
+    printWindow.onload = triggerPrintWhenReady;
+    printWindow.onafterprint = () => {
+      printWindow.close();
+    };
+
+    const { document } = printWindow;
+    document.open();
+    document.write(printHtml);
+    document.close();
+
+    if (document.readyState === "complete") {
+      triggerPrintWhenReady();
+    }
+
+    return true;
   }
 
   async function handleCreateSponsorLibraryEntry(event: FormEvent<HTMLFormElement>) {
@@ -4391,13 +4695,6 @@ export function ShowPage({
     sponsor: SponsorLibraryEntry,
     kind: "proposal" | "quote" | "receipt",
   ) {
-    const printWindow = window.open("", "_blank");
-
-    if (!printWindow) {
-      window.alert("The print window was blocked. Please allow pop-ups and try again.");
-      return;
-    }
-
     setActionError(null);
     setActiveSponsorActionId(`${kind}-${sponsor.id}`);
 
@@ -4439,59 +4736,107 @@ export function ShowPage({
         logoUrl: `${window.location.origin}/cmms-logo.png`,
       });
 
-      const triggerPrint = () => {
-        if (printWindow.closed) {
-          return;
-        }
-
-        printWindow.focus();
-        printWindow.print();
-      };
-
-      const triggerPrintWhenReady = () => {
-        const { document } = printWindow;
-        const images = Array.from(document.images ?? []);
-
-        if (images.length === 0) {
-          window.setTimeout(triggerPrint, 150);
-          return;
-        }
-
-        let settledImages = 0;
-        const finishImageLoad = () => {
-          settledImages += 1;
-
-          if (settledImages >= images.length) {
-            window.setTimeout(triggerPrint, 150);
-          }
-        };
-
-        images.forEach((image) => {
-          if (image.complete) {
-            finishImageLoad();
-            return;
-          }
-
-          image.addEventListener("load", finishImageLoad, { once: true });
-          image.addEventListener("error", finishImageLoad, { once: true });
-        });
-      };
-
-      printWindow.onload = triggerPrintWhenReady;
-      printWindow.onafterprint = () => {
-        printWindow.close();
-      };
-
-      const { document } = printWindow;
-      document.open();
-      document.write(printHtml);
-      document.close();
-
-      if (document.readyState === "complete") {
-        triggerPrintWhenReady();
+      if (!openPrintDocumentWindow(printHtml)) {
+        return;
       }
     } catch (error) {
-      printWindow.close();
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handlePrintSponsorProposalDraft() {
+    const { name, sponsorshipAmount, sponsor } = buildProposalGeneratorSponsorDraft();
+
+    if (!name) {
+      setActionError("Business name is required.");
+      return;
+    }
+
+    if (!sponsorProposalGeneratorFormState.amount.trim()) {
+      setActionError("Amount is required.");
+      return;
+    }
+
+    if (sponsorProposalGeneratorFormState.amount.trim() && sponsorshipAmount === null) {
+      setActionError("Enter a valid sponsorship amount.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId("draft-proposal-print");
+
+    try {
+      const printHtml = buildSponsorDocumentHtml({
+        kind: "proposal",
+        sponsor,
+        showName: show?.name ?? "Cumberland Mountain Music Show",
+        showDate: show?.show_date ?? null,
+        logoUrl: `${window.location.origin}/cmms-logo.png`,
+        contactName: sponsorProposalGeneratorFormState.contactName,
+        proposalNotes: sponsorProposalGeneratorFormState.notes,
+      });
+
+      openPrintDocumentWindow(printHtml);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleAddDraftSponsorToLibrary() {
+    const { name, sponsorshipAmount, sponsor } = buildProposalGeneratorSponsorDraft();
+
+    if (!name) {
+      setActionError("Business name is required.");
+      return;
+    }
+
+    if (!sponsorProposalGeneratorFormState.amount.trim()) {
+      setActionError("Amount is required.");
+      return;
+    }
+
+    if (sponsorProposalGeneratorFormState.amount.trim() && sponsorshipAmount === null) {
+      setActionError("Enter a valid sponsorship amount.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId("draft-proposal-add");
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("sponsor_library")
+        .insert({
+          name,
+          sponsorship_level: sponsor.sponsorship_level,
+          sponsorship_amount: sponsorshipAmount,
+          payment_status: "prospect",
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const normalizedSponsor = normalizeSponsorLibraryEntry(data);
+      setSponsorLibrary((currentSponsors) =>
+        [...currentSponsors, normalizedSponsor].sort((sponsorA, sponsorB) =>
+          sponsorA.name.localeCompare(sponsorB.name),
+        ),
+      );
+      setSponsorDocumentFormStates((currentStates) => ({
+        ...currentStates,
+        [normalizedSponsor.id]: buildSponsorDocumentFormState(normalizedSponsor),
+      }));
+      setSponsorProposalGeneratorFormState(initialSponsorProposalGeneratorFormState);
+      setIsSponsorProposalGeneratorOpen(false);
+    } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
       setActiveSponsorActionId(null);
@@ -9491,6 +9836,20 @@ export function ShowPage({
                   </button>
                 </div>
 
+                <div className="flex justify-start">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setIsSponsorProposalGeneratorOpen((currentValue) => !currentValue)
+                    }
+                    className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    {isSponsorProposalGeneratorOpen
+                      ? "Hide Proposal Generator"
+                      : "Generate Proposal for New Business"}
+                  </button>
+                </div>
+
                 {isAddSponsorFormOpen ? (
                   <form className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4" onSubmit={handleCreateSponsorLibraryEntry}>
                     <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
@@ -9565,6 +9924,106 @@ export function ShowPage({
                       </button>
                     </div>
                   </form>
+                ) : null}
+
+                {isSponsorProposalGeneratorOpen ? (
+                  <div className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4">
+                    <div className="flex flex-col gap-1">
+                      <h4 className="text-base font-semibold text-stone-900">New Business Proposal</h4>
+                      <p className="text-sm text-stone-600">
+                        Generate and print a sponsor proposal without adding this business to the permanent sponsor library.
+                      </p>
+                    </div>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Business Name
+                      <input
+                        type="text"
+                        name="businessName"
+                        value={sponsorProposalGeneratorFormState.businessName}
+                        onChange={handleSponsorProposalGeneratorChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Business or organization name"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Contact Name
+                      <input
+                        type="text"
+                        name="contactName"
+                        value={sponsorProposalGeneratorFormState.contactName}
+                        onChange={handleSponsorProposalGeneratorChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Optional contact name"
+                      />
+                    </label>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Sponsorship Level
+                        <select
+                          name="sponsorshipLevel"
+                          value={sponsorProposalGeneratorFormState.sponsorshipLevel}
+                          onChange={handleSponsorProposalGeneratorChange}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        >
+                          <option value="Platinum Sponsor">Platinum</option>
+                          <option value="Gold Sponsor">Gold</option>
+                          <option value="Silver Sponsor">Silver</option>
+                          <option value="Custom">Custom</option>
+                        </select>
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Amount
+                        <input
+                          type="text"
+                          name="amount"
+                          value={sponsorProposalGeneratorFormState.amount}
+                          onChange={handleSponsorProposalGeneratorChange}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="$500.00"
+                          required
+                        />
+                      </label>
+                    </div>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Notes
+                      <textarea
+                        name="notes"
+                        value={sponsorProposalGeneratorFormState.notes}
+                        onChange={handleSponsorProposalGeneratorChange}
+                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Optional notes to include on the proposal"
+                      />
+                    </label>
+
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => void handlePrintSponsorProposalDraft()}
+                        disabled={activeSponsorActionId === "draft-proposal-print"}
+                        className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                      >
+                        {activeSponsorActionId === "draft-proposal-print"
+                          ? "Generating Proposal..."
+                          : "Print Proposal"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleAddDraftSponsorToLibrary()}
+                        disabled={activeSponsorActionId === "draft-proposal-add"}
+                        className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {activeSponsorActionId === "draft-proposal-add"
+                          ? "Adding Sponsor..."
+                          : "Add to Sponsor Library"}
+                      </button>
+                    </div>
+                  </div>
                 ) : null}
 
                 {sponsorLibrary.length === 0 ? (
@@ -12826,3 +13285,4 @@ export function ShowPage({
     </main>
   );
 }
+
