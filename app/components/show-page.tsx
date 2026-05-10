@@ -2550,10 +2550,20 @@ function buildSponsorDocumentHtml({
           <p class="greeting">${escapeHtml(greetingLine)}</p>
           <div class="letter-copy">
             <p>I would like to thank you for taking the time to consider support of the Cumberland Mountain Music Show.</p>
-            <p>The Cumberland Mountain Music Show was created to bring people together through live music, community, and the rich musical traditions of our region. Each show gives us the opportunity to showcase local talent, welcome regional guest artists, and provide a stage for young musicians who are learning, growing, and carrying this music forward.</p>
-            <p>This show is very personal to me. As a lifelong musician and part of the Turner family's musical roots here in Claiborne County - including the legacy of my Uncle Buster Turner - one of my biggest goals is to help keep that musical heritage alive while creating a place where families, musicians, and neighbors can gather and enjoy bluegrass, gospel, traditional country, and acoustic music in a welcoming environment.</p>
-            <p>As owner and coordinator of the Cumberland Mountain Music Show, I truly appreciate businesses and community partners who believe in supporting local music and hometown events. Your sponsorship directly supports the continued growth, promotion, production, and overall betterment of the show while helping us continue creating opportunities for musicians and entertainers throughout our area.</p>
-            <p>We are proud to partner with Lincoln Memorial University and thankful for the support of businesses and organizations such as DeRoyal, Hearthside Bank, Giles Industries, and many other local sponsors who help make the show possible.</p>
+            <p>The Cumberland Mountain Music Show was created to bring people together through live music, community, and the musical traditions of our region. Each show gives us the opportunity to showcase local talent, welcome regional guest artists, and provide a stage for young musicians carrying this music forward.</p>
+            <p>This show is very personal to me. As a lifelong musician and part of the Turner family's musical roots here in Claiborne County - including the legacy of my Uncle Buster Turner - one of my biggest goals is to help keep that musical heritage alive while creating a place where families, musicians, and neighbors can enjoy bluegrass, gospel, traditional country, and acoustic music together.</p>
+            <p>As owner and coordinator of the Cumberland Mountain Music Show, I truly appreciate businesses and community partners who support local music and hometown events. Your sponsorship helps support the continued growth, promotion, and production of the show while creating opportunities for musicians and entertainers throughout our region.</p>
+            <section class="community-reach-block">
+              <h2>Community Reach &amp; Audience</h2>
+              <ul>
+                <li>Approximately 150 attendees per show</li>
+                <li>Six live shows presented annually</li>
+                <li>Entering our third full year of production</li>
+                <li>Audience reach throughout East Tennessee, Southeastern Kentucky, and Southwest Virginia</li>
+                <li>Strong regional Facebook engagement with promotional campaigns often reaching thousands of viewers per event</li>
+                <li>Proud partnership support from Lincoln Memorial University, DeRoyal, Hearthside Bank, Giles Industries, and other local business sponsors</li>
+              </ul>
+            </section>
             <p>We would be honored to have ${escapeHtml(sponsor.name)} become part of the Cumberland Mountain Music Show family.</p>
           </div>
           <p class="signoff">With sincere appreciation,</p>
@@ -2650,16 +2660,21 @@ function buildSponsorDocumentHtml({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${escapeHtml(`${sponsor.name} - ${documentTitle}`)}</title>
         <style>
-          body { margin: 32px; color: #111827; font-family: Arial, sans-serif; background: #ffffff; }
+          body { margin: 28px; color: #111827; font-family: Arial, sans-serif; background: #ffffff; }
           h1, h2, h3, p { margin: 0; }
-          .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
-          .header img { display: block; width: 92px; height: auto; object-fit: contain; flex-shrink: 0; }
+          .header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+          .header img { display: block; width: 88px; height: auto; object-fit: contain; flex-shrink: 0; }
           .brand { font-size: 14px; font-weight: 700; color: #047857; }
           .title { margin-top: 4px; font-size: 28px; font-weight: 700; }
           .meta { margin-top: 6px; color: #4b5563; font-size: 14px; }
-          .lead { margin: 18px 0; line-height: 1.6; }
-          .greeting { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
-          .letter-copy { display: flex; flex-direction: column; gap: 16px; }
+          .lead { margin: 16px 0; line-height: 1.55; }
+          .greeting { font-size: 20px; font-weight: 700; margin-bottom: 12px; }
+          .letter-copy { display: flex; flex-direction: column; gap: 10px; }
+          .letter-copy p { line-height: 1.5; }
+          .community-reach-block { border-top: 1px solid #d6d3d1; padding-top: 8px; }
+          .community-reach-block h2 { margin: 0 0 6px; font-size: 17px; }
+          .community-reach-block ul { margin: 0; padding-left: 18px; line-height: 1.35; }
+          .community-reach-block li + li { margin-top: 2px; }
           .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 22px; }
           .summary-card { border: 1px solid #d1d5db; border-radius: 12px; padding: 12px 14px; background: #f9fafb; }
           .summary-card span { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; }
@@ -2668,10 +2683,10 @@ function buildSponsorDocumentHtml({
           h3 { font-size: 18px; margin: 0; }
           p { line-height: 1.6; }
           ul { margin: 0; padding-left: 20px; line-height: 1.6; }
-          .signoff { margin-top: 24px; }
+          .signoff { margin-top: 14px; line-height: 1.45; }
           .proposal-page { min-height: calc(100vh - 64px); }
           .proposal-page-break { break-before: page; page-break-before: always; }
-          .proposal-header { margin-bottom: 28px; }
+          .proposal-header { margin-bottom: 18px; }
           .proposal-summary-grid { margin-bottom: 24px; }
           .proposal-summary-card { background: transparent; border: 0; border-bottom: 1px solid #d6d3d1; border-radius: 0; padding: 0 0 10px; }
           .tier-grid { display: grid; gap: 14px; }
@@ -2690,7 +2705,7 @@ function buildSponsorDocumentHtml({
           .payment-note,
           .notes-block { break-inside: avoid; page-break-inside: avoid; }
           @media print {
-            body { margin: 18px; }
+            body { margin: 16px; }
             img { display: block !important; }
             .proposal-page { min-height: auto; }
           }
