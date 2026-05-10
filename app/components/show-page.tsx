@@ -362,6 +362,9 @@ type SponsorDocumentFormState = {
   sponsorshipLevel: string;
   sponsorshipAmount: string;
   paymentStatus: string;
+  proposalCoverage: "current-show" | "season-year" | "custom";
+  proposalYear: string;
+  proposalCustomCoverage: string;
 };
 
 type SponsorProposalGeneratorFormState = {
@@ -370,6 +373,9 @@ type SponsorProposalGeneratorFormState = {
   sponsorshipLevel: string;
   amount: string;
   notes: string;
+  proposalCoverage: "current-show" | "season-year" | "custom";
+  proposalYear: string;
+  proposalCustomCoverage: string;
 };
 
 const initialSponsorLibraryFormState: SponsorLibraryFormState = {
@@ -384,6 +390,9 @@ const initialSponsorDocumentFormState: SponsorDocumentFormState = {
   sponsorshipLevel: "",
   sponsorshipAmount: "",
   paymentStatus: "prospect",
+  proposalCoverage: "current-show",
+  proposalYear: String(new Date().getFullYear()),
+  proposalCustomCoverage: "",
 };
 
 const initialSponsorProposalGeneratorFormState: SponsorProposalGeneratorFormState = {
@@ -392,6 +401,9 @@ const initialSponsorProposalGeneratorFormState: SponsorProposalGeneratorFormStat
   sponsorshipLevel: "Gold Sponsor",
   amount: "",
   notes: "",
+  proposalCoverage: "current-show",
+  proposalYear: String(new Date().getFullYear()),
+  proposalCustomCoverage: "",
 };
 
 const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
@@ -435,6 +447,37 @@ function getDefaultSponsorTierAmount(level: string) {
     default:
       return null;
   }
+}
+
+function buildProposalCoverageLabel({
+  coverage,
+  year,
+  customCoverage,
+  showName,
+  showDate,
+}: {
+  coverage: "current-show" | "season-year" | "custom";
+  year: string;
+  customCoverage: string;
+  showName: string;
+  showDate: string | null;
+}) {
+  if (coverage === "season-year") {
+    const seasonYear = year.trim() || String(new Date().getFullYear());
+    return `${seasonYear} Season`;
+  }
+
+  if (coverage === "custom") {
+    return customCoverage.trim() || "Custom Sponsorship Coverage";
+  }
+
+  const showDateLabel = formatShowDate(showDate);
+
+  if (showName.trim() && showDateLabel && showDateLabel !== "Date TBD") {
+    return `${showName.trim()} — ${showDateLabel}`;
+  }
+
+  return showName.trim() || showDateLabel || "Current Show";
 }
 
 function formatShowDate(showDate: string | null) {
@@ -1002,6 +1045,9 @@ function buildSponsorDocumentFormState(sponsor: SponsorLibraryEntry): SponsorDoc
         ? ""
         : sponsor.sponsorship_amount.toFixed(2),
     paymentStatus: sponsor.payment_status ?? "prospect",
+    proposalCoverage: "current-show",
+    proposalYear: String(new Date().getFullYear()),
+    proposalCustomCoverage: "",
   };
 }
 
@@ -2389,6 +2435,7 @@ function buildSponsorDocumentHtml({
   showName,
   showDate,
   logoUrl,
+  coverageLabel,
   contactName,
   proposalNotes,
 }: {
@@ -2397,6 +2444,7 @@ function buildSponsorDocumentHtml({
   showName: string;
   showDate: string | null;
   logoUrl: string;
+  coverageLabel?: string | null;
   contactName?: string | null;
   proposalNotes?: string | null;
 }) {
@@ -2521,12 +2569,11 @@ function buildSponsorDocumentHtml({
             </div>
           </div>
           <div class="summary-grid proposal-summary-grid">
-            <div class="summary-card"><span>Business</span><strong>${escapeHtml(sponsor.name)}</strong></div>
-            <div class="summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
-            <div class="summary-card"><span>Amount</span><strong>${escapeHtml(sponsorshipAmount)}</strong></div>
-            <div class="summary-card"><span>Show</span><strong>${escapeHtml(showName)}</strong></div>
-            <div class="summary-card"><span>Show date</span><strong>${escapeHtml(showDateLabel)}</strong></div>
-            ${contactMarkup}
+            <div class="summary-card proposal-summary-card"><span>Business</span><strong>${escapeHtml(sponsor.name)}</strong></div>
+            <div class="summary-card proposal-summary-card"><span>Sponsorship level</span><strong>${escapeHtml(sponsorshipLevel)}</strong></div>
+            <div class="summary-card proposal-summary-card"><span>Amount</span><strong>${escapeHtml(sponsorshipAmount)}</strong></div>
+            <div class="summary-card proposal-summary-card"><span>Coverage</span><strong>${escapeHtml(coverageLabel ?? showName)}</strong></div>
+            ${contactMarkup ? contactMarkup.replace('summary-card', 'summary-card proposal-summary-card') : ""}
           </div>
           <h2>Selected Sponsorship Level</h2>
           <article class="tier-card selected-tier-card">
@@ -2541,6 +2588,9 @@ function buildSponsorDocumentHtml({
           <section class="additional-levels">
             <h2>Other available sponsorship levels:</h2>
             <ul>${additionalLevelsMarkup}</ul>
+          </section>
+          <section class="support-note">
+            <p>Sponsorship support helps fund the continued promotion, production, and growth of Cumberland Mountain Music Show events throughout the selected show or season.</p>
           </section>
           <section class="payment-note">
             <p>If you decide to support the show, checks may be made payable to:</p>
@@ -2623,17 +2673,20 @@ function buildSponsorDocumentHtml({
           .proposal-page-break { break-before: page; page-break-before: always; }
           .proposal-header { margin-bottom: 28px; }
           .proposal-summary-grid { margin-bottom: 24px; }
+          .proposal-summary-card { background: transparent; border: 0; border-bottom: 1px solid #d6d3d1; border-radius: 0; padding: 0 0 10px; }
           .tier-grid { display: grid; gap: 14px; }
-          .tier-card { border: 1px solid #d1d5db; border-radius: 14px; padding: 14px 16px; background: #ffffff; break-inside: avoid; page-break-inside: avoid; }
+          .tier-card { border-top: 2px solid #111827; border-bottom: 1px solid #d6d3d1; border-left: 0; border-right: 0; border-radius: 0; padding: 14px 0; background: #ffffff; break-inside: avoid; page-break-inside: avoid; }
           .selected-tier-card { margin-bottom: 18px; }
           .tier-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
           .tier-header p { font-size: 16px; font-weight: 700; }
-          .additional-levels { margin-top: 18px; }
+          .additional-levels { margin-top: 18px; border-top: 1px solid #d6d3d1; padding-top: 14px; }
           .additional-levels ul { margin-top: 8px; }
-          .payment-note { margin-top: 18px; }
+          .support-note { margin-top: 18px; color: #374151; }
+          .payment-note { margin-top: 18px; border-top: 1px solid #d6d3d1; padding-top: 14px; }
           .payment-note p + p { margin-top: 6px; }
           .selected-benefits,
           .additional-levels,
+          .support-note,
           .payment-note,
           .notes-block { break-inside: avoid; page-break-inside: avoid; }
           @media print {
@@ -4734,6 +4787,13 @@ export function ShowPage({
         showName: show?.name ?? "Cumberland Mountain Music Show",
         showDate: show?.show_date ?? null,
         logoUrl: `${window.location.origin}/cmms-logo.png`,
+        coverageLabel: buildProposalCoverageLabel({
+          coverage: currentFormState.proposalCoverage,
+          year: currentFormState.proposalYear,
+          customCoverage: currentFormState.proposalCustomCoverage,
+          showName: show?.name ?? "Cumberland Mountain Music Show",
+          showDate: show?.show_date ?? null,
+        }),
       });
 
       if (!openPrintDocumentWindow(printHtml)) {
@@ -4774,6 +4834,13 @@ export function ShowPage({
         showName: show?.name ?? "Cumberland Mountain Music Show",
         showDate: show?.show_date ?? null,
         logoUrl: `${window.location.origin}/cmms-logo.png`,
+        coverageLabel: buildProposalCoverageLabel({
+          coverage: sponsorProposalGeneratorFormState.proposalCoverage,
+          year: sponsorProposalGeneratorFormState.proposalYear,
+          customCoverage: sponsorProposalGeneratorFormState.proposalCustomCoverage,
+          showName: show?.name ?? "Cumberland Mountain Music Show",
+          showDate: show?.show_date ?? null,
+        }),
         contactName: sponsorProposalGeneratorFormState.contactName,
         proposalNotes: sponsorProposalGeneratorFormState.notes,
       });
@@ -10001,6 +10068,50 @@ export function ShowPage({
                       />
                     </label>
 
+                    <div className="grid gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Proposal Coverage
+                        <select
+                          name="proposalCoverage"
+                          value={sponsorProposalGeneratorFormState.proposalCoverage}
+                          onChange={handleSponsorProposalGeneratorChange}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        >
+                          <option value="current-show">Current Show</option>
+                          <option value="season-year">Season / Year</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                      </label>
+
+                      {sponsorProposalGeneratorFormState.proposalCoverage === "season-year" ? (
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Season / Year
+                          <input
+                            type="text"
+                            name="proposalYear"
+                            value={sponsorProposalGeneratorFormState.proposalYear}
+                            onChange={handleSponsorProposalGeneratorChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder={String(new Date().getFullYear())}
+                          />
+                        </label>
+                      ) : null}
+
+                      {sponsorProposalGeneratorFormState.proposalCoverage === "custom" ? (
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Custom Coverage
+                          <input
+                            type="text"
+                            name="proposalCustomCoverage"
+                            value={sponsorProposalGeneratorFormState.proposalCustomCoverage}
+                            onChange={handleSponsorProposalGeneratorChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Fall 2026 Show Series"
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <button
                         type="button"
@@ -10032,7 +10143,7 @@ export function ShowPage({
                   </div>
                 ) : (
                   <div className="grid gap-3">
-                    {sponsorLibrary.map((sponsor) => (
+                        {sponsorLibrary.map((sponsor) => (
                       <article
                         key={sponsor.id}
                         className="rounded-2xl border border-stone-200 bg-white p-4"
@@ -10040,6 +10151,8 @@ export function ShowPage({
                         {(() => {
                           const isEditing = editingSponsorLibraryId === sponsor.id;
                           const isExpanded = isEditing || expandedSponsorLibraryCardId === sponsor.id;
+                          const sponsorDocumentFormState =
+                            sponsorDocumentFormStates[sponsor.id] ?? buildSponsorDocumentFormState(sponsor);
                           const sponsorshipLevel = sponsor.sponsorship_level?.trim() || null;
                           const sponsorshipAmount =
                             sponsor.sponsorship_amount === null ? null : formatCurrency(sponsor.sponsorship_amount);
@@ -10244,7 +10357,7 @@ export function ShowPage({
                                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                                   Sponsorship Level
                                   <select
-                                    value={sponsorDocumentFormStates[sponsor.id]?.sponsorshipLevel ?? sponsor.sponsorship_level ?? ""}
+                                    value={sponsorDocumentFormState.sponsorshipLevel ?? ""}
                                     onChange={(event) =>
                                       handleSponsorDocumentFormChange(
                                         sponsor.id,
@@ -10268,7 +10381,7 @@ export function ShowPage({
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    value={sponsorDocumentFormStates[sponsor.id]?.sponsorshipAmount ?? (sponsor.sponsorship_amount?.toFixed(2) ?? "")}
+                                    value={sponsorDocumentFormState.sponsorshipAmount ?? ""}
                                     onChange={(event) =>
                                       handleSponsorDocumentFormChange(
                                         sponsor.id,
@@ -10284,7 +10397,7 @@ export function ShowPage({
                                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                                   Payment Status
                                   <select
-                                    value={sponsorDocumentFormStates[sponsor.id]?.paymentStatus ?? sponsor.payment_status ?? "prospect"}
+                                    value={sponsorDocumentFormState.paymentStatus ?? "prospect"}
                                     onChange={(event) =>
                                       handleSponsorDocumentFormChange(
                                         sponsor.id,
@@ -10301,6 +10414,65 @@ export function ShowPage({
                                     ))}
                                   </select>
                                 </label>
+                              </div>
+
+                              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Proposal Coverage
+                                  <select
+                                    value={sponsorDocumentFormState.proposalCoverage ?? "current-show"}
+                                    onChange={(event) =>
+                                      handleSponsorDocumentFormChange(
+                                        sponsor.id,
+                                        "proposalCoverage",
+                                        event.target.value as SponsorDocumentFormState["proposalCoverage"],
+                                      )
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  >
+                                    <option value="current-show">Current Show</option>
+                                    <option value="season-year">Season / Year</option>
+                                    <option value="custom">Custom</option>
+                                  </select>
+                                </label>
+
+                                {(sponsorDocumentFormState.proposalCoverage ?? "current-show") === "season-year" ? (
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Season / Year
+                                    <input
+                                      type="text"
+                                      value={sponsorDocumentFormState.proposalYear ?? String(new Date().getFullYear())}
+                                      onChange={(event) =>
+                                        handleSponsorDocumentFormChange(
+                                          sponsor.id,
+                                          "proposalYear",
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      placeholder={String(new Date().getFullYear())}
+                                    />
+                                  </label>
+                                ) : null}
+
+                                {(sponsorDocumentFormState.proposalCoverage ?? "current-show") === "custom" ? (
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:col-span-2">
+                                    Custom Coverage
+                                    <input
+                                      type="text"
+                                      value={sponsorDocumentFormState.proposalCustomCoverage ?? ""}
+                                      onChange={(event) =>
+                                        handleSponsorDocumentFormChange(
+                                          sponsor.id,
+                                          "proposalCustomCoverage",
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      placeholder="Fall 2026 Show Series"
+                                    />
+                                  </label>
+                                ) : null}
                               </div>
 
                               <div className="mt-4 flex flex-wrap gap-2">
