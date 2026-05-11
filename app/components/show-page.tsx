@@ -2567,7 +2567,7 @@ function buildSponsorDocumentHtml({
             <p>We would be honored to have ${escapeHtml(sponsor.name)} become part of the Cumberland Mountain Music Show family.</p>
           </div>
           <p class="signoff">With sincere appreciation,</p>
-          <p class="signoff">Bryan Turner<br />Owner &amp; Coordinator<br />Cumberland Mountain Music Show</p>
+          <p class="signoff">Bryan Turner<br />Owner &amp; Coordinator<br />Cumberland Mountain Music Show<br />(423) 449-9150<br />bryan@pinnaclestudiotn.com</p>
         </section>
         <section class="proposal-page proposal-page-break">
           <div class="header proposal-header">
@@ -2605,6 +2605,8 @@ function buildSponsorDocumentHtml({
           <section class="payment-note">
             <p>If you decide to support the show, checks may be made payable to:</p>
             <p><strong>The Cumberland Mountain Music Show</strong></p>
+            <p class="payment-address-label">Mailing Address:</p>
+            <p>319 Cowan Lane<br />LaFollette, TN 37766</p>
           </section>
           ${notesMarkup}
         </section>
@@ -2683,7 +2685,7 @@ function buildSponsorDocumentHtml({
           h3 { font-size: 18px; margin: 0; }
           p { line-height: 1.6; }
           ul { margin: 0; padding-left: 20px; line-height: 1.6; }
-          .signoff { margin-top: 14px; line-height: 1.45; }
+          .signoff { margin-top: 12px; line-height: 1.4; }
           .proposal-page { min-height: calc(100vh - 64px); }
           .proposal-page-break { break-before: page; page-break-before: always; }
           .proposal-header { margin-bottom: 18px; }
@@ -2699,6 +2701,7 @@ function buildSponsorDocumentHtml({
           .support-note { margin-top: 18px; color: #374151; }
           .payment-note { margin-top: 18px; border-top: 1px solid #d6d3d1; padding-top: 14px; }
           .payment-note p + p { margin-top: 6px; }
+          .payment-address-label { margin-top: 10px; font-weight: 700; }
           .selected-benefits,
           .additional-levels,
           .support-note,
