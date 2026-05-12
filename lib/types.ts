@@ -121,6 +121,7 @@ export type SponsorLibraryEntry = {
   full_message: string | null;
   website: string | null;
   logo_url: string | null;
+  is_archived: boolean;
   sponsorship_level: string | null;
   sponsorship_amount: number | null;
   payment_status: string | null;

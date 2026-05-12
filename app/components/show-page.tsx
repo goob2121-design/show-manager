@@ -2337,6 +2337,7 @@ function normalizeSponsorLibraryEntry(
     ...sponsor,
     website: sponsor.website ?? null,
     logo_url: sponsor.logo_url ?? null,
+    is_archived: sponsor.is_archived ?? false,
     sponsorship_level: sponsor.sponsorship_level ?? null,
     sponsorship_amount: Number.isFinite(parsedSponsorshipAmount) ? parsedSponsorshipAmount : null,
     payment_status: sponsor.payment_status ?? "prospect",
@@ -3407,6 +3408,7 @@ export function ShowPage({
     useState<SponsorLibraryFormState>(initialSponsorLibraryFormState);
   const [isAddSponsorFormOpen, setIsAddSponsorFormOpen] = useState(false);
   const [isSponsorProposalGeneratorOpen, setIsSponsorProposalGeneratorOpen] = useState(false);
+  const [showArchivedSponsors, setShowArchivedSponsors] = useState(false);
   const [sponsorProposalGeneratorFormState, setSponsorProposalGeneratorFormState] =
     useState<SponsorProposalGeneratorFormState>(initialSponsorProposalGeneratorFormState);
   const [sponsorDocumentFormStates, setSponsorDocumentFormStates] = useState<
@@ -3456,6 +3458,21 @@ export function ShowPage({
   const [copiedGuestShortTextId, setCopiedGuestShortTextId] = useState<string | null>(null);
   const [activeGuestAppearanceSaveId, setActiveGuestAppearanceSaveId] = useState<string | null>(null);
   const [activeGuestConfirmationSaveId, setActiveGuestConfirmationSaveId] = useState<string | null>(null);
+  const [sponsorDeleteConfirmId, setSponsorDeleteConfirmId] = useState<string | null>(null);
+  const [sponsorDeleteConfirmText, setSponsorDeleteConfirmText] = useState("");
+
+  const activeSponsorLibrary = useMemo(
+    () => sponsorLibrary.filter((sponsor) => !sponsor.is_archived),
+    [sponsorLibrary],
+  );
+  const archivedSponsorLibrary = useMemo(
+    () => sponsorLibrary.filter((sponsor) => sponsor.is_archived),
+    [sponsorLibrary],
+  );
+  const visibleSponsorLibrary = useMemo(
+    () => (showArchivedSponsors ? sponsorLibrary : activeSponsorLibrary),
+    [activeSponsorLibrary, showArchivedSponsors, sponsorLibrary],
+  );
 
   useEffect(() => {
     if (viewMode !== "guest" || !lockedGuestProfileId) {
@@ -4535,6 +4552,20 @@ export function ShowPage({
     }));
   }
 
+  function removeSponsorAcrossState(sponsorId: string) {
+    setSponsorLibrary((currentSponsors) =>
+      currentSponsors.filter((sponsor) => sponsor.id !== sponsorId),
+    );
+    setShowSponsors((currentSponsors) =>
+      currentSponsors.filter((sponsor) => sponsor.sponsor_id !== sponsorId),
+    );
+    setSponsorDocumentFormStates((currentStates) => {
+      const nextStates = { ...currentStates };
+      delete nextStates[sponsorId];
+      return nextStates;
+    });
+  }
+
   function buildProposalGeneratorSponsorDraft() {
     const name = sponsorProposalGeneratorFormState.businessName.trim();
     const sponsorshipAmount = parseSponsorAmountInput(sponsorProposalGeneratorFormState.amount);
@@ -4549,6 +4580,7 @@ export function ShowPage({
         full_message: null,
         website: null,
         logo_url: null,
+        is_archived: false,
         sponsorship_level:
           normalizeOptionalField(sponsorProposalGeneratorFormState.sponsorshipLevel) ?? "Custom",
         sponsorship_amount: sponsorshipAmount,
@@ -4651,6 +4683,7 @@ export function ShowPage({
           full_message: normalizeOptionalField(newSponsorLibraryFormState.fullMessage),
           website: normalizeOptionalField(newSponsorLibraryFormState.website),
           logo_url: logoUrl,
+          is_archived: false,
         })
         .select("*")
         .single();
@@ -4898,6 +4931,7 @@ export function ShowPage({
         .from("sponsor_library")
         .insert({
           name,
+          is_archived: false,
           sponsorship_level: sponsor.sponsorship_level,
           sponsorship_amount: sponsorshipAmount,
           payment_status: "prospect",
@@ -4933,6 +4967,110 @@ export function ShowPage({
       await navigator.clipboard.writeText(buildSponsorOutreachEmail(sponsor.name));
     } catch (error) {
       setActionError(getErrorMessage(error));
+    }
+  }
+
+  async function handleSetSponsorArchived(
+    sponsor: SponsorLibraryEntry,
+    isArchived: boolean,
+  ) {
+    setActionError(null);
+    setActiveSponsorActionId(`${isArchived ? "archive" : "restore"}-${sponsor.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("sponsor_library")
+        .update({ is_archived: isArchived })
+        .eq("id", sponsor.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        console.error("Sponsor archive update failed", {
+          sponsorId: sponsor.id,
+          isArchived,
+          data,
+          error,
+          message: error.message,
+          code: "code" in error ? error.code : undefined,
+          details: "details" in error ? error.details : undefined,
+          hint: "hint" in error ? error.hint : undefined,
+          json: JSON.stringify(error, null, 2),
+        });
+      } else {
+        console.info("Sponsor archive update response", {
+          sponsorId: sponsor.id,
+          isArchived,
+          data,
+          error,
+        });
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      syncSponsorAcrossState(normalizeSponsorLibraryEntry(data));
+
+      if (isArchived) {
+        setExpandedSponsorLibraryCardId((currentId) =>
+          currentId === sponsor.id && !showArchivedSponsors ? null : currentId,
+        );
+        setEditingSponsorLibraryId((currentId) => (currentId === sponsor.id ? null : currentId));
+      }
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleDeleteSponsorPermanently(sponsor: SponsorLibraryEntry) {
+    if (sponsorDeleteConfirmText.trim().toUpperCase() !== "DELETE") {
+      setActionError('Type DELETE to permanently remove this sponsor.');
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`delete-${sponsor.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.from("sponsor_library").delete().eq("id", sponsor.id);
+
+      if (error) {
+        console.error("Permanent sponsor delete failed", {
+          sponsorId: sponsor.id,
+          data,
+          error,
+          message: error.message,
+          code: "code" in error ? error.code : undefined,
+          details: "details" in error ? error.details : undefined,
+          hint: "hint" in error ? error.hint : undefined,
+          json: JSON.stringify(error, null, 2),
+        });
+      } else {
+        console.info("Permanent sponsor delete response", {
+          sponsorId: sponsor.id,
+          data,
+          error,
+        });
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      removeSponsorAcrossState(sponsor.id);
+      setSponsorDeleteConfirmId((currentId) => (currentId === sponsor.id ? null : currentId));
+      setSponsorDeleteConfirmText("");
+      setExpandedSponsorLibraryCardId((currentId) => (currentId === sponsor.id ? null : currentId));
+      setEditingSponsorLibraryId((currentId) => (currentId === sponsor.id ? null : currentId));
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
     }
   }
 
@@ -9911,28 +10049,41 @@ export function ShowPage({
                   </p>
                 </div>
 
-                <div className="flex justify-start">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddSponsorFormOpen((currentValue) => !currentValue)}
-                    className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                  >
-                    {isAddSponsorFormOpen ? "Hide Add Sponsor" : "Add Sponsor"}
-                  </button>
-                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddSponsorFormOpen((currentValue) => !currentValue)}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                    >
+                      {isAddSponsorFormOpen ? "Hide Add Sponsor" : "Add Sponsor"}
+                    </button>
 
-                <div className="flex justify-start">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setIsSponsorProposalGeneratorOpen((currentValue) => !currentValue)
-                    }
-                    className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                  >
-                    {isSponsorProposalGeneratorOpen
-                      ? "Hide Proposal Generator"
-                      : "Generate Proposal for New Business"}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setIsSponsorProposalGeneratorOpen((currentValue) => !currentValue)
+                      }
+                      className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                    >
+                      {isSponsorProposalGeneratorOpen
+                        ? "Hide Proposal Generator"
+                        : "Generate Proposal for New Business"}
+                    </button>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm font-medium text-stone-700">
+                    <input
+                      type="checkbox"
+                      checked={showArchivedSponsors}
+                      onChange={(event) => setShowArchivedSponsors(event.target.checked)}
+                      className="h-4 w-4 rounded border border-stone-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Show Archived Sponsors
+                    <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs font-semibold text-stone-700">
+                      {archivedSponsorLibrary.length}
+                    </span>
+                  </label>
                 </div>
 
                 {isAddSponsorFormOpen ? (
@@ -10155,13 +10306,15 @@ export function ShowPage({
                   </div>
                 ) : null}
 
-                {sponsorLibrary.length === 0 ? (
+                {visibleSponsorLibrary.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
-                    No reusable sponsors saved yet.
+                    {showArchivedSponsors
+                      ? "No sponsors match the current view yet."
+                      : "No active reusable sponsors saved yet."}
                   </div>
                 ) : (
                   <div className="grid gap-3">
-                        {sponsorLibrary.map((sponsor) => (
+                        {visibleSponsorLibrary.map((sponsor) => (
                       <article
                         key={sponsor.id}
                         className="rounded-2xl border border-stone-200 bg-white p-4"
@@ -10201,6 +10354,11 @@ export function ShowPage({
                                       {paymentStatus ? (
                                         <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                                           {paymentStatus}
+                                        </span>
+                                      ) : null}
+                                      {sponsor.is_archived ? (
+                                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                                          Archived
                                         </span>
                                       ) : null}
                                     </div>
@@ -10246,6 +10404,17 @@ export function ShowPage({
                                     className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                                   >
                                     Receipt
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSetSponsorArchived(sponsor, !sponsor.is_archived)}
+                                    disabled={
+                                      activeSponsorActionId === `archive-${sponsor.id}` ||
+                                      activeSponsorActionId === `restore-${sponsor.id}`
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {sponsor.is_archived ? "Restore" : "Archive"}
                                   </button>
                                 </div>
                               </div>
@@ -10547,6 +10716,68 @@ export function ShowPage({
                                 ) : null}
                               </div>
                             </div>
+
+                            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+                              <div className="flex flex-col gap-1">
+                                <h5 className="text-sm font-semibold uppercase tracking-[0.14em] text-red-700">
+                                  Remove Test Sponsor
+                                </h5>
+                                <p className="text-xs leading-5 text-red-700">
+                                  Archive is safest for real sponsors. Permanent delete is best reserved for test sponsors and removes this sponsor record and any show assignments tied to it.
+                                </p>
+                              </div>
+
+                              {sponsorDeleteConfirmId === sponsor.id ? (
+                                <div className="mt-4 grid gap-3">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-red-800">
+                                    Type DELETE to confirm permanent removal
+                                    <input
+                                      type="text"
+                                      value={sponsorDeleteConfirmText}
+                                      onChange={(event) => setSponsorDeleteConfirmText(event.target.value)}
+                                      className="rounded-xl border border-red-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-red-500"
+                                      placeholder="DELETE"
+                                    />
+                                  </label>
+
+                                  <div className="flex flex-col gap-3 sm:flex-row">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleDeleteSponsorPermanently(sponsor)}
+                                      disabled={activeSponsorActionId === `delete-${sponsor.id}`}
+                                      className="rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-red-400"
+                                    >
+                                      {activeSponsorActionId === `delete-${sponsor.id}`
+                                        ? "Deleting..."
+                                        : "Delete Permanently"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSponsorDeleteConfirmId(null);
+                                        setSponsorDeleteConfirmText("");
+                                      }}
+                                      className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="mt-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSponsorDeleteConfirmId(sponsor.id);
+                                      setSponsorDeleteConfirmText("");
+                                    }}
+                                    className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                                  >
+                                    Delete Permanently
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </>
                         )}
                                 </div>
@@ -10581,7 +10812,7 @@ export function ShowPage({
                       required
                     >
                       <option value="">Choose a sponsor</option>
-                      {sponsorLibrary.map((sponsor) => (
+                      {activeSponsorLibrary.map((sponsor) => (
                         <option key={sponsor.id} value={sponsor.id}>
                           {sponsor.name}
                         </option>
