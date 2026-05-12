@@ -10072,7 +10072,10 @@ export function ShowPage({
                     </button>
                   </div>
 
-                  <label className="flex items-center gap-2 text-sm font-medium text-stone-700">
+                  <label
+                    aria-hidden="true"
+                    className="hidden items-center gap-2 text-sm font-medium text-stone-700"
+                  >
                     <input
                       type="checkbox"
                       checked={showArchivedSponsors}
@@ -10407,12 +10410,13 @@ export function ShowPage({
                                   </button>
                                   <button
                                     type="button"
+                                    aria-hidden="true"
                                     onClick={() => void handleSetSponsorArchived(sponsor, !sponsor.is_archived)}
                                     disabled={
                                       activeSponsorActionId === `archive-${sponsor.id}` ||
                                       activeSponsorActionId === `restore-${sponsor.id}`
                                     }
-                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="hidden rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     {sponsor.is_archived ? "Restore" : "Archive"}
                                   </button>
@@ -10720,10 +10724,10 @@ export function ShowPage({
                             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
                               <div className="flex flex-col gap-1">
                                 <h5 className="text-sm font-semibold uppercase tracking-[0.14em] text-red-700">
-                                  Remove Test Sponsor
+                                  Remove Sponsor
                                 </h5>
                                 <p className="text-xs leading-5 text-red-700">
-                                  Archive is safest for real sponsors. Permanent delete is best reserved for test sponsors and removes this sponsor record and any show assignments tied to it.
+                                  Permanent delete removes this sponsor record and any show assignments tied to it. Use it only when you are sure this sponsor should be removed completely.
                                 </p>
                               </div>
 
