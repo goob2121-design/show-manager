@@ -110,6 +110,15 @@ function formatProfitMargin(income: number, net: number) {
   return `${((net / income) * 100).toFixed(1)}%`;
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function getShowYear(showDate: string | null) {
   if (!showDate) {
     return null;
@@ -135,6 +144,655 @@ function normalizeFinanceAmount(value: unknown) {
   }
 
   return 0;
+}
+
+type FinanceQuickTotalDefinition = {
+  key: string;
+  label: string;
+  type: ShowFinanceItem["type"];
+  matchers: string[];
+};
+
+const financeQuickTotalDefinitions: FinanceQuickTotalDefinition[] = [
+  {
+    key: "sponsorship-income",
+    label: "Sponsorship Income",
+    type: "income",
+    matchers: ["sponsor", "sponsorship"],
+  },
+  {
+    key: "presale-ticket-income",
+    label: "Presale Ticket Income",
+    type: "income",
+    matchers: ["presale", "pre-sale", "advance ticket", "advance sales"],
+  },
+  {
+    key: "door-sales-income",
+    label: "Door Sales Income",
+    type: "income",
+    matchers: ["door", "door sales", "ticket sales", "walk-up"],
+  },
+  {
+    key: "advertising-expenses",
+    label: "Advertising Expenses",
+    type: "expense",
+    matchers: ["advertis", "marketing", "promo", "facebook ad"],
+  },
+  {
+    key: "talent-guest-pay",
+    label: "Talent / Guest Pay",
+    type: "expense",
+    matchers: ["guest pay", "talent", "artist pay", "performer pay"],
+  },
+  {
+    key: "band-pay",
+    label: "Band Pay",
+    type: "expense",
+    matchers: ["band pay", "band"],
+  },
+  {
+    key: "printing-signs",
+    label: "Printing / Signs",
+    type: "expense",
+    matchers: ["print", "printing", "sign", "signage"],
+  },
+  {
+    key: "misc-expenses",
+    label: "Misc Expenses",
+    type: "expense",
+    matchers: ["misc", "miscellaneous", "other"],
+  },
+];
+
+function normalizeFinanceCategoryLabel(value: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function openPrintDocumentWindow(printHtml: string) {
+  const printWindow = window.open("", "_blank");
+
+  if (!printWindow) {
+    window.alert("The print window was blocked. Please allow pop-ups and try again.");
+    return false;
+  }
+
+  const triggerPrint = () => {
+    if (printWindow.closed) {
+      return;
+    }
+
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  const triggerPrintWhenReady = () => {
+    const { document } = printWindow;
+    const images = Array.from(document.images ?? []);
+
+    if (images.length === 0) {
+      window.setTimeout(triggerPrint, 150);
+      return;
+    }
+
+    let settledImages = 0;
+    const finishImageLoad = () => {
+      settledImages += 1;
+
+      if (settledImages >= images.length) {
+        window.setTimeout(triggerPrint, 150);
+      }
+    };
+
+    images.forEach((image) => {
+      if (image.complete) {
+        finishImageLoad();
+        return;
+      }
+
+      image.addEventListener("load", finishImageLoad, { once: true });
+      image.addEventListener("error", finishImageLoad, { once: true });
+    });
+  };
+
+  printWindow.onload = triggerPrintWhenReady;
+  printWindow.onafterprint = () => {
+    printWindow.close();
+  };
+
+  const { document } = printWindow;
+  document.open();
+  document.write(printHtml);
+  document.close();
+
+  if (document.readyState === "complete") {
+    triggerPrintWhenReady();
+  }
+
+  return true;
+}
+
+type YearlyFinanceReportShowBreakdown = {
+  show: ShowRecord;
+  income: number;
+  expenses: number;
+  net: number;
+};
+
+type YearlyFinanceReportCategoryGroup = {
+  category: string;
+  total: number;
+  items: Array<
+    ShowFinanceItem & {
+      showName: string;
+      showDate: string | null;
+    }
+  >;
+};
+
+type YearlyFinanceReportQuickTotal = {
+  key: string;
+  label: string;
+  amount: number;
+};
+
+function buildYearToDateFinanceReportHtml({
+  year,
+  showCount,
+  totalIncome,
+  totalExpenses,
+  net,
+  quickTotals,
+  showBreakdown,
+  incomeGroups,
+  expenseGroups,
+  logoUrl,
+}: {
+  year: number;
+  showCount: number;
+  totalIncome: number;
+  totalExpenses: number;
+  net: number;
+  quickTotals: YearlyFinanceReportQuickTotal[];
+  showBreakdown: YearlyFinanceReportShowBreakdown[];
+  incomeGroups: YearlyFinanceReportCategoryGroup[];
+  expenseGroups: YearlyFinanceReportCategoryGroup[];
+  logoUrl: string;
+}) {
+  const summaryRows = [
+    { label: "Year", value: String(year), tone: "tone-neutral" },
+    {
+      label: "Prepared",
+      value: new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }).format(new Date()),
+      tone: "tone-neutral",
+    },
+    { label: "Total Income", value: formatCurrency(totalIncome), tone: "tone-income" },
+    { label: "Total Expenses", value: formatCurrency(totalExpenses), tone: "tone-expense" },
+    {
+      label: "Net Profit / Loss",
+      value: formatCurrency(net),
+      tone: net < 0 ? "tone-net-negative" : "tone-net-positive",
+    },
+    {
+      label: "Profit Margin",
+      value: formatProfitMargin(totalIncome, net),
+      tone: totalIncome > 0 && net < 0 ? "tone-net-negative" : "tone-neutral",
+    },
+    { label: "Total Shows Included", value: String(showCount), tone: "tone-neutral" },
+  ];
+
+  const renderCategoryGroups = (
+    groups: YearlyFinanceReportCategoryGroup[],
+    emptyMessage: string,
+    toneClass: string,
+  ) => {
+    if (groups.length === 0) {
+      return `<div class="empty-state">${escapeHtml(emptyMessage)}</div>`;
+    }
+
+    return groups
+      .map(
+        (group) => `
+          <section class="category-group avoid-break ${toneClass}">
+            <div class="category-header">
+              <div>
+                <h3>${escapeHtml(group.category)}</h3>
+                <p>${group.items.length} item${group.items.length === 1 ? "" : "s"}</p>
+              </div>
+            </div>
+            <div class="line-items">
+              ${group.items
+                .map(
+                  (item) => `
+                    <div class="line-item avoid-break">
+                      <div class="line-item-main">
+                        <div class="line-item-top">
+                          <strong>${escapeHtml(item.label || "Untitled item")}</strong>
+                          <span class="${toneClass}">${escapeHtml(formatCurrency(item.amount))}</span>
+                        </div>
+                        <p>${escapeHtml(item.showName)}${
+                          item.showDate ? ` • ${escapeHtml(formatShowDate(item.showDate))}` : ""
+                        }</p>
+                        ${
+                          item.notes?.trim()
+                            ? `<p class="line-item-notes">${escapeHtml(item.notes.trim())}</p>`
+                            : ""
+                        }
+                      </div>
+                    </div>
+                  `,
+                )
+                .join("")}
+            </div>
+            <div class="category-total-row ${toneClass}">
+              <span>${escapeHtml(group.category)} Total</span>
+              <strong>${escapeHtml(formatCurrency(group.total))}</strong>
+            </div>
+          </section>
+        `,
+      )
+      .join("");
+  };
+
+  return `<!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <title>${escapeHtml(`Year-to-Date Finance Report — ${year}`)}</title>
+      <style>
+        :root {
+          color-scheme: light;
+        }
+        * {
+          box-sizing: border-box;
+        }
+        @page {
+          margin: 0.55in;
+        }
+        body {
+          margin: 0;
+          background: #ffffff;
+          color: #111827;
+          font-family: Arial, Helvetica, sans-serif;
+          line-height: 1.42;
+        }
+        .report {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .page-break {
+          break-before: page;
+          page-break-before: always;
+        }
+        .logo {
+          display: block;
+          width: auto;
+          max-width: 280px;
+          max-height: 90px;
+          margin: 0 auto 0.75rem;
+          object-fit: contain;
+        }
+        .header {
+          text-align: center;
+          border-bottom: 1.5px solid #a8a29e;
+          padding-bottom: 0.65rem;
+          margin-bottom: 0.8rem;
+        }
+        .header h1 {
+          margin: 0.25rem 0 0;
+          font-size: 1.7rem;
+          line-height: 1.15;
+        }
+        .header p {
+          margin: 0.35rem 0 0;
+          color: #57534e;
+          font-size: 0.96rem;
+        }
+        .summary-intro {
+          margin: 0 0 0.8rem;
+          color: #44403c;
+          font-size: 0.94rem;
+        }
+        .summary-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0.25rem 1.25rem;
+          border-top: 1px solid #d6d3d1;
+          border-bottom: 1px solid #d6d3d1;
+          padding: 0.2rem 0 0.35rem;
+        }
+        .summary-card {
+          display: flex;
+          justify-content: space-between;
+          gap: 1rem;
+          padding: 0.45rem 0;
+          border-bottom: 1px solid #ece7e1;
+          background: transparent;
+        }
+        .summary-card:nth-last-child(-n + 2) {
+          border-bottom: none;
+        }
+        .summary-card span {
+          display: block;
+          font-size: 0.82rem;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #57534e;
+        }
+        .summary-card strong {
+          display: block;
+          font-size: 1rem;
+          color: #111827;
+          text-align: right;
+        }
+        .quick-totals {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0.15rem 1rem;
+        }
+        .quick-total {
+          display: flex;
+          justify-content: space-between;
+          gap: 1rem;
+          padding: 0.35rem 0;
+          border-bottom: 1px solid #ece7e1;
+          font-size: 0.92rem;
+        }
+        .section-title {
+          margin: 1.25rem 0 0.7rem;
+          padding-bottom: 0.3rem;
+          border-bottom: 1px solid #d6d3d1;
+          font-size: 1.1rem;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #111827;
+        }
+        .section-title:first-child {
+          margin-top: 0;
+        }
+        .subtle {
+          margin: 0 0 0.8rem;
+          color: #57534e;
+          font-size: 0.9rem;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        th, td {
+          padding: 0.55rem 0.5rem;
+          border-bottom: 1px solid #e7e5e4;
+          text-align: left;
+          vertical-align: top;
+          font-size: 0.92rem;
+        }
+        th {
+          font-size: 0.76rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #57534e;
+          border-bottom: 1.5px solid #a8a29e;
+          background: #fafaf9;
+        }
+        td.amount, th.amount {
+          text-align: right;
+          white-space: nowrap;
+        }
+        tbody tr:nth-child(even) {
+          background: #fafaf9;
+        }
+        .show-row td.amount.income {
+          color: #166534;
+          font-weight: 600;
+        }
+        .show-row td.amount.expense {
+          color: #b91c1c;
+          font-weight: 600;
+        }
+        .show-row td.amount.net-positive {
+          color: #166534;
+          font-weight: 700;
+        }
+        .show-row td.amount.net-negative {
+          color: #b91c1c;
+          font-weight: 700;
+        }
+        .category-group {
+          padding: 0 0 0.95rem;
+          margin-bottom: 1rem;
+          border-bottom: 1px solid #d6d3d1;
+        }
+        .category-header {
+          display: flex;
+          justify-content: space-between;
+          gap: 1rem;
+          align-items: flex-start;
+          border-bottom: 1px solid #e7e5e4;
+          padding-bottom: 0.5rem;
+          margin-bottom: 0.65rem;
+        }
+        .category-header h3 {
+          margin: 0;
+          font-size: 1.08rem;
+          font-weight: 800;
+          line-height: 1.25;
+          color: #111827;
+        }
+        .category-header p {
+          margin: 0.18rem 0 0;
+          color: #57534e;
+          font-size: 0.8rem;
+        }
+        .category-header strong {
+          font-size: 1rem;
+          white-space: nowrap;
+        }
+        .tone-income {
+          color: #166534;
+        }
+        .tone-expense {
+          color: #b91c1c;
+        }
+        .tone-net-positive {
+          color: #166534;
+        }
+        .tone-net-negative {
+          color: #b91c1c;
+        }
+        .tone-neutral {
+          color: #111827;
+        }
+        .line-items {
+          display: grid;
+          gap: 0.15rem;
+        }
+        .line-item {
+          padding: 0.45rem 0;
+          border-bottom: 1px solid #f1eeea;
+        }
+        .line-item-top {
+          display: flex;
+          justify-content: space-between;
+          gap: 1rem;
+          align-items: flex-start;
+        }
+        .line-item-top strong {
+          font-size: 0.95rem;
+        }
+        .line-item-top span {
+          white-space: nowrap;
+          font-weight: 700;
+        }
+        .line-item-main p {
+          margin: 0.25rem 0 0;
+          color: #57534e;
+          font-size: 0.84rem;
+        }
+        .line-item-notes {
+          color: #44403c;
+          font-size: 0.8rem;
+        }
+        .category-total-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 1rem;
+          align-items: baseline;
+          margin-top: 0.6rem;
+          padding-top: 0.55rem;
+          border-top: 1px solid #d6d3d1;
+          font-size: 0.94rem;
+          font-weight: 700;
+        }
+        .category-total-row strong {
+          white-space: nowrap;
+        }
+        .empty-state {
+          border: 1px dashed #d6d3d1;
+          border-radius: 10px;
+          padding: 1rem;
+          color: #57534e;
+          background: #ffffff;
+          font-size: 0.92rem;
+        }
+        .final-summary {
+          margin-top: 0.45rem;
+          padding-top: 0.8rem;
+          border-top: 1.5px solid #a8a29e;
+        }
+        .avoid-break {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+      </style>
+    </head>
+    <body>
+      <main class="report">
+        <section class="avoid-break">
+          <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" class="logo" />
+          <div class="header">
+            <h1>Year-to-Date Finance Report</h1>
+            <p>${escapeHtml(String(year))} Cumberland Mountain Music Show Summary</p>
+          </div>
+          <p class="summary-intro">Executive Summary / Year Summary</p>
+          <div class="summary-grid">
+            ${summaryRows
+              .map(
+                (row) => `
+                  <div class="summary-card avoid-break">
+                    <span>${escapeHtml(row.label)}</span>
+                    <strong class="${escapeHtml(row.tone)}">${escapeHtml(row.value)}</strong>
+                  </div>
+                `,
+              )
+              .join("")}
+          </div>
+          ${
+            quickTotals.length > 0
+              ? `
+                <h2 class="section-title" style="margin-top: 1rem;">Quick Totals</h2>
+                <div class="quick-totals">
+                  ${quickTotals
+                    .map(
+                      (item) => `
+                        <div class="quick-total avoid-break">
+                          <span>${escapeHtml(item.label)}</span>
+                          <strong>${escapeHtml(formatCurrency(item.amount))}</strong>
+                        </div>
+                      `,
+                    )
+                    .join("")}
+                </div>
+              `
+              : ""
+          }
+        </section>
+
+        <section class="page-break">
+          <h2 class="section-title">Show-By-Show Summary</h2>
+          <p class="subtle">All shows dated in ${escapeHtml(String(year))}, including archived and historical records.</p>
+          ${
+            showBreakdown.length === 0
+              ? `<div class="empty-state">No shows with dates were found for ${escapeHtml(String(year))}.</div>`
+              : `
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Show</th>
+                      <th>Date</th>
+                      <th class="amount">Income</th>
+                      <th class="amount">Expenses</th>
+                      <th class="amount">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${showBreakdown
+                      .map(
+                        ({ show, income, expenses, net }) => `
+                          <tr class="avoid-break show-row">
+                            <td>${escapeHtml(show.name)}</td>
+                            <td>${escapeHtml(formatShowDate(show.show_date))}</td>
+                            <td class="amount income">${escapeHtml(formatCurrency(income))}</td>
+                            <td class="amount expense">${escapeHtml(formatCurrency(expenses))}</td>
+                            <td class="amount ${net < 0 ? "net-negative" : "net-positive"}">${escapeHtml(formatCurrency(net))}</td>
+                          </tr>
+                        `,
+                      )
+                      .join("")}
+                  </tbody>
+                </table>
+              `
+          }
+        </section>
+
+        <section class="page-break">
+          <h2 class="section-title">Income Breakdown</h2>
+          <p class="subtle">Grouped income items for all shows in ${escapeHtml(String(year))}.</p>
+          ${renderCategoryGroups(incomeGroups, `No income items were found for ${year}.`, "tone-income")}
+        </section>
+
+        <section class="page-break">
+          <h2 class="section-title">Expense Breakdown</h2>
+          <p class="subtle">Grouped expense items for all shows in ${escapeHtml(String(year))}.</p>
+          ${renderCategoryGroups(expenseGroups, `No expense items were found for ${year}.`, "tone-expense")}
+          <section class="final-summary avoid-break">
+            <h2 class="section-title">Final Totals</h2>
+            <div class="summary-grid">
+              ${[
+                { label: "Total Income", value: formatCurrency(totalIncome), tone: "tone-income" },
+                { label: "Total Expenses", value: formatCurrency(totalExpenses), tone: "tone-expense" },
+                {
+                  label: "Net Profit / Loss",
+                  value: formatCurrency(net),
+                  tone: net < 0 ? "tone-net-negative" : "tone-net-positive",
+                },
+                {
+                  label: "Profit Margin",
+                  value: formatProfitMargin(totalIncome, net),
+                  tone: totalIncome > 0 && net < 0 ? "tone-net-negative" : "tone-neutral",
+                },
+              ]
+                .map(
+                  (row) => `
+                    <div class="summary-card avoid-break">
+                      <span>${escapeHtml(row.label)}</span>
+                      <strong class="${escapeHtml(row.tone)}">${escapeHtml(row.value)}</strong>
+                    </div>
+                  `,
+                )
+                .join("")}
+            </div>
+          </section>
+        </section>
+      </main>
+    </body>
+  </html>`;
 }
 
 function normalizeShowFinanceItem(item: Partial<ShowFinanceItem> & { amount?: unknown }) {
@@ -257,6 +915,7 @@ export default function ShowsDashboardPage() {
   const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
   const [selectedFinanceYear, setSelectedFinanceYear] = useState(() => new Date().getUTCFullYear());
   const [financeSummaryErrorMessage, setFinanceSummaryErrorMessage] = useState<string | null>(null);
+  const [isPrintingYearlyFinanceReport, setIsPrintingYearlyFinanceReport] = useState(false);
   const [currentShowMetrics, setCurrentShowMetrics] = useState<CurrentShowDashboardMetrics>({
     songLibraryCount: null,
     totalGuestProfilesCount: null,
@@ -352,6 +1011,7 @@ export default function ShowsDashboardPage() {
   );
   const yearlyFinanceSummary = useMemo(() => {
     const itemsByShowId = new Map<string, ShowFinanceItem[]>();
+    const selectedYearShowLookup = new Map(selectedYearShows.map((show) => [show.id, show]));
 
     financeItems.forEach((item) => {
       const currentItems = itemsByShowId.get(item.show_id) ?? [];
@@ -378,6 +1038,13 @@ export default function ShowsDashboardPage() {
     const totalIncome = showBreakdown.reduce((total, item) => total + item.income, 0);
     const totalExpenses = showBreakdown.reduce((total, item) => total + item.expenses, 0);
     const net = totalIncome - totalExpenses;
+    const selectedYearFinanceItems = financeItems
+      .filter((item) => selectedYearShowLookup.has(item.show_id))
+      .map((item) => ({
+        ...item,
+        showName: selectedYearShowLookup.get(item.show_id)?.name ?? "Unknown show",
+        showDate: selectedYearShowLookup.get(item.show_id)?.show_date ?? null,
+      }));
     const categoryTotals = financeItems.reduce<Record<string, number>>((totals, item) => {
       const matchingShow = selectedYearShows.find((show) => show.id === item.show_id);
 
@@ -388,13 +1055,81 @@ export default function ShowsDashboardPage() {
       const key = `${item.type}:${item.category.trim()}`;
       totals[key] = (totals[key] ?? 0) + item.amount;
       return totals;
-    }, {});
+      }, {});
+
+    const buildCategoryGroups = (type: ShowFinanceItem["type"]) => {
+      const groups = selectedYearFinanceItems.reduce<Record<string, YearlyFinanceReportCategoryGroup>>(
+        (lookup, item) => {
+          if (item.type !== type) {
+            return lookup;
+          }
+
+          const category = item.category?.trim() || "Uncategorized";
+          const existingGroup = lookup[category] ?? {
+            category,
+            total: 0,
+            items: [],
+          };
+
+          existingGroup.total += item.amount;
+          existingGroup.items.push(item);
+          lookup[category] = existingGroup;
+          return lookup;
+        },
+        {},
+      );
+
+      return Object.values(groups)
+        .map((group) => ({
+          ...group,
+          items: [...group.items].sort((left, right) => {
+            if (left.showDate && right.showDate) {
+              return left.showDate.localeCompare(right.showDate);
+            }
+
+            if (left.showDate) {
+              return -1;
+            }
+
+            if (right.showDate) {
+              return 1;
+            }
+
+            return left.label.localeCompare(right.label);
+          }),
+        }))
+        .sort((left, right) => right.total - left.total);
+    };
+
+    const quickTotals = financeQuickTotalDefinitions
+      .map((definition) => {
+        const amount = selectedYearFinanceItems.reduce((total, item) => {
+          if (item.type !== definition.type) {
+            return total;
+          }
+
+          const categoryLabel = normalizeFinanceCategoryLabel(item.category);
+          return definition.matchers.some((matcher) => categoryLabel.includes(matcher))
+            ? total + item.amount
+            : total;
+        }, 0);
+
+        return {
+          key: definition.key,
+          label: definition.label,
+          amount,
+        };
+      })
+      .filter((item) => item.amount > 0);
 
     return {
       totalIncome,
       totalExpenses,
       net,
       showBreakdown,
+      incomeGroups: buildCategoryGroups("income"),
+      expenseGroups: buildCategoryGroups("expense"),
+      quickTotals,
       categoryTotals: Object.entries(categoryTotals)
         .map(([key, amount]) => {
           const separatorIndex = key.indexOf(":");
@@ -538,6 +1273,32 @@ export default function ShowsDashboardPage() {
   useEffect(() => {
     void loadShows();
   }, [loadShows]);
+
+  async function handlePrintYearToDateReport() {
+    setFinanceSummaryErrorMessage(null);
+    setIsPrintingYearlyFinanceReport(true);
+
+    try {
+      const printHtml = buildYearToDateFinanceReportHtml({
+        year: selectedFinanceYear,
+        showCount: selectedYearShows.length,
+        totalIncome: yearlyFinanceSummary.totalIncome,
+        totalExpenses: yearlyFinanceSummary.totalExpenses,
+        net: yearlyFinanceSummary.net,
+        quickTotals: yearlyFinanceSummary.quickTotals,
+        showBreakdown: yearlyFinanceSummary.showBreakdown,
+        incomeGroups: yearlyFinanceSummary.incomeGroups,
+        expenseGroups: yearlyFinanceSummary.expenseGroups,
+        logoUrl: `${window.location.origin}/cmms-logo.png`,
+      });
+
+      openPrintDocumentWindow(printHtml);
+    } catch (error) {
+      setFinanceSummaryErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsPrintingYearlyFinanceReport(false);
+    }
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1737,7 +2498,16 @@ export default function ShowsDashboardPage() {
                 {expandedMainPanels.yearlyFinanceSummary ? (
                   <>
                     <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                      <div />
+                      <button
+                        type="button"
+                        onClick={() => void handlePrintYearToDateReport()}
+                        disabled={isPrintingYearlyFinanceReport}
+                        className="w-fit rounded-2xl border border-stone-200 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:border-emerald-300 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-emerald-900 dark:hover:bg-slate-950"
+                      >
+                        {isPrintingYearlyFinanceReport
+                          ? "Preparing Report..."
+                          : "Print Year-to-Date Report"}
+                      </button>
                       <label className="flex w-full max-w-[13rem] flex-col gap-2 text-sm font-medium text-stone-700 dark:text-slate-200">
                         Year
                         <select
