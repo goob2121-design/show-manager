@@ -1305,6 +1305,309 @@ function buildFinanceReportHtml({
   `;
 }
 
+type YearlyFinanceQuickTotalDefinition = {
+  key: string;
+  label: string;
+  type: ShowFinanceItem["type"];
+  matchers: string[];
+};
+
+type YearlyFinanceReportShowBreakdown = {
+  show: ShowRecord;
+  income: number;
+  expenses: number;
+  net: number;
+};
+
+type YearlyFinanceReportCategoryGroup = {
+  category: string;
+  total: number;
+  items: Array<
+    ShowFinanceItem & {
+      showName: string;
+      showDate: string | null;
+    }
+  >;
+};
+
+type YearlyFinanceReportQuickTotal = {
+  key: string;
+  label: string;
+  amount: number;
+};
+
+const yearlyFinanceQuickTotalDefinitions: YearlyFinanceQuickTotalDefinition[] = [
+  { key: "sponsorship-income", label: "Sponsorship Income", type: "income", matchers: ["sponsor", "sponsorship"] },
+  { key: "presale-ticket-income", label: "Presale Ticket Income", type: "income", matchers: ["presale", "pre-sale", "advance ticket", "advance sales"] },
+  { key: "door-sales-income", label: "Door Sales Income", type: "income", matchers: ["door", "door sales", "ticket sales", "walk-up"] },
+  { key: "advertising-expenses", label: "Advertising Expenses", type: "expense", matchers: ["advertis", "marketing", "promo", "facebook ad"] },
+  { key: "talent-guest-pay", label: "Talent / Guest Pay", type: "expense", matchers: ["guest pay", "talent", "artist pay", "performer pay"] },
+  { key: "band-pay", label: "Band Pay", type: "expense", matchers: ["band pay", "band"] },
+  { key: "printing-signs", label: "Printing / Signs", type: "expense", matchers: ["print", "printing", "sign", "signage"] },
+  { key: "misc-expenses", label: "Misc Expenses", type: "expense", matchers: ["misc", "miscellaneous", "other"] },
+];
+
+function getShowYear(showDate: string | null) {
+  if (!showDate) {
+    return null;
+  }
+
+  const parsedDate = new Date(`${showDate}T00:00:00`);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return parsedDate.getUTCFullYear();
+}
+
+function normalizeFinanceCategoryLabel(value: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function buildYearToDateFinanceReportHtml({
+  year,
+  showCount,
+  totalIncome,
+  totalExpenses,
+  net,
+  quickTotals,
+  showBreakdown,
+  incomeGroups,
+  expenseGroups,
+  logoUrl,
+}: {
+  year: number;
+  showCount: number;
+  totalIncome: number;
+  totalExpenses: number;
+  net: number;
+  quickTotals: YearlyFinanceReportQuickTotal[];
+  showBreakdown: YearlyFinanceReportShowBreakdown[];
+  incomeGroups: YearlyFinanceReportCategoryGroup[];
+  expenseGroups: YearlyFinanceReportCategoryGroup[];
+  logoUrl: string;
+}) {
+  const summaryRows = [
+    { label: "Year", value: String(year), tone: "tone-neutral" },
+    {
+      label: "Prepared",
+      value: new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }).format(new Date()),
+      tone: "tone-neutral",
+    },
+    { label: "Total Income", value: formatCurrency(totalIncome), tone: "tone-income" },
+    { label: "Total Expenses", value: formatCurrency(totalExpenses), tone: "tone-expense" },
+    {
+      label: "Net Profit / Loss",
+      value: formatCurrency(net),
+      tone: net < 0 ? "tone-net-negative" : "tone-net-positive",
+    },
+    {
+      label: "Profit Margin",
+      value: formatProfitMargin(totalIncome, net) ?? "N/A",
+      tone: totalIncome > 0 && net < 0 ? "tone-net-negative" : "tone-neutral",
+    },
+    { label: "Total Shows Included", value: String(showCount), tone: "tone-neutral" },
+  ];
+
+  const renderCategoryGroups = (
+    groups: YearlyFinanceReportCategoryGroup[],
+    emptyMessage: string,
+    toneClass: string,
+  ) => {
+    if (groups.length === 0) {
+      return `<div class="empty-state">${escapeHtml(emptyMessage)}</div>`;
+    }
+
+    return groups
+      .map(
+        (group) => `
+          <section class="category-group avoid-break ${toneClass}">
+            <div class="category-header">
+              <div>
+                <h3>${escapeHtml(group.category)}</h3>
+                <p>${group.items.length} item${group.items.length === 1 ? "" : "s"}</p>
+              </div>
+            </div>
+            <div class="line-items">
+              ${group.items
+                .map(
+                  (item) => `
+                    <div class="line-item avoid-break">
+                      <div class="line-item-main">
+                        <div class="line-item-top">
+                          <strong>${escapeHtml(item.label || "Untitled item")}</strong>
+                          <span class="${toneClass}">${escapeHtml(formatCurrency(item.amount))}</span>
+                        </div>
+                        <p>${escapeHtml(item.showName)}${item.showDate ? ` • ${escapeHtml(formatShowDate(item.showDate))}` : ""}</p>
+                        ${item.notes?.trim() ? `<p class="line-item-notes">${escapeHtml(item.notes.trim())}</p>` : ""}
+                      </div>
+                    </div>
+                  `,
+                )
+                .join("")}
+            </div>
+            <div class="category-total-row ${toneClass}">
+              <span>${escapeHtml(group.category)} Total</span>
+              <strong>${escapeHtml(formatCurrency(group.total))}</strong>
+            </div>
+          </section>
+        `,
+      )
+      .join("");
+  };
+
+  return `<!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <title>${escapeHtml(`Year-to-Date Finance Report — ${year}`)}</title>
+      <style>
+        :root { color-scheme: light; }
+        * { box-sizing: border-box; }
+        @page { margin: 0.55in; }
+        body { margin: 0; background: #ffffff; color: #111827; font-family: Arial, Helvetica, sans-serif; line-height: 1.42; }
+        .report { display: flex; flex-direction: column; gap: 1rem; }
+        .page-break { break-before: page; page-break-before: always; }
+        .logo { display: block; width: auto; max-width: 280px; max-height: 90px; margin: 0 auto 0.75rem; object-fit: contain; }
+        .header { text-align: center; border-bottom: 1.5px solid #a8a29e; padding-bottom: 0.65rem; margin-bottom: 0.8rem; }
+        .header h1 { margin: 0.25rem 0 0; font-size: 1.7rem; line-height: 1.15; }
+        .header p { margin: 0.35rem 0 0; color: #57534e; font-size: 0.96rem; }
+        .summary-intro { margin: 0 0 0.8rem; color: #44403c; font-size: 0.94rem; }
+        .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem 1.25rem; border-top: 1px solid #d6d3d1; border-bottom: 1px solid #d6d3d1; padding: 0.2rem 0 0.35rem; }
+        .summary-card { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid #ece7e1; background: transparent; }
+        .summary-card:nth-last-child(-n + 2) { border-bottom: none; }
+        .summary-card span { display: block; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #57534e; }
+        .summary-card strong { display: block; font-size: 1rem; color: #111827; text-align: right; }
+        .quick-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.15rem 1rem; }
+        .quick-total { display: flex; justify-content: space-between; gap: 1rem; padding: 0.35rem 0; border-bottom: 1px solid #ece7e1; font-size: 0.92rem; }
+        .section-title { margin: 1.25rem 0 0.7rem; padding-bottom: 0.3rem; border-bottom: 1px solid #d6d3d1; font-size: 1.1rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #111827; }
+        .section-title:first-child { margin-top: 0; }
+        .subtle { margin: 0 0 0.8rem; color: #57534e; font-size: 0.9rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.55rem 0.5rem; border-bottom: 1px solid #e7e5e4; text-align: left; vertical-align: top; font-size: 0.92rem; }
+        th { font-size: 0.76rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #57534e; border-bottom: 1.5px solid #a8a29e; background: #fafaf9; }
+        td.amount, th.amount { text-align: right; white-space: nowrap; }
+        tbody tr:nth-child(even) { background: #fafaf9; }
+        .show-row td.amount.income { color: #166534; font-weight: 600; }
+        .show-row td.amount.expense { color: #b91c1c; font-weight: 600; }
+        .show-row td.amount.net-positive { color: #166534; font-weight: 700; }
+        .show-row td.amount.net-negative { color: #b91c1c; font-weight: 700; }
+        .category-group { padding: 0 0 0.95rem; margin-bottom: 1rem; border-bottom: 1px solid #d6d3d1; }
+        .category-header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; border-bottom: 1px solid #e7e5e4; padding-bottom: 0.5rem; margin-bottom: 0.65rem; }
+        .category-header h3 { margin: 0; font-size: 1.08rem; font-weight: 800; line-height: 1.25; color: #111827; }
+        .category-header p { margin: 0.18rem 0 0; color: #57534e; font-size: 0.8rem; }
+        .tone-income { color: #166534; }
+        .tone-expense { color: #b91c1c; }
+        .tone-net-positive { color: #166534; }
+        .tone-net-negative { color: #b91c1c; }
+        .tone-neutral { color: #111827; }
+        .line-items { display: grid; gap: 0.15rem; }
+        .line-item { padding: 0.45rem 0; border-bottom: 1px solid #f1eeea; }
+        .line-item-top { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+        .line-item-top strong { font-size: 0.95rem; }
+        .line-item-top span { white-space: nowrap; font-weight: 700; }
+        .line-item-main p { margin: 0.25rem 0 0; color: #57534e; font-size: 0.84rem; }
+        .line-item-notes { color: #44403c; font-size: 0.8rem; }
+        .category-total-row { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; margin-top: 0.6rem; padding-top: 0.55rem; border-top: 1px solid #d6d3d1; font-size: 0.94rem; font-weight: 700; }
+        .category-total-row strong { white-space: nowrap; }
+        .empty-state { border: 1px dashed #d6d3d1; border-radius: 10px; padding: 1rem; color: #57534e; background: #ffffff; font-size: 0.92rem; }
+        .final-summary { margin-top: 0.45rem; padding-top: 0.8rem; border-top: 1.5px solid #a8a29e; }
+        .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+      </style>
+    </head>
+    <body>
+      <main class="report">
+        <section class="avoid-break">
+          <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" class="logo" />
+          <div class="header">
+            <h1>Year-to-Date Finance Report</h1>
+            <p>${escapeHtml(String(year))} Cumberland Mountain Music Show Summary</p>
+          </div>
+          <p class="summary-intro">Executive Summary / Year Summary</p>
+          <div class="summary-grid">
+            ${summaryRows.map((row) => `
+              <div class="summary-card avoid-break">
+                <span>${escapeHtml(row.label)}</span>
+                <strong class="${escapeHtml(row.tone)}">${escapeHtml(row.value)}</strong>
+              </div>
+            `).join("")}
+          </div>
+          ${quickTotals.length > 0 ? `
+            <h2 class="section-title" style="margin-top: 1rem;">Quick Totals</h2>
+            <div class="quick-totals">
+              ${quickTotals.map((item) => `
+                <div class="quick-total avoid-break">
+                  <span>${escapeHtml(item.label)}</span>
+                  <strong>${escapeHtml(formatCurrency(item.amount))}</strong>
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
+        </section>
+        <section class="page-break">
+          <h2 class="section-title">Show-By-Show Summary</h2>
+          <p class="subtle">All shows dated in ${escapeHtml(String(year))}, including archived and historical records.</p>
+          ${showBreakdown.length === 0 ? `<div class="empty-state">No shows with dates were found for ${escapeHtml(String(year))}.</div>` : `
+            <table>
+              <thead>
+                <tr>
+                  <th>Show</th>
+                  <th>Date</th>
+                  <th class="amount">Income</th>
+                  <th class="amount">Expenses</th>
+                  <th class="amount">Net</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${showBreakdown.map(({ show, income, expenses, net: showNet }) => `
+                  <tr class="avoid-break show-row">
+                    <td>${escapeHtml(show.name)}</td>
+                    <td>${escapeHtml(formatShowDate(show.show_date))}</td>
+                    <td class="amount income">${escapeHtml(formatCurrency(income))}</td>
+                    <td class="amount expense">${escapeHtml(formatCurrency(expenses))}</td>
+                    <td class="amount ${showNet < 0 ? "net-negative" : "net-positive"}">${escapeHtml(formatCurrency(showNet))}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          `}
+        </section>
+        <section class="page-break">
+          <h2 class="section-title">Income Breakdown</h2>
+          <p class="subtle">Grouped income items for all shows in ${escapeHtml(String(year))}.</p>
+          ${renderCategoryGroups(incomeGroups, `No income items were found for ${year}.`, "tone-income")}
+        </section>
+        <section class="page-break">
+          <h2 class="section-title">Expense Breakdown</h2>
+          <p class="subtle">Grouped expense items for all shows in ${escapeHtml(String(year))}.</p>
+          ${renderCategoryGroups(expenseGroups, `No expense items were found for ${year}.`, "tone-expense")}
+          <section class="final-summary avoid-break">
+            <h2 class="section-title">Final Totals</h2>
+            <div class="summary-grid">
+              ${[
+                { label: "Total Income", value: formatCurrency(totalIncome), tone: "tone-income" },
+                { label: "Total Expenses", value: formatCurrency(totalExpenses), tone: "tone-expense" },
+                { label: "Net Profit / Loss", value: formatCurrency(net), tone: net < 0 ? "tone-net-negative" : "tone-net-positive" },
+                { label: "Profit Margin", value: formatProfitMargin(totalIncome, net) ?? "N/A", tone: totalIncome > 0 && net < 0 ? "tone-net-negative" : "tone-neutral" },
+              ].map((row) => `
+                <div class="summary-card avoid-break">
+                  <span>${escapeHtml(row.label)}</span>
+                  <strong class="${escapeHtml(row.tone)}">${escapeHtml(row.value)}</strong>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+        </section>
+      </main>
+    </body>
+  </html>`;
+}
+
 function normalizeSetSection(value: string | null | undefined): SetSection {
   if (value === "set2" || value === "encore") {
     return value;
@@ -3350,6 +3653,20 @@ export function ShowPage({
   const [sponsorLibrary, setSponsorLibrary] = useState<SponsorLibraryEntry[]>([]);
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
   const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
+  const [yearlyFinanceShows, setYearlyFinanceShows] = useState<ShowRecord[]>([]);
+  const [yearlyFinanceItems, setYearlyFinanceItems] = useState<ShowFinanceItem[]>([]);
+  const [selectedYearlyFinanceYear, setSelectedYearlyFinanceYear] = useState(() => new Date().getUTCFullYear());
+  const [isYearlyFinanceSummaryExpanded, setIsYearlyFinanceSummaryExpanded] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const storedValue = window.localStorage.getItem("stageflow-yearly-finance-summary-expanded");
+    return storedValue === null ? false : storedValue === "true";
+  });
+  const [yearlyFinanceErrorMessage, setYearlyFinanceErrorMessage] = useState<string | null>(null);
+  const [isPrintingYearlyFinanceReport, setIsPrintingYearlyFinanceReport] = useState(false);
+  const [hasLoadedYearlyFinanceSummary, setHasLoadedYearlyFinanceSummary] = useState(false);
   const [incomeFinanceFormState, setIncomeFinanceFormState] =
     useState<FinanceItemFormState>(initialFinanceItemFormState);
   const [expenseFinanceFormState, setExpenseFinanceFormState] =
@@ -3533,6 +3850,150 @@ export function ShowPage({
     () => financeItems.filter((item) => item.type === "expense"),
     [financeItems],
   );
+  const availableYearlyFinanceYears = useMemo(() => {
+    const years = new Set<number>([new Date().getUTCFullYear()]);
+
+    yearlyFinanceShows.forEach((currentShowRecord) => {
+      const showYear = getShowYear(currentShowRecord.show_date);
+
+      if (showYear !== null) {
+        years.add(showYear);
+      }
+    });
+
+    return Array.from(years).sort((left, right) => right - left);
+  }, [yearlyFinanceShows]);
+  const selectedYearlyFinanceShows = useMemo(
+    () =>
+      yearlyFinanceShows.filter(
+        (currentShowRecord) => getShowYear(currentShowRecord.show_date) === selectedYearlyFinanceYear,
+      ),
+    [selectedYearlyFinanceYear, yearlyFinanceShows],
+  );
+  const yearlyFinanceSummary = useMemo(() => {
+    const itemsByShowId = new Map<string, ShowFinanceItem[]>();
+    const selectedYearShowLookup = new Map(selectedYearlyFinanceShows.map((currentShowRecord) => [currentShowRecord.id, currentShowRecord]));
+
+    yearlyFinanceItems.forEach((item) => {
+      const currentItems = itemsByShowId.get(item.show_id) ?? [];
+      currentItems.push(item);
+      itemsByShowId.set(item.show_id, currentItems);
+    });
+
+    const showBreakdown = selectedYearlyFinanceShows.map((currentShowRecord) => {
+      const showItems = itemsByShowId.get(currentShowRecord.id) ?? [];
+      const income = showItems
+        .filter((item) => item.type === "income")
+        .reduce((sum, item) => sum + item.amount, 0);
+      const expenses = showItems
+        .filter((item) => item.type === "expense")
+        .reduce((sum, item) => sum + item.amount, 0);
+
+      return {
+        show: currentShowRecord,
+        income,
+        expenses,
+        net: income - expenses,
+      };
+    });
+
+    const summaryTotalIncome = showBreakdown.reduce((sum, item) => sum + item.income, 0);
+    const summaryTotalExpenses = showBreakdown.reduce((sum, item) => sum + item.expenses, 0);
+    const summaryNet = summaryTotalIncome - summaryTotalExpenses;
+    const selectedYearItems = yearlyFinanceItems
+      .filter((item) => selectedYearShowLookup.has(item.show_id))
+      .map((item) => ({
+        ...item,
+        showName: selectedYearShowLookup.get(item.show_id)?.name ?? "Unknown show",
+        showDate: selectedYearShowLookup.get(item.show_id)?.show_date ?? null,
+      }));
+
+    const categoryTotals = yearlyFinanceItems.reduce<Record<string, number>>((totals, item) => {
+      const matchingShow = selectedYearlyFinanceShows.find((currentShowRecord) => currentShowRecord.id === item.show_id);
+
+      if (!matchingShow || !item.category?.trim()) {
+        return totals;
+      }
+
+      const key = `${item.type}:${item.category.trim()}`;
+      totals[key] = (totals[key] ?? 0) + item.amount;
+      return totals;
+    }, {});
+
+    const buildCategoryGroups = (type: ShowFinanceItem["type"]) => {
+      const groups = selectedYearItems.reduce<Record<string, YearlyFinanceReportCategoryGroup>>((lookup, item) => {
+        if (item.type !== type) {
+          return lookup;
+        }
+
+        const category = item.category?.trim() || "Uncategorized";
+        const existingGroup = lookup[category] ?? {
+          category,
+          total: 0,
+          items: [],
+        };
+
+        existingGroup.total += item.amount;
+        existingGroup.items.push(item);
+        lookup[category] = existingGroup;
+        return lookup;
+      }, {});
+
+      return Object.values(groups)
+        .map((group) => ({
+          ...group,
+          items: [...group.items].sort((left, right) => {
+            if (left.showDate && right.showDate) {
+              return left.showDate.localeCompare(right.showDate);
+            }
+            if (left.showDate) {
+              return -1;
+            }
+            if (right.showDate) {
+              return 1;
+            }
+            return left.label.localeCompare(right.label);
+          }),
+        }))
+        .sort((left, right) => right.total - left.total);
+    };
+
+    const quickTotals = yearlyFinanceQuickTotalDefinitions
+      .map((definition) => {
+        const amount = selectedYearItems.reduce((sum, item) => {
+          if (item.type !== definition.type) {
+            return sum;
+          }
+          const categoryLabel = normalizeFinanceCategoryLabel(item.category);
+          return definition.matchers.some((matcher) => categoryLabel.includes(matcher))
+            ? sum + item.amount
+            : sum;
+        }, 0);
+
+        return { key: definition.key, label: definition.label, amount };
+      })
+      .filter((item) => item.amount > 0);
+
+    return {
+      totalIncome: summaryTotalIncome,
+      totalExpenses: summaryTotalExpenses,
+      net: summaryNet,
+      showBreakdown,
+      incomeGroups: buildCategoryGroups("income"),
+      expenseGroups: buildCategoryGroups("expense"),
+      quickTotals,
+      categoryTotals: Object.entries(categoryTotals)
+        .map(([key, amount]) => {
+          const separatorIndex = key.indexOf(":");
+          return {
+            type: key.slice(0, separatorIndex),
+            category: key.slice(separatorIndex + 1),
+            amount,
+          };
+        })
+        .sort((left, right) => right.amount - left.amount),
+    };
+  }, [selectedYearlyFinanceShows, selectedYearlyFinanceYear, yearlyFinanceItems]);
   const generatedPromoPost = [
     show?.name ?? "",
     [formatShowDate(show?.show_date ?? null), show?.show_start_time ?? ""]
@@ -4242,6 +4703,17 @@ export function ShowPage({
   }, [requestedAdminTab, viewMode]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      "stageflow-yearly-finance-summary-expanded",
+      isYearlyFinanceSummaryExpanded ? "true" : "false",
+    );
+  }, [isYearlyFinanceSummaryExpanded]);
+
+  useEffect(() => {
     if (!shouldShowBandSongTools) {
       setIsBandSongFormOpen(false);
     }
@@ -4252,6 +4724,67 @@ export function ShowPage({
       setIsGuestSongFormOpen(false);
     }
   }, [shouldShowGuestSongsTab]);
+
+  useEffect(() => {
+    if (!shouldShowAdminFinanceTab || hasLoadedYearlyFinanceSummary) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function loadYearlyFinanceSummary() {
+      try {
+        const supabase = createClient();
+        const [{ data: yearlyShowsData, error: yearlyShowsError }, { data: yearlyItemsData, error: yearlyItemsError }] =
+          await Promise.all([
+            supabase
+              .from("shows")
+              .select("*")
+              .order("show_date", { ascending: true, nullsFirst: false })
+              .order("created_at", { ascending: false }),
+            supabase.from("show_finance_items").select("*"),
+          ]);
+
+        if (yearlyShowsError) {
+          throw yearlyShowsError;
+        }
+
+        if (yearlyItemsError) {
+          throw yearlyItemsError;
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        setYearlyFinanceShows((yearlyShowsData ?? []) as ShowRecord[]);
+        setYearlyFinanceItems(
+          Array.isArray(yearlyItemsData)
+            ? yearlyItemsData.map((item) =>
+                normalizeShowFinanceItem(
+                  item as Omit<ShowFinanceItem, "amount"> & { amount: number | string | null },
+                ),
+              )
+            : [],
+        );
+        setYearlyFinanceErrorMessage(null);
+        setHasLoadedYearlyFinanceSummary(true);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        setYearlyFinanceErrorMessage(getErrorMessage(error));
+        setHasLoadedYearlyFinanceSummary(true);
+      }
+    }
+
+    void loadYearlyFinanceSummary();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [hasLoadedYearlyFinanceSummary, shouldShowAdminFinanceTab]);
 
   const mcRunSections = useMemo(
     () => buildMcRunSections(setlist, guestProfiles, mcBlockNotes),
@@ -4967,6 +5500,32 @@ export function ShowPage({
       await navigator.clipboard.writeText(buildSponsorOutreachEmail(sponsor.name));
     } catch (error) {
       setActionError(getErrorMessage(error));
+    }
+  }
+
+  async function handlePrintYearToDateFinanceReport() {
+    setYearlyFinanceErrorMessage(null);
+    setIsPrintingYearlyFinanceReport(true);
+
+    try {
+      const printHtml = buildYearToDateFinanceReportHtml({
+        year: selectedYearlyFinanceYear,
+        showCount: selectedYearlyFinanceShows.length,
+        totalIncome: yearlyFinanceSummary.totalIncome,
+        totalExpenses: yearlyFinanceSummary.totalExpenses,
+        net: yearlyFinanceSummary.net,
+        quickTotals: yearlyFinanceSummary.quickTotals,
+        showBreakdown: yearlyFinanceSummary.showBreakdown,
+        incomeGroups: yearlyFinanceSummary.incomeGroups,
+        expenseGroups: yearlyFinanceSummary.expenseGroups,
+        logoUrl: `${window.location.origin}/cmms-logo.png`,
+      });
+
+      openPrintDocumentWindow(printHtml);
+    } catch (error) {
+      setYearlyFinanceErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsPrintingYearlyFinanceReport(false);
     }
   }
 
@@ -9209,6 +9768,176 @@ export function ShowPage({
                 {financeErrorMessage}
               </div>
             ) : null}
+
+            <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Yearly Finance Summary</h3>
+                  <p className="text-sm text-stone-600">
+                    Read-only income and expense totals across all shows in the selected year.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsYearlyFinanceSummaryExpanded((currentValue) => !currentValue)}
+                  className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                >
+                  {isYearlyFinanceSummaryExpanded ? "Hide Summary" : "Show Summary"}
+                </button>
+              </div>
+
+              {isYearlyFinanceSummaryExpanded ? (
+                <>
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <label className="flex w-full max-w-[13rem] flex-col gap-2 text-sm font-medium text-stone-700">
+                      Year
+                      <select
+                        value={selectedYearlyFinanceYear}
+                        onChange={(event) => setSelectedYearlyFinanceYear(Number(event.target.value))}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        {availableYearlyFinanceYears.map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => void handlePrintYearToDateFinanceReport()}
+                      disabled={isPrintingYearlyFinanceReport}
+                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      {isPrintingYearlyFinanceReport ? "Preparing Report..." : "Print Year-to-Date Report"}
+                    </button>
+                  </div>
+
+                  {yearlyFinanceErrorMessage ? (
+                    <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      Finance summary data could not be loaded: {yearlyFinanceErrorMessage}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      {
+                        label: "Total Income",
+                        value: formatCurrency(yearlyFinanceSummary.totalIncome),
+                        tone: "text-emerald-700",
+                      },
+                      {
+                        label: "Total Expenses",
+                        value: formatCurrency(yearlyFinanceSummary.totalExpenses),
+                        tone: "text-rose-700",
+                      },
+                      {
+                        label: "Net Profit / Loss",
+                        value: formatCurrency(yearlyFinanceSummary.net),
+                        tone: yearlyFinanceSummary.net < 0 ? "text-rose-700" : "text-stone-900",
+                      },
+                      {
+                        label: "Profit Margin",
+                        value: formatProfitMargin(
+                          yearlyFinanceSummary.totalIncome,
+                          yearlyFinanceSummary.net,
+                        ) ?? "N/A",
+                        tone: "text-stone-900",
+                      },
+                    ].map((card) => (
+                      <article key={card.label} className="rounded-2xl border border-stone-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          {card.label}
+                        </p>
+                        <p className={`mt-3 text-2xl font-semibold ${card.tone}`}>{card.value}</p>
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+                    <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <div className="flex flex-col gap-1">
+                        <h4 className="text-base font-semibold text-stone-900">Shows in {selectedYearlyFinanceYear}</h4>
+                        <p className="text-sm text-stone-600">
+                          Archived and historical shows are included when they fall in the selected year.
+                        </p>
+                      </div>
+
+                      {selectedYearlyFinanceShows.length === 0 ? (
+                        <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                          No shows with dates were found for {selectedYearlyFinanceYear}.
+                        </div>
+                      ) : (
+                        <div className="mt-4 grid gap-3">
+                          {yearlyFinanceSummary.showBreakdown.map(({ show: yearlyShow, income, expenses, net }) => (
+                            <article key={yearlyShow.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0">
+                                  <p className="text-base font-semibold text-stone-900">{yearlyShow.name}</p>
+                                  <p className="mt-1 text-sm text-stone-600">{formatShowDate(yearlyShow.show_date)}</p>
+                                </div>
+
+                                <div className="grid gap-2 text-sm sm:text-right">
+                                  <p className="text-stone-600">
+                                    <span className="font-medium text-stone-900">Income:</span> {formatCurrency(income)}
+                                  </p>
+                                  <p className="text-stone-600">
+                                    <span className="font-medium text-stone-900">Expenses:</span> {formatCurrency(expenses)}
+                                  </p>
+                                  <p className={`font-semibold ${net < 0 ? "text-rose-700" : "text-stone-900"}`}>
+                                    Net: {formatCurrency(net)}
+                                  </p>
+                                </div>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <div className="flex flex-col gap-1">
+                        <h4 className="text-base font-semibold text-stone-900">Category Totals</h4>
+                        <p className="text-sm text-stone-600">
+                          Read-only rollup of saved income and expense categories for the year.
+                        </p>
+                      </div>
+
+                      {yearlyFinanceSummary.categoryTotals.length === 0 ? (
+                        <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                          No categorized finance items found for {selectedYearlyFinanceYear}.
+                        </div>
+                      ) : (
+                        <div className="mt-4 grid gap-2">
+                          {yearlyFinanceSummary.categoryTotals.map((item) => (
+                            <div
+                              key={`${item.type}-${item.category}`}
+                              className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-stone-900">{item.category}</p>
+                                <p className="text-xs uppercase tracking-[0.12em] text-stone-500">{item.type}</p>
+                              </div>
+                              <p className={`text-sm font-semibold ${item.type === "expense" ? "text-rose-700" : "text-emerald-700"}`}>
+                                {formatCurrency(item.amount)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  </div>
+                </>
+              ) : null}
+            </section>
+
+            <div className="flex flex-col gap-1">
+              <h3 className="text-lg font-semibold text-stone-900">Current Show Finance</h3>
+              <p className="text-sm text-stone-600">
+                Income and expenses below apply only to this show.
+              </p>
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
