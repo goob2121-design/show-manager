@@ -135,6 +135,17 @@ alter table public.sponsor_library
   add column if not exists quote_generated_at timestamptz,
   add column if not exists receipt_generated_at timestamptz;
 
+create table if not exists public.potential_sponsors (
+  id uuid primary key default gen_random_uuid(),
+  business_name text not null,
+  contact_name text,
+  phone text,
+  email text,
+  notes text,
+  status text not null default 'Not Contacted',
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.show_sponsors (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,

@@ -131,6 +131,25 @@ export type SponsorLibraryEntry = {
   created_at: string;
 };
 
+export type PotentialSponsorStatus =
+  | "Not Contacted"
+  | "Contacted"
+  | "Interested"
+  | "Follow Up"
+  | "Became Sponsor"
+  | "Passed";
+
+export type PotentialSponsor = {
+  id: string;
+  business_name: string;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  status: PotentialSponsorStatus;
+  created_at: string;
+};
+
 export type ShowSponsor = {
   id: string;
   show_id: string;

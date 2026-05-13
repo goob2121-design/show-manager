@@ -32,6 +32,8 @@ import type {
   GuestProfile,
   GuestProfileFormState,
   McBlockNote,
+  PotentialSponsor,
+  PotentialSponsorStatus,
   PromoMaterial,
   PromoMaterialCategory,
   PromoMaterialFormState,
@@ -378,6 +380,15 @@ type SponsorProposalGeneratorFormState = {
   proposalCustomCoverage: string;
 };
 
+type PotentialSponsorFormState = {
+  businessName: string;
+  contactName: string;
+  phone: string;
+  email: string;
+  status: PotentialSponsorStatus;
+  notes: string;
+};
+
 const initialSponsorLibraryFormState: SponsorLibraryFormState = {
   name: "",
   shortMessage: "",
@@ -404,6 +415,24 @@ const initialSponsorProposalGeneratorFormState: SponsorProposalGeneratorFormStat
   proposalCoverage: "current-show",
   proposalYear: String(new Date().getFullYear()),
   proposalCustomCoverage: "",
+};
+
+const potentialSponsorStatusOptions: PotentialSponsorStatus[] = [
+  "Not Contacted",
+  "Contacted",
+  "Interested",
+  "Follow Up",
+  "Became Sponsor",
+  "Passed",
+];
+
+const initialPotentialSponsorFormState: PotentialSponsorFormState = {
+  businessName: "",
+  contactName: "",
+  phone: "",
+  email: "",
+  status: "Not Contacted",
+  notes: "",
 };
 
 const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
@@ -922,8 +951,75 @@ function getErrorMessage(error: unknown) {
 
 function logDataSectionError(sectionName: string, error: unknown) {
   if (process.env.NODE_ENV !== "production") {
-    console.error(`Failed to load ${sectionName}.`, error);
+    const errorObject =
+      error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+
+    console.error(`Failed to load ${sectionName}.`, {
+      error,
+      message:
+        error instanceof Error
+          ? error.message
+          : typeof errorObject?.message === "string"
+            ? errorObject.message
+            : null,
+      code: typeof errorObject?.code === "string" ? errorObject.code : null,
+      details:
+        typeof errorObject?.details === "string" ? errorObject.details : errorObject?.details ?? null,
+      hint: typeof errorObject?.hint === "string" ? errorObject.hint : errorObject?.hint ?? null,
+      json: (() => {
+        try {
+          return JSON.stringify(error, null, 2);
+        } catch {
+          return null;
+        }
+      })(),
+    });
   }
+}
+
+async function parseJsonResponse(response: Response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function requestPotentialSponsorsApi<T>(
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch("/api/potential-sponsors", {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  const payload = await parseJsonResponse(response);
+
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(
+      payload?.error ??
+        payload?.message ??
+        `Potential sponsors request failed with status ${response.status}.`,
+    ) as Error & {
+      code?: unknown;
+      details?: unknown;
+      hint?: unknown;
+    };
+
+    error.details = payload?.details ?? null;
+
+    if (payload?.details && typeof payload.details === "object") {
+      const detailRecord = payload.details as Record<string, unknown>;
+      error.code = detailRecord.code;
+      error.hint = detailRecord.hint;
+    }
+
+    throw error;
+  }
+
+  return (payload?.data ?? null) as T;
 }
 
 function sortSetlistSongs(songs: SetlistSong[]) {
@@ -995,6 +1091,7 @@ type DataSectionKey =
   | "guestSongs"
   | "songLibrary"
   | "sponsorLibrary"
+  | "potentialSponsors"
   | "showSponsors"
   | "financeItems"
   | "promoMaterials"
@@ -1048,6 +1145,19 @@ function buildSponsorDocumentFormState(sponsor: SponsorLibraryEntry): SponsorDoc
     proposalCoverage: "current-show",
     proposalYear: String(new Date().getFullYear()),
     proposalCustomCoverage: "",
+  };
+}
+
+function buildPotentialSponsorFormState(
+  potentialSponsor: PotentialSponsor,
+): PotentialSponsorFormState {
+  return {
+    businessName: potentialSponsor.business_name,
+    contactName: potentialSponsor.contact_name ?? "",
+    phone: potentialSponsor.phone ?? "",
+    email: potentialSponsor.email ?? "",
+    status: potentialSponsor.status,
+    notes: potentialSponsor.notes ?? "",
   };
 }
 
@@ -2650,6 +2760,40 @@ function normalizeSponsorLibraryEntry(
   };
 }
 
+function normalizePotentialSponsorEntry(
+  potentialSponsor: PotentialSponsor,
+): PotentialSponsor {
+  return {
+    ...potentialSponsor,
+    contact_name: potentialSponsor.contact_name ?? null,
+    phone: potentialSponsor.phone ?? null,
+    email: potentialSponsor.email ?? null,
+    notes: potentialSponsor.notes ?? null,
+    status: potentialSponsor.status ?? "Not Contacted",
+  };
+}
+
+function sortPotentialSponsors(potentialSponsors: PotentialSponsor[]) {
+  return [...potentialSponsors].sort((sponsorA, sponsorB) =>
+    sponsorB.created_at.localeCompare(sponsorA.created_at),
+  );
+}
+
+function getPotentialSponsorStatusBadgeClasses(status: PotentialSponsorStatus) {
+  switch (status) {
+    case "Interested":
+    case "Became Sponsor":
+      return "bg-emerald-100 text-emerald-800";
+    case "Contacted":
+    case "Follow Up":
+      return "bg-amber-100 text-amber-800";
+    case "Passed":
+      return "bg-stone-200 text-stone-700";
+    default:
+      return "bg-slate-200 text-slate-700";
+  }
+}
+
 function parseSponsorAmountInput(value: string) {
   const trimmedValue = value.trim();
 
@@ -3651,6 +3795,7 @@ export function ShowPage({
   const [libraryTempoFilter, setLibraryTempoFilter] = useState<"" | SongTempo>("");
   const [librarySongTypeFilter, setLibrarySongTypeFilter] = useState<"" | SongType>("");
   const [sponsorLibrary, setSponsorLibrary] = useState<SponsorLibraryEntry[]>([]);
+  const [potentialSponsors, setPotentialSponsors] = useState<PotentialSponsor[]>([]);
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
   const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
   const [yearlyFinanceShows, setYearlyFinanceShows] = useState<ShowRecord[]>([]);
@@ -3725,6 +3870,11 @@ export function ShowPage({
     useState<SponsorLibraryFormState>(initialSponsorLibraryFormState);
   const [isAddSponsorFormOpen, setIsAddSponsorFormOpen] = useState(false);
   const [isSponsorProposalGeneratorOpen, setIsSponsorProposalGeneratorOpen] = useState(false);
+  const [isPotentialSponsorsOpen, setIsPotentialSponsorsOpen] = useState(false);
+  const [isPotentialSponsorFormOpen, setIsPotentialSponsorFormOpen] = useState(false);
+  const [editingPotentialSponsorId, setEditingPotentialSponsorId] = useState<string | null>(null);
+  const [potentialSponsorFormState, setPotentialSponsorFormState] =
+    useState<PotentialSponsorFormState>(initialPotentialSponsorFormState);
   const [showArchivedSponsors, setShowArchivedSponsors] = useState(false);
   const [sponsorProposalGeneratorFormState, setSponsorProposalGeneratorFormState] =
     useState<SponsorProposalGeneratorFormState>(initialSponsorProposalGeneratorFormState);
@@ -4419,6 +4569,7 @@ export function ShowPage({
           setPendingSongs([]);
           setSongLibrary([]);
           setSponsorLibrary([]);
+          setPotentialSponsors([]);
           setShowSponsors([]);
           setFinanceItems([]);
           setPromoMaterials([]);
@@ -4459,6 +4610,7 @@ export function ShowPage({
           pendingRows,
           libraryRows,
           sponsorLibraryRows,
+          potentialSponsorRows,
           showSponsorRows,
           financeItemRows,
           promoMaterialRows,
@@ -4534,6 +4686,14 @@ export function ShowPage({
               .from("sponsor_library")
               .select("*")
               .order("name", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "potentialSponsors",
+            "potential sponsors",
+            requestPotentialSponsorsApi<PotentialSponsor[]>()
+              .then((data) => ({ data, error: null }))
+              .catch((error) => ({ data: null, error })),
             [],
           ),
           loadSection(
@@ -4638,6 +4798,13 @@ export function ShowPage({
           (sponsor: SponsorLibraryEntry) => normalizeSponsorLibraryEntry(sponsor),
         );
         setSponsorLibrary(normalizedSponsorLibrary);
+        setPotentialSponsors(
+          sortPotentialSponsors(
+            (potentialSponsorRows ?? []).map((potentialSponsor: PotentialSponsor) =>
+              normalizePotentialSponsorEntry(potentialSponsor),
+            ),
+          ),
+        );
         setShowSponsors(
           mergeShowSponsorsWithLibrary((showSponsorRows ?? []) as ShowSponsor[], normalizedSponsorLibrary),
         );
@@ -5019,6 +5186,38 @@ export function ShowPage({
     });
   }
 
+  function handlePotentialSponsorFormChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) {
+    const { name, value } = event.target;
+
+    setPotentialSponsorFormState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function startEditingPotentialSponsor(potentialSponsorId: string) {
+    const potentialSponsorToEdit = potentialSponsors.find(
+      (potentialSponsor) => potentialSponsor.id === potentialSponsorId,
+    );
+
+    if (!potentialSponsorToEdit) {
+      return;
+    }
+
+    setEditingPotentialSponsorId(potentialSponsorId);
+    setPotentialSponsorFormState(buildPotentialSponsorFormState(potentialSponsorToEdit));
+    setIsPotentialSponsorsOpen(true);
+    setIsPotentialSponsorFormOpen(true);
+  }
+
+  function resetPotentialSponsorForm() {
+    setEditingPotentialSponsorId(null);
+    setPotentialSponsorFormState(initialPotentialSponsorFormState);
+    setIsPotentialSponsorFormOpen(false);
+  }
+
   function handleSponsorLogoFileChange(
     event: ChangeEvent<HTMLInputElement>,
     mode: "new" | "edit",
@@ -5124,6 +5323,28 @@ export function ShowPage({
         created_at: new Date().toISOString(),
       } satisfies SponsorLibraryEntry,
     };
+  }
+
+  function primeProposalGeneratorFromPotentialSponsor(potentialSponsor: PotentialSponsor) {
+    setSponsorProposalGeneratorFormState((currentState) => ({
+      ...currentState,
+      businessName: potentialSponsor.business_name,
+      contactName: potentialSponsor.contact_name ?? "",
+      notes: potentialSponsor.notes ?? "",
+      amount:
+        currentState.amount || getDefaultSponsorTierAmount(currentState.sponsorshipLevel) || "",
+    }));
+    setIsSponsorProposalGeneratorOpen(true);
+    setIsPotentialSponsorsOpen(true);
+
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        document.getElementById("sponsor-proposal-generator")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 0);
+    }
   }
 
   function openPrintDocumentWindow(printHtml: string) {
@@ -5488,6 +5709,171 @@ export function ShowPage({
       }));
       setSponsorProposalGeneratorFormState(initialSponsorProposalGeneratorFormState);
       setIsSponsorProposalGeneratorOpen(false);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleSavePotentialSponsor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const businessName = potentialSponsorFormState.businessName.trim();
+
+    if (!businessName) {
+      setActionError("Business name is required.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(
+      editingPotentialSponsorId ? `potential-save-${editingPotentialSponsorId}` : "potential-create",
+    );
+
+    try {
+      const payload = {
+        business_name: businessName,
+        contact_name: normalizeOptionalField(potentialSponsorFormState.contactName),
+        phone: normalizeOptionalField(potentialSponsorFormState.phone),
+        email: normalizeOptionalField(potentialSponsorFormState.email),
+        notes: normalizeOptionalField(potentialSponsorFormState.notes),
+        status: potentialSponsorFormState.status,
+      };
+
+      if (editingPotentialSponsorId) {
+        const data = await requestPotentialSponsorsApi<PotentialSponsor>({
+          method: "PATCH",
+          body: JSON.stringify({
+            id: editingPotentialSponsorId,
+            ...payload,
+          }),
+        });
+
+        const normalizedPotentialSponsor = normalizePotentialSponsorEntry(data);
+        setPotentialSponsors((currentSponsors) =>
+          sortPotentialSponsors(
+            currentSponsors.map((potentialSponsor) =>
+              potentialSponsor.id === editingPotentialSponsorId
+                ? normalizedPotentialSponsor
+                : potentialSponsor,
+            ),
+          ),
+        );
+      } else {
+        const data = await requestPotentialSponsorsApi<PotentialSponsor>({
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        setPotentialSponsors((currentSponsors) =>
+          sortPotentialSponsors([
+            normalizePotentialSponsorEntry(data),
+            ...currentSponsors,
+          ]),
+        );
+      }
+
+      resetPotentialSponsorForm();
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleDeletePotentialSponsor(potentialSponsor: PotentialSponsor) {
+    const shouldDelete = window.confirm(
+      `Delete "${potentialSponsor.business_name}" from Potential Sponsors?`,
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`potential-delete-${potentialSponsor.id}`);
+
+    try {
+      await requestPotentialSponsorsApi<PotentialSponsor[]>({
+        method: "DELETE",
+        body: JSON.stringify({ id: potentialSponsor.id }),
+      });
+
+      setPotentialSponsors((currentSponsors) =>
+        currentSponsors.filter((entry) => entry.id !== potentialSponsor.id),
+      );
+
+      if (editingPotentialSponsorId === potentialSponsor.id) {
+        resetPotentialSponsorForm();
+      }
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleConvertPotentialSponsorToSponsor(potentialSponsor: PotentialSponsor) {
+    const businessName = potentialSponsor.business_name.trim();
+
+    if (!businessName) {
+      setActionError("Potential sponsor business name is required.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveSponsorActionId(`potential-convert-${potentialSponsor.id}`);
+
+    try {
+      const existingSponsor = sponsorLibrary.find(
+        (sponsor) => sponsor.name.trim().toLowerCase() === businessName.toLowerCase(),
+      );
+      const supabase = createClient();
+
+      if (!existingSponsor) {
+        const { data, error } = await supabase
+          .from("sponsor_library")
+          .insert({
+            name: businessName,
+            is_archived: false,
+            payment_status: "prospect",
+          })
+          .select("*")
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const normalizedSponsor = normalizeSponsorLibraryEntry(data);
+        setSponsorLibrary((currentSponsors) =>
+          [...currentSponsors, normalizedSponsor].sort((sponsorA, sponsorB) =>
+            sponsorA.name.localeCompare(sponsorB.name),
+          ),
+        );
+        setSponsorDocumentFormStates((currentStates) => ({
+          ...currentStates,
+          [normalizedSponsor.id]: buildSponsorDocumentFormState(normalizedSponsor),
+        }));
+      }
+
+      const updatedPotentialSponsor = await requestPotentialSponsorsApi<PotentialSponsor>({
+        method: "PATCH",
+        body: JSON.stringify({
+          id: potentialSponsor.id,
+          status: "Became Sponsor" as PotentialSponsorStatus,
+        }),
+      });
+
+      const normalizedPotentialSponsor = normalizePotentialSponsorEntry(updatedPotentialSponsor);
+      setPotentialSponsors((currentSponsors) =>
+        sortPotentialSponsors(
+          currentSponsors.map((entry) =>
+            entry.id === potentialSponsor.id ? normalizedPotentialSponsor : entry,
+          ),
+        ),
+      );
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -10746,7 +11132,13 @@ export function ShowPage({
               </Link>
             </div>
 
-            <SectionLoadWarning message={dataSectionErrors.sponsorLibrary || dataSectionErrors.showSponsors} />
+            <SectionLoadWarning
+              message={
+                dataSectionErrors.sponsorLibrary ||
+                dataSectionErrors.potentialSponsors ||
+                dataSectionErrors.showSponsors
+              }
+            />
 
             <div className="flex flex-wrap gap-2 rounded-2xl bg-stone-100 p-2">
               {sponsorAdminTabItems.map((tab) => (
@@ -10778,6 +11170,415 @@ export function ShowPage({
                   </p>
                 </div>
 
+                <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex flex-col gap-1">
+                      <h4 className="text-base font-semibold text-stone-900">Potential Sponsors</h4>
+                      <p className="text-sm text-stone-600">
+                        Track businesses you may approach before adding them to the permanent sponsor library.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsPotentialSponsorsOpen((currentValue) => !currentValue)}
+                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                    >
+                      {isPotentialSponsorsOpen ? "Hide Potential Sponsors" : "Show Potential Sponsors"}
+                    </button>
+                  </div>
+
+                  {isPotentialSponsorsOpen ? (
+                    <div className="mt-4 grid gap-4">
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isPotentialSponsorFormOpen && !editingPotentialSponsorId) {
+                              resetPotentialSponsorForm();
+                              return;
+                            }
+
+                            setEditingPotentialSponsorId(null);
+                            setPotentialSponsorFormState(initialPotentialSponsorFormState);
+                            setIsPotentialSponsorFormOpen(true);
+                          }}
+                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                        >
+                          {isPotentialSponsorFormOpen && !editingPotentialSponsorId
+                            ? "Hide Add Potential Sponsor"
+                            : "Add Potential Sponsor"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setIsSponsorProposalGeneratorOpen((currentValue) => !currentValue)
+                          }
+                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          {isSponsorProposalGeneratorOpen
+                            ? "Hide Proposal Generator"
+                            : "Generate Proposal for New Business"}
+                        </button>
+                      </div>
+
+                      {isPotentialSponsorFormOpen ? (
+                        <form
+                          className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4"
+                          onSubmit={handleSavePotentialSponsor}
+                        >
+                          <div className="flex flex-col gap-1">
+                            <h5 className="text-sm font-semibold uppercase tracking-[0.14em] text-stone-700">
+                              {editingPotentialSponsorId ? "Edit Potential Sponsor" : "New Potential Sponsor"}
+                            </h5>
+                            <p className="text-sm text-stone-600">
+                              Keep a lightweight note of sponsor prospects without creating a permanent sponsor record.
+                            </p>
+                          </div>
+
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:col-span-2">
+                              Business Name
+                              <input
+                                type="text"
+                                name="businessName"
+                                value={potentialSponsorFormState.businessName}
+                                onChange={handlePotentialSponsorFormChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Business or organization name"
+                                required
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Contact Name
+                              <input
+                                type="text"
+                                name="contactName"
+                                value={potentialSponsorFormState.contactName}
+                                onChange={handlePotentialSponsorFormChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Optional contact name"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Status
+                              <select
+                                name="status"
+                                value={potentialSponsorFormState.status}
+                                onChange={handlePotentialSponsorFormChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              >
+                                {potentialSponsorStatusOptions.map((status) => (
+                                  <option key={status} value={status}>
+                                    {status}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Phone
+                              <input
+                                type="text"
+                                name="phone"
+                                value={potentialSponsorFormState.phone}
+                                onChange={handlePotentialSponsorFormChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Optional phone number"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Email
+                              <input
+                                type="email"
+                                name="email"
+                                value={potentialSponsorFormState.email}
+                                onChange={handlePotentialSponsorFormChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Optional email address"
+                              />
+                            </label>
+                          </div>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Notes
+                            <textarea
+                              name="notes"
+                              value={potentialSponsorFormState.notes}
+                              onChange={handlePotentialSponsorFormChange}
+                              className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Conversation notes, context, or ideas"
+                            />
+                          </label>
+
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <button
+                              type="submit"
+                              disabled={
+                                activeSponsorActionId === "potential-create" ||
+                                activeSponsorActionId === `potential-save-${editingPotentialSponsorId ?? ""}`
+                              }
+                              className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                            >
+                              {editingPotentialSponsorId ? "Save Potential Sponsor" : "Add Potential Sponsor"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={resetPotentialSponsorForm}
+                              className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      ) : null}
+
+                      {isSponsorProposalGeneratorOpen ? (
+                        <div
+                          id="sponsor-proposal-generator"
+                          className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4"
+                        >
+                          <div className="flex flex-col gap-1">
+                            <h5 className="text-sm font-semibold uppercase tracking-[0.14em] text-stone-700">
+                              New Business Proposal
+                            </h5>
+                            <p className="text-sm text-stone-600">
+                              Generate and print a sponsor proposal without adding this business to the permanent sponsor library.
+                            </p>
+                          </div>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Business Name
+                            <input
+                              type="text"
+                              name="businessName"
+                              value={sponsorProposalGeneratorFormState.businessName}
+                              onChange={handleSponsorProposalGeneratorChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Business or organization name"
+                              required
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Contact Name
+                            <input
+                              type="text"
+                              name="contactName"
+                              value={sponsorProposalGeneratorFormState.contactName}
+                              onChange={handleSponsorProposalGeneratorChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Optional contact name"
+                            />
+                          </label>
+
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Sponsorship Level
+                              <select
+                                name="sponsorshipLevel"
+                                value={sponsorProposalGeneratorFormState.sponsorshipLevel}
+                                onChange={handleSponsorProposalGeneratorChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              >
+                                <option value="Platinum Sponsor">Platinum</option>
+                                <option value="Gold Sponsor">Gold</option>
+                                <option value="Silver Sponsor">Silver</option>
+                                <option value="Custom">Custom</option>
+                              </select>
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Amount
+                              <input
+                                type="text"
+                                name="amount"
+                                value={sponsorProposalGeneratorFormState.amount}
+                                onChange={handleSponsorProposalGeneratorChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="$500.00"
+                                required
+                              />
+                            </label>
+                          </div>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Notes
+                            <textarea
+                              name="notes"
+                              value={sponsorProposalGeneratorFormState.notes}
+                              onChange={handleSponsorProposalGeneratorChange}
+                              className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Optional notes to include on the proposal"
+                            />
+                          </label>
+
+                          <div className="grid gap-4 rounded-xl border border-stone-200 bg-white p-4">
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Proposal Coverage
+                              <select
+                                name="proposalCoverage"
+                                value={sponsorProposalGeneratorFormState.proposalCoverage}
+                                onChange={handleSponsorProposalGeneratorChange}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              >
+                                <option value="current-show">Current Show</option>
+                                <option value="season-year">Season / Year</option>
+                                <option value="custom">Custom</option>
+                              </select>
+                            </label>
+
+                            {sponsorProposalGeneratorFormState.proposalCoverage === "season-year" ? (
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Season / Year
+                                <input
+                                  type="text"
+                                  name="proposalYear"
+                                  value={sponsorProposalGeneratorFormState.proposalYear}
+                                  onChange={handleSponsorProposalGeneratorChange}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  placeholder={String(new Date().getFullYear())}
+                                />
+                              </label>
+                            ) : null}
+
+                            {sponsorProposalGeneratorFormState.proposalCoverage === "custom" ? (
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Custom Coverage
+                                <input
+                                  type="text"
+                                  name="proposalCustomCoverage"
+                                  value={sponsorProposalGeneratorFormState.proposalCustomCoverage}
+                                  onChange={handleSponsorProposalGeneratorChange}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  placeholder="Fall 2026 Show Series"
+                                />
+                              </label>
+                            ) : null}
+                          </div>
+
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <button
+                              type="button"
+                              onClick={() => void handlePrintSponsorProposalDraft()}
+                              disabled={activeSponsorActionId === "draft-proposal-print"}
+                              className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                            >
+                              {activeSponsorActionId === "draft-proposal-print"
+                                ? "Generating Proposal..."
+                                : "Print Proposal"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleAddDraftSponsorToLibrary()}
+                              disabled={activeSponsorActionId === "draft-proposal-add"}
+                              className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {activeSponsorActionId === "draft-proposal-add"
+                                ? "Adding Sponsor..."
+                                : "Add to Sponsor Library"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {potentialSponsors.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                          No potential sponsors have been added yet.
+                        </div>
+                      ) : (
+                        <div className="grid gap-3">
+                          {potentialSponsors.map((potentialSponsor) => (
+                            <article
+                              key={potentialSponsor.id}
+                              className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
+                            >
+                              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h5 className="text-base font-semibold text-stone-900">
+                                      {potentialSponsor.business_name}
+                                    </h5>
+                                    <span
+                                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getPotentialSponsorStatusBadgeClasses(
+                                        potentialSponsor.status,
+                                      )}`}
+                                    >
+                                      {potentialSponsor.status}
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-2 grid gap-1 text-sm text-stone-600">
+                                    {potentialSponsor.contact_name ? (
+                                      <p>
+                                        <span className="font-medium text-stone-800">Contact:</span>{" "}
+                                        {potentialSponsor.contact_name}
+                                      </p>
+                                    ) : null}
+                                    {potentialSponsor.phone ? (
+                                      <p>
+                                        <span className="font-medium text-stone-800">Phone:</span>{" "}
+                                        {potentialSponsor.phone}
+                                      </p>
+                                    ) : null}
+                                    {potentialSponsor.email ? (
+                                      <p className="break-words">
+                                        <span className="font-medium text-stone-800">Email:</span>{" "}
+                                        {potentialSponsor.email}
+                                      </p>
+                                    ) : null}
+                                    {potentialSponsor.notes ? (
+                                      <p className="whitespace-pre-wrap">
+                                        <span className="font-medium text-stone-800">Notes:</span>{" "}
+                                        {potentialSponsor.notes}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingPotentialSponsor(potentialSponsor.id)}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => primeProposalGeneratorFromPotentialSponsor(potentialSponsor)}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Generate Proposal
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleConvertPotentialSponsorToSponsor(potentialSponsor)}
+                                    disabled={activeSponsorActionId === `potential-convert-${potentialSponsor.id}`}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Convert to Sponsor
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeletePotentialSponsor(potentialSponsor)}
+                                    disabled={activeSponsorActionId === `potential-delete-${potentialSponsor.id}`}
+                                    className="rounded-xl bg-stone-800 px-3 py-2 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </section>
+
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                   <div className="flex flex-wrap gap-3">
                     <button
@@ -10786,18 +11587,6 @@ export function ShowPage({
                       className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
                     >
                       {isAddSponsorFormOpen ? "Hide Add Sponsor" : "Add Sponsor"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setIsSponsorProposalGeneratorOpen((currentValue) => !currentValue)
-                      }
-                      className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                    >
-                      {isSponsorProposalGeneratorOpen
-                        ? "Hide Proposal Generator"
-                        : "Generate Proposal for New Business"}
                     </button>
                   </div>
 
@@ -10892,150 +11681,6 @@ export function ShowPage({
                       </button>
                     </div>
                   </form>
-                ) : null}
-
-                {isSponsorProposalGeneratorOpen ? (
-                  <div className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4">
-                    <div className="flex flex-col gap-1">
-                      <h4 className="text-base font-semibold text-stone-900">New Business Proposal</h4>
-                      <p className="text-sm text-stone-600">
-                        Generate and print a sponsor proposal without adding this business to the permanent sponsor library.
-                      </p>
-                    </div>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Business Name
-                      <input
-                        type="text"
-                        name="businessName"
-                        value={sponsorProposalGeneratorFormState.businessName}
-                        onChange={handleSponsorProposalGeneratorChange}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Business or organization name"
-                        required
-                      />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Contact Name
-                      <input
-                        type="text"
-                        name="contactName"
-                        value={sponsorProposalGeneratorFormState.contactName}
-                        onChange={handleSponsorProposalGeneratorChange}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Optional contact name"
-                      />
-                    </label>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Sponsorship Level
-                        <select
-                          name="sponsorshipLevel"
-                          value={sponsorProposalGeneratorFormState.sponsorshipLevel}
-                          onChange={handleSponsorProposalGeneratorChange}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        >
-                          <option value="Platinum Sponsor">Platinum</option>
-                          <option value="Gold Sponsor">Gold</option>
-                          <option value="Silver Sponsor">Silver</option>
-                          <option value="Custom">Custom</option>
-                        </select>
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Amount
-                        <input
-                          type="text"
-                          name="amount"
-                          value={sponsorProposalGeneratorFormState.amount}
-                          onChange={handleSponsorProposalGeneratorChange}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="$500.00"
-                          required
-                        />
-                      </label>
-                    </div>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Notes
-                      <textarea
-                        name="notes"
-                        value={sponsorProposalGeneratorFormState.notes}
-                        onChange={handleSponsorProposalGeneratorChange}
-                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Optional notes to include on the proposal"
-                      />
-                    </label>
-
-                    <div className="grid gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4">
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Proposal Coverage
-                        <select
-                          name="proposalCoverage"
-                          value={sponsorProposalGeneratorFormState.proposalCoverage}
-                          onChange={handleSponsorProposalGeneratorChange}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        >
-                          <option value="current-show">Current Show</option>
-                          <option value="season-year">Season / Year</option>
-                          <option value="custom">Custom</option>
-                        </select>
-                      </label>
-
-                      {sponsorProposalGeneratorFormState.proposalCoverage === "season-year" ? (
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Season / Year
-                          <input
-                            type="text"
-                            name="proposalYear"
-                            value={sponsorProposalGeneratorFormState.proposalYear}
-                            onChange={handleSponsorProposalGeneratorChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder={String(new Date().getFullYear())}
-                          />
-                        </label>
-                      ) : null}
-
-                      {sponsorProposalGeneratorFormState.proposalCoverage === "custom" ? (
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Custom Coverage
-                          <input
-                            type="text"
-                            name="proposalCustomCoverage"
-                            value={sponsorProposalGeneratorFormState.proposalCustomCoverage}
-                            onChange={handleSponsorProposalGeneratorChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Fall 2026 Show Series"
-                          />
-                        </label>
-                      ) : null}
-                    </div>
-
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={() => void handlePrintSponsorProposalDraft()}
-                        disabled={activeSponsorActionId === "draft-proposal-print"}
-                        className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                      >
-                        {activeSponsorActionId === "draft-proposal-print"
-                          ? "Generating Proposal..."
-                          : "Print Proposal"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleAddDraftSponsorToLibrary()}
-                        disabled={activeSponsorActionId === "draft-proposal-add"}
-                        className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {activeSponsorActionId === "draft-proposal-add"
-                          ? "Adding Sponsor..."
-                          : "Add to Sponsor Library"}
-                      </button>
-                    </div>
-                  </div>
                 ) : null}
 
                 {visibleSponsorLibrary.length === 0 ? (
