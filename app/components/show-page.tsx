@@ -5422,23 +5422,24 @@ export function ShowPage({
 
     setActionError(null);
     setActiveSponsorActionId("new-library");
+    const sponsorInsertPayload = {
+      name,
+      short_message: normalizeOptionalField(newSponsorLibraryFormState.shortMessage),
+      full_message: normalizeOptionalField(newSponsorLibraryFormState.fullMessage),
+      website: normalizeOptionalField(newSponsorLibraryFormState.website),
+      logo_url: null as string | null,
+    };
 
     try {
       const supabase = createClient();
       const logoUrl = newSponsorLogoFile
         ? await uploadSponsorLogoFile(newSponsorLogoFile, name)
         : null;
+      sponsorInsertPayload.logo_url = logoUrl;
 
       const { data, error } = await supabase
         .from("sponsor_library")
-        .insert({
-          name,
-          short_message: normalizeOptionalField(newSponsorLibraryFormState.shortMessage),
-          full_message: normalizeOptionalField(newSponsorLibraryFormState.fullMessage),
-          website: normalizeOptionalField(newSponsorLibraryFormState.website),
-          logo_url: logoUrl,
-          is_archived: false,
-        })
+        .insert(sponsorInsertPayload)
         .select("*")
         .single();
 
@@ -5455,7 +5456,23 @@ export function ShowPage({
       setNewSponsorLogoFile(null);
       setIsAddSponsorFormOpen(false);
     } catch (error) {
-      setActionError(getErrorMessage(error));
+      console.error("Sponsor library insert failed.", {
+        error,
+        message: error instanceof Error ? error.message : null,
+        code: typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : null,
+        details:
+          typeof error === "object" && error !== null && "details" in error
+            ? (error as { details?: unknown }).details
+            : null,
+        hint:
+          typeof error === "object" && error !== null && "hint" in error
+            ? (error as { hint?: unknown }).hint
+            : null,
+        fullErrorJson: JSON.stringify(error, null, 2),
+        table: "sponsor_library",
+        payload: sponsorInsertPayload,
+      });
+      setActionError(`Sponsor could not be added. ${getErrorMessage(error)}`);
     } finally {
       setActiveSponsorActionId(null);
     }
@@ -5471,22 +5488,24 @@ export function ShowPage({
 
     setActionError(null);
     setActiveSponsorActionId(`library-${sponsorId}`);
+    const sponsorUpdatePayload = {
+      name,
+      short_message: normalizeOptionalField(sponsorLibraryFormState.shortMessage),
+      full_message: normalizeOptionalField(sponsorLibraryFormState.fullMessage),
+      website: normalizeOptionalField(sponsorLibraryFormState.website),
+      logo_url: null as string | null,
+    };
 
     try {
       const supabase = createClient();
       const logoUrl = editingSponsorLogoFile
         ? await uploadSponsorLogoFile(editingSponsorLogoFile, name)
         : normalizeOptionalField(sponsorLibraryFormState.logoUrl);
+      sponsorUpdatePayload.logo_url = logoUrl;
 
       const { data, error } = await supabase
         .from("sponsor_library")
-        .update({
-          name,
-          short_message: normalizeOptionalField(sponsorLibraryFormState.shortMessage),
-          full_message: normalizeOptionalField(sponsorLibraryFormState.fullMessage),
-          website: normalizeOptionalField(sponsorLibraryFormState.website),
-          logo_url: logoUrl,
-        })
+        .update(sponsorUpdatePayload)
         .eq("id", sponsorId)
         .select("*")
         .single();
@@ -5499,7 +5518,24 @@ export function ShowPage({
       syncSponsorAcrossState(normalizedSponsor);
       cancelEditingSponsorLibraryEntry();
     } catch (error) {
-      setActionError(getErrorMessage(error));
+      console.error("Sponsor library update failed.", {
+        error,
+        message: error instanceof Error ? error.message : null,
+        code: typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : null,
+        details:
+          typeof error === "object" && error !== null && "details" in error
+            ? (error as { details?: unknown }).details
+            : null,
+        hint:
+          typeof error === "object" && error !== null && "hint" in error
+            ? (error as { hint?: unknown }).hint
+            : null,
+        fullErrorJson: JSON.stringify(error, null, 2),
+        table: "sponsor_library",
+        sponsorId,
+        payload: sponsorUpdatePayload,
+      });
+      setActionError(`Sponsor could not be saved. ${getErrorMessage(error)}`);
     } finally {
       setActiveSponsorActionId(null);
     }
@@ -5685,7 +5721,6 @@ export function ShowPage({
         .from("sponsor_library")
         .insert({
           name,
-          is_archived: false,
           sponsorship_level: sponsor.sponsorship_level,
           sponsorship_amount: sponsorshipAmount,
           payment_status: "prospect",
@@ -5836,7 +5871,6 @@ export function ShowPage({
           .from("sponsor_library")
           .insert({
             name: businessName,
-            is_archived: false,
             payment_status: "prospect",
           })
           .select("*")
