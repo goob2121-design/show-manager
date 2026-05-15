@@ -254,7 +254,7 @@ const financeCategoryOptions: Record<FinanceItemType, string[]> = {
 };
 
 const defaultSingerName = "CMMS Band";
-const stageflowPortalVersion = "StageFlow v0.9.15";
+const stageflowPortalVersion = "StageFlow v1.0.15";
 const SONG_AUDIO_BUCKET = "promo-materials";
 const MAX_SONG_MP3_BYTES = 30 * 1024 * 1024;
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
