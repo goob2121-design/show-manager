@@ -38,6 +38,7 @@ import type {
   PromoMaterialCategory,
   PromoMaterialFormState,
   SetSection,
+  SponsorTypeOption,
   SetlistEntry,
   ShowGuestSong,
   ShowFinanceItem,
@@ -395,6 +396,10 @@ const initialSponsorLibraryFormState: SponsorLibraryFormState = {
   fullMessage: "",
   website: "",
   logoUrl: "",
+  sponsorType: "",
+  defaultContribution: "",
+  estimatedValue: "",
+  recognitionNotes: "",
 };
 
 const initialSponsorDocumentFormState: SponsorDocumentFormState = {
@@ -440,7 +445,21 @@ const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
   placementType: "",
   linkedPerformer: "",
   customNote: "",
+  sponsorType: "",
+  defaultContribution: "",
+  estimatedValue: "",
+  recognitionNotes: "",
 };
+
+const sponsorTypeOptions: SponsorTypeOption[] = [
+  "Cash Package",
+  "In-Kind / Product Donation",
+  "Food & Beverage",
+  "Service Trade",
+  "Giveaway / Prize",
+  "Printing / Media",
+  "Custom",
+];
 
 const sponsorPlacementOptions = [
   { value: "", label: "Flexible / not set" },
@@ -1122,6 +1141,13 @@ function buildSponsorLibraryFormState(sponsor: SponsorLibraryEntry): SponsorLibr
     fullMessage: sponsor.full_message ?? "",
     website: sponsor.website ?? "",
     logoUrl: sponsor.logo_url ?? "",
+    sponsorType: sponsor.sponsor_type ?? "",
+    defaultContribution: sponsor.default_contribution ?? "",
+    estimatedValue:
+      sponsor.estimated_value === null || sponsor.estimated_value === undefined
+        ? ""
+        : formatNumericInputValue(sponsor.estimated_value),
+    recognitionNotes: sponsor.recognition_notes ?? "",
   };
 }
 
@@ -1131,6 +1157,17 @@ function buildShowSponsorAssignmentFormState(sponsor: ShowSponsor): ShowSponsorA
     placementType: sponsor.placement_type ?? "",
     linkedPerformer: sponsor.linked_performer ?? "",
     customNote: sponsor.custom_note ?? "",
+    sponsorType: sponsor.sponsor_type ?? sponsor.sponsor?.sponsor_type ?? "",
+    defaultContribution:
+      sponsor.default_contribution ?? sponsor.sponsor?.default_contribution ?? "",
+    estimatedValue:
+      sponsor.estimated_value !== null && sponsor.estimated_value !== undefined
+        ? formatNumericInputValue(sponsor.estimated_value)
+        : sponsor.sponsor?.estimated_value !== null && sponsor.sponsor?.estimated_value !== undefined
+          ? formatNumericInputValue(sponsor.sponsor.estimated_value)
+          : "",
+    recognitionNotes:
+      sponsor.recognition_notes ?? sponsor.sponsor?.recognition_notes ?? "",
   };
 }
 
@@ -2745,11 +2782,21 @@ function normalizeSponsorLibraryEntry(
       : typeof sponsor.sponsorship_amount === "string"
         ? Number.parseFloat(sponsor.sponsorship_amount)
         : null;
+  const parsedEstimatedValue =
+    typeof sponsor.estimated_value === "number"
+      ? sponsor.estimated_value
+      : typeof sponsor.estimated_value === "string"
+        ? Number.parseFloat(sponsor.estimated_value)
+        : null;
 
   return {
     ...sponsor,
     website: sponsor.website ?? null,
     logo_url: sponsor.logo_url ?? null,
+    sponsor_type: sponsor.sponsor_type ?? null,
+    default_contribution: sponsor.default_contribution ?? null,
+    estimated_value: Number.isFinite(parsedEstimatedValue) ? parsedEstimatedValue : null,
+    recognition_notes: sponsor.recognition_notes ?? null,
     is_archived: sponsor.is_archived ?? false,
     sponsorship_level: sponsor.sponsorship_level ?? null,
     sponsorship_amount: Number.isFinite(parsedSponsorshipAmount) ? parsedSponsorshipAmount : null,
@@ -2805,6 +2852,10 @@ function parseSponsorAmountInput(value: string) {
   const parsedValue = Number.parseFloat(normalizedValue);
 
   return Number.isFinite(parsedValue) ? parsedValue : null;
+}
+
+function formatNumericInputValue(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 function getSponsorTierBenefits(level: string | null | undefined) {
@@ -3362,9 +3413,19 @@ function normalizeShowSponsor(
   },
 ): ShowSponsor {
   const relatedSponsor = Array.isArray(sponsor.sponsor) ? sponsor.sponsor[0] : sponsor.sponsor;
+  const parsedEstimatedValue =
+    typeof sponsor.estimated_value === "number"
+      ? sponsor.estimated_value
+      : typeof sponsor.estimated_value === "string"
+        ? Number.parseFloat(sponsor.estimated_value)
+        : null;
 
   return {
     ...sponsor,
+    sponsor_type: sponsor.sponsor_type ?? null,
+    default_contribution: sponsor.default_contribution ?? null,
+    estimated_value: Number.isFinite(parsedEstimatedValue) ? parsedEstimatedValue : null,
+    recognition_notes: sponsor.recognition_notes ?? null,
     sponsor: relatedSponsor ? normalizeSponsorLibraryEntry(relatedSponsor) : null,
   };
 }
@@ -3396,6 +3457,33 @@ function attachSponsorToShowAssignment(
       ? sponsorLibrary.find((librarySponsor) => librarySponsor.id === sponsor.sponsor_id) ?? null
       : null,
   });
+}
+
+function getShowSponsorTypeLabel(sponsor: ShowSponsor) {
+  return sponsor.sponsor_type?.trim() || sponsor.sponsor?.sponsor_type?.trim() || null;
+}
+
+function getShowSponsorContributionText(sponsor: ShowSponsor) {
+  return sponsor.default_contribution?.trim() || sponsor.sponsor?.default_contribution?.trim() || null;
+}
+
+function getShowSponsorRecognitionNotesText(sponsor: ShowSponsor) {
+  return sponsor.recognition_notes?.trim() || sponsor.sponsor?.recognition_notes?.trim() || null;
+}
+
+function getShowSponsorEstimatedValue(sponsor: ShowSponsor) {
+  if (typeof sponsor.estimated_value === "number" && Number.isFinite(sponsor.estimated_value)) {
+    return sponsor.estimated_value;
+  }
+
+  if (
+    typeof sponsor.sponsor?.estimated_value === "number" &&
+    Number.isFinite(sponsor.sponsor.estimated_value)
+  ) {
+    return sponsor.sponsor.estimated_value;
+  }
+
+  return null;
 }
 
 function formatLibrarySourceRole(role: SongLibrarySong["created_by_role"]) {
@@ -5125,7 +5213,7 @@ export function ShowPage({
   }
 
   function handleSponsorLibraryChange(
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
     mode: "new" | "edit",
   ) {
     const { name, value } = event.target;
@@ -5237,6 +5325,25 @@ export function ShowPage({
     mode: "new" | "edit",
   ) {
     const { name, value } = event.target;
+
+    if (mode === "new" && name === "sponsorId") {
+      const selectedSponsor =
+        sponsorLibrary.find((sponsor) => sponsor.id === value) ?? null;
+
+      setShowSponsorAssignmentFormState((currentState) => ({
+        ...currentState,
+        sponsorId: value,
+        sponsorType: selectedSponsor?.sponsor_type ?? "",
+        defaultContribution: selectedSponsor?.default_contribution ?? "",
+        estimatedValue:
+          selectedSponsor?.estimated_value === null || selectedSponsor?.estimated_value === undefined
+            ? ""
+            : formatNumericInputValue(selectedSponsor.estimated_value),
+        recognitionNotes: selectedSponsor?.recognition_notes ?? "",
+      }));
+      return;
+    }
+
     const setState =
       mode === "edit" ? setEditingShowSponsorFormState : setShowSponsorAssignmentFormState;
 
@@ -5312,6 +5419,10 @@ export function ShowPage({
         full_message: null,
         website: null,
         logo_url: null,
+        sponsor_type: null,
+        default_contribution: null,
+        estimated_value: null,
+        recognition_notes: null,
         is_archived: false,
         sponsorship_level:
           normalizeOptionalField(sponsorProposalGeneratorFormState.sponsorshipLevel) ?? "Custom",
@@ -5422,11 +5533,16 @@ export function ShowPage({
 
     setActionError(null);
     setActiveSponsorActionId("new-library");
+    const estimatedValue = parseSponsorAmountInput(newSponsorLibraryFormState.estimatedValue);
     const sponsorInsertPayload = {
       name,
       short_message: normalizeOptionalField(newSponsorLibraryFormState.shortMessage),
       full_message: normalizeOptionalField(newSponsorLibraryFormState.fullMessage),
       website: normalizeOptionalField(newSponsorLibraryFormState.website),
+      sponsor_type: normalizeOptionalField(newSponsorLibraryFormState.sponsorType),
+      default_contribution: normalizeOptionalField(newSponsorLibraryFormState.defaultContribution),
+      estimated_value: estimatedValue,
+      recognition_notes: normalizeOptionalField(newSponsorLibraryFormState.recognitionNotes),
       logo_url: null as string | null,
     };
 
@@ -5488,11 +5604,16 @@ export function ShowPage({
 
     setActionError(null);
     setActiveSponsorActionId(`library-${sponsorId}`);
+    const estimatedValue = parseSponsorAmountInput(sponsorLibraryFormState.estimatedValue);
     const sponsorUpdatePayload = {
       name,
       short_message: normalizeOptionalField(sponsorLibraryFormState.shortMessage),
       full_message: normalizeOptionalField(sponsorLibraryFormState.fullMessage),
       website: normalizeOptionalField(sponsorLibraryFormState.website),
+      sponsor_type: normalizeOptionalField(sponsorLibraryFormState.sponsorType),
+      default_contribution: normalizeOptionalField(sponsorLibraryFormState.defaultContribution),
+      estimated_value: estimatedValue,
+      recognition_notes: normalizeOptionalField(sponsorLibraryFormState.recognitionNotes),
       logo_url: null as string | null,
     };
 
@@ -5721,6 +5842,10 @@ export function ShowPage({
         .from("sponsor_library")
         .insert({
           name,
+          sponsor_type: null,
+          default_contribution: null,
+          estimated_value: null,
+          recognition_notes: null,
           sponsorship_level: sponsor.sponsorship_level,
           sponsorship_amount: sponsorshipAmount,
           payment_status: "prospect",
@@ -5871,6 +5996,10 @@ export function ShowPage({
           .from("sponsor_library")
           .insert({
             name: businessName,
+            sponsor_type: null,
+            default_contribution: null,
+            estimated_value: null,
+            recognition_notes: null,
             payment_status: "prospect",
           })
           .select("*")
@@ -6088,12 +6217,16 @@ export function ShowPage({
         mc_anchor_song_id: null,
         linked_performer: normalizeOptionalField(showSponsorAssignmentFormState.linkedPerformer),
         custom_note: normalizeOptionalField(showSponsorAssignmentFormState.customNote),
+        sponsor_type: normalizeOptionalField(showSponsorAssignmentFormState.sponsorType),
+        default_contribution: normalizeOptionalField(showSponsorAssignmentFormState.defaultContribution),
+        estimated_value: parseSponsorAmountInput(showSponsorAssignmentFormState.estimatedValue),
+        recognition_notes: normalizeOptionalField(showSponsorAssignmentFormState.recognitionNotes),
       };
 
       const { data, error } = await supabase
         .from("show_sponsors")
         .insert(payload)
-        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, created_at")
+        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, sponsor_type, default_contribution, estimated_value, recognition_notes, created_at")
         .single();
 
       if (error) {
@@ -6155,6 +6288,10 @@ export function ShowPage({
         mc_anchor_song_id: null,
         linked_performer: normalizeOptionalField(editingShowSponsorFormState.linkedPerformer),
         custom_note: normalizeOptionalField(editingShowSponsorFormState.customNote),
+        sponsor_type: normalizeOptionalField(editingShowSponsorFormState.sponsorType),
+        default_contribution: normalizeOptionalField(editingShowSponsorFormState.defaultContribution),
+        estimated_value: parseSponsorAmountInput(editingShowSponsorFormState.estimatedValue),
+        recognition_notes: normalizeOptionalField(editingShowSponsorFormState.recognitionNotes),
       };
 
       const { data, error } = await supabase
@@ -6162,7 +6299,7 @@ export function ShowPage({
         .update(payload)
         .eq("id", sponsorId)
         .eq("show_id", show.id)
-        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, created_at")
+        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, sponsor_type, default_contribution, estimated_value, recognition_notes, created_at")
         .single();
 
       if (error) {
@@ -9605,10 +9742,9 @@ export function ShowPage({
                                 type="button"
                                 onClick={() => {
                                   setShowSponsorAssignmentFormState({
-                                    sponsorId: "",
+                                    ...initialShowSponsorAssignmentFormState,
                                     placementType: "before_performer",
                                     linkedPerformer: getDisplaySingerName(item.song.artist),
-                                    customNote: "",
                                   });
                                   setActiveAdminTab("sponsors");
                                 }}
@@ -9620,10 +9756,9 @@ export function ShowPage({
                                 type="button"
                                 onClick={() => {
                                   setShowSponsorAssignmentFormState({
-                                    sponsorId: "",
+                                    ...initialShowSponsorAssignmentFormState,
                                     placementType: "after_performer",
                                     linkedPerformer: getDisplaySingerName(item.song.artist),
-                                    customNote: "",
                                   });
                                   setActiveAdminTab("sponsors");
                                 }}
@@ -11690,6 +11825,60 @@ export function ShowPage({
                       />
                     </label>
 
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Sponsor Type
+                        <select
+                          name="sponsorType"
+                          value={newSponsorLibraryFormState.sponsorType}
+                          onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        >
+                          <option value="">Optional</option>
+                          {sponsorTypeOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Estimated Value
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          name="estimatedValue"
+                          value={newSponsorLibraryFormState.estimatedValue}
+                          onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Optional dollar amount"
+                        />
+                      </label>
+                    </div>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Default Contribution
+                      <textarea
+                        name="defaultContribution"
+                        value={newSponsorLibraryFormState.defaultContribution}
+                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="What this sponsor usually provides"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Recognition Notes
+                      <textarea
+                        name="recognitionNotes"
+                        value={newSponsorLibraryFormState.recognitionNotes}
+                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="How this sponsor should be thanked or described"
+                      />
+                    </label>
+
                     <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                       Sponsor Logo
                       <input
@@ -11738,6 +11927,9 @@ export function ShowPage({
                           const sponsorshipLevel = sponsor.sponsorship_level?.trim() || null;
                           const sponsorshipAmount =
                             sponsor.sponsorship_amount === null ? null : formatCurrency(sponsor.sponsorship_amount);
+                          const sponsorType = sponsor.sponsor_type?.trim() || null;
+                          const estimatedValue =
+                            sponsor.estimated_value === null ? null : formatCurrency(sponsor.estimated_value);
                           const paymentStatus = sponsor.payment_status
                             ? formatSponsorPaymentStatusLabel(sponsor.payment_status)
                             : null;
@@ -11762,6 +11954,11 @@ export function ShowPage({
                                           {sponsorshipLevel}
                                         </span>
                                       ) : null}
+                                      {sponsorType ? (
+                                        <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-800">
+                                          {sponsorType}
+                                        </span>
+                                      ) : null}
                                       {paymentStatus ? (
                                         <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                                           {paymentStatus}
@@ -11775,6 +11972,7 @@ export function ShowPage({
                                     </div>
                                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-stone-500">
                                       {sponsorshipAmount ? <span>{sponsorshipAmount}</span> : null}
+                                      {estimatedValue ? <span>Estimated value: {estimatedValue}</span> : null}
                                       {sponsor.website ? <span className="truncate">{sponsor.website}</span> : null}
                                     </div>
                                   </div>
@@ -11897,6 +12095,58 @@ export function ShowPage({
                               />
                             </label>
 
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Sponsor Type
+                                <select
+                                  name="sponsorType"
+                                  value={sponsorLibraryFormState.sponsorType}
+                                  onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                >
+                                  <option value="">Optional</option>
+                                  {sponsorTypeOptions.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Estimated Value
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  name="estimatedValue"
+                                  value={sponsorLibraryFormState.estimatedValue}
+                                  onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  placeholder="Optional dollar amount"
+                                />
+                              </label>
+                            </div>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Default Contribution
+                              <textarea
+                                name="defaultContribution"
+                                value={sponsorLibraryFormState.defaultContribution}
+                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Recognition Notes
+                              <textarea
+                                name="recognitionNotes"
+                                value={sponsorLibraryFormState.recognitionNotes}
+                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                               Replace Sponsor Logo
                               <input
@@ -11940,6 +12190,14 @@ export function ShowPage({
                             <div className="mt-3 grid gap-3 text-sm text-stone-600">
                               {sponsor.short_message ? <p>Short: {sponsor.short_message}</p> : null}
                               {sponsor.full_message ? <p>Full: {sponsor.full_message}</p> : null}
+                              {sponsorType ? <p>Sponsor Type: {sponsorType}</p> : null}
+                              {estimatedValue ? <p>Estimated Value: {estimatedValue}</p> : null}
+                              {sponsor.default_contribution ? (
+                                <p className="whitespace-pre-wrap">Contribution: {sponsor.default_contribution}</p>
+                              ) : null}
+                              {sponsor.recognition_notes ? (
+                                <p className="whitespace-pre-wrap">Recognition Notes: {sponsor.recognition_notes}</p>
+                              ) : null}
                             </div>
 
                             <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-4">
@@ -12273,6 +12531,60 @@ export function ShowPage({
                     />
                   </label>
 
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Sponsor Type
+                      <select
+                        name="sponsorType"
+                        value={showSponsorAssignmentFormState.sponsorType}
+                        onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Optional</option>
+                        {sponsorTypeOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Estimated Value
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        name="estimatedValue"
+                        value={showSponsorAssignmentFormState.estimatedValue}
+                        onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Optional dollar amount"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Contribution
+                    <textarea
+                      name="defaultContribution"
+                      value={showSponsorAssignmentFormState.defaultContribution}
+                      onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="What this sponsor is providing for this show"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Recognition Notes
+                    <textarea
+                      name="recognitionNotes"
+                      value={showSponsorAssignmentFormState.recognitionNotes}
+                      onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="How this sponsor should be recognized for this show"
+                    />
+                  </label>
+
                   <div className="flex justify-start">
                     <button
                       type="submit"
@@ -12349,6 +12661,65 @@ export function ShowPage({
                               />
                             </label>
 
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Sponsor Type
+                                <select
+                                  name="sponsorType"
+                                  value={editingShowSponsorFormState.sponsorType}
+                                  onChange={(event) =>
+                                    handleShowSponsorAssignmentChange(event, "edit")
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                >
+                                  <option value="">Optional</option>
+                                  {sponsorTypeOptions.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Estimated Value
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  name="estimatedValue"
+                                  value={editingShowSponsorFormState.estimatedValue}
+                                  onChange={(event) =>
+                                    handleShowSponsorAssignmentChange(event, "edit")
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                />
+                              </label>
+                            </div>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Contribution
+                              <textarea
+                                name="defaultContribution"
+                                value={editingShowSponsorFormState.defaultContribution}
+                                onChange={(event) =>
+                                  handleShowSponsorAssignmentChange(event, "edit")
+                                }
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Recognition Notes
+                              <textarea
+                                name="recognitionNotes"
+                                value={editingShowSponsorFormState.recognitionNotes}
+                                onChange={(event) =>
+                                  handleShowSponsorAssignmentChange(event, "edit")
+                                }
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
                             <div className="flex flex-col gap-3 sm:flex-row">
                               <button
                                 type="button"
@@ -12369,6 +12740,14 @@ export function ShowPage({
                           </div>
                         ) : (
                           <>
+                            {(() => {
+                              const sponsorType = getShowSponsorTypeLabel(sponsor);
+                              const contributionText = getShowSponsorContributionText(sponsor);
+                              const recognitionNotes = getShowSponsorRecognitionNotesText(sponsor);
+                              const estimatedValue = getShowSponsorEstimatedValue(sponsor);
+
+                              return (
+                                <>
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div className="flex gap-3">
                                 <SponsorLogoThumbnail
@@ -12390,7 +12769,17 @@ export function ShowPage({
                                       {formatSponsorPlacementType(sponsor.placement_type)}
                                     </span>
                                   ) : null}
+                                  {sponsorType ? (
+                                    <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800">
+                                      {sponsorType}
+                                    </span>
+                                  ) : null}
                                   </div>
+                                  {estimatedValue !== null ? (
+                                    <p className="text-sm text-stone-600">
+                                      Estimated value: {formatCurrency(estimatedValue)}
+                                    </p>
+                                  ) : null}
                                   {sponsor.linked_performer ? (
                                     <p className="text-sm text-stone-600">
                                       Linked performer: {sponsor.linked_performer}
@@ -12399,6 +12788,16 @@ export function ShowPage({
                                   {sponsor.custom_note ? (
                                     <p className="text-sm text-stone-600">
                                       Note: {sponsor.custom_note}
+                                    </p>
+                                  ) : null}
+                                  {contributionText ? (
+                                    <p className="whitespace-pre-wrap text-sm text-stone-600">
+                                      Contribution: {contributionText}
+                                    </p>
+                                  ) : null}
+                                  {recognitionNotes ? (
+                                    <p className="whitespace-pre-wrap text-sm text-stone-600">
+                                      Recognition Notes: {recognitionNotes}
                                     </p>
                                   ) : null}
                                 </div>
@@ -12443,6 +12842,9 @@ export function ShowPage({
                                 </button>
                               </div>
                             </div>
+                                </>
+                              );
+                            })()}
                           </>
                         )}
                       </article>

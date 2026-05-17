@@ -13,6 +13,14 @@ export type PromoMaterialCategory =
   | "promo_photo"
   | "other";
 export type FinanceItemType = "income" | "expense";
+export type SponsorTypeOption =
+  | "Cash Package"
+  | "In-Kind / Product Donation"
+  | "Food & Beverage"
+  | "Service Trade"
+  | "Giveaway / Prize"
+  | "Printing / Media"
+  | "Custom";
 
 export type ShowRecord = {
   id: string;
@@ -121,6 +129,10 @@ export type SponsorLibraryEntry = {
   full_message: string | null;
   website: string | null;
   logo_url: string | null;
+  sponsor_type: SponsorTypeOption | string | null;
+  default_contribution: string | null;
+  estimated_value: number | null;
+  recognition_notes: string | null;
   is_archived: boolean;
   sponsorship_level: string | null;
   sponsorship_amount: number | null;
@@ -159,6 +171,10 @@ export type ShowSponsor = {
   mc_anchor_song_id: string | null;
   linked_performer: string | null;
   custom_note: string | null;
+  sponsor_type: SponsorTypeOption | string | null;
+  default_contribution: string | null;
+  estimated_value: number | null;
+  recognition_notes: string | null;
   created_at: string;
   sponsor?: SponsorLibraryEntry | null;
 };
@@ -203,6 +219,10 @@ export type SponsorLibraryFormState = {
   fullMessage: string;
   website: string;
   logoUrl: string;
+  sponsorType: string;
+  defaultContribution: string;
+  estimatedValue: string;
+  recognitionNotes: string;
 };
 
 export type ShowSponsorAssignmentFormState = {
@@ -210,6 +230,10 @@ export type ShowSponsorAssignmentFormState = {
   placementType: string;
   linkedPerformer: string;
   customNote: string;
+  sponsorType: string;
+  defaultContribution: string;
+  estimatedValue: string;
+  recognitionNotes: string;
 };
 
 export type FinanceItemFormState = {
