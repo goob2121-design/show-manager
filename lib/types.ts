@@ -206,6 +206,26 @@ export type ShowFinanceItem = {
   created_at: string;
 };
 
+export type ShowChecklistItem = {
+  id: string;
+  show_id: string;
+  task: string;
+  completed: boolean;
+  created_at: string;
+};
+
+export type ShowPayoutItem = {
+  id: string;
+  show_id: string;
+  payee_name: string;
+  category: string | null;
+  description: string | null;
+  amount: number;
+  paid: boolean;
+  payment_method: string | null;
+  created_at: string;
+};
+
 export type PromoMaterialFormState = {
   title: string;
   description: string;
@@ -241,6 +261,15 @@ export type FinanceItemFormState = {
   category: string;
   amount: string;
   notes: string;
+};
+
+export type PayoutFormState = {
+  payeeName: string;
+  category: string;
+  description: string;
+  amount: string;
+  paid: boolean;
+  paymentMethod: string;
 };
 
 export type McBlockNote = {

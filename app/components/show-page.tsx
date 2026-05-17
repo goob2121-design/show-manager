@@ -32,6 +32,7 @@ import type {
   GuestProfile,
   GuestProfileFormState,
   McBlockNote,
+  PayoutFormState,
   PotentialSponsor,
   PotentialSponsorStatus,
   PromoMaterial,
@@ -48,7 +49,9 @@ import type {
   SponsorLibraryFormState,
   ShowSponsorAssignmentFormState,
   ShowDetailsFormState,
+  ShowPayoutItem,
   ShowRecord,
+  ShowChecklistItem,
   SongFormState,
   SongTempo,
   SongType,
@@ -97,6 +100,7 @@ type AdminTab =
 type BandTab = "setlist" | "songs" | "itinerary" | "promo-materials";
 type GuestTab = "welcome" | "songs" | "artist-info" | "itinerary" | "promo-materials";
 type SponsorAdminTab = "library" | "show";
+type FinanceAdminSubTab = "reporting" | "payouts";
 type SetlistSectionConfig = {
   key: SetSection;
   title: string;
@@ -148,6 +152,23 @@ const sponsorAdminTabItems: Array<{
     key: "show",
     label: "This Show's Sponsors",
     description: "Assignments, ordering, and placement for this event.",
+  },
+];
+
+const financeAdminSubTabItems: Array<{
+  key: FinanceAdminSubTab;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: "reporting",
+    label: "Reporting",
+    description: "Current show finance and yearly reporting tools.",
+  },
+  {
+    key: "payouts",
+    label: "Payout Sheet",
+    description: "Night-of-show payout tracking and printing.",
   },
 ];
 
@@ -218,6 +239,15 @@ const initialFinanceItemFormState: FinanceItemFormState = {
   notes: "",
 };
 
+const initialPayoutFormState: PayoutFormState = {
+  payeeName: "",
+  category: "",
+  description: "",
+  amount: "",
+  paid: false,
+  paymentMethod: "",
+};
+
 const promoMaterialCategoryOptions: Array<{
   value: PromoMaterialCategory;
   label: string;
@@ -253,6 +283,19 @@ const financeCategoryOptions: Record<FinanceItemType, string[]> = {
     "Misc Expense",
   ],
 };
+
+const payoutCategoryOptions = [
+  "Band",
+  "MC",
+  "Guest",
+  "Sound",
+  "Production",
+  "Food / Hospitality",
+  "Printing / Signs",
+  "Other Expense",
+] as const;
+
+const payoutPaymentMethodOptions = ["Cash", "Check", "Venmo", "Other"] as const;
 
 const defaultSingerName = "CMMS Band";
 const stageflowPortalVersion = "StageFlow v1.0.15";
@@ -461,6 +504,17 @@ const sponsorTypeOptions: SponsorTypeOption[] = [
   "Custom",
 ];
 
+const showChecklistQuickAddTasks = [
+  "Post Facebook flyer/ad",
+  "Put out banners/signs",
+  "Contact printers",
+  "Order sponsor signs",
+  "Order pizza",
+  "Pick up drinks",
+  "Print sponsor logo sheet",
+  "Confirm sponsors",
+] as const;
+
 const sponsorPlacementOptions = [
   { value: "", label: "Flexible / not set" },
   { value: "before_performer", label: "Before Performer Block" },
@@ -539,6 +593,45 @@ function formatShowDate(showDate: string | null) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${showDate}T00:00:00`));
+}
+
+function getDaysUntilDate(targetDate: string | null) {
+  if (!targetDate) {
+    return null;
+  }
+
+  const today = new Date();
+  const startOfTodayUtc = Date.UTC(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const targetUtc = Date.parse(`${targetDate}T00:00:00Z`);
+
+  if (Number.isNaN(targetUtc)) {
+    return null;
+  }
+
+  return Math.floor((targetUtc - startOfTodayUtc) / (1000 * 60 * 60 * 24));
+}
+
+function buildShowReminderSummary(showDate: string | null) {
+  const daysUntilShow = getDaysUntilDate(showDate);
+
+  if (daysUntilShow === null) {
+    return null;
+  }
+
+  const facebookReminderDays = daysUntilShow - 30;
+  const bannerReminderDays = daysUntilShow - 14;
+
+  return {
+    daysUntilShow,
+    facebookReminderDays,
+    bannerReminderDays,
+    isFacebookReminderActive: facebookReminderDays <= 0,
+    isBannerReminderActive: bannerReminderDays <= 0,
+  };
 }
 
 function formatCurrency(amount: number) {
@@ -1112,6 +1205,8 @@ type DataSectionKey =
   | "sponsorLibrary"
   | "potentialSponsors"
   | "showSponsors"
+  | "checklistItems"
+  | "payoutItems"
   | "financeItems"
   | "promoMaterials"
   | "guestProfiles"
@@ -1225,6 +1320,45 @@ function buildFinanceItemFormState(item: ShowFinanceItem): FinanceItemFormState 
 
 function sortFinanceItems(items: ShowFinanceItem[]) {
   return [...items].sort((itemA, itemB) => itemB.created_at.localeCompare(itemA.created_at));
+}
+
+function normalizeShowPayoutItem(
+  item: Omit<ShowPayoutItem, "amount"> & { amount: number | string | null },
+): ShowPayoutItem {
+  const parsedAmount =
+    typeof item.amount === "number"
+      ? item.amount
+      : typeof item.amount === "string"
+        ? Number.parseFloat(item.amount)
+        : 0;
+
+  return {
+    ...item,
+    amount: Number.isFinite(parsedAmount) ? parsedAmount : 0,
+    category: item.category ?? null,
+    description: item.description ?? null,
+    payment_method: item.payment_method ?? null,
+    paid: item.paid ?? false,
+  };
+}
+
+function buildPayoutFormState(item: ShowPayoutItem): PayoutFormState {
+  return {
+    payeeName: item.payee_name,
+    category: item.category ?? "",
+    description: item.description ?? "",
+    amount: item.amount.toFixed(2),
+    paid: item.paid,
+    paymentMethod: item.payment_method ?? "",
+  };
+}
+
+function sortShowPayoutItems(items: ShowPayoutItem[]) {
+  return [...items].sort((itemA, itemB) => itemA.created_at.localeCompare(itemB.created_at));
+}
+
+function sortShowChecklistItems(items: ShowChecklistItem[]) {
+  return [...items].sort((itemA, itemB) => itemA.created_at.localeCompare(itemB.created_at));
 }
 
 function buildFinanceReportHtml({
@@ -1450,6 +1584,148 @@ function buildFinanceReportHtml({
       </body>
     </html>
   `;
+}
+
+function buildPayoutSheetHtml({
+  showName,
+  showDate,
+  payoutItems,
+}: {
+  showName: string;
+  showDate: string | null;
+  payoutItems: ShowPayoutItem[];
+}) {
+  const groupedItems = payoutCategoryOptions.map((category) => ({
+    category,
+    items: payoutItems.filter((item) => (item.category ?? "Other Expense") === category),
+  })).filter((group) => group.items.length > 0);
+  const totalAmount = payoutItems.reduce((sum, item) => sum + item.amount, 0);
+
+  return `<!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>${escapeHtml(`${showName} - Payout Sheet`)}</title>
+      <style>
+        :root { color-scheme: light; }
+        body {
+          margin: 32px;
+          color: #1f2937;
+          font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+          background: #ffffff;
+        }
+        h1 { margin: 0; font-size: 1.9rem; }
+        .meta { margin-top: 0.5rem; color: #57534e; font-size: 0.98rem; }
+        .section { margin-top: 1.5rem; break-inside: avoid; page-break-inside: avoid; }
+        .section h2 {
+          margin: 0 0 0.55rem;
+          font-size: 1rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #44403c;
+          border-bottom: 1px solid #d6d3d1;
+          padding-bottom: 0.35rem;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td {
+          padding: 0.55rem 0.45rem;
+          border-bottom: 1px solid #e7e5e4;
+          text-align: left;
+          vertical-align: top;
+          font-size: 0.92rem;
+        }
+        th {
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #57534e;
+          background: #fafaf9;
+        }
+        td.amount, th.amount { text-align: right; white-space: nowrap; }
+        td.center, th.center { text-align: center; }
+        .notes { color: #57534e; white-space: pre-wrap; }
+        .totals {
+          margin-top: 1.5rem;
+          border-top: 1.5px solid #a8a29e;
+          padding-top: 0.8rem;
+          display: flex;
+          justify-content: flex-end;
+        }
+        .totals-card {
+          min-width: 240px;
+          border: 1px solid #d6d3d1;
+          border-radius: 14px;
+          padding: 0.85rem 1rem;
+          background: #fafaf9;
+        }
+        .totals-card p { margin: 0; color: #57534e; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+        .totals-card strong { display: block; margin-top: 0.35rem; font-size: 1.35rem; color: #111827; }
+        .empty {
+          margin-top: 1.5rem;
+          border: 1px dashed #d6d3d1;
+          border-radius: 14px;
+          padding: 1rem;
+          color: #57534e;
+          background: #fafaf9;
+        }
+      </style>
+    </head>
+    <body>
+      <main>
+        <header>
+          <h1>Show Payout Sheet</h1>
+          <p class="meta">${escapeHtml(showName)}${showDate ? ` - ${escapeHtml(formatShowDate(showDate))}` : ""}</p>
+        </header>
+        ${
+          payoutItems.length === 0
+            ? `<div class="empty">No payout items added yet.</div>`
+            : groupedItems
+                .map(
+                  (group) => `
+                    <section class="section">
+                      <h2>${escapeHtml(group.category)}</h2>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Payee</th>
+                            <th>Description / Notes</th>
+                            <th class="amount">Amount</th>
+                            <th class="center">Paid</th>
+                            <th>Payment Method</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${group.items
+                            .map(
+                              (item) => `
+                                <tr>
+                                  <td>${escapeHtml(item.payee_name)}</td>
+                                  <td class="notes">${escapeHtml(item.description ?? "")}</td>
+                                  <td class="amount">${escapeHtml(formatCurrency(item.amount))}</td>
+                                  <td class="center">${item.paid ? "Yes" : "No"}</td>
+                                  <td>${escapeHtml(item.payment_method ?? "")}</td>
+                                </tr>
+                              `,
+                            )
+                            .join("")}
+                        </tbody>
+                      </table>
+                    </section>
+                  `,
+                )
+                .join("")
+        }
+        <section class="totals">
+          <div class="totals-card">
+            <p>Total Payout Amount</p>
+            <strong>${escapeHtml(formatCurrency(totalAmount))}</strong>
+          </div>
+        </section>
+      </main>
+    </body>
+  </html>`;
 }
 
 type YearlyFinanceQuickTotalDefinition = {
@@ -1750,6 +2026,144 @@ function buildYearToDateFinanceReportHtml({
             </div>
           </section>
         </section>
+      </main>
+    </body>
+  </html>`;
+}
+
+function buildShowSponsorLogoSheetHtml({
+  showName,
+  showDate,
+  sponsors,
+  logoUrl,
+}: {
+  showName: string;
+  showDate: string | null;
+  sponsors: ShowSponsor[];
+  logoUrl: string;
+}) {
+  const printableSponsors = sponsors.filter((sponsor) =>
+    Boolean(sponsor.sponsor?.name?.trim() || sponsor.sponsor?.logo_url?.trim()),
+  );
+
+  return `<!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>Sponsor Logo Sheet</title>
+      <style>
+        :root {
+          color-scheme: light;
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          background: #ffffff;
+          color: #111827;
+          font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sheet {
+          padding: 0.6in 0.55in 0.5in;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 0.35in;
+        }
+        .header img {
+          max-height: 110px;
+          width: auto;
+          display: block;
+          margin: 0 auto 0.2in;
+        }
+        .header h1 {
+          margin: 0;
+          font-size: 1.6rem;
+          font-weight: 800;
+          letter-spacing: 0.01em;
+        }
+        .header p {
+          margin: 0.12rem 0 0;
+          color: #4b5563;
+          font-size: 0.98rem;
+        }
+        .logo-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 0.24in;
+          align-items: stretch;
+        }
+        .logo-card {
+          min-height: 150px;
+          border: 1px solid #e5e7eb;
+          border-radius: 18px;
+          background: #ffffff;
+          padding: 0.22in 0.18in;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        .logo-card img {
+          max-width: 100%;
+          max-height: 92px;
+          object-fit: contain;
+          display: block;
+        }
+        .logo-card .name {
+          font-size: 1rem;
+          font-weight: 700;
+          line-height: 1.35;
+          color: #111827;
+        }
+        .empty {
+          border: 1px dashed #d1d5db;
+          border-radius: 18px;
+          padding: 0.3in;
+          text-align: center;
+          color: #6b7280;
+        }
+        @page {
+          size: auto;
+          margin: 0.45in;
+        }
+        @media print {
+          body {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .sheet {
+            padding: 0;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <main class="sheet">
+        <header class="header">
+          <img src="${escapeHtml(logoUrl)}" alt="Cumberland Mountain Music Show logo" />
+          <h1>This Cumberland Mountain Music Show Is Proudly Sponsored By</h1>
+        </header>
+        ${
+          printableSponsors.length === 0
+            ? `<div class="empty">No sponsor logos or sponsor names are attached to this show yet.</div>`
+            : `<section class="logo-grid">
+                ${printableSponsors
+                  .map((sponsor) => {
+                    const sponsorName = sponsor.sponsor?.name?.trim() || "Show Sponsor";
+                    const sponsorLogoUrl = sponsor.sponsor?.logo_url?.trim() || "";
+
+                    if (sponsorLogoUrl) {
+                      return `<article class="logo-card"><img src="${escapeHtml(sponsorLogoUrl)}" alt="${escapeHtml(sponsorName)} logo" /></article>`;
+                    }
+
+                    return `<article class="logo-card"><div class="name">${escapeHtml(sponsorName)}</div></article>`;
+                  })
+                  .join("")}
+              </section>`
+        }
       </main>
     </body>
   </html>`;
@@ -3852,13 +4266,17 @@ export function ShowPage({
   isPrivateGuestPortal = false,
 }: ShowPageProps) {
   const requestedAdminTab = normalizeAdminTab(initialAdminTab);
+  const shouldOpenPayoutsInsideFinance = initialAdminTab === "payouts";
   const [viewMode, setViewMode] = useState<ViewMode>(initialRole);
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(
-    requestedAdminTab ?? "overview",
+    requestedAdminTab ?? (shouldOpenPayoutsInsideFinance ? "finance" : "overview"),
   );
   const [activeBandTab, setActiveBandTab] = useState<BandTab>("setlist");
   const [activeGuestTab, setActiveGuestTab] = useState<GuestTab>("welcome");
   const [activeSponsorAdminTab, setActiveSponsorAdminTab] = useState<SponsorAdminTab>("library");
+  const [activeFinanceAdminSubTab, setActiveFinanceAdminSubTab] = useState<FinanceAdminSubTab>(
+    shouldOpenPayoutsInsideFinance ? "payouts" : "reporting",
+  );
   const [printMode, setPrintMode] = useState<PrintMode>("standard");
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [setlist, setSetlist] = useState<SetlistSong[]>([]);
@@ -3885,7 +4303,19 @@ export function ShowPage({
   const [sponsorLibrary, setSponsorLibrary] = useState<SponsorLibraryEntry[]>([]);
   const [potentialSponsors, setPotentialSponsors] = useState<PotentialSponsor[]>([]);
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
+  const [showChecklistItems, setShowChecklistItems] = useState<ShowChecklistItem[]>([]);
+  const [isShowChecklistOpen, setIsShowChecklistOpen] = useState(false);
+  const [newChecklistTask, setNewChecklistTask] = useState("");
+  const [activeChecklistActionId, setActiveChecklistActionId] = useState<string | null>(null);
   const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
+  const [payoutItems, setPayoutItems] = useState<ShowPayoutItem[]>([]);
+  const [payoutFormState, setPayoutFormState] = useState<PayoutFormState>(initialPayoutFormState);
+  const [editingPayoutItemId, setEditingPayoutItemId] = useState<string | null>(null);
+  const [editingPayoutFormState, setEditingPayoutFormState] = useState<PayoutFormState>(initialPayoutFormState);
+  const [payoutStatusMessage, setPayoutStatusMessage] = useState<string | null>(null);
+  const [payoutErrorMessage, setPayoutErrorMessage] = useState<string | null>(null);
+  const [activePayoutActionId, setActivePayoutActionId] = useState<string | null>(null);
+  const [isGuestPayoutQuickAddOpen, setIsGuestPayoutQuickAddOpen] = useState(false);
   const [yearlyFinanceShows, setYearlyFinanceShows] = useState<ShowRecord[]>([]);
   const [yearlyFinanceItems, setYearlyFinanceItems] = useState<ShowFinanceItem[]>([]);
   const [selectedYearlyFinanceYear, setSelectedYearlyFinanceYear] = useState(() => new Date().getUTCFullYear());
@@ -3957,6 +4387,7 @@ export function ShowPage({
   const [newSponsorLibraryFormState, setNewSponsorLibraryFormState] =
     useState<SponsorLibraryFormState>(initialSponsorLibraryFormState);
   const [isAddSponsorFormOpen, setIsAddSponsorFormOpen] = useState(false);
+  const [isAddShowSponsorFormOpen, setIsAddShowSponsorFormOpen] = useState(false);
   const [isSponsorProposalGeneratorOpen, setIsSponsorProposalGeneratorOpen] = useState(false);
   const [isPotentialSponsorsOpen, setIsPotentialSponsorsOpen] = useState(false);
   const [isPotentialSponsorFormOpen, setIsPotentialSponsorFormOpen] = useState(false);
@@ -4062,6 +4493,10 @@ export function ShowPage({
   const shouldShowGuestPromoMaterialsTab = isGuestView && activeGuestTab === "promo-materials";
   const shouldShowBandPromoMaterialsTab = isBandView && activeBandTab === "promo-materials";
   const shouldShowAdminFinanceTab = isAdminView && activeAdminTab === "finance";
+  const shouldShowFinanceReportingSubTab =
+    shouldShowAdminFinanceTab && activeFinanceAdminSubTab === "reporting";
+  const shouldShowFinancePayoutSubTab =
+    shouldShowAdminFinanceTab && activeFinanceAdminSubTab === "payouts";
   const shouldShowSongSubmissionForm = shouldShowAdminSongSubmission;
   const visiblePromoMaterials = promoMaterials.filter((material) => material.is_visible);
   const totalIncome = useMemo(
@@ -4088,6 +4523,18 @@ export function ShowPage({
     () => financeItems.filter((item) => item.type === "expense"),
     [financeItems],
   );
+  const payoutTotalAmount = useMemo(
+    () => payoutItems.reduce((sum, item) => sum + item.amount, 0),
+    [payoutItems],
+  );
+  const payoutItemsByCategory = useMemo(() => {
+    return payoutCategoryOptions
+      .map((category) => ({
+        category,
+        items: payoutItems.filter((item) => (item.category ?? "Other Expense") === category),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [payoutItems]);
   const availableYearlyFinanceYears = useMemo(() => {
     const years = new Set<number>([new Date().getUTCFullYear()]);
 
@@ -4590,6 +5037,304 @@ export function ShowPage({
     }
   }
 
+  function handlePayoutFormChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    mode: "new" | "edit",
+  ) {
+    const { name, value, type } = event.target;
+    const checked = "checked" in event.target ? event.target.checked : false;
+    const nextValue = type === "checkbox" ? checked : value;
+
+    if (mode === "edit") {
+      setEditingPayoutFormState((currentState) => ({
+        ...currentState,
+        [name]: nextValue,
+      }));
+      return;
+    }
+
+    setPayoutFormState((currentState) => ({
+      ...currentState,
+      [name]: nextValue,
+    }));
+  }
+
+  function startEditingPayoutItem(item: ShowPayoutItem) {
+    setEditingPayoutItemId(item.id);
+    setEditingPayoutFormState(buildPayoutFormState(item));
+    setPayoutErrorMessage(null);
+    setPayoutStatusMessage(null);
+  }
+
+  function cancelEditingPayoutItem() {
+    setEditingPayoutItemId(null);
+    setEditingPayoutFormState(initialPayoutFormState);
+  }
+
+  async function handleCreatePayoutItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!show) {
+      setPayoutErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const payeeName = payoutFormState.payeeName.trim();
+    const amount = parseFinanceAmountInput(payoutFormState.amount) ?? 0;
+
+    if (!payeeName) {
+      setPayoutErrorMessage("Payee name is required.");
+      return;
+    }
+
+    setPayoutErrorMessage(null);
+    setPayoutStatusMessage(null);
+    setActivePayoutActionId("create");
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_payout_items")
+        .insert({
+          show_id: show.id,
+          payee_name: payeeName,
+          category: normalizeOptionalField(payoutFormState.category),
+          description: normalizeOptionalField(payoutFormState.description),
+          amount,
+          paid: payoutFormState.paid,
+          payment_method: normalizeOptionalField(payoutFormState.paymentMethod),
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPayoutItems((currentItems) =>
+        sortShowPayoutItems([
+          ...currentItems,
+          normalizeShowPayoutItem(data as ShowPayoutItem),
+        ]),
+      );
+      setPayoutFormState(initialPayoutFormState);
+      setPayoutStatusMessage("Payout item added.");
+    } catch (error) {
+      setPayoutErrorMessage(getErrorMessage(error));
+    } finally {
+      setActivePayoutActionId(null);
+    }
+  }
+
+  async function handleSavePayoutItem(item: ShowPayoutItem) {
+    if (!show) {
+      setPayoutErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const payeeName = editingPayoutFormState.payeeName.trim();
+    const amount = parseFinanceAmountInput(editingPayoutFormState.amount);
+
+    if (!payeeName) {
+      setPayoutErrorMessage("Payee name is required.");
+      return;
+    }
+
+    if (amount === null) {
+      setPayoutErrorMessage("Enter a valid payout amount.");
+      return;
+    }
+
+    setPayoutErrorMessage(null);
+    setPayoutStatusMessage(null);
+    setActivePayoutActionId(`edit-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_payout_items")
+        .update({
+          payee_name: payeeName,
+          category: normalizeOptionalField(editingPayoutFormState.category),
+          description: normalizeOptionalField(editingPayoutFormState.description),
+          amount,
+          paid: editingPayoutFormState.paid,
+          payment_method: normalizeOptionalField(editingPayoutFormState.paymentMethod),
+        })
+        .eq("id", item.id)
+        .eq("show_id", show.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPayoutItems((currentItems) =>
+        sortShowPayoutItems(
+          currentItems.map((currentItem) =>
+            currentItem.id === item.id
+              ? normalizeShowPayoutItem(data as ShowPayoutItem)
+              : currentItem,
+          ),
+        ),
+      );
+      cancelEditingPayoutItem();
+      setPayoutStatusMessage("Payout item updated.");
+    } catch (error) {
+      setPayoutErrorMessage(getErrorMessage(error));
+    } finally {
+      setActivePayoutActionId(null);
+    }
+  }
+
+  async function handleTogglePayoutPaid(item: ShowPayoutItem) {
+    setPayoutErrorMessage(null);
+    setPayoutStatusMessage(null);
+    setActivePayoutActionId(`paid-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_payout_items")
+        .update({ paid: !item.paid })
+        .eq("id", item.id)
+        .eq("show_id", item.show_id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPayoutItems((currentItems) =>
+        sortShowPayoutItems(
+          currentItems.map((currentItem) =>
+            currentItem.id === item.id
+              ? normalizeShowPayoutItem(data as ShowPayoutItem)
+              : currentItem,
+          ),
+        ),
+      );
+    } catch (error) {
+      setPayoutErrorMessage(getErrorMessage(error));
+    } finally {
+      setActivePayoutActionId(null);
+    }
+  }
+
+  async function handleDeletePayoutItem(item: ShowPayoutItem) {
+    if (!show) {
+      setPayoutErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete this payout item?\n\n${item.payee_name}\n${formatCurrency(item.amount)}`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPayoutErrorMessage(null);
+    setPayoutStatusMessage(null);
+    setActivePayoutActionId(`delete-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("show_payout_items")
+        .delete()
+        .eq("id", item.id)
+        .eq("show_id", show.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setPayoutItems((currentItems) =>
+        currentItems.filter((currentItem) => currentItem.id !== item.id),
+      );
+
+      if (editingPayoutItemId === item.id) {
+        cancelEditingPayoutItem();
+      }
+
+      setPayoutStatusMessage("Payout item deleted.");
+    } catch (error) {
+      setPayoutErrorMessage(getErrorMessage(error));
+    } finally {
+      setActivePayoutActionId(null);
+    }
+  }
+
+  async function handleQuickAddGuestPayout(guestProfile: GuestProfile) {
+    if (!show) {
+      setPayoutErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const payeeName = guestProfile.name?.trim();
+
+    if (!payeeName) {
+      setPayoutErrorMessage("Guest name is missing.");
+      return;
+    }
+
+    setPayoutErrorMessage(null);
+    setPayoutStatusMessage(null);
+    setActivePayoutActionId(`guest-${guestProfile.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_payout_items")
+        .insert({
+          show_id: show.id,
+          payee_name: payeeName,
+          category: "Guest",
+          description: null,
+          amount: 0,
+          paid: false,
+          payment_method: null,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPayoutItems((currentItems) =>
+        sortShowPayoutItems([
+          ...currentItems,
+          normalizeShowPayoutItem(data as ShowPayoutItem),
+        ]),
+      );
+      setPayoutStatusMessage(`Added ${payeeName} to the payout sheet.`);
+    } catch (error) {
+      setPayoutErrorMessage(getErrorMessage(error));
+    } finally {
+      setActivePayoutActionId(null);
+    }
+  }
+
+  function handlePrintPayoutSheet() {
+    if (!show) {
+      setPayoutErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    setPayoutErrorMessage(null);
+    const printHtml = buildPayoutSheetHtml({
+      showName: show.name,
+      showDate: show.show_date,
+      payoutItems,
+    });
+    openPrintDocumentWindow(printHtml);
+  }
+
   function handlePrintFinanceReport() {
     const printWindow = window.open("", "_blank");
 
@@ -4659,7 +5404,9 @@ export function ShowPage({
           setSponsorLibrary([]);
           setPotentialSponsors([]);
           setShowSponsors([]);
+          setShowChecklistItems([]);
           setFinanceItems([]);
+          setPayoutItems([]);
           setPromoMaterials([]);
           setGuestProfiles([]);
           setMcBlockNotes([]);
@@ -4700,7 +5447,9 @@ export function ShowPage({
           sponsorLibraryRows,
           potentialSponsorRows,
           showSponsorRows,
+          checklistItemRows,
           financeItemRows,
+          payoutItemRows,
           promoMaterialRows,
           guestProfileRows,
           mcBlockNoteRows,
@@ -4796,6 +5545,16 @@ export function ShowPage({
             [],
           ),
           loadSection(
+            "checklistItems",
+            "show checklist items",
+            supabase
+              .from("show_checklist_items")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("created_at", { ascending: true }),
+            [],
+          ),
+          loadSection(
             "financeItems",
             "finance items",
             supabase
@@ -4803,6 +5562,16 @@ export function ShowPage({
               .select("*")
               .eq("show_id", showRecord.id)
               .order("created_at", { ascending: false }),
+            [],
+          ),
+          loadSection(
+            "payoutItems",
+            "show payout items",
+            supabase
+              .from("show_payout_items")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("created_at", { ascending: true }),
             [],
           ),
           loadSection(
@@ -4896,11 +5665,21 @@ export function ShowPage({
         setShowSponsors(
           mergeShowSponsorsWithLibrary((showSponsorRows ?? []) as ShowSponsor[], normalizedSponsorLibrary),
         );
+        setShowChecklistItems(
+          sortShowChecklistItems((checklistItemRows ?? []) as ShowChecklistItem[]),
+        );
         setFinanceItems(
           sortFinanceItems(
             ((financeItemRows ?? []) as Array<
               Omit<ShowFinanceItem, "amount"> & { amount: number | string | null }
             >).map((item) => normalizeShowFinanceItem(item)),
+          ),
+        );
+        setPayoutItems(
+          sortShowPayoutItems(
+            ((payoutItemRows ?? []) as Array<
+              Omit<ShowPayoutItem, "amount"> & { amount: number | string | null }
+            >).map((item) => normalizeShowPayoutItem(item)),
           ),
         );
         setPromoMaterials((promoMaterialRows ?? []) as PromoMaterial[]);
@@ -5069,6 +5848,10 @@ export function ShowPage({
         return lookup;
       }, {});
   }, [mcRunSections]);
+  const showReminderSummary = useMemo(
+    () => buildShowReminderSummary(show?.show_date ?? null),
+    [show?.show_date],
+  );
 
   useEffect(() => {
     setMcBlockNoteDrafts(buildBlockNoteDrafts(mcRunSections, mcBlockNotes));
@@ -6078,6 +6861,24 @@ export function ShowPage({
     }
   }
 
+  function handlePrintShowSponsorLogoSheet() {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    setActionError(null);
+
+    const printHtml = buildShowSponsorLogoSheetHtml({
+      showName: show.name,
+      showDate: show.show_date,
+      sponsors: showSponsors,
+      logoUrl: `${window.location.origin}/cmms-logo.png`,
+    });
+
+    openPrintDocumentWindow(printHtml);
+  }
+
   async function handleSetSponsorArchived(
     sponsor: SponsorLibraryEntry,
     isArchived: boolean,
@@ -6419,6 +7220,108 @@ export function ShowPage({
       setActionError(getErrorMessage(error));
     } finally {
       setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleAddShowChecklistTask(taskText: string) {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    const task = taskText.trim();
+
+    if (!task) {
+      setActionError("Task text is required.");
+      return;
+    }
+
+    setActionError(null);
+    setActiveChecklistActionId("create");
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_checklist_items")
+        .insert({
+          show_id: show.id,
+          task,
+          completed: false,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setShowChecklistItems((currentItems) =>
+        sortShowChecklistItems([...(currentItems ?? []), data as ShowChecklistItem]),
+      );
+      setNewChecklistTask("");
+      setIsShowChecklistOpen(true);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveChecklistActionId(null);
+    }
+  }
+
+  async function handleToggleShowChecklistItem(item: ShowChecklistItem) {
+    setActionError(null);
+    setActiveChecklistActionId(item.id);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_checklist_items")
+        .update({ completed: !item.completed })
+        .eq("id", item.id)
+        .eq("show_id", item.show_id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setShowChecklistItems((currentItems) =>
+        sortShowChecklistItems(
+          currentItems.map((currentItem) =>
+            currentItem.id === item.id ? (data as ShowChecklistItem) : currentItem,
+          ),
+        ),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveChecklistActionId(null);
+    }
+  }
+
+  async function handleDeleteShowChecklistItem(item: ShowChecklistItem) {
+    setActionError(null);
+    setActiveChecklistActionId(`delete-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("show_checklist_items")
+        .delete()
+        .eq("id", item.id)
+        .eq("show_id", item.show_id);
+
+      if (error) {
+        throw error;
+      }
+
+      setShowChecklistItems((currentItems) =>
+        currentItems.filter((currentItem) => currentItem.id !== item.id),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveChecklistActionId(null);
     }
   }
 
@@ -9193,6 +10096,45 @@ export function ShowPage({
                     <p className="mt-1 break-all text-sm text-stone-700">{show.slug}</p>
                   </div>
                 </div>
+
+                {showReminderSummary ? (
+                  <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Countdown & Reminders
+                      </p>
+                      <p className="text-lg font-semibold text-stone-900">
+                        {showReminderSummary.daysUntilShow >= 0
+                          ? `${showReminderSummary.daysUntilShow} days until show`
+                          : `${Math.abs(showReminderSummary.daysUntilShow)} days since show`}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Facebook Flyer / Ad
+                        </p>
+                        <p className="mt-1 text-sm text-stone-700">
+                          {showReminderSummary.isFacebookReminderActive
+                            ? "Facebook flyer/ad window is active"
+                            : `${showReminderSummary.facebookReminderDays} days until Facebook flyer/ad window starts`}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Banner / Sign
+                        </p>
+                        <p className="mt-1 text-sm text-stone-700">
+                          {showReminderSummary.isBannerReminderActive
+                            ? "Banner/sign window is active"
+                            : `${showReminderSummary.bannerReminderDays} days until banner/sign window starts`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </section>
 
               <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
@@ -9225,6 +10167,122 @@ export function ShowPage({
                 </div>
               </section>
             </div>
+
+            <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                    Show Checklist
+                  </p>
+                  <h3 className="text-lg font-semibold text-stone-900">Simple To-Do List</h3>
+                  <p className="text-sm text-stone-600">
+                    Track small show tasks without changing the rest of the admin workflow.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsShowChecklistOpen((currentValue) => !currentValue)}
+                  className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                >
+                  {isShowChecklistOpen ? "Hide Checklist" : "Show Checklist"}
+                </button>
+              </div>
+
+              <SectionLoadWarning message={dataSectionErrors.checklistItems} />
+
+              {isShowChecklistOpen ? (
+                <div className="mt-4 grid gap-4">
+                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Quick Add
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {showChecklistQuickAddTasks.map((task) => (
+                          <button
+                            key={task}
+                            type="button"
+                            onClick={() => void handleAddShowChecklistTask(task)}
+                            disabled={activeChecklistActionId === "create"}
+                            className="rounded-full border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {task}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <form
+                    className="rounded-2xl border border-stone-200 bg-white p-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleAddShowChecklistTask(newChecklistTask);
+                    }}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <input
+                        type="text"
+                        value={newChecklistTask}
+                        onChange={(event) => setNewChecklistTask(event.target.value)}
+                        className="flex-1 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Add a custom checklist task"
+                      />
+                      <button
+                        type="submit"
+                        disabled={activeChecklistActionId === "create"}
+                        className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                      >
+                        {activeChecklistActionId === "create" ? "Adding..." : "Add Task"}
+                      </button>
+                    </div>
+                  </form>
+
+                  {showChecklistItems.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
+                      No checklist items yet. Use Quick Add or create a custom task.
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {showChecklistItems.map((item) => (
+                        <article
+                          key={item.id}
+                          className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <label className="flex min-w-0 flex-1 items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={item.completed}
+                              onChange={() => void handleToggleShowChecklistItem(item)}
+                              disabled={activeChecklistActionId === item.id}
+                              className="mt-0.5 h-4 w-4 rounded border border-stone-300 text-emerald-700 focus:ring-emerald-600"
+                            />
+                            <div className="min-w-0">
+                              <p
+                                className={`text-sm font-medium ${
+                                  item.completed ? "text-stone-500 line-through" : "text-stone-900"
+                                }`}
+                              >
+                                {item.task}
+                              </p>
+                            </div>
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteShowChecklistItem(item)}
+                            disabled={activeChecklistActionId === `delete-${item.id}`}
+                            className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {activeChecklistActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </section>
 
             <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
               <div className="flex flex-col gap-1">
@@ -10301,200 +11359,224 @@ export function ShowPage({
                   Simple per-show income and expense tracking for settlement reporting.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handlePrintFinanceReport}
-                className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-              >
-                Print Finance Report
-              </button>
-            </div>
-
-            <SectionLoadWarning message={dataSectionErrors.financeItems} />
-
-            {financeStatusMessage ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                {financeStatusMessage}
-              </div>
-            ) : null}
-
-            {financeErrorMessage ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {financeErrorMessage}
-              </div>
-            ) : null}
-
-            <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-lg font-semibold text-stone-900">Yearly Finance Summary</h3>
-                  <p className="text-sm text-stone-600">
-                    Read-only income and expense totals across all shows in the selected year.
-                  </p>
-                </div>
+              {shouldShowFinanceReportingSubTab ? (
                 <button
                   type="button"
-                  onClick={() => setIsYearlyFinanceSummaryExpanded((currentValue) => !currentValue)}
+                  onClick={handlePrintFinanceReport}
                   className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
                 >
-                  {isYearlyFinanceSummaryExpanded ? "Hide Summary" : "Show Summary"}
+                  Print Finance Report
                 </button>
-              </div>
+              ) : null}
+            </div>
 
-              {isYearlyFinanceSummaryExpanded ? (
-                <>
-                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <label className="flex w-full max-w-[13rem] flex-col gap-2 text-sm font-medium text-stone-700">
-                      Year
-                      <select
-                        value={selectedYearlyFinanceYear}
-                        onChange={(event) => setSelectedYearlyFinanceYear(Number(event.target.value))}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      >
-                        {availableYearlyFinanceYears.map((year) => (
-                          <option key={year} value={year}>
-                            {year}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+            <div className="flex flex-wrap gap-2 rounded-2xl bg-stone-100 p-2">
+              {financeAdminSubTabItems.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveFinanceAdminSubTab(tab.key)}
+                  className={`flex min-w-[12rem] flex-1 flex-col rounded-xl px-4 py-3 text-left transition ${
+                    activeFinanceAdminSubTab === tab.key
+                      ? "bg-white text-stone-900 shadow-sm"
+                      : "bg-transparent text-stone-600 hover:bg-white/80 hover:text-stone-900"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">{tab.label}</span>
+                  <span className="mt-1 text-xs leading-5 text-stone-500">
+                    {tab.description}
+                  </span>
+                </button>
+              ))}
+            </div>
 
+            {shouldShowFinanceReportingSubTab ? (
+              <>
+                <SectionLoadWarning message={dataSectionErrors.financeItems} />
+
+                {financeStatusMessage ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    {financeStatusMessage}
+                  </div>
+                ) : null}
+
+                {financeErrorMessage ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {financeErrorMessage}
+                  </div>
+                ) : null}
+
+                <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-lg font-semibold text-stone-900">Yearly Finance Summary</h3>
+                      <p className="text-sm text-stone-600">
+                        Read-only income and expense totals across all shows in the selected year.
+                      </p>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => void handlePrintYearToDateFinanceReport()}
-                      disabled={isPrintingYearlyFinanceReport}
-                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                      onClick={() => setIsYearlyFinanceSummaryExpanded((currentValue) => !currentValue)}
+                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
                     >
-                      {isPrintingYearlyFinanceReport ? "Preparing Report..." : "Print Year-to-Date Report"}
+                      {isYearlyFinanceSummaryExpanded ? "Hide Summary" : "Show Summary"}
                     </button>
                   </div>
 
-                  {yearlyFinanceErrorMessage ? (
-                    <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                      Finance summary data could not be loaded: {yearlyFinanceErrorMessage}
-                    </div>
-                  ) : null}
+                  {isYearlyFinanceSummaryExpanded ? (
+                    <>
+                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <label className="flex w-full max-w-[13rem] flex-col gap-2 text-sm font-medium text-stone-700">
+                          Year
+                          <select
+                            value={selectedYearlyFinanceYear}
+                            onChange={(event) => setSelectedYearlyFinanceYear(Number(event.target.value))}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          >
+                            {availableYearlyFinanceYears.map((year) => (
+                              <option key={year} value={year}>
+                                {year}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
 
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      {
-                        label: "Total Income",
-                        value: formatCurrency(yearlyFinanceSummary.totalIncome),
-                        tone: "text-emerald-700",
-                      },
-                      {
-                        label: "Total Expenses",
-                        value: formatCurrency(yearlyFinanceSummary.totalExpenses),
-                        tone: "text-rose-700",
-                      },
-                      {
-                        label: "Net Profit / Loss",
-                        value: formatCurrency(yearlyFinanceSummary.net),
-                        tone: yearlyFinanceSummary.net < 0 ? "text-rose-700" : "text-stone-900",
-                      },
-                      {
-                        label: "Profit Margin",
-                        value: formatProfitMargin(
-                          yearlyFinanceSummary.totalIncome,
-                          yearlyFinanceSummary.net,
-                        ) ?? "N/A",
-                        tone: "text-stone-900",
-                      },
-                    ].map((card) => (
-                      <article key={card.label} className="rounded-2xl border border-stone-200 bg-white p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                          {card.label}
-                        </p>
-                        <p className={`mt-3 text-2xl font-semibold ${card.tone}`}>{card.value}</p>
-                      </article>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-                    <section className="rounded-2xl border border-stone-200 bg-white p-4">
-                      <div className="flex flex-col gap-1">
-                        <h4 className="text-base font-semibold text-stone-900">Shows in {selectedYearlyFinanceYear}</h4>
-                        <p className="text-sm text-stone-600">
-                          Archived and historical shows are included when they fall in the selected year.
-                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void handlePrintYearToDateFinanceReport()}
+                          disabled={isPrintingYearlyFinanceReport}
+                          className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                        >
+                          {isPrintingYearlyFinanceReport ? "Preparing Report..." : "Print Year-to-Date Report"}
+                        </button>
                       </div>
 
-                      {selectedYearlyFinanceShows.length === 0 ? (
-                        <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                          No shows with dates were found for {selectedYearlyFinanceYear}.
+                      {yearlyFinanceErrorMessage ? (
+                        <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                          Finance summary data could not be loaded: {yearlyFinanceErrorMessage}
                         </div>
-                      ) : (
-                        <div className="mt-4 grid gap-3">
-                          {yearlyFinanceSummary.showBreakdown.map(({ show: yearlyShow, income, expenses, net }) => (
-                            <article key={yearlyShow.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                <div className="min-w-0">
-                                  <p className="text-base font-semibold text-stone-900">{yearlyShow.name}</p>
-                                  <p className="mt-1 text-sm text-stone-600">{formatShowDate(yearlyShow.show_date)}</p>
-                                </div>
+                      ) : null}
 
-                                <div className="grid gap-2 text-sm sm:text-right">
-                                  <p className="text-stone-600">
-                                    <span className="font-medium text-stone-900">Income:</span> {formatCurrency(income)}
-                                  </p>
-                                  <p className="text-stone-600">
-                                    <span className="font-medium text-stone-900">Expenses:</span> {formatCurrency(expenses)}
-                                  </p>
-                                  <p className={`font-semibold ${net < 0 ? "text-rose-700" : "text-stone-900"}`}>
-                                    Net: {formatCurrency(net)}
-                                  </p>
-                                </div>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-
-                    <section className="rounded-2xl border border-stone-200 bg-white p-4">
-                      <div className="flex flex-col gap-1">
-                        <h4 className="text-base font-semibold text-stone-900">Category Totals</h4>
-                        <p className="text-sm text-stone-600">
-                          Read-only rollup of saved income and expense categories for the year.
-                        </p>
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                          {
+                            label: "Total Income",
+                            value: formatCurrency(yearlyFinanceSummary.totalIncome),
+                            tone: "text-emerald-700",
+                          },
+                          {
+                            label: "Total Expenses",
+                            value: formatCurrency(yearlyFinanceSummary.totalExpenses),
+                            tone: "text-rose-700",
+                          },
+                          {
+                            label: "Net Profit / Loss",
+                            value: formatCurrency(yearlyFinanceSummary.net),
+                            tone: yearlyFinanceSummary.net < 0 ? "text-rose-700" : "text-stone-900",
+                          },
+                          {
+                            label: "Profit Margin",
+                            value: formatProfitMargin(
+                              yearlyFinanceSummary.totalIncome,
+                              yearlyFinanceSummary.net,
+                            ) ?? "N/A",
+                            tone: "text-stone-900",
+                          },
+                        ].map((card) => (
+                          <article key={card.label} className="rounded-2xl border border-stone-200 bg-white p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              {card.label}
+                            </p>
+                            <p className={`mt-3 text-2xl font-semibold ${card.tone}`}>{card.value}</p>
+                          </article>
+                        ))}
                       </div>
 
-                      {yearlyFinanceSummary.categoryTotals.length === 0 ? (
-                        <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                          No categorized finance items found for {selectedYearlyFinanceYear}.
-                        </div>
-                      ) : (
-                        <div className="mt-4 grid gap-2">
-                          {yearlyFinanceSummary.categoryTotals.map((item) => (
-                            <div
-                              key={`${item.type}-${item.category}`}
-                              className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5"
-                            >
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-stone-900">{item.category}</p>
-                                <p className="text-xs uppercase tracking-[0.12em] text-stone-500">{item.type}</p>
-                              </div>
-                              <p className={`text-sm font-semibold ${item.type === "expense" ? "text-rose-700" : "text-emerald-700"}`}>
-                                {formatCurrency(item.amount)}
-                              </p>
+                      <div className="mt-4 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+                        <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                          <div className="flex flex-col gap-1">
+                            <h4 className="text-base font-semibold text-stone-900">Shows in {selectedYearlyFinanceYear}</h4>
+                            <p className="text-sm text-stone-600">
+                              Archived and historical shows are included when they fall in the selected year.
+                            </p>
+                          </div>
+
+                          {selectedYearlyFinanceShows.length === 0 ? (
+                            <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                              No shows with dates were found for {selectedYearlyFinanceYear}.
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-                  </div>
-                </>
-              ) : null}
-            </section>
+                          ) : (
+                            <div className="mt-4 grid gap-3">
+                              {yearlyFinanceSummary.showBreakdown.map(({ show: yearlyShow, income, expenses, net }) => (
+                                <article key={yearlyShow.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="text-base font-semibold text-stone-900">{yearlyShow.name}</p>
+                                      <p className="mt-1 text-sm text-stone-600">{formatShowDate(yearlyShow.show_date)}</p>
+                                    </div>
 
-            <div className="flex flex-col gap-1">
-              <h3 className="text-lg font-semibold text-stone-900">Current Show Finance</h3>
-              <p className="text-sm text-stone-600">
-                Income and expenses below apply only to this show.
-              </p>
-            </div>
+                                    <div className="grid gap-2 text-sm sm:text-right">
+                                      <p className="text-stone-600">
+                                        <span className="font-medium text-stone-900">Income:</span> {formatCurrency(income)}
+                                      </p>
+                                      <p className="text-stone-600">
+                                        <span className="font-medium text-stone-900">Expenses:</span> {formatCurrency(expenses)}
+                                      </p>
+                                      <p className={`font-semibold ${net < 0 ? "text-rose-700" : "text-stone-900"}`}>
+                                        Net: {formatCurrency(net)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          )}
+                        </section>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                        <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                          <div className="flex flex-col gap-1">
+                            <h4 className="text-base font-semibold text-stone-900">Category Totals</h4>
+                            <p className="text-sm text-stone-600">
+                              Read-only rollup of saved income and expense categories for the year.
+                            </p>
+                          </div>
+
+                          {yearlyFinanceSummary.categoryTotals.length === 0 ? (
+                            <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                              No categorized finance items found for {selectedYearlyFinanceYear}.
+                            </div>
+                          ) : (
+                            <div className="mt-4 grid gap-2">
+                              {yearlyFinanceSummary.categoryTotals.map((item) => (
+                                <div
+                                  key={`${item.type}-${item.category}`}
+                                  className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-stone-900">{item.category}</p>
+                                    <p className="text-xs uppercase tracking-[0.12em] text-stone-500">{item.type}</p>
+                                  </div>
+                                  <p className={`text-sm font-semibold ${item.type === "expense" ? "text-rose-700" : "text-emerald-700"}`}>
+                                    {formatCurrency(item.amount)}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      </div>
+                    </>
+                  ) : null}
+                </section>
+
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Current Show Finance</h3>
+                  <p className="text-sm text-stone-600">
+                    Income and expenses below apply only to this show.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                   Total Income
@@ -10964,6 +12046,8 @@ export function ShowPage({
                 )}
               </section>
             </div>
+          </>
+        ) : null}
           </section>
         ) : null}
 
@@ -11281,6 +12365,419 @@ export function ShowPage({
                 </div>
               )}
             </section>
+          </section>
+        ) : null}
+
+        {shouldShowFinancePayoutSubTab ? (
+          <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Show Payout Sheet</h2>
+                <p className="text-sm text-stone-600">
+                  Track simple night-of-show payouts without changing the existing finance workflow.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handlePrintPayoutSheet}
+                className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+              >
+                Print Payout Sheet
+              </button>
+            </div>
+
+            <SectionLoadWarning message={dataSectionErrors.payoutItems} />
+
+            {payoutStatusMessage ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {payoutStatusMessage}
+              </div>
+            ) : null}
+
+            {payoutErrorMessage ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {payoutErrorMessage}
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Total Payout
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-stone-900">
+                  {formatCurrency(payoutTotalAmount)}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Paid Items
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-emerald-700">
+                  {payoutItems.filter((item) => item.paid).length}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Unpaid Items
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-rose-700">
+                  {payoutItems.filter((item) => !item.paid).length}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  Total Rows
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-stone-900">
+                  {payoutItems.length}
+                </p>
+              </article>
+            </div>
+
+            <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+              <section className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Add Payout Item</h3>
+                  <p className="text-sm text-stone-600">
+                    Add band, guest, hospitality, printing, and other night-of-show payout rows.
+                  </p>
+                </div>
+
+                <form className="grid gap-3" onSubmit={(event) => void handleCreatePayoutItem(event)}>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Payee Name
+                      <input
+                        type="text"
+                        name="payeeName"
+                        value={payoutFormState.payeeName}
+                        onChange={(event) => handlePayoutFormChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Performer or vendor"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Category
+                      <select
+                        name="category"
+                        value={payoutFormState.category}
+                        onChange={(event) => handlePayoutFormChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Choose a category</option>
+                        {payoutCategoryOptions.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,11rem)]">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Description / Notes
+                      <textarea
+                        name="description"
+                        value={payoutFormState.description}
+                        onChange={(event) => handlePayoutFormChange(event, "new")}
+                        className="min-h-20 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Optional details"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Amount
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        name="amount"
+                        value={payoutFormState.amount}
+                        onChange={(event) => handlePayoutFormChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="0.00"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Payment Method
+                      <select
+                        name="paymentMethod"
+                        value={payoutFormState.paymentMethod}
+                        onChange={(event) => handlePayoutFormChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Choose a payment method</option>
+                        {payoutPaymentMethodOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-700">
+                      <input
+                        type="checkbox"
+                        name="paid"
+                        checked={payoutFormState.paid}
+                        onChange={(event) => handlePayoutFormChange(event, "new")}
+                        className="h-4 w-4 rounded border-stone-300 text-emerald-700"
+                      />
+                      Mark as already paid
+                    </label>
+                  </div>
+
+                  <div className="flex justify-start">
+                    <button
+                      type="submit"
+                      disabled={activePayoutActionId === "create"}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {activePayoutActionId === "create" ? "Adding..." : "Add Payout Item"}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h4 className="text-base font-semibold text-stone-900">Quick Add Guests</h4>
+                      <p className="mt-1 text-sm text-stone-600">
+                        Add attached guests as payout rows with category set to Guest.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsGuestPayoutQuickAddOpen((currentValue) => !currentValue)}
+                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                    >
+                      {isGuestPayoutQuickAddOpen ? "Hide Guests" : "Quick Add Guests"}
+                    </button>
+                  </div>
+
+                  {isGuestPayoutQuickAddOpen ? (
+                    guestProfiles.length === 0 ? (
+                      <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+                        No guests are attached to this show yet.
+                      </div>
+                    ) : (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {guestProfiles.map((guestProfile) => (
+                          <button
+                            key={guestProfile.id}
+                            type="button"
+                            onClick={() => void handleQuickAddGuestPayout(guestProfile)}
+                            disabled={activePayoutActionId === `guest-${guestProfile.id}`}
+                            className="rounded-full border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {activePayoutActionId === `guest-${guestProfile.id}`
+                              ? "Adding..."
+                              : guestProfile.name?.trim() || "Unnamed Guest"}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Saved Payout Items</h3>
+                  <p className="text-sm text-stone-600">
+                    Mark items paid, edit them, or remove them before printing the final sheet.
+                  </p>
+                </div>
+
+                {payoutItems.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
+                    No payout items added yet.
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {payoutItemsByCategory.map((group) => (
+                      <section key={group.category} className="grid gap-2">
+                        <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          {group.category}
+                        </h4>
+                        {group.items.map((item) => (
+                          <article key={item.id} className="rounded-xl border border-stone-200 bg-white px-4 py-4">
+                            {editingPayoutItemId === item.id ? (
+                              <div className="grid gap-3">
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Payee Name
+                                    <input
+                                      type="text"
+                                      name="payeeName"
+                                      value={editingPayoutFormState.payeeName}
+                                      onChange={(event) => handlePayoutFormChange(event, "edit")}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      required
+                                    />
+                                  </label>
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Category
+                                    <select
+                                      name="category"
+                                      value={editingPayoutFormState.category}
+                                      onChange={(event) => handlePayoutFormChange(event, "edit")}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    >
+                                      <option value="">Choose a category</option>
+                                      {payoutCategoryOptions.map((category) => (
+                                        <option key={category} value={category}>
+                                          {category}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,11rem)]">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Description / Notes
+                                    <textarea
+                                      name="description"
+                                      value={editingPayoutFormState.description}
+                                      onChange={(event) => handlePayoutFormChange(event, "edit")}
+                                      className="min-h-20 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    />
+                                  </label>
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Amount
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      min="0"
+                                      step="0.01"
+                                      name="amount"
+                                      value={editingPayoutFormState.amount}
+                                      onChange={(event) => handlePayoutFormChange(event, "edit")}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      required
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Payment Method
+                                    <select
+                                      name="paymentMethod"
+                                      value={editingPayoutFormState.paymentMethod}
+                                      onChange={(event) => handlePayoutFormChange(event, "edit")}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    >
+                                      <option value="">Choose a payment method</option>
+                                      {payoutPaymentMethodOptions.map((option) => (
+                                        <option key={option} value={option}>
+                                          {option}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label className="flex items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-medium text-stone-700">
+                                    <input
+                                      type="checkbox"
+                                      name="paid"
+                                      checked={editingPayoutFormState.paid}
+                                      onChange={(event) => handlePayoutFormChange(event, "edit")}
+                                      className="h-4 w-4 rounded border-stone-300 text-emerald-700"
+                                    />
+                                    Mark as paid
+                                  </label>
+                                </div>
+
+                                <div className="flex flex-col gap-3 sm:flex-row">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSavePayoutItem(item)}
+                                    disabled={activePayoutActionId === `edit-${item.id}`}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    {activePayoutActionId === `edit-${item.id}` ? "Saving..." : "Save Payout"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingPayoutItem}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h4 className="text-sm font-semibold text-stone-900">{item.payee_name}</h4>
+                                    <span
+                                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                        item.paid
+                                          ? "bg-emerald-100 text-emerald-800"
+                                          : "bg-amber-100 text-amber-800"
+                                      }`}
+                                    >
+                                      {item.paid ? "Paid" : "Unpaid"}
+                                    </span>
+                                    {item.payment_method ? (
+                                      <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
+                                        {item.payment_method}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {item.description?.trim() ? (
+                                    <p className="mt-1 whitespace-pre-wrap text-sm text-stone-600">{item.description}</p>
+                                  ) : null}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2.5 sm:justify-end">
+                                  <p className="min-w-[7rem] text-sm font-semibold text-stone-900 sm:text-right">
+                                    {formatCurrency(item.amount)}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleTogglePayoutPaid(item)}
+                                    disabled={activePayoutActionId === `paid-${item.id}`}
+                                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {item.paid ? "Mark Unpaid" : "Mark Paid"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingPayoutItem(item)}
+                                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeletePayoutItem(item)}
+                                    disabled={activePayoutActionId === `delete-${item.id}`}
+                                    className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {activePayoutActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </article>
+                        ))}
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
           </section>
         ) : null}
 
@@ -12471,132 +13968,154 @@ export function ShowPage({
                   </p>
                 </div>
 
-                <form className="grid gap-4" onSubmit={handleAssignSponsorToShow}>
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Sponsor from Library
-                    <select
-                      name="sponsorId"
-                      value={showSponsorAssignmentFormState.sponsorId}
-                      onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      required
-                    >
-                      <option value="">Choose a sponsor</option>
-                      {activeSponsorLibrary.map((sponsor) => (
-                        <option key={sponsor.id} value={sponsor.id}>
-                          {sponsor.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                <div className="flex justify-start">
+                  <button
+                    type="button"
+                    onClick={handlePrintShowSponsorLogoSheet}
+                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    Print Sponsor Logo Sheet
+                  </button>
+                </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex justify-start">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddShowSponsorFormOpen((currentValue) => !currentValue)}
+                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    {isAddShowSponsorFormOpen ? "Hide Add Sponsor Form" : "Add Sponsor From Library"}
+                  </button>
+                </div>
+
+                {isAddShowSponsorFormOpen ? (
+                  <form className="grid gap-4" onSubmit={handleAssignSponsorToShow}>
                     <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Placement Type
+                      Sponsor from Library
                       <select
-                        name="placementType"
-                        value={showSponsorAssignmentFormState.placementType}
+                        name="sponsorId"
+                        value={showSponsorAssignmentFormState.sponsorId}
                         onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
                         className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        required
                       >
-                        {sponsorPlacementOptions.map((option) => (
-                          <option key={option.value || "unset"} value={option.value}>
-                            {option.label}
+                        <option value="">Choose a sponsor</option>
+                        {activeSponsorLibrary.map((sponsor) => (
+                          <option key={sponsor.id} value={sponsor.id}>
+                            {sponsor.name}
                           </option>
                         ))}
                       </select>
                     </label>
 
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Placement Type
+                        <select
+                          name="placementType"
+                          value={showSponsorAssignmentFormState.placementType}
+                          onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        >
+                          {sponsorPlacementOptions.map((option) => (
+                            <option key={option.value || "unset"} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Linked Performer
+                        <input
+                          type="text"
+                          name="linkedPerformer"
+                          value={showSponsorAssignmentFormState.linkedPerformer}
+                          onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Optional performer name for before/after performer slots"
+                        />
+                      </label>
+                    </div>
+
                     <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Linked Performer
-                      <input
-                        type="text"
-                        name="linkedPerformer"
-                        value={showSponsorAssignmentFormState.linkedPerformer}
+                      Custom Note
+                      <textarea
+                        name="customNote"
+                        value={showSponsorAssignmentFormState.customNote}
                         onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Optional performer name for before/after performer slots"
+                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Notes for this specific show placement"
                       />
                     </label>
-                  </div>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Custom Note
-                    <textarea
-                      name="customNote"
-                      value={showSponsorAssignmentFormState.customNote}
-                      onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
-                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Notes for this specific show placement"
-                    />
-                  </label>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Sponsor Type
+                        <select
+                          name="sponsorType"
+                          value={showSponsorAssignmentFormState.sponsorType}
+                          onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        >
+                          <option value="">Optional</option>
+                          {sponsorTypeOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Estimated Value
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          name="estimatedValue"
+                          value={showSponsorAssignmentFormState.estimatedValue}
+                          onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Optional dollar amount"
+                        />
+                      </label>
+                    </div>
+
                     <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Sponsor Type
-                      <select
-                        name="sponsorType"
-                        value={showSponsorAssignmentFormState.sponsorType}
+                      Contribution
+                      <textarea
+                        name="defaultContribution"
+                        value={showSponsorAssignmentFormState.defaultContribution}
                         onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="What this sponsor is providing for this show"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Recognition Notes
+                      <textarea
+                        name="recognitionNotes"
+                        value={showSponsorAssignmentFormState.recognitionNotes}
+                        onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="How this sponsor should be recognized for this show"
+                      />
+                    </label>
+
+                    <div className="flex justify-start">
+                      <button
+                        type="submit"
+                        disabled={activeSponsorActionId === "assign-show"}
+                        className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                       >
-                        <option value="">Optional</option>
-                        {sponsorTypeOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Estimated Value
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        name="estimatedValue"
-                        value={showSponsorAssignmentFormState.estimatedValue}
-                        onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Optional dollar amount"
-                      />
-                    </label>
-                  </div>
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Contribution
-                    <textarea
-                      name="defaultContribution"
-                      value={showSponsorAssignmentFormState.defaultContribution}
-                      onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
-                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="What this sponsor is providing for this show"
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Recognition Notes
-                    <textarea
-                      name="recognitionNotes"
-                      value={showSponsorAssignmentFormState.recognitionNotes}
-                      onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
-                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="How this sponsor should be recognized for this show"
-                    />
-                  </label>
-
-                  <div className="flex justify-start">
-                    <button
-                      type="submit"
-                      disabled={activeSponsorActionId === "assign-show"}
-                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                    >
-                      {activeSponsorActionId === "assign-show"
-                        ? "Assigning Sponsor..."
-                        : "Add Sponsor to This Show"}
-                    </button>
-                  </div>
-                </form>
+                        {activeSponsorActionId === "assign-show"
+                          ? "Assigning Sponsor..."
+                          : "Add Sponsor to This Show"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
 
                 {showSponsors.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
