@@ -332,8 +332,26 @@ function renderTextWithLinks(text: string | null | undefined): ReactNode {
       );
     }
 
-    return <Fragment key={`${part}-${index}`}>{part}</Fragment>;
+  return <Fragment key={`${part}-${index}`}>{part}</Fragment>;
   });
+}
+
+function appendReferenceUrlToNotes(
+  notes: string | null | undefined,
+  referenceUrl: string | null | undefined,
+) {
+  const cleanedNotes = notes?.trim() ?? "";
+  const cleanedUrl = referenceUrl?.trim() ?? "";
+
+  if (!cleanedUrl) {
+    return cleanedNotes || null;
+  }
+
+  if (cleanedNotes.includes(cleanedUrl)) {
+    return cleanedNotes;
+  }
+
+  return cleanedNotes ? `${cleanedNotes}\n\n${cleanedUrl}` : cleanedUrl;
 }
 
 type ShowInfoItem = {
@@ -1059,6 +1077,26 @@ function getErrorMessage(error: unknown) {
   }
 
   return "Something went wrong while talking to Supabase.";
+}
+
+function getGuestSongSaveErrorMessage(error: unknown) {
+  const baseMessage = getErrorMessage(error);
+
+  if (error && typeof error === "object") {
+    const errorObject = error as Record<string, unknown>;
+    const message = typeof errorObject.message === "string" ? errorObject.message : "";
+    const code = typeof errorObject.code === "string" ? errorObject.code : "";
+
+    if (
+      code === "PGRST204" ||
+      message.includes("Could not find the 'notes' column of 'show_guest_songs'") ||
+      message.includes("Could not find the 'lyrics' column of 'show_guest_songs'")
+    ) {
+      return "Guest song notes fields are missing from Supabase. Apply the show_guest_songs notes/lyrics migration, then try again.";
+    }
+  }
+
+  return baseMessage;
 }
 
 function logDataSectionError(sectionName: string, error: unknown) {
@@ -2612,6 +2650,13 @@ function buildBandSetlistMessage(showSlug: string) {
 ${bandLink}
 
 You can use this to review songs, setlist order, itinerary, and show notes.`;
+}
+
+function buildGuestSongsUrl(showSlug: string) {
+  const guestSongsPath = `/guest-songs/${encodeURIComponent(showSlug)}`;
+  const siteBaseUrl = getSiteBaseUrl();
+
+  return siteBaseUrl ? `${siteBaseUrl}${guestSongsPath}` : guestSongsPath;
 }
 
 function buildNotificationHtml({
@@ -4440,6 +4485,7 @@ export function ShowPage({
   const [copiedSongLinkId, setCopiedSongLinkId] = useState<string | null>(null);
   const [copiedGuestProfileLinkId, setCopiedGuestProfileLinkId] = useState<string | null>(null);
   const [copiedBandSetlistLink, setCopiedBandSetlistLink] = useState(false);
+  const [copiedGuestSongsLink, setCopiedGuestSongsLink] = useState(false);
   const [copiedGuestReminderEmailId, setCopiedGuestReminderEmailId] = useState<string | null>(null);
   const [copiedGuestShortTextId, setCopiedGuestShortTextId] = useState<string | null>(null);
   const [activeGuestAppearanceSaveId, setActiveGuestAppearanceSaveId] = useState<string | null>(null);
@@ -7634,7 +7680,10 @@ export function ShowPage({
       const normalizedSubmittedByRole = normalizeSubmittedByRole(viewMode);
 
       if (normalizedSubmittedByRole === "guest") {
-        const guestNotes = normalizeOptionalField(formState.notes);
+        const guestNotes = appendReferenceUrlToNotes(
+          normalizeOptionalField(formState.notes),
+          normalizedChartUrl,
+        );
         const guestLyrics = normalizeOptionalField(formState.lyrics);
 
         const nextGuestSongId = crypto.randomUUID();
@@ -7645,6 +7694,8 @@ export function ShowPage({
           key,
           tempo,
           song_type: songType,
+          notes: guestNotes,
+          lyrics: guestLyrics,
           submitted_by_name: guestSingerName || null,
         };
         const { error } = await supabase
@@ -7850,7 +7901,21 @@ export function ShowPage({
         setIsGuestSongFormOpen(false);
       }
     } catch (error) {
-      setActionError(getErrorMessage(error));
+      if (process.env.NODE_ENV !== "production") {
+        const errorObject =
+          error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+
+        console.error("Guest song submit failed.", {
+          error,
+          message: error instanceof Error ? error.message : errorObject?.message ?? null,
+          code: typeof errorObject?.code === "string" ? errorObject.code : null,
+          details: errorObject?.details ?? null,
+          hint: errorObject?.hint ?? null,
+          serialized: JSON.stringify(error, null, 2),
+        });
+      }
+
+      setActionError(getGuestSongSaveErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -8452,7 +8517,21 @@ export function ShowPage({
 
       setPendingSongs((currentSongs) => currentSongs.filter((song) => song.id !== songId));
     } catch (error) {
-      setActionError(getErrorMessage(error));
+      if (process.env.NODE_ENV !== "production") {
+        const errorObject =
+          error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+
+        console.error("Guest song save failed.", {
+          error,
+          message: error instanceof Error ? error.message : errorObject?.message ?? null,
+          code: typeof errorObject?.code === "string" ? errorObject.code : null,
+          details: errorObject?.details ?? null,
+          hint: errorObject?.hint ?? null,
+          serialized: JSON.stringify(error, null, 2),
+        });
+      }
+
+      setActionError(getGuestSongSaveErrorMessage(error));
     } finally {
       setActivePendingActionId(null);
     }
@@ -8665,6 +8744,8 @@ export function ShowPage({
         key: normalizeOptionalField(poolSongEditFormState.key),
         tempo: poolSongEditFormState.tempo || null,
         song_type: poolSongEditFormState.songType || null,
+        notes: normalizeOptionalField(poolSongEditFormState.notes ?? ""),
+        lyrics: normalizeOptionalField(poolSongEditFormState.lyrics ?? ""),
         submitted_by_name: guestAssociationName,
       };
       const { error } = await supabase
@@ -8681,8 +8762,6 @@ export function ShowPage({
         ...updatePayload,
         artist: guestAssociationName,
         song_key: updatePayload.key,
-        notes: normalizeOptionalField(poolSongEditFormState.notes ?? ""),
-        lyrics: normalizeOptionalField(poolSongEditFormState.lyrics ?? ""),
       };
 
       if (poolSongMp3File) {
@@ -9271,6 +9350,38 @@ export function ShowPage({
     } catch (error) {
       setActionError(getErrorMessage(error));
     }
+  }
+
+  async function handleCopyGuestSongsLink() {
+    if (!show?.slug) {
+      setActionError("Guest songs link is not available until this show has a valid slug.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildGuestSongsUrl(show.slug));
+      setActionError(null);
+      setCopiedGuestSongsLink(true);
+
+      window.setTimeout(() => {
+        setCopiedGuestSongsLink(false);
+      }, 1800);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    }
+  }
+
+  function handleOpenGuestSongsLink() {
+    if (!show?.slug) {
+      setActionError("Guest songs link is not available until this show has a valid slug.");
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.open(buildGuestSongsUrl(show.slug), "_blank", "noopener,noreferrer");
   }
 
   async function handleCopyGuestProfileLink(profile: GuestProfile) {
@@ -14385,13 +14496,29 @@ export function ShowPage({
 
           <div className="print-hidden flex flex-wrap gap-3">
             {isAdminView ? (
-              <button
-                type="button"
-                onClick={handleCopyBandSetlistLink}
-                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-              >
-                {copiedBandSetlistLink ? "Band setlist link copied!" : "Copy Band Setlist Link"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleCopyBandSetlistLink}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  {copiedBandSetlistLink ? "Band setlist link copied!" : "Copy Band Setlist Link"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyGuestSongsLink}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  {copiedGuestSongsLink ? "Guest songs link copied!" : "Copy Guest Songs Link"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenGuestSongsLink}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  Open Guest Songs Link
+                </button>
+              </>
             ) : null}
             <button
               type="button"
@@ -15703,7 +15830,9 @@ export function ShowPage({
                           </div>
 
                           {song.notes ? (
-                            <p className="text-sm text-stone-600">{song.notes}</p>
+                            <p className="whitespace-pre-wrap text-sm text-stone-600">
+                              {renderTextWithLinks(song.notes)}
+                            </p>
                           ) : null}
 
                           {song.lyrics ? (
@@ -16014,7 +16143,9 @@ export function ShowPage({
                             </div>
 
                             {song.notes ? (
-                              <p className="text-sm text-stone-600">{song.notes}</p>
+                              <p className="whitespace-pre-wrap text-sm text-stone-600">
+                                {renderTextWithLinks(song.notes)}
+                              </p>
                             ) : null}
 
                             {song.lyrics ? (
