@@ -4490,6 +4490,9 @@ export function ShowPage({
   const [copiedGuestShortTextId, setCopiedGuestShortTextId] = useState<string | null>(null);
   const [activeGuestAppearanceSaveId, setActiveGuestAppearanceSaveId] = useState<string | null>(null);
   const [activeGuestConfirmationSaveId, setActiveGuestConfirmationSaveId] = useState<string | null>(null);
+  const [openGuestAppearanceDetailsById, setOpenGuestAppearanceDetailsById] = useState<
+    Record<string, boolean>
+  >({});
   const [sponsorDeleteConfirmId, setSponsorDeleteConfirmId] = useState<string | null>(null);
   const [sponsorDeleteConfirmText, setSponsorDeleteConfirmText] = useState("");
 
@@ -15278,6 +15281,11 @@ export function ShowPage({
                   const lastReminderLabel = formatPortalStatusDateTime(
                     guestPortalStatus.lastReminderSentAt,
                   );
+                  const submittedSongsForProfile = pendingSongs.filter((song) =>
+                    isGuestSongForProfile(song, profile.name),
+                  );
+                  const isGuestAppearanceDetailsOpen =
+                    openGuestAppearanceDetailsById[profile.id] ?? false;
 
                   return (
                     <article
@@ -15394,97 +15402,180 @@ export function ShowPage({
                           </div>
 
                           <div className="rounded-xl border border-stone-200 bg-white p-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex flex-col gap-1">
+                                <h4 className="text-sm font-semibold text-stone-900">
+                                  Appearance Details
+                                </h4>
+                                <p className="text-xs text-stone-500">
+                                  Optional private details shown only on this guest&apos;s unique portal
+                                  link.
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenGuestAppearanceDetailsById((currentState) => ({
+                                    ...currentState,
+                                    [profile.id]: !isGuestAppearanceDetailsOpen,
+                                  }))
+                                }
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                {isGuestAppearanceDetailsOpen ? "Hide Appearance Details" : "Appearance Details"}
+                              </button>
+                            </div>
+
+                            {isGuestAppearanceDetailsOpen ? (
+                              <>
+                                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Agreed Fee
+                                    <input
+                                      type="text"
+                                      value={profile.agreed_fee ?? ""}
+                                      onChange={(event) =>
+                                        handleGuestAppearanceDetailsChange(
+                                          profile.id,
+                                          "agreed_fee",
+                                          event.target.value,
+                                        )}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      placeholder="Optional fee"
+                                    />
+                                  </label>
+
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Planned Song Count
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={profile.planned_song_count ?? ""}
+                                      onChange={(event) =>
+                                        handleGuestAppearanceDetailsChange(
+                                          profile.id,
+                                          "planned_song_count",
+                                          event.target.value,
+                                        )}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      placeholder="Optional count"
+                                    />
+                                  </label>
+
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Backup Song Count
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={profile.backup_song_count ?? ""}
+                                      onChange={(event) =>
+                                        handleGuestAppearanceDetailsChange(
+                                          profile.id,
+                                          "backup_song_count",
+                                          event.target.value,
+                                        )}
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      placeholder="Optional count"
+                                    />
+                                  </label>
+
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:col-span-2">
+                                    Appearance Notes
+                                    <textarea
+                                      value={profile.appearance_notes ?? ""}
+                                      onChange={(event) =>
+                                        handleGuestAppearanceDetailsChange(
+                                          profile.id,
+                                          "appearance_notes",
+                                          event.target.value,
+                                        )}
+                                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      placeholder="Optional private notes for this guest"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="mt-3 flex justify-start">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSaveGuestAppearanceDetails(profile.id)}
+                                    disabled={activeGuestAppearanceSaveId === profile.id}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {activeGuestAppearanceSaveId === profile.id
+                                      ? "Saving Appearance Details..."
+                                      : "Save Appearance Details"}
+                                  </button>
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
+
+                          <div className="rounded-xl border border-stone-200 bg-white p-3">
                             <div className="flex flex-col gap-1">
                               <h4 className="text-sm font-semibold text-stone-900">
-                                Appearance Details
+                                Submitted Songs
                               </h4>
                               <p className="text-xs text-stone-500">
-                                Optional private details shown only on this guest&apos;s unique portal
-                                link.
+                                Read-only guest-submitted songs for this show.
                               </p>
                             </div>
 
-                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Agreed Fee
-                                <input
-                                  type="text"
-                                  value={profile.agreed_fee ?? ""}
-                                  onChange={(event) =>
-                                    handleGuestAppearanceDetailsChange(
-                                      profile.id,
-                                      "agreed_fee",
-                                      event.target.value,
-                                    )}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  placeholder="Optional fee"
-                                />
-                              </label>
+                            {submittedSongsForProfile.length === 0 ? (
+                              <p className="mt-3 text-sm text-stone-500">No songs submitted yet.</p>
+                            ) : (
+                              <div className="mt-3 grid gap-3">
+                                {submittedSongsForProfile.map((song, songIndex) => (
+                                  <article
+                                    key={`${profile.id}-submitted-song-${song.id}`}
+                                    className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-3"
+                                  >
+                                    <div className="flex flex-col gap-1">
+                                      <p className="text-sm font-semibold text-stone-900">
+                                        {songIndex + 1}. {song.title}
+                                      </p>
+                                      <p className="text-sm text-stone-600">
+                                        {song.artist || song.submitted_by_name || "Guest Submission"}
+                                        {song.song_key ? ` • Key: ${song.song_key}` : ""}
+                                        {song.tempo ? ` • Tempo: ${song.tempo}` : ""}
+                                        {song.song_type ? ` • ${song.song_type}` : ""}
+                                      </p>
+                                    </div>
 
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Planned Song Count
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  value={profile.planned_song_count ?? ""}
-                                  onChange={(event) =>
-                                    handleGuestAppearanceDetailsChange(
-                                      profile.id,
-                                      "planned_song_count",
-                                      event.target.value,
-                                    )}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  placeholder="Optional count"
-                                />
-                              </label>
+                                    {song.notes?.trim() ? (
+                                      <div className="mt-3">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                          Notes
+                                        </p>
+                                        <p className="mt-1 whitespace-pre-wrap text-sm text-stone-700">
+                                          {renderTextWithLinks(song.notes)}
+                                        </p>
+                                      </div>
+                                    ) : null}
 
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Backup Song Count
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  value={profile.backup_song_count ?? ""}
-                                  onChange={(event) =>
-                                    handleGuestAppearanceDetailsChange(
-                                      profile.id,
-                                      "backup_song_count",
-                                      event.target.value,
-                                    )}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  placeholder="Optional count"
-                                />
-                              </label>
+                                    {song.lyrics?.trim() ? (
+                                      <div className="mt-3 rounded-lg border border-stone-200 bg-white px-3 py-3">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                          Lyrics
+                                        </p>
+                                        <p className="mt-1 whitespace-pre-wrap text-sm text-stone-700">
+                                          {song.lyrics}
+                                        </p>
+                                      </div>
+                                    ) : null}
 
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:col-span-2">
-                                Appearance Notes
-                                <textarea
-                                  value={profile.appearance_notes ?? ""}
-                                  onChange={(event) =>
-                                    handleGuestAppearanceDetailsChange(
-                                      profile.id,
-                                      "appearance_notes",
-                                      event.target.value,
-                                    )}
-                                  className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  placeholder="Optional private notes for this guest"
-                                />
-                              </label>
-                            </div>
-
-                            <div className="mt-3 flex justify-start">
-                              <button
-                                type="button"
-                                onClick={() => void handleSaveGuestAppearanceDetails(profile.id)}
-                                disabled={activeGuestAppearanceSaveId === profile.id}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {activeGuestAppearanceSaveId === profile.id
-                                  ? "Saving Appearance Details..."
-                                  : "Save Appearance Details"}
-                              </button>
-                            </div>
+                                    {song.mp3_path ? (
+                                      <div className="mt-3">
+                                        <SongMp3DownloadButton title={song.title} mp3Path={song.mp3_path} />
+                                      </div>
+                                    ) : null}
+                                  </article>
+                                ))}
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap gap-3 text-sm">
