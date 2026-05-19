@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getShowNameBySlug } from "@/lib/route-metadata";
 import { notFound } from "next/navigation";
 import { Fragment } from "react";
 
@@ -10,6 +12,23 @@ const urlOnlyPattern = /^https?:\/\/[^\s]+$/;
 type GuestSongsPageProps = {
   params: Promise<{ slug: string }>;
 };
+
+export async function generateMetadata({
+  params,
+}: GuestSongsPageProps): Promise<Metadata> {
+  const { slug } = await params;
+
+  try {
+    const showName = await getShowNameBySlug(slug);
+    return {
+      title: showName ? `Guest Songs | ${showName}` : "Guest Songs | StageFlow",
+    };
+  } catch {
+    return {
+      title: "Guest Songs | StageFlow",
+    };
+  }
+}
 
 type GuestSongsShow = {
   id: string;

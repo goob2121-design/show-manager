@@ -67,7 +67,7 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-stone-100 via-stone-50 to-stone-100 px-4 py-8 text-stone-900 sm:px-6 sm:py-10 lg:px-8">
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 px-4 py-8 text-slate-100 sm:px-6 sm:py-10 lg:px-8">
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <header className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
           <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
@@ -130,6 +130,11 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
             emptyMessage="No visible promo materials have been added for this show yet."
           />
         </section>
+
+        <p className="px-2 text-center text-xs leading-5 text-slate-400 sm:px-6">
+          Promo materials are provided for promotional use for the Cumberland Mountain Music Show. Please do not alter,
+          resell, or use these materials in a misleading way without permission.
+        </p>
       </section>
     </main>
   );

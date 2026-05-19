@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import { McPage } from "@/app/components/mc-page";
+import { getShowNameBySlug } from "@/lib/route-metadata";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type {
   GuestProfile,
@@ -15,6 +17,25 @@ type SetlistEntryRow = SetlistEntry & {
   library_song?: SongRecord | SongRecord[] | null;
   guest_song?: ShowGuestSong | ShowGuestSong[] | null;
 };
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+
+  try {
+    const showName = await getShowNameBySlug(slug);
+    return {
+      title: showName ? `MC Portal | ${showName}` : "MC Portal | StageFlow",
+    };
+  } catch {
+    return {
+      title: "MC Portal | StageFlow",
+    };
+  }
+}
 
 function mergeShowSponsorsWithLibrary(
   showSponsors: ShowSponsor[],

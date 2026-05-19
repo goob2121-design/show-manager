@@ -27,8 +27,10 @@ import {
 } from "@/app/components/promo-materials-view";
 import { createClient } from "@/lib/supabase/client";
 import type {
+  CompTicketFormState,
   FinanceItemFormState,
   FinanceItemType,
+  GuestListTicketType,
   GuestProfile,
   GuestProfileFormState,
   McBlockNote,
@@ -52,6 +54,7 @@ import type {
   ShowPayoutItem,
   ShowRecord,
   ShowChecklistItem,
+  ShowCompTicket,
   SongFormState,
   SongTempo,
   SongType,
@@ -92,6 +95,7 @@ type AdminTab =
   | "setlist"
   | "songs"
   | "guests"
+  | "comp-tickets"
   | "finance"
   | "promo-materials"
   | "sponsors"
@@ -112,6 +116,7 @@ const adminTabItems: Array<{ key: AdminTab; label: string }> = [
   { key: "setlist", label: "Setlist" },
   { key: "songs", label: "Songs" },
   { key: "guests", label: "Guests" },
+  { key: "comp-tickets", label: "Tickets / Check-In" },
   { key: "finance", label: "Finance" },
   { key: "promo-materials", label: "Promo Materials" },
   { key: "sponsors", label: "Sponsors" },
@@ -248,16 +253,34 @@ const initialPayoutFormState: PayoutFormState = {
   paymentMethod: "",
 };
 
+const initialCompTicketFormState: CompTicketFormState = {
+  guestName: "",
+  email: "",
+  ticketCount: "1",
+  ticketType: "complimentary",
+  orderId: "",
+  notes: "",
+  checkedInCount: "0",
+};
+
+const guestListTicketTypeOptions: Array<{ value: GuestListTicketType; label: string }> = [
+  { value: "paid_online", label: "Paid Online" },
+  { value: "complimentary", label: "Complimentary" },
+  { value: "manual", label: "Manual / Other" },
+];
+
 const promoMaterialCategoryOptions: Array<{
   value: PromoMaterialCategory;
   label: string;
 }> = [
   { value: "flyer", label: "Flyer" },
   { value: "social_graphic", label: "Social Graphic" },
-  { value: "poster", label: "Poster" },
   { value: "sponsor_graphic", label: "Sponsor Graphic" },
-  { value: "logo", label: "Logo" },
-  { value: "promo_photo", label: "Promo Photo" },
+  { value: "poster", label: "Poster" },
+  { value: "video", label: "Video" },
+  { value: "audio_promo", label: "Audio Promo" },
+  { value: "printable", label: "Printable" },
+  { value: "logo_branding", label: "Logo/Branding" },
   { value: "other", label: "Other" },
 ];
 
@@ -298,7 +321,9 @@ const payoutCategoryOptions = [
 const payoutPaymentMethodOptions = ["Cash", "Check", "Venmo", "Other"] as const;
 
 const defaultSingerName = "CMMS Band";
-const stageflowPortalVersion = "StageFlow v1.0.15";
+const stageflowPortalVersion = "StageFlow v1.1.15";
+const PAID_ONLINE_TICKET_PRICE = 8;
+const COMP_TICKET_VALUE = 10;
 const SONG_AUDIO_BUCKET = "promo-materials";
 const MAX_SONG_MP3_BYTES = 30 * 1024 * 1024;
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
@@ -1244,6 +1269,7 @@ type DataSectionKey =
   | "potentialSponsors"
   | "showSponsors"
   | "checklistItems"
+  | "compTickets"
   | "payoutItems"
   | "financeItems"
   | "promoMaterials"
@@ -1393,6 +1419,242 @@ function buildPayoutFormState(item: ShowPayoutItem): PayoutFormState {
 
 function sortShowPayoutItems(items: ShowPayoutItem[]) {
   return [...items].sort((itemA, itemB) => itemA.created_at.localeCompare(itemB.created_at));
+}
+
+function normalizeGuestListTicketType(value: string | null | undefined): GuestListTicketType {
+  return value === "paid_online" || value === "manual" || value === "complimentary"
+    ? value
+    : "complimentary";
+}
+
+function formatGuestListTicketTypeLabel(value: string | null | undefined) {
+  switch (value) {
+    case "paid_online":
+      return "Paid Online";
+    case "manual":
+      return "Manual / Other";
+    default:
+      return "Complimentary";
+  }
+}
+
+function normalizeShowCompTicket(
+  item: Omit<ShowCompTicket, "ticket_count" | "checked_in_count"> & {
+    ticket_count: number | string | null;
+    checked_in_count?: number | string | null;
+  },
+): ShowCompTicket {
+  const parsedTicketCount =
+    typeof item.ticket_count === "number"
+      ? item.ticket_count
+      : typeof item.ticket_count === "string"
+        ? Number.parseInt(item.ticket_count, 10)
+        : 1;
+  const normalizedTicketCount =
+    Number.isFinite(parsedTicketCount) && parsedTicketCount > 0 ? parsedTicketCount : 1;
+  const parsedCheckedInCount =
+    typeof item.checked_in_count === "number"
+      ? item.checked_in_count
+      : typeof item.checked_in_count === "string"
+        ? Number.parseInt(item.checked_in_count, 10)
+        : item.checked_in
+          ? normalizedTicketCount
+          : 0;
+  const normalizedCheckedInCount = Math.max(
+    0,
+    Math.min(
+      normalizedTicketCount,
+      Number.isFinite(parsedCheckedInCount) ? parsedCheckedInCount : 0,
+    ),
+  );
+
+  return {
+    ...item,
+    email: item.email ?? null,
+    ticket_count: normalizedTicketCount,
+    ticket_type: normalizeGuestListTicketType(item.ticket_type),
+    order_id: item.order_id ?? null,
+    notes: item.notes ?? null,
+    checked_in: normalizedCheckedInCount >= normalizedTicketCount,
+    checked_in_count: normalizedCheckedInCount,
+  };
+}
+
+function buildCompTicketFormState(item: ShowCompTicket): CompTicketFormState {
+  return {
+    guestName: item.guest_name,
+    email: item.email ?? "",
+    ticketCount: String(item.ticket_count),
+    ticketType: normalizeGuestListTicketType(item.ticket_type),
+    orderId: item.order_id ?? "",
+    notes: item.notes ?? "",
+    checkedInCount: String(item.checked_in_count),
+  };
+}
+
+function clampCheckedInCount(value: number, ticketCount: number) {
+  return Math.max(0, Math.min(ticketCount, value));
+}
+
+function getCompTicketCheckInStatus(item: ShowCompTicket) {
+  if (item.checked_in_count <= 0) {
+    return {
+      label: "Not Checked In",
+      className: "bg-amber-200 text-amber-900",
+    };
+  }
+
+  if (item.checked_in_count >= item.ticket_count) {
+    return {
+      label: `Fully Checked In: ${item.checked_in_count} of ${item.ticket_count}`,
+      className: "bg-emerald-100 text-emerald-800",
+    };
+  }
+
+  return {
+    label: `Partially Checked In: ${item.checked_in_count} of ${item.ticket_count}`,
+    className: "bg-sky-100 text-sky-800",
+  };
+}
+
+function sortShowCompTickets(items: ShowCompTicket[]) {
+  return [...items].sort((itemA, itemB) => itemA.created_at.localeCompare(itemB.created_at));
+}
+
+type ParsedGuestListImportEntry = {
+  guestName: string;
+  email: string;
+  ticketCount: number;
+  ticketType: GuestListTicketType;
+  orderId: string;
+  notes: string;
+  checkedInCount: number;
+};
+
+function normalizeImportedGuestName(value: string) {
+  const trimmedValue = value.trim().replace(/\s+/g, " ");
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  if (trimmedValue.includes(",")) {
+    const [lastName, firstName] = trimmedValue.split(",").map((part) => part.trim());
+    return [firstName, lastName].filter(Boolean).join(" ");
+  }
+
+  return trimmedValue;
+}
+
+function parseGuestListImportText(text: string): ParsedGuestListImportEntry[] {
+  const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+  const emailBeforeOrderIdPattern = /(\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?=(\d{6,}(?:-\d+)?\b))/gi;
+  const standaloneOrderIdPattern = /^\d{6,}(?:-\d+)?$/;
+  const normalizeGroupingText = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  const extractBaseOrderId = (value: string) =>
+    value.trim().match(standaloneOrderIdPattern)?.[0]?.split("-")[0] ?? "";
+  const normalizedText = text.replace(emailBeforeOrderIdPattern, "$1\n");
+  const lines = normalizedText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const ticketRecords: Array<{
+    baseOrderId: string;
+    guestName: string;
+    email: string;
+    notes: string;
+    sourceIndex: number;
+  }> = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const orderLine = lines[index];
+    const baseOrderId = extractBaseOrderId(orderLine);
+
+    if (!baseOrderId) {
+      continue;
+    }
+
+    const nameLine = lines[index + 1] ?? "";
+    const emailLine = lines[index + 2] ?? "";
+    const email = emailLine.match(emailPattern)?.[0] ?? "";
+    const guestName = normalizeImportedGuestName(nameLine);
+
+    if (!guestName || !email) {
+      continue;
+    }
+
+    ticketRecords.push({
+      baseOrderId,
+      guestName,
+      email,
+      notes: "",
+      sourceIndex: index,
+    });
+
+    index += 2;
+  }
+
+  const groupedEntries = new Map<
+    string,
+    {
+      guestName: string;
+      email: string;
+      ticketCount: number;
+      ticketType: GuestListTicketType;
+      orderId: string;
+      notes: string;
+      checkedInCount: number;
+      sourceIndex: number;
+    }
+  >();
+
+  ticketRecords.forEach((record, index) => {
+    const guestName = record.guestName || record.email || `Imported Order ${index + 1}`;
+    const email = record.email;
+    const baseOrderId = record.baseOrderId;
+    const normalizedEmail = normalizeGroupingText(email);
+    const normalizedGuestName = normalizeGroupingText(guestName);
+    const groupingKey = baseOrderId
+      ? `${baseOrderId}::${normalizedEmail || normalizedGuestName || "unknown"}`
+      : `${normalizedEmail || normalizedGuestName || `line-${index}`}`;
+    const existingEntry = groupedEntries.get(groupingKey);
+
+    if (existingEntry) {
+      existingEntry.ticketCount += 1;
+      if (!existingEntry.email && email) {
+        existingEntry.email = email;
+      }
+      if (
+        (!existingEntry.guestName || existingEntry.guestName.startsWith("Imported Order")) &&
+        guestName
+      ) {
+        existingEntry.guestName = guestName;
+      }
+      if (baseOrderId && !existingEntry.orderId) {
+        existingEntry.orderId = baseOrderId;
+      }
+      return;
+    }
+
+    groupedEntries.set(groupingKey, {
+      guestName,
+      email,
+      ticketCount: 1,
+      ticketType: "paid_online",
+      orderId: baseOrderId,
+      notes: record.notes,
+      checkedInCount: 0,
+      sourceIndex: record.sourceIndex,
+    });
+  });
+
+  return [...groupedEntries.values()]
+    .sort((entryA, entryB) => entryA.sourceIndex - entryB.sourceIndex)
+    .map(({ sourceIndex: _sourceIndex, ...entry }) => entry);
 }
 
 function sortShowChecklistItems(items: ShowChecklistItem[]) {
@@ -2484,6 +2746,14 @@ function getChartUrlValidationMessage(value: string | null | undefined) {
 }
 
 function normalizePromoMaterialCategory(value: string | null | undefined): PromoMaterialCategory {
+  if (value === "logo") {
+    return "logo_branding";
+  }
+
+  if (value === "promo_photo") {
+    return "other";
+  }
+
   return promoMaterialCategoryOptions.some((option) => option.value === value)
     ? (value as PromoMaterialCategory)
     : "other";
@@ -4352,6 +4622,15 @@ export function ShowPage({
   const [isShowChecklistOpen, setIsShowChecklistOpen] = useState(false);
   const [newChecklistTask, setNewChecklistTask] = useState("");
   const [activeChecklistActionId, setActiveChecklistActionId] = useState<string | null>(null);
+  const [compTickets, setCompTickets] = useState<ShowCompTicket[]>([]);
+  const [compTicketFormState, setCompTicketFormState] = useState<CompTicketFormState>(initialCompTicketFormState);
+  const [editingCompTicketId, setEditingCompTicketId] = useState<string | null>(null);
+  const [editingCompTicketFormState, setEditingCompTicketFormState] =
+    useState<CompTicketFormState>(initialCompTicketFormState);
+  const [compTicketImportText, setCompTicketImportText] = useState("");
+  const [compTicketStatusMessage, setCompTicketStatusMessage] = useState<string | null>(null);
+  const [compTicketErrorMessage, setCompTicketErrorMessage] = useState<string | null>(null);
+  const [activeCompTicketActionId, setActiveCompTicketActionId] = useState<string | null>(null);
   const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
   const [payoutItems, setPayoutItems] = useState<ShowPayoutItem[]>([]);
   const [payoutFormState, setPayoutFormState] = useState<PayoutFormState>(initialPayoutFormState);
@@ -4387,6 +4666,7 @@ export function ShowPage({
     initialPromoMaterialFormState,
   );
   const [promoMaterialFile, setPromoMaterialFile] = useState<File | null>(null);
+  const [promoMaterialFilter, setPromoMaterialFilter] = useState<"all" | PromoMaterialCategory>("all");
   const [editingPromoMaterialId, setEditingPromoMaterialId] = useState<string | null>(null);
   const [promoMaterialEditFormState, setPromoMaterialEditFormState] =
     useState<PromoMaterialFormState>(initialPromoMaterialFormState);
@@ -4401,6 +4681,7 @@ export function ShowPage({
   const [isBandSongFormOpen, setIsBandSongFormOpen] = useState(false);
   const [isAdminSongFormOpen, setIsAdminSongFormOpen] = useState(false);
   const [isGuestSongFormOpen, setIsGuestSongFormOpen] = useState(false);
+  const [isPromoMaterialFormOpen, setIsPromoMaterialFormOpen] = useState(false);
   const [poolSongMp3File, setPoolSongMp3File] = useState<File | null>(null);
   const [poolSongMp3InputKey, setPoolSongMp3InputKey] = useState(0);
   const [editingSponsorLibraryId, setEditingSponsorLibraryId] = useState<string | null>(null);
@@ -4488,6 +4769,9 @@ export function ShowPage({
   const [copiedGuestSongsLink, setCopiedGuestSongsLink] = useState(false);
   const [copiedGuestReminderEmailId, setCopiedGuestReminderEmailId] = useState<string | null>(null);
   const [copiedGuestShortTextId, setCopiedGuestShortTextId] = useState<string | null>(null);
+  const [selectedCompTicketIds, setSelectedCompTicketIds] = useState<string[]>([]);
+  const [isTicketImportOpen, setIsTicketImportOpen] = useState(false);
+  const [isManualTicketFormOpen, setIsManualTicketFormOpen] = useState(false);
   const [activeGuestAppearanceSaveId, setActiveGuestAppearanceSaveId] = useState<string | null>(null);
   const [activeGuestConfirmationSaveId, setActiveGuestConfirmationSaveId] = useState<string | null>(null);
   const [openGuestAppearanceDetailsById, setOpenGuestAppearanceDetailsById] = useState<
@@ -4525,6 +4809,12 @@ export function ShowPage({
     setGuestProfileFormState(buildGuestProfileFormStateFromProfile(lockedProfile));
   }, [guestProfiles, lockedGuestProfileId, viewMode]);
 
+  useEffect(() => {
+    setSelectedCompTicketIds((currentIds) =>
+      currentIds.filter((currentId) => compTickets.some((item) => item.id === currentId)),
+    );
+  }, [compTickets]);
+
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
   const portalLabel = getPortalLabel(viewMode);
@@ -4541,6 +4831,7 @@ export function ShowPage({
   const shouldShowGuestItineraryTab = isGuestView && activeGuestTab === "itinerary";
   const shouldShowGuestPromoMaterialsTab = isGuestView && activeGuestTab === "promo-materials";
   const shouldShowBandPromoMaterialsTab = isBandView && activeBandTab === "promo-materials";
+  const shouldShowAdminCompTicketsTab = isAdminView && activeAdminTab === "comp-tickets";
   const shouldShowAdminFinanceTab = isAdminView && activeAdminTab === "finance";
   const shouldShowFinanceReportingSubTab =
     shouldShowAdminFinanceTab && activeFinanceAdminSubTab === "reporting";
@@ -4548,6 +4839,15 @@ export function ShowPage({
     shouldShowAdminFinanceTab && activeFinanceAdminSubTab === "payouts";
   const shouldShowSongSubmissionForm = shouldShowAdminSongSubmission;
   const visiblePromoMaterials = promoMaterials.filter((material) => material.is_visible);
+  const filteredPromoMaterials = useMemo(
+    () =>
+      promoMaterialFilter === "all"
+        ? promoMaterials
+        : promoMaterials.filter(
+            (material) => normalizePromoMaterialCategory(material.category) === promoMaterialFilter,
+          ),
+    [promoMaterialFilter, promoMaterials],
+  );
   const totalIncome = useMemo(
     () =>
       financeItems
@@ -4576,6 +4876,51 @@ export function ShowPage({
     () => payoutItems.reduce((sum, item) => sum + item.amount, 0),
     [payoutItems],
   );
+  const totalCompTickets = useMemo(
+    () => compTickets.reduce((sum, item) => sum + item.ticket_count, 0),
+    [compTickets],
+  );
+  const paidOnlineOrders = useMemo(
+    () =>
+      compTickets.filter(
+        (item) => normalizeGuestListTicketType(item.ticket_type) === "paid_online",
+      ).length,
+    [compTickets],
+  );
+  const paidOnlineTickets = useMemo(
+    () =>
+      compTickets
+        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "paid_online")
+        .reduce((sum, item) => sum + item.ticket_count, 0),
+    [compTickets],
+  );
+  const paidOnlineRevenue = useMemo(
+    () => paidOnlineTickets * PAID_ONLINE_TICKET_PRICE,
+    [paidOnlineTickets],
+  );
+  const complimentaryTickets = useMemo(
+    () =>
+      compTickets
+        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "complimentary")
+        .reduce((sum, item) => sum + item.ticket_count, 0),
+    [compTickets],
+  );
+  const complimentaryTicketValue = useMemo(
+    () => complimentaryTickets * COMP_TICKET_VALUE,
+    [complimentaryTickets],
+  );
+  const manualTickets = useMemo(
+    () =>
+      compTickets
+        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "manual")
+        .reduce((sum, item) => sum + item.ticket_count, 0),
+    [compTickets],
+  );
+  const checkedInCompTickets = useMemo(
+    () => compTickets.reduce((sum, item) => sum + item.checked_in_count, 0),
+    [compTickets],
+  );
+  const areAllCompTicketsSelected = compTickets.length > 0 && compTickets.every((item) => selectedCompTicketIds.includes(item.id));
   const payoutItemsByCategory = useMemo(() => {
     return payoutCategoryOptions
       .map((category) => ({
@@ -5318,6 +5663,389 @@ export function ShowPage({
     }
   }
 
+  function handleCompTicketFormChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    mode: "new" | "edit",
+  ) {
+    const { name, value, type } = event.target;
+    const checked = "checked" in event.target ? event.target.checked : false;
+    const nextValue = type === "checkbox" ? checked : value;
+
+    if (mode === "edit") {
+      setEditingCompTicketFormState((currentState) => ({
+        ...currentState,
+        [name]: nextValue,
+      }));
+      return;
+    }
+
+    setCompTicketFormState((currentState) => ({
+      ...currentState,
+      [name]: nextValue,
+    }));
+  }
+
+  function startEditingCompTicket(item: ShowCompTicket) {
+    setEditingCompTicketId(item.id);
+    setEditingCompTicketFormState(buildCompTicketFormState(item));
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+  }
+
+  function cancelEditingCompTicket() {
+    setEditingCompTicketId(null);
+    setEditingCompTicketFormState(initialCompTicketFormState);
+  }
+
+  async function handleCreateCompTicket(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!show) {
+      setCompTicketErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const guestName = compTicketFormState.guestName.trim();
+    const email = compTicketFormState.email.trim();
+    const ticketCount = Number.parseInt(compTicketFormState.ticketCount.trim(), 10);
+    const checkedInCount = clampCheckedInCount(
+      Number.parseInt(compTicketFormState.checkedInCount.trim(), 10) || 0,
+      Number.isFinite(ticketCount) && ticketCount > 0 ? ticketCount : 1,
+    );
+
+    if (!guestName) {
+      setCompTicketErrorMessage("Guest name is required.");
+      return;
+    }
+
+    if (!Number.isFinite(ticketCount) || ticketCount <= 0) {
+      setCompTicketErrorMessage("Enter a valid number of tickets.");
+      return;
+    }
+
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+    setActiveCompTicketActionId("create");
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_comp_tickets")
+        .insert({
+          show_id: show.id,
+          guest_name: guestName,
+          email: normalizeOptionalField(email),
+          ticket_count: ticketCount,
+          ticket_type: compTicketFormState.ticketType,
+          order_id: normalizeOptionalField(compTicketFormState.orderId),
+          notes: normalizeOptionalField(compTicketFormState.notes),
+          checked_in: checkedInCount >= ticketCount,
+          checked_in_count: checkedInCount,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setCompTickets((currentItems) =>
+        sortShowCompTickets([
+          ...currentItems,
+          normalizeShowCompTicket(data as ShowCompTicket),
+        ]),
+      );
+      setCompTicketFormState(initialCompTicketFormState);
+      setCompTicketStatusMessage("Guest list entry added.");
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCompTicketActionId(null);
+    }
+  }
+
+  async function handleSaveCompTicket(item: ShowCompTicket) {
+    if (!show) {
+      setCompTicketErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const guestName = editingCompTicketFormState.guestName.trim();
+    const email = editingCompTicketFormState.email.trim();
+    const ticketCount = Number.parseInt(editingCompTicketFormState.ticketCount.trim(), 10);
+    const checkedInCount = clampCheckedInCount(
+      Number.parseInt(editingCompTicketFormState.checkedInCount.trim(), 10) || 0,
+      Number.isFinite(ticketCount) && ticketCount > 0 ? ticketCount : 1,
+    );
+
+    if (!guestName) {
+      setCompTicketErrorMessage("Guest name is required.");
+      return;
+    }
+
+    if (!Number.isFinite(ticketCount) || ticketCount <= 0) {
+      setCompTicketErrorMessage("Enter a valid number of tickets.");
+      return;
+    }
+
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+    setActiveCompTicketActionId(`edit-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_comp_tickets")
+        .update({
+          guest_name: guestName,
+          email: normalizeOptionalField(email),
+          ticket_count: ticketCount,
+          ticket_type: editingCompTicketFormState.ticketType,
+          order_id: normalizeOptionalField(editingCompTicketFormState.orderId),
+          notes: normalizeOptionalField(editingCompTicketFormState.notes),
+          checked_in: checkedInCount >= ticketCount,
+          checked_in_count: checkedInCount,
+        })
+        .eq("id", item.id)
+        .eq("show_id", show.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setCompTickets((currentItems) =>
+        sortShowCompTickets(
+          currentItems.map((currentItem) =>
+            currentItem.id === item.id
+              ? normalizeShowCompTicket(data as ShowCompTicket)
+              : currentItem,
+          ),
+        ),
+      );
+      cancelEditingCompTicket();
+      setCompTicketStatusMessage("Guest list entry updated.");
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCompTicketActionId(null);
+    }
+  }
+
+  async function handleAdjustCompTicketCheckedInCount(item: ShowCompTicket, delta: number) {
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+    setActiveCompTicketActionId(`checked-${item.id}`);
+    const nextCheckedInCount = clampCheckedInCount(item.checked_in_count + delta, item.ticket_count);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_comp_tickets")
+        .update({
+          checked_in: nextCheckedInCount >= item.ticket_count,
+          checked_in_count: nextCheckedInCount,
+        })
+        .eq("id", item.id)
+        .eq("show_id", item.show_id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setCompTickets((currentItems) =>
+        sortShowCompTickets(
+          currentItems.map((currentItem) =>
+            currentItem.id === item.id
+              ? normalizeShowCompTicket(data as ShowCompTicket)
+              : currentItem,
+          ),
+        ),
+      );
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCompTicketActionId(null);
+    }
+  }
+
+  async function handleDeleteCompTicket(item: ShowCompTicket) {
+    if (!show) {
+      setCompTicketErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete this guest list entry?\n\n${item.guest_name}\n${item.ticket_count} ticket${item.ticket_count === 1 ? "" : "s"}`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+    setActiveCompTicketActionId(`delete-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("show_comp_tickets")
+        .delete()
+        .eq("id", item.id)
+        .eq("show_id", show.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setCompTickets((currentItems) =>
+        currentItems.filter((currentItem) => currentItem.id !== item.id),
+      );
+      setSelectedCompTicketIds((currentIds) => currentIds.filter((currentId) => currentId !== item.id));
+
+      if (editingCompTicketId === item.id) {
+        cancelEditingCompTicket();
+      }
+
+      setCompTicketStatusMessage("Guest list entry deleted.");
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCompTicketActionId(null);
+    }
+  }
+
+  function handleToggleCompTicketSelection(itemId: string) {
+    setSelectedCompTicketIds((currentIds) =>
+      currentIds.includes(itemId)
+        ? currentIds.filter((currentId) => currentId !== itemId)
+        : [...currentIds, itemId],
+    );
+  }
+
+  function handleToggleAllCompTicketSelections() {
+    setSelectedCompTicketIds((currentIds) =>
+      areAllCompTicketsSelected ? [] : compTickets.map((item) => item.id),
+    );
+  }
+
+  async function handleDeleteSelectedCompTickets() {
+    if (!show) {
+      setCompTicketErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    if (selectedCompTicketIds.length === 0) {
+      setCompTicketErrorMessage("Select one or more guest list entries to delete.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete selected guest list entries? This cannot be undone.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+    setActiveCompTicketActionId("delete-selected");
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("show_comp_tickets")
+        .delete()
+        .eq("show_id", show.id)
+        .in("id", selectedCompTicketIds);
+
+      if (error) {
+        throw error;
+      }
+
+      setCompTickets((currentItems) =>
+        currentItems.filter((currentItem) => !selectedCompTicketIds.includes(currentItem.id)),
+      );
+
+      if (editingCompTicketId && selectedCompTicketIds.includes(editingCompTicketId)) {
+        cancelEditingCompTicket();
+      }
+
+      setSelectedCompTicketIds([]);
+      setCompTicketStatusMessage("Selected guest list entries deleted.");
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCompTicketActionId(null);
+    }
+  }
+
+  async function handleImportPaidOnlineGuestList(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!show) {
+      setCompTicketErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const parsedEntries = parseGuestListImportText(compTicketImportText);
+
+    if (parsedEntries.length === 0) {
+      setCompTicketErrorMessage("Paste website ticket order text to import paid online entries.");
+      return;
+    }
+
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+    setActiveCompTicketActionId("import");
+
+    try {
+      const supabase = createClient();
+      const payload = parsedEntries.map((entry) => ({
+        show_id: show.id,
+        guest_name: entry.guestName,
+        email: normalizeOptionalField(entry.email),
+        ticket_count: entry.ticketCount,
+        ticket_type: "paid_online",
+        order_id: normalizeOptionalField(entry.orderId),
+        notes: normalizeOptionalField(entry.notes),
+        checked_in: false,
+        checked_in_count: entry.checkedInCount,
+      }));
+
+      const { data, error } = await supabase
+        .from("show_comp_tickets")
+        .insert(payload)
+        .select("*");
+
+      if (error) {
+        throw error;
+      }
+
+      const importedEntries = ((data ?? []) as Array<
+        Omit<ShowCompTicket, "ticket_count" | "checked_in_count"> & {
+          ticket_count: number | string | null;
+          checked_in_count?: number | string | null;
+        }
+      >).map((item) => normalizeShowCompTicket(item));
+
+      setCompTickets((currentItems) => sortShowCompTickets([...currentItems, ...importedEntries]));
+      setCompTicketImportText("");
+      setCompTicketStatusMessage(
+        `Imported ${importedEntries.length} paid online guest list entr${importedEntries.length === 1 ? "y" : "ies"}.`,
+      );
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCompTicketActionId(null);
+    }
+  }
+
   async function handleQuickAddGuestPayout(guestProfile: GuestProfile) {
     if (!show) {
       setPayoutErrorMessage("The show is not loaded yet.");
@@ -5454,6 +6182,7 @@ export function ShowPage({
           setPotentialSponsors([]);
           setShowSponsors([]);
           setShowChecklistItems([]);
+          setCompTickets([]);
           setFinanceItems([]);
           setPayoutItems([]);
           setPromoMaterials([]);
@@ -5497,6 +6226,7 @@ export function ShowPage({
           potentialSponsorRows,
           showSponsorRows,
           checklistItemRows,
+          compTicketRows,
           financeItemRows,
           payoutItemRows,
           promoMaterialRows,
@@ -5598,6 +6328,16 @@ export function ShowPage({
             "show checklist items",
             supabase
               .from("show_checklist_items")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("created_at", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "compTickets",
+            "show comp tickets",
+            supabase
+              .from("show_comp_tickets")
               .select("*")
               .eq("show_id", showRecord.id)
               .order("created_at", { ascending: true }),
@@ -5716,6 +6456,13 @@ export function ShowPage({
         );
         setShowChecklistItems(
           sortShowChecklistItems((checklistItemRows ?? []) as ShowChecklistItem[]),
+        );
+        setCompTickets(
+          sortShowCompTickets(
+            ((compTicketRows ?? []) as Array<
+              Omit<ShowCompTicket, "ticket_count"> & { ticket_count: number | string | null }
+            >).map((item) => normalizeShowCompTicket(item)),
+          ),
         );
         setFinanceItems(
           sortFinanceItems(
@@ -7454,6 +8201,7 @@ export function ShowPage({
       setPromoMaterials((currentMaterials) => [data as PromoMaterial, ...currentMaterials]);
       setPromoMaterialFormState(initialPromoMaterialFormState);
       setPromoMaterialFile(null);
+      setIsPromoMaterialFormOpen(false);
       setPromoMaterialMessage("Promo material uploaded.");
     } catch (error) {
       setPromoMaterialError(getErrorMessage(error));
@@ -7566,6 +8314,45 @@ export function ShowPage({
       }
 
       setPromoMaterialMessage("Promo material deleted.");
+    } catch (error) {
+      setPromoMaterialError(getErrorMessage(error));
+    } finally {
+      setActivePromoMaterialActionId(null);
+    }
+  }
+
+  async function handleTogglePromoMaterialVisibility(material: PromoMaterial) {
+    setActivePromoMaterialActionId(material.id);
+    setPromoMaterialError(null);
+    setPromoMaterialMessage(null);
+
+    try {
+      const supabase = createClient();
+      const nextVisibility = !material.is_visible;
+      const { data, error } = await supabase
+        .from("promo_materials")
+        .update({
+          is_visible: nextVisibility,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", material.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPromoMaterials((currentMaterials) =>
+        currentMaterials.map((currentMaterial) =>
+          currentMaterial.id === material.id ? (data as PromoMaterial) : currentMaterial,
+        ),
+      );
+      setPromoMaterialMessage(
+        nextVisibility
+          ? "Promo material is now public on the promo page."
+          : "Promo material is now admin-only.",
+      );
     } catch (error) {
       setPromoMaterialError(getErrorMessage(error));
     } finally {
@@ -10119,7 +10906,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="flex flex-nowrap gap-4 overflow-x-auto rounded-2xl bg-stone-100 p-2 whitespace-nowrap sm:justify-center"
+              className="grid grid-cols-2 gap-3 rounded-2xl bg-stone-100 p-2 sm:grid-cols-3 lg:grid-cols-5"
               role="tablist"
               aria-label="Admin portal sections"
             >
@@ -10130,7 +10917,7 @@ export function ShowPage({
                   role="tab"
                   aria-selected={activeAdminTab === tab.key}
                   onClick={() => setActiveAdminTab(tab.key)}
-                  className={`shrink-0 rounded-2xl px-6 py-4 text-base font-semibold leading-none transition ${
+                  className={`w-full rounded-2xl px-6 py-4 text-base font-semibold leading-none transition ${
                     activeAdminTab === tab.key
                       ? "bg-emerald-700 text-white shadow-sm"
                       : "bg-white text-stone-700 hover:bg-stone-50"
@@ -10422,6 +11209,14 @@ export function ShowPage({
                 >
                   <p className="text-sm font-semibold text-stone-900">Guests</p>
                   <p className="mt-1 text-sm text-stone-600">Review bios, links, and guest readiness.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAdminTab("comp-tickets")}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
+                >
+                  <p className="text-sm font-semibold text-stone-900">Tickets / Check-In</p>
+                  <p className="mt-1 text-sm text-stone-600">Track paid online, complimentary, and manual entries.</p>
                 </button>
                 <button
                   type="button"
@@ -11464,6 +12259,504 @@ export function ShowPage({
           </section>
         ) : null}
 
+        {shouldShowAdminCompTicketsTab ? (
+          <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
+              <p className="text-sm text-stone-600">
+                Track paid online tickets, complimentary tickets, expected attendance, and check-in management for this show.
+              </p>
+            </div>
+
+            <SectionLoadWarning message={dataSectionErrors.compTickets} />
+
+            {compTicketStatusMessage ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {compTicketStatusMessage}
+              </div>
+            ) : null}
+
+            {compTicketErrorMessage ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {compTicketErrorMessage}
+              </div>
+            ) : null}
+
+            <div className="grid gap-4">
+              <div className="flex items-center justify-between rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 sm:px-5">
+                <div>
+                  <h3 className="text-base font-semibold text-stone-900">Summary / Totals</h3>
+                  <p className="text-sm text-stone-600">Paid online totals, comp value, expected attendance, and check-in counts.</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Paid Online Tickets
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{paidOnlineTickets}</p>
+                  <p className="mt-1 text-sm text-stone-500">{paidOnlineOrders} order{paidOnlineOrders === 1 ? "" : "s"}</p>
+                </article>
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Paid Online Revenue
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{formatCurrency(paidOnlineRevenue)}</p>
+                </article>
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Complimentary Tickets
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{complimentaryTickets}</p>
+                </article>
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Complimentary Ticket Value
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{formatCurrency(complimentaryTicketValue)}</p>
+                </article>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Manual / Other Tickets
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{manualTickets}</p>
+                </article>
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Total Expected Attendance
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{totalCompTickets}</p>
+                </article>
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Checked In
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-emerald-700">{checkedInCompTickets} of {totalCompTickets}</p>
+                </article>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-stone-900">Add Manual / Complimentary Ticket</h3>
+                  <p className="text-sm text-stone-600">Add a manual, complimentary, or other attendance entry.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsManualTicketFormOpen((currentValue) => !currentValue)}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  {isManualTicketFormOpen ? "Hide Manual Ticket Form" : "Add Manual / Complimentary Ticket"}
+                </button>
+              </div>
+
+              {isManualTicketFormOpen ? (
+                <form
+                  className="mt-4 grid gap-4"
+                  onSubmit={(event) => void handleCreateCompTicket(event)}
+                >
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Guest Name
+                  <input
+                    type="text"
+                    name="guestName"
+                    value={compTicketFormState.guestName}
+                    onChange={(event) => handleCompTicketFormChange(event, "new")}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="Guest name"
+                    required
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Email
+                  <input
+                    type="email"
+                    name="email"
+                    value={compTicketFormState.email}
+                    onChange={(event) => handleCompTicketFormChange(event, "new")}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="name@example.com"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Number of Tickets
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    name="ticketCount"
+                    value={compTicketFormState.ticketCount}
+                    onChange={(event) => handleCompTicketFormChange(event, "new")}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    required
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Ticket Type
+                  <select
+                    name="ticketType"
+                    value={compTicketFormState.ticketType}
+                    onChange={(event) => handleCompTicketFormChange(event, "new")}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  >
+                    {guestListTicketTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]">
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Notes
+                  <textarea
+                    name="notes"
+                    value={compTicketFormState.notes}
+                    onChange={(event) => handleCompTicketFormChange(event, "new")}
+                    className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="Optional guest list notes"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Order ID
+                  <input
+                    type="text"
+                    name="orderId"
+                    value={compTicketFormState.orderId}
+                    onChange={(event) => handleCompTicketFormChange(event, "new")}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="Optional order ID"
+                  />
+                </label>
+              </div>
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:max-w-xs">
+                Checked In Count
+                <input
+                  type="number"
+                  min="0"
+                  max={compTicketFormState.ticketCount || "1"}
+                  step="1"
+                  name="checkedInCount"
+                  value={compTicketFormState.checkedInCount}
+                  onChange={(event) => handleCompTicketFormChange(event, "new")}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                />
+              </label>
+
+              <div className="flex justify-start">
+                <button
+                  type="submit"
+                  disabled={activeCompTicketActionId === "create"}
+                  className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                >
+                  {activeCompTicketActionId === "create" ? "Adding Entry..." : "Add Guest List Entry"}
+                </button>
+              </div>
+                </form>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-stone-900">Import Paid Online Orders</h3>
+                  <p className="text-sm text-stone-600">Paste website ticket export text and group it into one entry per purchaser/order.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTicketImportOpen((currentValue) => !currentValue)}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  {isTicketImportOpen ? "Hide Import" : "Import Paid Online Orders"}
+                </button>
+              </div>
+
+              {isTicketImportOpen ? (
+                <form
+                  className="mt-4 grid gap-4"
+                  onSubmit={(event) => void handleImportPaidOnlineGuestList(event)}
+                >
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Website Order Text
+                <textarea
+                  value={compTicketImportText}
+                  onChange={(event) => setCompTicketImportText(event.target.value)}
+                  className="min-h-32 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  placeholder={"Example:\n177186438 John Smith john@example.com\n177186438-2 John Smith john@example.com"}
+                />
+              </label>
+
+              <div className="flex justify-start">
+                <button
+                  type="submit"
+                  disabled={activeCompTicketActionId === "import"}
+                  className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {activeCompTicketActionId === "import" ? "Importing..." : "Import Paid Online Orders"}
+                </button>
+              </div>
+                </form>
+              ) : null}
+            </div>
+
+            {compTickets.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                No tickets or check-in entries have been added for this show yet.
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 sm:px-5">
+                  <div>
+                    <h3 className="text-base font-semibold text-stone-900">Guest List / Ticket Entries</h3>
+                    <p className="text-sm text-stone-600">Manage paid online orders, complimentary tickets, manual entries, and check-ins.</p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
+                    <input
+                      type="checkbox"
+                      checked={areAllCompTicketsSelected}
+                      onChange={handleToggleAllCompTicketSelections}
+                      className="h-4 w-4 rounded border-stone-300 text-emerald-700"
+                    />
+                    Select All
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteSelectedCompTickets()}
+                    disabled={selectedCompTicketIds.length === 0 || activeCompTicketActionId === "delete-selected"}
+                    className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {activeCompTicketActionId === "delete-selected"
+                      ? "Deleting Selected..."
+                      : `Delete Selected${selectedCompTicketIds.length > 0 ? ` (${selectedCompTicketIds.length})` : ""}`}
+                  </button>
+                </div>
+
+                {compTickets.map((item) => (
+                  <article key={item.id} className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                    {editingCompTicketId === item.id ? (
+                      <div className="grid gap-4">
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Guest Name
+                            <input
+                              type="text"
+                              name="guestName"
+                              value={editingCompTicketFormState.guestName}
+                              onChange={(event) => handleCompTicketFormChange(event, "edit")}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              required
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Email
+                            <input
+                              type="email"
+                              name="email"
+                              value={editingCompTicketFormState.email}
+                              onChange={(event) => handleCompTicketFormChange(event, "edit")}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Number of Tickets
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              name="ticketCount"
+                              value={editingCompTicketFormState.ticketCount}
+                              onChange={(event) => handleCompTicketFormChange(event, "edit")}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              required
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Ticket Type
+                            <select
+                              name="ticketType"
+                              value={editingCompTicketFormState.ticketType}
+                              onChange={(event) => handleCompTicketFormChange(event, "edit")}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            >
+                              {guestListTicketTypeOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]">
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Notes
+                            <textarea
+                              name="notes"
+                              value={editingCompTicketFormState.notes}
+                              onChange={(event) => handleCompTicketFormChange(event, "edit")}
+                              className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Order ID
+                            <input
+                              type="text"
+                              name="orderId"
+                              value={editingCompTicketFormState.orderId}
+                              onChange={(event) => handleCompTicketFormChange(event, "edit")}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:max-w-xs">
+                          Checked In Count
+                          <input
+                            type="number"
+                            min="0"
+                            max={editingCompTicketFormState.ticketCount || "1"}
+                            step="1"
+                            name="checkedInCount"
+                            value={editingCompTicketFormState.checkedInCount}
+                            onChange={(event) => handleCompTicketFormChange(event, "edit")}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          />
+                        </label>
+
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveCompTicket(item)}
+                            disabled={activeCompTicketActionId === `edit-${item.id}`}
+                            className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                          >
+                            {activeCompTicketActionId === `edit-${item.id}` ? "Saving..." : "Save Entry"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditingCompTicket}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-start gap-3">
+                              <label className="mt-0.5 flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedCompTicketIds.includes(item.id)}
+                                  onChange={() => handleToggleCompTicketSelection(item.id)}
+                                  className="h-4 w-4 rounded border-stone-300 text-emerald-700"
+                                  aria-label={`Select ${item.guest_name}`}
+                                />
+                              </label>
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h3 className="text-base font-semibold text-stone-900">{item.guest_name}</h3>
+                                  <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                                    Qty: {item.ticket_count}
+                                  </span>
+                                  <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-800">
+                                    {formatGuestListTicketTypeLabel(item.ticket_type)}
+                                  </span>
+                                  {(() => {
+                                    const checkInStatus = getCompTicketCheckInStatus(item);
+
+                                    return (
+                                      <span
+                                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${checkInStatus.className}`}
+                                      >
+                                        {checkInStatus.label}
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                                {item.email?.trim() || item.order_id?.trim() ? (
+                                  <div className="mt-2 flex flex-wrap gap-3 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                                    {item.email?.trim() ? <span className="normal-case tracking-normal">{item.email}</span> : null}
+                                    {item.order_id?.trim() ? <span>Order ID: {item.order_id}</span> : null}
+                                  </div>
+                                ) : null}
+                                {item.notes?.trim() ? (
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-600">
+                                    {item.notes}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-2 sm:items-end">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void handleAdjustCompTicketCheckedInCount(item, 1)}
+                                disabled={activeCompTicketActionId === `checked-${item.id}` || item.checked_in_count >= item.ticket_count}
+                                className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                +1 Check In
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleAdjustCompTicketCheckedInCount(item, -1)}
+                                disabled={activeCompTicketActionId === `checked-${item.id}` || item.checked_in_count <= 0}
+                                className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                -1 Undo
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => startEditingCompTicket(item)}
+                              className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteCompTicket(item)}
+                              disabled={activeCompTicketActionId === `delete-${item.id}`}
+                              className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {activeCompTicketActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
         {shouldShowAdminFinanceTab ? (
           <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -12201,32 +13494,121 @@ export function ShowPage({
               </div>
             ) : null}
 
-            <form
-              className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
-              onSubmit={handleCreatePromoMaterial}
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Title
-                  <input
-                    type="text"
-                    name="title"
-                    value={promoMaterialFormState.title}
-                    onChange={(event) => handlePromoMaterialChange(event, "new")}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder="April show flyer"
-                    required
-                  />
-                </label>
+            <section className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Upload Promo Material</h3>
+                  <p className="text-sm text-stone-600">
+                    Add flyers, graphics, logos, photos, and other downloadable promo assets for this show.
+                  </p>
+                </div>
 
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Category
+                <button
+                  type="button"
+                  onClick={() => setIsPromoMaterialFormOpen((currentValue) => !currentValue)}
+                  className="w-full rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 sm:w-auto"
+                >
+                  {isPromoMaterialFormOpen ? "Hide Upload Promo Material" : "Add Promo Material"}
+                </button>
+              </div>
+
+              {isPromoMaterialFormOpen ? (
+                <form className="grid gap-4" onSubmit={handleCreatePromoMaterial}>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Title
+                      <input
+                        type="text"
+                        name="title"
+                        value={promoMaterialFormState.title}
+                        onChange={(event) => handlePromoMaterialChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="April show flyer"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Category
+                      <select
+                        name="category"
+                        value={promoMaterialFormState.category}
+                        onChange={(event) => handlePromoMaterialChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        {promoMaterialCategoryOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Description
+                    <textarea
+                      name="description"
+                      value={promoMaterialFormState.description}
+                      onChange={(event) => handlePromoMaterialChange(event, "new")}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional details about where or how to use this item"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    File
+                    <input
+                      type="file"
+                      onChange={(event) => handlePromoMaterialFileChange(event, "new")}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                      required
+                    />
+                  </label>
+
+                  <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
+                    <input
+                      type="checkbox"
+                      name="isVisible"
+                      checked={promoMaterialFormState.isVisible}
+                      onChange={(event) => handlePromoMaterialChange(event, "new")}
+                      className="h-4 w-4 rounded border-stone-300 text-emerald-700"
+                    />
+                    Show on public promo page
+                  </label>
+
+                  <div className="flex justify-start">
+                    <button
+                      type="submit"
+                      disabled={isSavingPromoMaterial}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {isSavingPromoMaterial ? "Uploading..." : "Upload Promo Material"}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+            </section>
+
+            <section className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Uploaded Materials</h3>
+                  <p className="text-sm text-stone-600">
+                    Admin can store everything here and choose which materials appear on the public promo page.
+                  </p>
+                </div>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:w-64">
+                  Filter Materials
                   <select
-                    name="category"
-                    value={promoMaterialFormState.category}
-                    onChange={(event) => handlePromoMaterialChange(event, "new")}
+                    value={promoMaterialFilter}
+                    onChange={(event) =>
+                      setPromoMaterialFilter(event.target.value as "all" | PromoMaterialCategory)
+                    }
                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                   >
+                    <option value="all">All Materials</option>
                     {promoMaterialCategoryOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -12236,64 +13618,15 @@ export function ShowPage({
                 </label>
               </div>
 
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Description
-                <textarea
-                  name="description"
-                  value={promoMaterialFormState.description}
-                  onChange={(event) => handlePromoMaterialChange(event, "new")}
-                  className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder="Optional details about where or how to use this item"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                File
-                <input
-                  type="file"
-                  onChange={(event) => handlePromoMaterialFileChange(event, "new")}
-                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                  required
-                />
-              </label>
-
-              <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
-                <input
-                  type="checkbox"
-                  name="isVisible"
-                  checked={promoMaterialFormState.isVisible}
-                  onChange={(event) => handlePromoMaterialChange(event, "new")}
-                  className="h-4 w-4 rounded border-stone-300 text-emerald-700"
-                />
-                Visible in guest, band, and promo hub pages
-              </label>
-
-              <div className="flex justify-start">
-                <button
-                  type="submit"
-                  disabled={isSavingPromoMaterial}
-                  className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                >
-                  {isSavingPromoMaterial ? "Uploading..." : "Upload Promo Material"}
-                </button>
-              </div>
-            </form>
-
-            <section className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <h3 className="text-lg font-semibold text-stone-900">Uploaded Materials</h3>
-                <p className="text-sm text-stone-600">
-                  Hidden items stay available here for admin, but will not show on public promo pages.
-                </p>
-              </div>
-
-              {promoMaterials.length === 0 ? (
+              {filteredPromoMaterials.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                  No promo materials have been uploaded for this show yet.
+                  {promoMaterials.length === 0
+                    ? "No promo materials have been uploaded for this show yet."
+                    : "No promo materials match the selected category."}
                 </div>
               ) : (
                 <div className="grid gap-4">
-                  {promoMaterials.map((material) => {
+                  {filteredPromoMaterials.map((material) => {
                     const isEditingPromoMaterial = editingPromoMaterialId === material.id;
                     const fileSize = formatPromoFileSize(material.file_size);
                     const uploadDate = formatPromoUploadDate(material.created_at);
@@ -12364,7 +13697,7 @@ export function ShowPage({
                                 onChange={(event) => handlePromoMaterialChange(event, "edit")}
                                 className="h-4 w-4 rounded border-stone-300 text-emerald-700"
                               />
-                              Visible in guest, band, and promo hub pages
+                              Show on public promo page
                             </label>
 
                             <div className="flex flex-col gap-3 sm:flex-row">
@@ -12395,11 +13728,17 @@ export function ShowPage({
                                     target="_blank"
                                     rel="noreferrer"
                                     aria-label={`Open ${material.title} preview`}
-                                    className="block aspect-[4/3] w-full shrink-0 rounded-2xl border border-stone-200 bg-stone-200 bg-cover bg-center transition hover:opacity-90 sm:w-44"
-                                    style={{ backgroundImage: `url("${material.file_url}")` }}
-                                  />
+                                    className="flex h-56 w-full shrink-0 items-center justify-center rounded-2xl border border-stone-200 bg-slate-900 p-4 transition hover:opacity-90 sm:h-48 sm:w-44"
+                                  >
+                                    <img
+                                      src={material.file_url}
+                                      alt={material.title}
+                                      className="h-full w-full object-contain"
+                                      loading="lazy"
+                                    />
+                                  </a>
                                 ) : (
-                                  <div className="flex aspect-[4/3] w-full shrink-0 items-center justify-center rounded-2xl border border-stone-200 bg-white sm:w-44">
+                                  <div className="flex h-56 w-full shrink-0 items-center justify-center rounded-2xl border border-stone-200 bg-white sm:h-48 sm:w-44">
                                     <div className="flex h-20 w-16 flex-col items-center justify-center rounded-xl border border-stone-300 bg-stone-50 text-center">
                                       <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-stone-500">
                                         File
@@ -12419,11 +13758,11 @@ export function ShowPage({
                                   <span
                                     className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
                                       material.is_visible
-                                        ? "bg-stone-200 text-stone-700"
+                                        ? "bg-emerald-100 text-emerald-800"
                                         : "bg-amber-200 text-amber-900"
                                     }`}
                                   >
-                                    {material.is_visible ? "Visible" : "Hidden"}
+                                    {material.is_visible ? "Public" : "Admin only"}
                                   </span>
                                 </div>
                                 <h4 className="mt-3 text-lg font-semibold text-stone-900">
@@ -12461,6 +13800,14 @@ export function ShowPage({
                                 className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleTogglePromoMaterialVisibility(material)}
+                                disabled={activePromoMaterialActionId === material.id}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {material.is_visible ? "Make Admin Only" : "Make Public"}
                               </button>
                               <button
                                 type="button"

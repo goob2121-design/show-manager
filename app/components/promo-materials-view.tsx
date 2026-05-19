@@ -22,14 +22,19 @@ export function formatPromoMaterialCategory(category: string | null | undefined)
       return "Flyer";
     case "social_graphic":
       return "Social Graphic";
-    case "poster":
-      return "Poster";
     case "sponsor_graphic":
       return "Sponsor Graphic";
+    case "poster":
+      return "Poster";
+    case "video":
+      return "Video";
+    case "audio_promo":
+      return "Audio Promo";
+    case "printable":
+      return "Printable";
+    case "logo_branding":
     case "logo":
-      return "Logo";
-    case "promo_photo":
-      return "Promo Photo";
+      return "Logo/Branding";
     default:
       return "Other";
   }
@@ -95,11 +100,17 @@ export function PromoMaterialsView({
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`Open ${material.title} preview`}
-                className="block aspect-[4/3] border-b border-stone-200 bg-stone-200 bg-cover bg-center transition hover:opacity-90"
-                style={{ backgroundImage: `url("${material.file_url}")` }}
-              />
+                className="flex h-56 items-center justify-center border-b border-stone-200 bg-slate-900 p-4 transition hover:opacity-90"
+              >
+                <img
+                  src={material.file_url}
+                  alt={material.title}
+                  className="h-full w-full object-contain"
+                  loading="lazy"
+                />
+              </a>
             ) : (
-              <div className="flex aspect-[4/3] items-center justify-center border-b border-stone-200 bg-white">
+              <div className="flex h-56 items-center justify-center border-b border-stone-200 bg-white">
                 <div className="flex h-24 w-20 flex-col items-center justify-center rounded-xl border border-stone-300 bg-stone-50 text-center shadow-sm">
                   <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                     File

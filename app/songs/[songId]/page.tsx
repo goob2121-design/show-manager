@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getSongTitleById } from "@/lib/route-metadata";
 import type { SongRecord } from "@/lib/types";
 
 const SONG_AUDIO_BUCKET = "promo-materials";
@@ -78,6 +80,23 @@ function resolveSongAudioUrl(
 type SongSharePageProps = {
   params: Promise<{ songId: string }>;
 };
+
+export async function generateMetadata({
+  params,
+}: SongSharePageProps): Promise<Metadata> {
+  const { songId } = await params;
+
+  try {
+    const songTitle = await getSongTitleById(songId);
+    return {
+      title: songTitle ? `${songTitle} | StageFlow` : "Song | StageFlow",
+    };
+  } catch {
+    return {
+      title: "Song | StageFlow",
+    };
+  }
+}
 
 export default async function SongSharePage({ params }: SongSharePageProps) {
   const { songId } = await params;

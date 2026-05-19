@@ -263,6 +263,20 @@ create table if not exists public.show_payout_items (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.show_comp_tickets (
+  id uuid primary key default gen_random_uuid(),
+  show_id uuid not null references public.shows(id) on delete cascade,
+  guest_name text not null,
+  email text,
+  ticket_count integer not null default 1,
+  ticket_type text not null default 'complimentary',
+  order_id text,
+  notes text,
+  checked_in boolean not null default false,
+  checked_in_count integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists songs_title_key_idx
   on public.songs(lower(title), lower(coalesce(key, '')));
 
@@ -311,8 +325,12 @@ create index if not exists show_checklist_items_show_id_created_at_idx
 create index if not exists show_payout_items_show_id_created_at_idx
   on public.show_payout_items(show_id, created_at);
 
+create index if not exists show_comp_tickets_show_id_created_at_idx
+  on public.show_comp_tickets(show_id, created_at);
+
 alter table public.show_checklist_items enable row level security;
 alter table public.show_payout_items enable row level security;
+alter table public.show_comp_tickets enable row level security;
 
 create unique index if not exists guest_profiles_show_id_name_unique
   on public.guest_profiles(show_id, lower(name));
@@ -547,6 +565,63 @@ begin
   ) then
     create policy "Allow public delete show payout items"
       on public.show_payout_items
+      for delete
+      to anon, authenticated
+      using (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'show_comp_tickets'
+      and policyname = 'Allow public read show comp tickets'
+  ) then
+    create policy "Allow public read show comp tickets"
+      on public.show_comp_tickets
+      for select
+      to anon, authenticated
+      using (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'show_comp_tickets'
+      and policyname = 'Allow public insert show comp tickets'
+  ) then
+    create policy "Allow public insert show comp tickets"
+      on public.show_comp_tickets
+      for insert
+      to anon, authenticated
+      with check (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'show_comp_tickets'
+      and policyname = 'Allow public update show comp tickets'
+  ) then
+    create policy "Allow public update show comp tickets"
+      on public.show_comp_tickets
+      for update
+      to anon, authenticated
+      using (true)
+      with check (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'show_comp_tickets'
+      and policyname = 'Allow public delete show comp tickets'
+  ) then
+    create policy "Allow public delete show comp tickets"
+      on public.show_comp_tickets
       for delete
       to anon, authenticated
       using (true);

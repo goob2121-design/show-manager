@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import { ShowPage } from "@/app/components/show-page";
+import { getGuestPortalMetadataBySlug } from "@/lib/route-metadata";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { headers } from "next/headers";
 
@@ -10,6 +12,32 @@ type MarkOpenedPayload = {
   error?: string;
   details?: unknown;
 };
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+
+  try {
+    const metadata = await getGuestPortalMetadataBySlug(slug);
+
+    if (metadata.guestName) {
+      return {
+        title: `${metadata.guestName} Guest Portal | StageFlow`,
+      };
+    }
+
+    return {
+      title: metadata.showName ? `Guest Portal | ${metadata.showName}` : "Guest Portal | StageFlow",
+    };
+  } catch {
+    return {
+      title: "Guest Portal | StageFlow",
+    };
+  }
+}
 
 export default async function GuestShowPage({
   params,

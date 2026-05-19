@@ -7,12 +7,17 @@ export type SongSourceType = "library" | "guest";
 export type PromoMaterialCategory =
   | "flyer"
   | "social_graphic"
-  | "poster"
   | "sponsor_graphic"
+  | "poster"
+  | "video"
+  | "audio_promo"
+  | "printable"
+  | "logo_branding"
   | "logo"
   | "promo_photo"
   | "other";
 export type FinanceItemType = "income" | "expense";
+export type GuestListTicketType = "paid_online" | "complimentary" | "manual";
 export type SponsorTypeOption =
   | "Cash Package"
   | "In-Kind / Product Donation"
@@ -226,6 +231,20 @@ export type ShowPayoutItem = {
   created_at: string;
 };
 
+export type ShowCompTicket = {
+  id: string;
+  show_id: string;
+  guest_name: string;
+  email: string | null;
+  ticket_count: number;
+  ticket_type: GuestListTicketType | string | null;
+  order_id: string | null;
+  notes: string | null;
+  checked_in: boolean;
+  checked_in_count: number;
+  created_at: string;
+};
+
 export type PromoMaterialFormState = {
   title: string;
   description: string;
@@ -270,6 +289,16 @@ export type PayoutFormState = {
   amount: string;
   paid: boolean;
   paymentMethod: string;
+};
+
+export type CompTicketFormState = {
+  guestName: string;
+  email: string;
+  ticketCount: string;
+  ticketType: GuestListTicketType;
+  orderId: string;
+  notes: string;
+  checkedInCount: string;
 };
 
 export type McBlockNote = {

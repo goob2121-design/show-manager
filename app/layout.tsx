@@ -12,7 +12,7 @@ const themeInitScript = `
 `;
 
 export const metadata: Metadata = {
-  title: "StageFlow — Pinnacle Recording Studio",
+  title: "StageFlow",
   description: "StageFlow by Pinnacle Recording Studio for managing shows, guests, band details, and setlists.",
 };
 
