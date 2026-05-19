@@ -2306,25 +2306,25 @@ export default function ShowsDashboardPage() {
             </div>
           ) : null}
 
-          <header className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+          <header className="overflow-visible rounded-[28px] border border-stone-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-[28px] bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
+                <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:flex-wrap lg:items-center lg:gap-6 xl:flex-nowrap">
                     {showLogo ? (
-                    <div className="w-full max-w-[250px] overflow-hidden sm:max-w-[350px]">
+                    <div className="w-full max-w-[300px] sm:max-w-[340px] lg:max-w-[360px] xl:max-w-[390px]">
                       <Image
                         src="/stageflow-logo-v2.png"
                         alt="StageFlow logo"
                         width={320}
                         height={160}
-                        className="h-auto w-full object-contain -translate-y-1.5 scale-[1.11] transform-gpu"
+                        className="h-auto w-full max-w-full object-contain"
                         onError={() => setShowLogo(false)}
                         priority
                       />
                     </div>
                   ) : null}
 
-                  <div className="max-w-2xl space-y-2">
+                  <div className="max-w-2xl space-y-2 xl:max-w-xl">
                     <p className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
                       Control Center
                     </p>
