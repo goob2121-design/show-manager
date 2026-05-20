@@ -17,7 +17,7 @@ export type PromoMaterialCategory =
   | "promo_photo"
   | "other";
 export type FinanceItemType = "income" | "expense";
-export type GuestListTicketType = "paid_online" | "complimentary" | "manual";
+export type GuestListTicketType = "paid_online" | "door_paid" | "complimentary" | "manual";
 export type SponsorTypeOption =
   | "Cash Package"
   | "In-Kind / Product Donation"
@@ -239,6 +239,7 @@ export type ShowCompTicket = {
   ticket_count: number;
   ticket_type: GuestListTicketType | string | null;
   order_id: string | null;
+  import_key: string | null;
   notes: string | null;
   checked_in: boolean;
   checked_in_count: number;

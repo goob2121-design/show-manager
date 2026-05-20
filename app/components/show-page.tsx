@@ -265,6 +265,7 @@ const initialCompTicketFormState: CompTicketFormState = {
 
 const guestListTicketTypeOptions: Array<{ value: GuestListTicketType; label: string }> = [
   { value: "paid_online", label: "Paid Online" },
+  { value: "door_paid", label: "Paid Door" },
   { value: "complimentary", label: "Complimentary" },
   { value: "manual", label: "Manual / Other" },
 ];
@@ -1422,7 +1423,7 @@ function sortShowPayoutItems(items: ShowPayoutItem[]) {
 }
 
 function normalizeGuestListTicketType(value: string | null | undefined): GuestListTicketType {
-  return value === "paid_online" || value === "manual" || value === "complimentary"
+  return value === "paid_online" || value === "door_paid" || value === "manual" || value === "complimentary"
     ? value
     : "complimentary";
 }
@@ -1431,6 +1432,8 @@ function formatGuestListTicketTypeLabel(value: string | null | undefined) {
   switch (value) {
     case "paid_online":
       return "Paid Online";
+    case "door_paid":
+      return "Paid Door";
     case "manual":
       return "Manual / Other";
     default:
@@ -1474,6 +1477,7 @@ function normalizeShowCompTicket(
     ticket_count: normalizedTicketCount,
     ticket_type: normalizeGuestListTicketType(item.ticket_type),
     order_id: item.order_id ?? null,
+    import_key: item.import_key ?? null,
     notes: item.notes ?? null,
     checked_in: normalizedCheckedInCount >= normalizedTicketCount,
     checked_in_count: normalizedCheckedInCount,
@@ -1531,6 +1535,15 @@ type ParsedGuestListImportEntry = {
   checkedInCount: number;
 };
 
+type CompTicketImportPreviewStatus = "new" | "already_imported" | "possible_duplicate";
+
+type CompTicketImportPreviewEntry = ParsedGuestListImportEntry & {
+  amountPaid: number;
+  importKey: string;
+  status: CompTicketImportPreviewStatus;
+  matchedTicketId: string | null;
+};
+
 function normalizeImportedGuestName(value: string) {
   const trimmedValue = value.trim().replace(/\s+/g, " ");
 
@@ -1546,17 +1559,161 @@ function normalizeImportedGuestName(value: string) {
   return trimmedValue;
 }
 
+function normalizeImportedOrderId(value: string) {
+  const trimmedValue = value.trim().toUpperCase();
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  const splitTicketSuffixMatch = trimmedValue.match(/^(\d{6,})-\d+$/);
+  if (splitTicketSuffixMatch) {
+    return splitTicketSuffixMatch[1] ?? trimmedValue;
+  }
+
+  return trimmedValue;
+}
+
+function extractImportedOrderId(value: string) {
+  const standaloneOrderIdPattern = /^\d{6,}(?:-\d+)?$/;
+  const labelledOrderIdPattern =
+    /\b(?:order|transaction)(?:\s*(?:id|number|no\.?))?\s*[:#-]?\s*([A-Z0-9]{6,}(?:-[A-Z0-9]+)*)\b/i;
+  const genericOrderIdPattern = /\b([A-Z0-9]{6,}(?:-[A-Z0-9]+)*)\b/i;
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  if (standaloneOrderIdPattern.test(trimmedValue)) {
+    return normalizeImportedOrderId(trimmedValue);
+  }
+
+  const labelledOrderId = trimmedValue.match(labelledOrderIdPattern)?.[1] ?? "";
+  if (labelledOrderId) {
+    return normalizeImportedOrderId(labelledOrderId);
+  }
+
+  const genericOrderId = trimmedValue.match(genericOrderIdPattern)?.[1] ?? "";
+  return normalizeImportedOrderId(genericOrderId);
+}
+
+function normalizeTicketImportLookupValue(value: string | null | undefined) {
+  return value
+    ?.trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ") ?? "";
+}
+
+function getPaidOnlineTicketAmount(ticketCount: number) {
+  return ticketCount * PAID_ONLINE_TICKET_PRICE;
+}
+
+function buildPaidOnlineFallbackImportKey(
+  showId: string,
+  guestName: string,
+  email: string,
+  ticketCount: number,
+  amountPaid: number,
+) {
+  return [
+    "paid_online",
+    showId,
+    normalizeTicketImportLookupValue(guestName) || "unknown-buyer",
+    normalizeTicketImportLookupValue(email) || "no-email",
+    String(ticketCount),
+    amountPaid.toFixed(2),
+  ].join("::");
+}
+
+function buildPaidOnlineOrderImportKey(showId: string, orderId: string) {
+  return ["paid_online", showId, "order", normalizeImportedOrderId(orderId)].join("::");
+}
+
+function buildPaidOnlineImportPreviewEntry(
+  showId: string,
+  entry: ParsedGuestListImportEntry,
+  existingTickets: ShowCompTicket[],
+): CompTicketImportPreviewEntry {
+  const amountPaid = getPaidOnlineTicketAmount(entry.ticketCount);
+  const fallbackImportKey = buildPaidOnlineFallbackImportKey(
+    showId,
+    entry.guestName,
+    entry.email,
+    entry.ticketCount,
+    amountPaid,
+  );
+  const orderImportKey = entry.orderId ? buildPaidOnlineOrderImportKey(showId, entry.orderId) : "";
+  const importKey = orderImportKey || fallbackImportKey;
+  const normalizedBuyerEmail = normalizeTicketImportLookupValue(entry.email);
+  const normalizedBuyerName = normalizeTicketImportLookupValue(entry.guestName);
+  const exactMatch = existingTickets.find((ticket) => {
+    const existingImportKey = ticket.import_key?.trim() ?? "";
+    const existingOrderImportKey = ticket.order_id
+      ? buildPaidOnlineOrderImportKey(showId, ticket.order_id)
+      : "";
+    const existingFallbackImportKey = buildPaidOnlineFallbackImportKey(
+      showId,
+      ticket.guest_name,
+      ticket.email ?? "",
+      ticket.ticket_count,
+      getPaidOnlineTicketAmount(ticket.ticket_count),
+    );
+
+    return (
+      existingImportKey === importKey ||
+      existingOrderImportKey === orderImportKey ||
+      existingFallbackImportKey === fallbackImportKey
+    );
+  });
+
+  if (exactMatch) {
+    return {
+      ...entry,
+      amountPaid,
+      importKey,
+      status: "already_imported",
+      matchedTicketId: exactMatch.id,
+    };
+  }
+
+  const possibleDuplicate = existingTickets.find((ticket) => {
+    const normalizedExistingEmail = normalizeTicketImportLookupValue(ticket.email);
+    const normalizedExistingName = normalizeTicketImportLookupValue(ticket.guest_name);
+    const buyerMatches = normalizedBuyerEmail
+      ? normalizedExistingEmail === normalizedBuyerEmail
+      : Boolean(normalizedBuyerName) && normalizedExistingName === normalizedBuyerName;
+
+    return buyerMatches;
+  });
+
+  if (possibleDuplicate) {
+    return {
+      ...entry,
+      amountPaid,
+      importKey,
+      status: "possible_duplicate",
+      matchedTicketId: possibleDuplicate.id,
+    };
+  }
+
+  return {
+    ...entry,
+    amountPaid,
+    importKey,
+    status: "new",
+    matchedTicketId: null,
+  };
+}
+
 function parseGuestListImportText(text: string): ParsedGuestListImportEntry[] {
   const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
   const emailBeforeOrderIdPattern = /(\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?=(\d{6,}(?:-\d+)?\b))/gi;
-  const standaloneOrderIdPattern = /^\d{6,}(?:-\d+)?$/;
   const normalizeGroupingText = (value: string) =>
     value
       .trim()
       .toLowerCase()
       .replace(/\s+/g, " ");
-  const extractBaseOrderId = (value: string) =>
-    value.trim().match(standaloneOrderIdPattern)?.[0]?.split("-")[0] ?? "";
   const normalizedText = text.replace(emailBeforeOrderIdPattern, "$1\n");
   const lines = normalizedText
     .split(/\r?\n/)
@@ -1572,7 +1729,7 @@ function parseGuestListImportText(text: string): ParsedGuestListImportEntry[] {
 
   for (let index = 0; index < lines.length; index += 1) {
     const orderLine = lines[index];
-    const baseOrderId = extractBaseOrderId(orderLine);
+    const baseOrderId = extractImportedOrderId(orderLine);
 
     if (!baseOrderId) {
       continue;
@@ -4628,6 +4785,9 @@ export function ShowPage({
   const [editingCompTicketFormState, setEditingCompTicketFormState] =
     useState<CompTicketFormState>(initialCompTicketFormState);
   const [compTicketImportText, setCompTicketImportText] = useState("");
+  const [compTicketImportPreview, setCompTicketImportPreview] = useState<
+    CompTicketImportPreviewEntry[]
+  >([]);
   const [compTicketStatusMessage, setCompTicketStatusMessage] = useState<string | null>(null);
   const [compTicketErrorMessage, setCompTicketErrorMessage] = useState<string | null>(null);
   const [activeCompTicketActionId, setActiveCompTicketActionId] = useState<string | null>(null);
@@ -4897,6 +5057,10 @@ export function ShowPage({
   const paidOnlineRevenue = useMemo(
     () => paidOnlineTickets * PAID_ONLINE_TICKET_PRICE,
     [paidOnlineTickets],
+  );
+  const newCompTicketImportPreviewCount = useMemo(
+    () => compTicketImportPreview.filter((entry) => entry.status === "new").length,
+    [compTicketImportPreview],
   );
   const complimentaryTickets = useMemo(
     () =>
@@ -5985,7 +6149,7 @@ export function ShowPage({
     }
   }
 
-  async function handleImportPaidOnlineGuestList(event: FormEvent<HTMLFormElement>) {
+  async function handlePreviewPaidOnlineGuestList(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!show) {
@@ -6002,17 +6166,43 @@ export function ShowPage({
 
     setCompTicketErrorMessage(null);
     setCompTicketStatusMessage(null);
+    const existingPaidOnlineTickets = compTickets.filter(
+      (item) => normalizeGuestListTicketType(item.ticket_type) === "paid_online",
+    );
+    setCompTicketImportPreview(
+      parsedEntries.map((entry) =>
+        buildPaidOnlineImportPreviewEntry(show.id, entry, existingPaidOnlineTickets),
+      ),
+    );
+  }
+
+  async function handleConfirmPaidOnlineGuestListImport() {
+    if (!show) {
+      setCompTicketErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const newEntries = compTicketImportPreview.filter((entry) => entry.status === "new");
+
+    if (newEntries.length === 0) {
+      setCompTicketErrorMessage("There are no new paid online orders to import.");
+      return;
+    }
+
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
     setActiveCompTicketActionId("import");
 
     try {
       const supabase = createClient();
-      const payload = parsedEntries.map((entry) => ({
+      const payload = newEntries.map((entry) => ({
         show_id: show.id,
         guest_name: entry.guestName,
         email: normalizeOptionalField(entry.email),
         ticket_count: entry.ticketCount,
         ticket_type: "paid_online",
         order_id: normalizeOptionalField(entry.orderId),
+        import_key: entry.importKey,
         notes: normalizeOptionalField(entry.notes),
         checked_in: false,
         checked_in_count: entry.checkedInCount,
@@ -6035,9 +6225,10 @@ export function ShowPage({
       >).map((item) => normalizeShowCompTicket(item));
 
       setCompTickets((currentItems) => sortShowCompTickets([...currentItems, ...importedEntries]));
+      setCompTicketImportPreview([]);
       setCompTicketImportText("");
       setCompTicketStatusMessage(
-        `Imported ${importedEntries.length} paid online guest list entr${importedEntries.length === 1 ? "y" : "ies"}.`,
+        `Imported ${importedEntries.length} new paid online order entr${importedEntries.length === 1 ? "y" : "ies"}.`,
       );
     } catch (error) {
       setCompTicketErrorMessage(getErrorMessage(error));
@@ -12261,11 +12452,19 @@ export function ShowPage({
 
         {shouldShowAdminCompTicketsTab ? (
           <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
-              <p className="text-sm text-stone-600">
-                Track paid online tickets, complimentary tickets, expected attendance, and check-in management for this show.
-              </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
+                <p className="text-sm text-stone-600">
+                  Track paid online tickets, complimentary tickets, expected attendance, and check-in management for this show.
+                </p>
+              </div>
+              <Link
+                href={`/admin/${showSlug}/door`}
+                className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 sm:w-auto"
+              >
+                Open Door Mode
+              </Link>
             </div>
 
             <SectionLoadWarning message={dataSectionErrors.compTickets} />
@@ -12487,28 +12686,103 @@ export function ShowPage({
               {isTicketImportOpen ? (
                 <form
                   className="mt-4 grid gap-4"
-                  onSubmit={(event) => void handleImportPaidOnlineGuestList(event)}
+                  onSubmit={(event) => void handlePreviewPaidOnlineGuestList(event)}
                 >
 
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                 Website Order Text
                 <textarea
                   value={compTicketImportText}
-                  onChange={(event) => setCompTicketImportText(event.target.value)}
+                  onChange={(event) => {
+                    setCompTicketImportText(event.target.value);
+                    setCompTicketImportPreview([]);
+                  }}
                   className="min-h-32 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                   placeholder={"Example:\n177186438 John Smith john@example.com\n177186438-2 John Smith john@example.com"}
                 />
               </label>
 
-              <div className="flex justify-start">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="submit"
                   disabled={activeCompTicketActionId === "import"}
                   className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {activeCompTicketActionId === "import" ? "Importing..." : "Import Paid Online Orders"}
+                  Preview Import
                 </button>
+                {compTicketImportPreview.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmPaidOnlineGuestListImport()}
+                    disabled={activeCompTicketActionId === "import" || newCompTicketImportPreviewCount === 0}
+                    className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                  >
+                    {activeCompTicketActionId === "import"
+                      ? "Importing..."
+                      : `Confirm Import (${newCompTicketImportPreviewCount} New)`}
+                  </button>
+                ) : null}
               </div>
+
+              {compTicketImportPreview.length > 0 ? (
+                <div className="grid gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <div className="flex flex-wrap items-center gap-3 text-sm text-stone-600">
+                    <span>{compTicketImportPreview.length} row{compTicketImportPreview.length === 1 ? "" : "s"} parsed</span>
+                    <span>{newCompTicketImportPreviewCount} New</span>
+                    <span>
+                      {compTicketImportPreview.filter((entry) => entry.status === "already_imported").length} Already Imported
+                    </span>
+                    <span>
+                      {compTicketImportPreview.filter((entry) => entry.status === "possible_duplicate").length} Possible Duplicate
+                    </span>
+                  </div>
+                  <p className="text-sm text-stone-600">
+                    Confirm Import will create only rows marked <span className="font-semibold text-emerald-700">New</span>. Existing check-in counts stay untouched.
+                  </p>
+
+                  <div className="grid gap-3">
+                    {compTicketImportPreview.map((entry, index) => {
+                      const statusClasses =
+                        entry.status === "new"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : entry.status === "already_imported"
+                            ? "bg-sky-100 text-sky-800"
+                            : "bg-amber-100 text-amber-800";
+
+                      return (
+                        <article
+                          key={`${entry.importKey}-${index}`}
+                          className="rounded-2xl border border-stone-200 bg-white p-4"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="space-y-1">
+                              <p className="text-sm font-semibold text-stone-900">{entry.guestName}</p>
+                              <p className="text-sm text-stone-600">
+                                {entry.ticketCount} ticket{entry.ticketCount === 1 ? "" : "s"} · {formatCurrency(entry.amountPaid)}
+                              </p>
+                              {entry.email ? (
+                                <p className="text-sm text-stone-600">{entry.email}</p>
+                              ) : null}
+                              {entry.orderId ? (
+                                <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                                  Order ID: {entry.orderId}
+                                </p>
+                              ) : null}
+                            </div>
+                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${statusClasses}`}>
+                              {entry.status === "new"
+                                ? "New"
+                                : entry.status === "already_imported"
+                                  ? "Already Imported"
+                                  : "Possible Duplicate"}
+                            </span>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
                 </form>
               ) : null}
             </div>

@@ -271,6 +271,7 @@ create table if not exists public.show_comp_tickets (
   ticket_count integer not null default 1,
   ticket_type text not null default 'complimentary',
   order_id text,
+  import_key text,
   notes text,
   checked_in boolean not null default false,
   checked_in_count integer not null default 0,
