@@ -154,6 +154,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [compTickets, setCompTickets] = useState<ShowCompTicket[]>([]);
   const [recentActivities, setRecentActivities] = useState<DoorModeActivity[]>([]);
   const [isTotalsPanelOpen, setIsTotalsPanelOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
@@ -209,6 +210,16 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
     void loadDoorModeData();
   }, [loadDoorModeData]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const doorPaidTickets = useMemo(
     () =>
       compTickets
@@ -243,6 +254,11 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const totalPaidAttendance = doorPaidTickets + prepaidOnlineTickets;
   const totalAttendance = totalPaidAttendance + compCheckedInTickets + manualCheckedInTickets;
   const totalRevenue = doorPaidRevenue + prepaidOnlineRevenue;
+  const formattedCurrentTime = currentTime.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 
   const prepaidTickets = useMemo(
     () =>
@@ -599,8 +615,8 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
     <main className="min-h-screen bg-stone-950 px-4 py-6 text-stone-100 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1800px] flex-col gap-3">
         <section className="rounded-[22px] border border-stone-800 bg-stone-900/90 p-3.5 shadow-2xl shadow-black/30">
-          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-1">
+          <div className="relative flex flex-col gap-3 lg:min-h-[5.5rem] lg:justify-center">
+            <div className="space-y-1 lg:min-w-0 lg:pr-56">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="rounded-full border border-emerald-700/60 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
                   Door Mode / Check-In Mode
@@ -617,15 +633,21 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               </p>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <div className="flex min-w-[10rem] max-w-[12rem] flex-col gap-1 rounded-xl border border-emerald-900/70 bg-emerald-500/5 px-3 py-2">
-                <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center gap-1.5 rounded-xl border border-stone-800 bg-stone-950/35 px-3 py-2 text-center lg:absolute lg:left-1/2 lg:top-1/2 lg:w-auto lg:min-w-[13rem] lg:-translate-x-1/2 lg:-translate-y-1/2 lg:justify-center lg:px-4">
+              <div className="text-4xl font-semibold tracking-[0.04em] text-stone-100 sm:text-5xl">
+                {formattedCurrentTime}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 lg:absolute lg:right-0 lg:top-1/2 lg:-translate-y-1/2">
+              <div className="flex min-w-[9rem] max-w-[11rem] flex-col items-center gap-1 rounded-lg border border-emerald-900/70 bg-emerald-500/5 px-2.5 py-1.5">
+                <div className="flex items-center justify-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(74,222,128,0.7)]" />
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-300">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-300">
                     Online
                   </span>
                 </div>
-                <div className="relative h-1.5 overflow-hidden rounded-full bg-stone-800">
+                <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-stone-800">
                   <div className="door-mode-scanner absolute inset-y-0 left-0 w-10 rounded-full bg-gradient-to-r from-transparent via-emerald-300 to-transparent opacity-80" />
                 </div>
               </div>
