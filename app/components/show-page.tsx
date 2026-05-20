@@ -25,6 +25,11 @@ import {
   isPromoMaterialImage,
   PromoMaterialsView,
 } from "@/app/components/promo-materials-view";
+import {
+  buildShowReminderSummary,
+  buildShowTimelineMessages,
+  getDaysUntilDate,
+} from "@/lib/show-reminders";
 import { createClient } from "@/lib/supabase/client";
 import type {
   CompTicketFormState,
@@ -637,45 +642,6 @@ function formatShowDate(showDate: string | null) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${showDate}T00:00:00`));
-}
-
-function getDaysUntilDate(targetDate: string | null) {
-  if (!targetDate) {
-    return null;
-  }
-
-  const today = new Date();
-  const startOfTodayUtc = Date.UTC(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate(),
-  );
-  const targetUtc = Date.parse(`${targetDate}T00:00:00Z`);
-
-  if (Number.isNaN(targetUtc)) {
-    return null;
-  }
-
-  return Math.floor((targetUtc - startOfTodayUtc) / (1000 * 60 * 60 * 24));
-}
-
-function buildShowReminderSummary(showDate: string | null) {
-  const daysUntilShow = getDaysUntilDate(showDate);
-
-  if (daysUntilShow === null) {
-    return null;
-  }
-
-  const facebookReminderDays = daysUntilShow - 30;
-  const bannerReminderDays = daysUntilShow - 14;
-
-  return {
-    daysUntilShow,
-    facebookReminderDays,
-    bannerReminderDays,
-    isFacebookReminderActive: facebookReminderDays <= 0,
-    isBannerReminderActive: bannerReminderDays <= 0,
-  };
 }
 
 function formatCurrency(amount: number) {
@@ -1816,6 +1782,44 @@ function parseGuestListImportText(text: string): ParsedGuestListImportEntry[] {
 
 function sortShowChecklistItems(items: ShowChecklistItem[]) {
   return [...items].sort((itemA, itemB) => itemA.created_at.localeCompare(itemB.created_at));
+}
+
+function getChecklistDueStatus(item: ShowChecklistItem) {
+  if (item.completed || !item.due_date) {
+    return null;
+  }
+
+  const daysUntilDue = getDaysUntilDate(item.due_date);
+
+  if (daysUntilDue === null) {
+    return null;
+  }
+
+  if (daysUntilDue < 0) {
+    return {
+      kind: "overdue" as const,
+      label: "Overdue",
+      className: "bg-rose-100 text-rose-700",
+    };
+  }
+
+  if (daysUntilDue === 0) {
+    return {
+      kind: "today" as const,
+      label: "Due Today",
+      className: "bg-amber-100 text-amber-900",
+    };
+  }
+
+  if (daysUntilDue <= 2) {
+    return {
+      kind: "soon" as const,
+      label: "Due Soon",
+      className: "bg-sky-100 text-sky-800",
+    };
+  }
+
+  return null;
 }
 
 function buildFinanceReportHtml({
@@ -4778,6 +4782,8 @@ export function ShowPage({
   const [showChecklistItems, setShowChecklistItems] = useState<ShowChecklistItem[]>([]);
   const [isShowChecklistOpen, setIsShowChecklistOpen] = useState(false);
   const [newChecklistTask, setNewChecklistTask] = useState("");
+  const [newChecklistDueDate, setNewChecklistDueDate] = useState("");
+  const [checklistDueDateDrafts, setChecklistDueDateDrafts] = useState<Record<string, string>>({});
   const [activeChecklistActionId, setActiveChecklistActionId] = useState<string | null>(null);
   const [compTickets, setCompTickets] = useState<ShowCompTicket[]>([]);
   const [compTicketFormState, setCompTicketFormState] = useState<CompTicketFormState>(initialCompTicketFormState);
@@ -4974,6 +4980,15 @@ export function ShowPage({
       currentIds.filter((currentId) => compTickets.some((item) => item.id === currentId)),
     );
   }, [compTickets]);
+
+  useEffect(() => {
+    setChecklistDueDateDrafts(
+      showChecklistItems.reduce<Record<string, string>>((drafts, item) => {
+        drafts[item.id] = item.due_date ?? "";
+        return drafts;
+      }, {}),
+    );
+  }, [showChecklistItems]);
 
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
@@ -5311,6 +5326,25 @@ export function ShowPage({
         (profile) => !profile.short_bio?.trim() || !profile.photo_url?.trim(),
       ).length,
     [guestProfiles],
+  );
+  const incompleteChecklistItemsCount = useMemo(
+    () => showChecklistItems.filter((item) => !item.completed).length,
+    [showChecklistItems],
+  );
+  const overdueChecklistItemsCount = useMemo(
+    () =>
+      showChecklistItems.filter((item) => getChecklistDueStatus(item)?.kind === "overdue").length,
+    [showChecklistItems],
+  );
+  const dueTodayChecklistItemsCount = useMemo(
+    () =>
+      showChecklistItems.filter((item) => getChecklistDueStatus(item)?.kind === "today").length,
+    [showChecklistItems],
+  );
+  const dueSoonChecklistItemsCount = useMemo(
+    () =>
+      showChecklistItems.filter((item) => getChecklistDueStatus(item)?.kind === "soon").length,
+    [showChecklistItems],
   );
   const unconfirmedGuestsCount = useMemo(
     () => guestProfiles.filter((profile) => !profile.is_confirmed).length,
@@ -6839,6 +6873,31 @@ export function ShowPage({
     () => buildShowReminderSummary(show?.show_date ?? null),
     [show?.show_date],
   );
+  const checklistTimelineMessages = useMemo(() => {
+    const messages: string[] = [];
+
+    if (overdueChecklistItemsCount > 0) {
+      messages.push(
+        `${overdueChecklistItemsCount} checklist item${overdueChecklistItemsCount === 1 ? "" : "s"} overdue`,
+      );
+    }
+
+    if (dueTodayChecklistItemsCount > 0) {
+      messages.push(
+        `${dueTodayChecklistItemsCount} checklist item${dueTodayChecklistItemsCount === 1 ? "" : "s"} due today`,
+      );
+    } else if (dueSoonChecklistItemsCount > 0) {
+      messages.push(
+        `${dueSoonChecklistItemsCount} checklist item${dueSoonChecklistItemsCount === 1 ? "" : "s"} due soon`,
+      );
+    }
+
+    return messages;
+  }, [dueSoonChecklistItemsCount, dueTodayChecklistItemsCount, overdueChecklistItemsCount]);
+  const quickNavTimelineMessages = useMemo(
+    () => [...buildShowTimelineMessages(show?.show_date ?? null), ...checklistTimelineMessages],
+    [checklistTimelineMessages, show?.show_date],
+  );
 
   useEffect(() => {
     setMcBlockNoteDrafts(buildBlockNoteDrafts(mcRunSections, mcBlockNotes));
@@ -8210,7 +8269,7 @@ export function ShowPage({
     }
   }
 
-  async function handleAddShowChecklistTask(taskText: string) {
+  async function handleAddShowChecklistTask(taskText: string, dueDate?: string) {
     if (!show) {
       setActionError("The show is not loaded yet.");
       return;
@@ -8234,6 +8293,7 @@ export function ShowPage({
           show_id: show.id,
           task,
           completed: false,
+          due_date: normalizeOptionalField(dueDate?.trim() ?? ""),
         })
         .select("*")
         .single();
@@ -8246,6 +8306,7 @@ export function ShowPage({
         sortShowChecklistItems([...(currentItems ?? []), data as ShowChecklistItem]),
       );
       setNewChecklistTask("");
+      setNewChecklistDueDate("");
       setIsShowChecklistOpen(true);
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -8263,6 +8324,40 @@ export function ShowPage({
       const { data, error } = await supabase
         .from("show_checklist_items")
         .update({ completed: !item.completed })
+        .eq("id", item.id)
+        .eq("show_id", item.show_id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setShowChecklistItems((currentItems) =>
+        sortShowChecklistItems(
+          currentItems.map((currentItem) =>
+            currentItem.id === item.id ? (data as ShowChecklistItem) : currentItem,
+          ),
+        ),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveChecklistActionId(null);
+    }
+  }
+
+  async function handleSaveShowChecklistDueDate(item: ShowChecklistItem) {
+    setActionError(null);
+    setActiveChecklistActionId(`due-${item.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_checklist_items")
+        .update({
+          due_date: normalizeOptionalField(checklistDueDateDrafts[item.id] ?? ""),
+        })
         .eq("id", item.id)
         .eq("show_id", item.show_id)
         .select("*")
@@ -10986,13 +11081,13 @@ export function ShowPage({
       className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8"
     >
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
-        <AdminQuickNav slug={showSlug} currentView={viewMode} />
+        <AdminQuickNav slug={showSlug} currentView={viewMode} timelineMessages={quickNavTimelineMessages} />
 
-        <header className="print-hidden flex flex-col gap-4 border-b border-stone-200 pb-6">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
+        <header className="print-hidden flex flex-col gap-3 border-b border-stone-200 pb-5">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
               {shouldShowPortalLogo ? (
-                <div className="mb-1 w-full max-w-[300px] sm:max-w-[340px] lg:max-w-[360px] xl:max-w-[390px]">
+                <div className="mb-0.5 w-full max-w-[300px] sm:max-w-[340px] lg:max-w-[360px] xl:max-w-[390px]">
                   <Image
                     src="/stageflow-logo-v2.png"
                     alt="StageFlow logo"
@@ -11012,8 +11107,8 @@ export function ShowPage({
               >
                 {portalLabel}
               </p>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{show.name}</h1>
-              <p className="text-base text-stone-600">{formatShowDate(show.show_date)}</p>
+              <h1 className="text-[2.15rem] font-bold tracking-tight sm:text-[2.7rem]">{show.name}</h1>
+              <p className="text-[0.95rem] text-stone-600 sm:text-base">{formatShowDate(show.show_date)}</p>
             </div>
           </div>
         </header>
@@ -11256,202 +11351,206 @@ export function ShowPage({
                     </p>
                     <p className="mt-1 text-sm text-stone-700">{unconfirmedGuestsCount}</p>
                   </div>
+                  <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Show Checklist
+                        </p>
+                        <p className="mt-1 text-sm text-stone-700">
+                          {incompleteChecklistItemsCount} incomplete item{incompleteChecklistItemsCount === 1 ? "" : "s"}
+                        </p>
+                        {overdueChecklistItemsCount > 0 ? (
+                          <p className="mt-1 text-sm font-medium text-rose-700">
+                            {overdueChecklistItemsCount} checklist item{overdueChecklistItemsCount === 1 ? "" : "s"} overdue
+                          </p>
+                        ) : null}
+                        {dueTodayChecklistItemsCount > 0 ? (
+                          <p className="mt-1 text-sm font-medium text-amber-700">
+                            {dueTodayChecklistItemsCount} checklist item{dueTodayChecklistItemsCount === 1 ? "" : "s"} due today
+                          </p>
+                        ) : dueSoonChecklistItemsCount > 0 ? (
+                          <p className="mt-1 text-sm font-medium text-sky-700">
+                            {dueSoonChecklistItemsCount} checklist item{dueSoonChecklistItemsCount === 1 ? "" : "s"} due soon
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsShowChecklistOpen(true)}
+                        className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        View Checklist
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </section>
             </div>
 
-            <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-                    Show Checklist
-                  </p>
-                  <h3 className="text-lg font-semibold text-stone-900">Simple To-Do List</h3>
-                  <p className="text-sm text-stone-600">
-                    Track small show tasks without changing the rest of the admin workflow.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsShowChecklistOpen((currentValue) => !currentValue)}
-                  className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                >
-                  {isShowChecklistOpen ? "Hide Checklist" : "Show Checklist"}
-                </button>
-              </div>
-
-              <SectionLoadWarning message={dataSectionErrors.checklistItems} />
-
-              {isShowChecklistOpen ? (
-                <div className="mt-4 grid gap-4">
-                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                    <div className="flex flex-col gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                        Quick Add
+            {isShowChecklistOpen ? (
+              <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/60 px-4 py-6 backdrop-blur-sm sm:px-6 sm:py-10">
+                <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-stone-200 bg-stone-50 p-4 shadow-2xl sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                        Show Checklist
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        {showChecklistQuickAddTasks.map((task) => (
-                          <button
-                            key={task}
-                            type="button"
-                            onClick={() => void handleAddShowChecklistTask(task)}
-                            disabled={activeChecklistActionId === "create"}
-                            className="rounded-full border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {task}
-                          </button>
-                        ))}
-                      </div>
+                      <h3 className="text-lg font-semibold text-stone-900">Simple To-Do List</h3>
+                      <p className="text-sm text-stone-600">
+                        Track small show tasks without changing the rest of the admin workflow.
+                      </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsShowChecklistOpen(false)}
+                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                    >
+                      Close Checklist
+                    </button>
                   </div>
 
-                  <form
-                    className="rounded-2xl border border-stone-200 bg-white p-4"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void handleAddShowChecklistTask(newChecklistTask);
-                    }}
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <input
-                        type="text"
-                        value={newChecklistTask}
-                        onChange={(event) => setNewChecklistTask(event.target.value)}
-                        className="flex-1 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Add a custom checklist task"
-                      />
-                      <button
-                        type="submit"
-                        disabled={activeChecklistActionId === "create"}
-                        className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                      >
-                        {activeChecklistActionId === "create" ? "Adding..." : "Add Task"}
-                      </button>
-                    </div>
-                  </form>
+                  <SectionLoadWarning message={dataSectionErrors.checklistItems} />
 
-                  {showChecklistItems.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
-                      No checklist items yet. Use Quick Add or create a custom task.
+                  <div className="mt-4 grid gap-4">
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <div className="flex flex-col gap-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Quick Add
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {showChecklistQuickAddTasks.map((task) => (
+                            <button
+                              key={task}
+                              type="button"
+                              onClick={() => void handleAddShowChecklistTask(task)}
+                              disabled={activeChecklistActionId === "create"}
+                              className="rounded-full border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {task}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="grid gap-3">
-                      {showChecklistItems.map((item) => (
-                        <article
-                          key={item.id}
-                          className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+
+                    <form
+                      className="rounded-2xl border border-stone-200 bg-white p-4"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void handleAddShowChecklistTask(newChecklistTask, newChecklistDueDate);
+                      }}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <input
+                          type="text"
+                          value={newChecklistTask}
+                          onChange={(event) => setNewChecklistTask(event.target.value)}
+                          className="flex-1 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Add a custom checklist task"
+                        />
+                        <input
+                          type="date"
+                          value={newChecklistDueDate}
+                          onChange={(event) => setNewChecklistDueDate(event.target.value)}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 sm:w-[11rem]"
+                        />
+                        <button
+                          type="submit"
+                          disabled={activeChecklistActionId === "create"}
+                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                         >
-                          <label className="flex min-w-0 flex-1 items-start gap-3">
-                            <input
-                              type="checkbox"
-                              checked={item.completed}
-                              onChange={() => void handleToggleShowChecklistItem(item)}
-                              disabled={activeChecklistActionId === item.id}
-                              className="mt-0.5 h-4 w-4 rounded border border-stone-300 text-emerald-700 focus:ring-emerald-600"
-                            />
-                            <div className="min-w-0">
-                              <p
-                                className={`text-sm font-medium ${
-                                  item.completed ? "text-stone-500 line-through" : "text-stone-900"
-                                }`}
-                              >
-                                {item.task}
-                              </p>
-                            </div>
-                          </label>
+                          {activeChecklistActionId === "create" ? "Adding..." : "Add Task"}
+                        </button>
+                      </div>
+                    </form>
 
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteShowChecklistItem(item)}
-                            disabled={activeChecklistActionId === `delete-${item.id}`}
-                            className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    {showChecklistItems.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
+                        No checklist items yet. Use Quick Add or create a custom task.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3">
+                        {showChecklistItems.map((item) => (
+                          <article
+                            key={item.id}
+                            className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-white p-4"
                           >
-                            {activeChecklistActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
-                          </button>
-                        </article>
-                      ))}
-                    </div>
-                  )}
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <label className="flex min-w-0 flex-1 items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={item.completed}
+                                  onChange={() => void handleToggleShowChecklistItem(item)}
+                                  disabled={activeChecklistActionId === item.id}
+                                  className="mt-0.5 h-4 w-4 rounded border border-stone-300 text-emerald-700 focus:ring-emerald-600"
+                                />
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p
+                                      className={`text-sm font-medium ${
+                                        item.completed ? "text-stone-500 line-through" : "text-stone-900"
+                                      }`}
+                                    >
+                                      {item.task}
+                                    </p>
+                                    {getChecklistDueStatus(item) ? (
+                                      <span
+                                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${getChecklistDueStatus(item)?.className}`}
+                                      >
+                                        {getChecklistDueStatus(item)?.label}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                                    Due Date:{" "}
+                                    <span className="normal-case tracking-normal text-stone-700">
+                                      {item.due_date ? formatShowDate(item.due_date) : "No due date"}
+                                    </span>
+                                  </p>
+                                </div>
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteShowChecklistItem(item)}
+                                disabled={activeChecklistActionId === `delete-${item.id}`}
+                                className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {activeChecklistActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                              <input
+                                type="date"
+                                value={checklistDueDateDrafts[item.id] ?? ""}
+                                onChange={(event) =>
+                                  setChecklistDueDateDrafts((currentDrafts) => ({
+                                    ...currentDrafts,
+                                    [item.id]: event.target.value,
+                                  }))
+                                }
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 sm:w-[11rem]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveShowChecklistDueDate(item)}
+                                disabled={activeChecklistActionId === `due-${item.id}`}
+                                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {activeChecklistActionId === `due-${item.id}` ? "Saving..." : "Save Due Date"}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              ) : null}
-            </section>
-
-            <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-                  Quick Actions
-                </p>
-                <h3 className="text-lg font-semibold text-stone-900">Jump Into a Section</h3>
               </div>
+            ) : null}
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <button
-                  type="button"
-                  onClick={() => setActiveAdminTab("setlist")}
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
-                >
-                  <p className="text-sm font-semibold text-stone-900">Setlist</p>
-                  <p className="mt-1 text-sm text-stone-600">Open the official setlist and print tools.</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveAdminTab("guests")}
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
-                >
-                  <p className="text-sm font-semibold text-stone-900">Guests</p>
-                  <p className="mt-1 text-sm text-stone-600">Review bios, links, and guest readiness.</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveAdminTab("comp-tickets")}
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
-                >
-                  <p className="text-sm font-semibold text-stone-900">Tickets / Check-In</p>
-                  <p className="mt-1 text-sm text-stone-600">Track paid online, complimentary, and manual entries.</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveAdminTab("songs")}
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
-                >
-                  <p className="text-sm font-semibold text-stone-900">Songs</p>
-                  <p className="mt-1 text-sm text-stone-600">Manage the song library and show suggestions.</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveAdminTab("show-details")}
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
-                >
-                  <p className="text-sm font-semibold text-stone-900">Itinerary</p>
-                  <p className="mt-1 text-sm text-stone-600">Open timing, venue, and show logistics.</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveAdminTab("promo-materials")}
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
-                >
-                  <p className="text-sm font-semibold text-stone-900">Promo Materials</p>
-                  <p className="mt-1 text-sm text-stone-600">View and manage flyers, graphics, and assets.</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveAdminTab("setlist")}
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
-                >
-                  <p className="text-sm font-semibold text-stone-900">Print Center</p>
-                  <p className="mt-1 text-sm text-stone-600">Use the existing print buttons in the setlist tools.</p>
-                </button>
-                <a
-                  href="https://charts.pinnaclestudiotn.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-emerald-300 hover:bg-stone-50"
-                >
-                  <p className="text-sm font-semibold text-stone-900">ChartBuilder</p>
-                  <p className="mt-1 text-sm text-stone-600">Open the external chart tool in a new tab.</p>
-                </a>
-              </div>
-            </section>
           </section>
         ) : null}
 

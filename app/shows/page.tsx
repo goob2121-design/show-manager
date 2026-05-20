@@ -7,6 +7,7 @@ import type { ChangeEvent, FormEvent, MouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
+import { buildShowTimelineMessages } from "@/lib/show-reminders";
 import { createClient } from "@/lib/supabase/client";
 import type { GuestProfile, SetlistEntry, ShowFinanceItem, ShowGuestSong, ShowRecord } from "@/lib/types";
 
@@ -933,6 +934,10 @@ export default function ShowsDashboardPage() {
     (show) => show.show_date && show.show_date >= today,
   );
   const currentShow = upcomingShows[0] ?? null;
+  const dashboardTimelineMessages = useMemo(
+    () => buildShowTimelineMessages(currentShow?.show_date ?? null),
+    [currentShow?.show_date],
+  );
   const guestSongIdsInSetlist = useMemo(
     () =>
       new Set(
@@ -2302,6 +2307,7 @@ export default function ShowsDashboardPage() {
                 slug={currentShow.slug}
                 accessSlug="shows-dashboard"
                 currentView="dashboard"
+                timelineMessages={dashboardTimelineMessages}
               />
             </div>
           ) : null}
@@ -2351,115 +2357,6 @@ export default function ShowsDashboardPage() {
 
           <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <div className="grid gap-6">
-              <section className="rounded-3xl border border-stone-200 bg-stone-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:p-5">
-                <button
-                  type="button"
-                  onClick={() => toggleMainDashboardPanel("quickActions")}
-                  className="flex w-full items-start justify-between gap-4 text-left"
-                >
-                  <div className="flex flex-col gap-1">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-                      Quick Actions
-                    </p>
-                    <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
-                      Move Fast
-                    </h2>
-                    <p className="text-sm text-stone-600 dark:text-slate-300">
-                      Jump into the most common admin tasks without hunting through the dashboard first.
-                    </p>
-                  </div>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                    {expandedMainPanels.quickActions ? "-" : "+"}
-                  </span>
-                </button>
-
-                {expandedMainPanels.quickActions ? (
-                  <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <button
-                    type="button"
-                    onClick={() => openDashboardTab("create", "create-show-section")}
-                    className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
-                  >
-                    <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Create Show</p>
-                    <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
-                      Open the existing show-creation workflow and start the next event.
-                    </p>
-                  </button>
-
-                  {currentShow ? (
-                    <Link
-                      href={`/admin/${currentShow.slug}?tab=songs`}
-                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
-                    >
-                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Add Song</p>
-                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
-                        Jump straight into the song tools for {currentShow.name}.
-                      </p>
-                    </Link>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => openDashboardTab("create", "create-show-section")}
-                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
-                    >
-                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Add Song</p>
-                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
-                        Create a show first, then jump into that show&apos;s song tools.
-                      </p>
-                    </button>
-                  )}
-
-                  {currentShow ? (
-                    <Link
-                      href={`/admin/${currentShow.slug}?tab=guests`}
-                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
-                    >
-                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Add Guest / Guest Info</p>
-                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
-                        Review guest profiles, bios, and submissions for the next show.
-                      </p>
-                    </Link>
-                  ) : null}
-
-                  {currentShow ? (
-                    <Link
-                      href={`/admin/${currentShow.slug}?tab=setlist`}
-                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
-                    >
-                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Create / Manage Setlist</p>
-                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
-                        Open the active show&apos;s setlist builder and official song order.
-                      </p>
-                    </Link>
-                  ) : null}
-
-                  {currentShow ? (
-                    <Link
-                      href={`/admin/${currentShow.slug}?tab=promo-materials`}
-                      className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
-                    >
-                      <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Upload Promo Material</p>
-                      <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
-                        Add flyers, graphics, and show assets for the current event.
-                      </p>
-                    </Link>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={() => jumpToSection("next-show-links")}
-                    className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-5 text-left transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-900 dark:hover:bg-slate-900"
-                  >
-                    <p className="text-base font-semibold text-stone-900 dark:text-slate-100">Copy Links</p>
-                    <p className="mt-2 text-sm text-stone-600 dark:text-slate-300">
-                      Jump to the existing portal link actions for the next show.
-                    </p>
-                  </button>
-
-                  </div>
-                ) : null}
-              </section>
-
               <section className="rounded-3xl border border-stone-200 bg-stone-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:p-5">
                 <button
                   type="button"

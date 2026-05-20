@@ -248,6 +248,7 @@ create table if not exists public.show_checklist_items (
   show_id uuid not null references public.shows(id) on delete cascade,
   task text not null,
   completed boolean not null default false,
+  due_date date,
   created_at timestamptz not null default now()
 );
 

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
+import { buildShowTimelineMessages } from "@/lib/show-reminders";
 import type {
   GuestProfile,
   McBlockNote,
@@ -1221,6 +1222,10 @@ export function McPage({
 
     return groups;
   }, [mcFlowItems]);
+  const quickNavTimelineMessages = useMemo(
+    () => buildShowTimelineMessages(show?.show_date ?? null),
+    [show?.show_date],
+  );
 
   function renderSongFlowCard(song: SetlistSong, printMode = false) {
     const mcBlock = mcBlockLookup[song.id] ?? null;
@@ -1383,7 +1388,7 @@ export function McPage({
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8">
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
-        <AdminQuickNav slug={showSlug} currentView="mc" />
+        <AdminQuickNav slug={showSlug} currentView="mc" timelineMessages={quickNavTimelineMessages} />
 
         <header className="print-hidden flex flex-col gap-4 border-b border-stone-200 pb-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

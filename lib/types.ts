@@ -216,6 +216,7 @@ export type ShowChecklistItem = {
   show_id: string;
   task: string;
   completed: boolean;
+  due_date: string | null;
   created_at: string;
 };
 
