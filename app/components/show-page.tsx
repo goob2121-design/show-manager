@@ -16319,70 +16319,128 @@ export function ShowPage({
                                 : "border-stone-200 bg-stone-50"
                             }`}
                           >
-                            <div className="flex flex-wrap items-start gap-2">
-                              <p className="text-base font-medium text-stone-900 sm:text-lg">
-                                {song.title} - {getDisplaySingerName(song.artist)}
-                                {song.song_key ? ` (${song.song_key})` : ""}
-                              </p>
-                              {isGuestSetlistSong ? (
-                                <span className="rounded-full border border-cyan-500/80 bg-cyan-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-950 dark:border-cyan-600/80 dark:bg-cyan-900/85 dark:text-cyan-100">
-                                  Guest
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                              <span>{song.source_type === "guest" ? "Guest Song" : "Library Song"}</span>
-                              {song.tempo ? <span>Tempo: {song.tempo}</span> : null}
-                              {song.song_type ? <span>Type: {song.song_type}</span> : null}
-                            </div>
-
-                            {song.notes?.trim() ? (
-                              <p className="mt-3 whitespace-pre-wrap text-sm text-stone-600">
-                                {renderTextWithLinks(song.notes)}
-                              </p>
-                            ) : null}
-
-                            {hasSetlistSongLyrics || setlistSongChartUrl || setlistSongMp3Path ? (
-                              <div className="print-hidden mt-3 flex flex-wrap items-center gap-2">
-                                {hasSetlistSongLyrics && song.song_id ? (
-                                  <Link
-                                    href={`/songs/${song.song_id}`}
-                                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Lyrics
-                                  </Link>
-                                ) : null}
-                                {setlistSongChartUrl ? (
-                                  <a
-                                    href={setlistSongChartUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Chart
-                                  </a>
-                                ) : null}
-                                {setlistSongMp3Path ? (
-                                  <div className="min-w-0">
-                                <SongMp3DownloadButton
-                                  title={song.title}
-                                  mp3Path={setlistSongMp3Path}
-                                />
-                                  </div>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-start gap-2">
+                                <p className="text-base font-medium text-stone-900 sm:text-lg">
+                                  {song.title} - {getDisplaySingerName(song.artist)}
+                                  {song.song_key ? ` (${song.song_key})` : ""}
+                                </p>
+                                {isGuestSetlistSong ? (
+                                  <span className="rounded-full border border-cyan-500/80 bg-cyan-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-950 dark:border-cyan-600/80 dark:bg-cyan-900/85 dark:text-cyan-100">
+                                    Guest
+                                  </span>
                                 ) : null}
                               </div>
-                            ) : null}
+                              <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                <span>{song.source_type === "guest" ? "Guest Song" : "Library Song"}</span>
+                                {song.tempo ? <span>Tempo: {song.tempo}</span> : null}
+                                {song.song_type ? <span>Type: {song.song_type}</span> : null}
+                              </div>
 
-                            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                              {canEditSetlistSong() ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleStartEditingSetlistSong(song.id)}
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                >
-                                  Edit Song
-                                </button>
+                              {song.notes?.trim() ? (
+                                <p className="mt-3 whitespace-pre-wrap text-sm text-stone-600">
+                                  {renderTextWithLinks(song.notes)}
+                                </p>
                               ) : null}
+
+                              <div className="print-hidden mt-4">
+                                <div className="flex w-full flex-wrap items-center gap-2">
+                                  {hasSetlistSongLyrics && song.song_id ? (
+                                    <Link
+                                      href={`/songs/${song.song_id}`}
+                                      className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Lyrics
+                                    </Link>
+                                  ) : null}
+                                  {setlistSongChartUrl ? (
+                                    <a
+                                      href={setlistSongChartUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Chart
+                                    </a>
+                                  ) : null}
+                                  {setlistSongMp3Path ? (
+                                    <div className="min-w-0">
+                                      <SongMp3DownloadButton
+                                        title={song.title}
+                                        mp3Path={setlistSongMp3Path}
+                                      />
+                                    </div>
+                                  ) : null}
+                                  {canEditSetlistSong() ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditingSetlistSong(song.id)}
+                                      className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Edit Song
+                                    </button>
+                                  ) : null}
+                                  {viewMode === "admin" ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMoveSongUp(song.id)}
+                                        disabled={activeSetlistActionId === song.id}
+                                        className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Move Up
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMoveSongDown(song.id)}
+                                        disabled={activeSetlistActionId === song.id}
+                                        className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Move Down
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMoveSongToSection(song.id, "set1")}
+                                        disabled={
+                                          activeSetlistActionId === song.id || song.set_section === "set1"
+                                        }
+                                        className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Move to Set 1
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMoveSongToSection(song.id, "set2")}
+                                        disabled={
+                                          activeSetlistActionId === song.id || song.set_section === "set2"
+                                        }
+                                        className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Move to Set 2
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMoveSongToSection(song.id, "encore")}
+                                        disabled={
+                                          activeSetlistActionId === song.id ||
+                                          song.set_section === "encore"
+                                        }
+                                        className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Move to Encore
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveFromSetlist(song.id)}
+                                        disabled={activeSetlistActionId === song.id}
+                                        className="inline-flex h-9 items-center rounded-lg border border-rose-300 bg-rose-50 px-3 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        Remove
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </div>
+                              </div>
                             </div>
 
                             {editingSetlistSongId === song.id ? (
@@ -16419,70 +16477,6 @@ export function ShowPage({
                               </div>
                             ) : null}
 
-                            {viewMode === "admin" ? (
-                              <div className="mt-4 flex flex-col gap-3">
-                                <div className="flex flex-col gap-3 sm:flex-row">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveSongUp(song.id)}
-                                    disabled={activeSetlistActionId === song.id}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Move Up
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveSongDown(song.id)}
-                                    disabled={activeSetlistActionId === song.id}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Move Down
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveFromSetlist(song.id)}
-                                    disabled={activeSetlistActionId === song.id}
-                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-
-                                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveSongToSection(song.id, "set1")}
-                                    disabled={
-                                      activeSetlistActionId === song.id || song.set_section === "set1"
-                                    }
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Move to Set 1
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveSongToSection(song.id, "set2")}
-                                    disabled={
-                                      activeSetlistActionId === song.id || song.set_section === "set2"
-                                    }
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Move to Set 2
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveSongToSection(song.id, "encore")}
-                                    disabled={
-                                      activeSetlistActionId === song.id ||
-                                      song.set_section === "encore"
-                                    }
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Move to Encore
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
                           </div>
                         </li>
                         );
@@ -18827,15 +18821,12 @@ export function ShowPage({
                           ) : null}
                         </div>
 
-                        {song.mp3_path ? (
-                          <div className="mt-3">
-                            <SongMp3DownloadButton title={song.title} mp3Path={song.mp3_path} />
-                          </div>
-                        ) : null}
-
                         {isBandView || canEditLibrarySong(song) || isAdminView ? (
                           <div className="mt-4 flex flex-col gap-3">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {song.mp3_path ? (
+                                <SongMp3DownloadButton title={song.title} mp3Path={song.mp3_path} />
+                              ) : null}
                               {canEditLibrarySong(song) ? (
                                 <button
                                   type="button"
@@ -18843,7 +18834,7 @@ export function ShowPage({
                                   disabled={
                                     activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
                                   }
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Edit Song
                                 </button>
@@ -18851,14 +18842,14 @@ export function ShowPage({
                               <button
                                 type="button"
                                 onClick={() => handleToggleLibraryLyrics(song.id)}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
                                 {openLibraryLyricsSongId === song.id ? "Hide Lyrics" : "View Lyrics"}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handlePrintLibrarySong(song)}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
                                 Print Lyrics
                               </button>
@@ -18867,7 +18858,7 @@ export function ShowPage({
                                   href={chartUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                                 >
                                   View Chart
                                 </a>
@@ -18875,21 +18866,21 @@ export function ShowPage({
                               <button
                                 type="button"
                                 onClick={() => handleCopySongLink(song.id)}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
                                 {copiedSongLinkId === song.id ? "Copied Song Link!" : "Copy Song Link"}
                               </button>
                             </div>
 
                             {isAdminView ? (
-                              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={() => handleAddLibrarySongToSection(song, "set1")}
                                   disabled={
                                     activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
                                   }
-                                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                                 >
                                   Add to Set 1
                                 </button>
@@ -18899,7 +18890,7 @@ export function ShowPage({
                                   disabled={
                                     activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
                                   }
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Add to Set 2
                                 </button>
@@ -18909,7 +18900,7 @@ export function ShowPage({
                                   disabled={
                                     activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
                                   }
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Add to Encore
                                 </button>
@@ -18918,7 +18909,7 @@ export function ShowPage({
 
                             {isAdminView ? (
                               <div className="border-t border-stone-200 pt-3">
-                                <div className="flex flex-col gap-3 sm:flex-row">
+                                <div className="flex flex-wrap items-center gap-2">
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveLibrarySongFromAnySetlist(song)}
@@ -18927,7 +18918,7 @@ export function ShowPage({
                                       activeSetlistActionId === song.id ||
                                       activeLibraryDeleteSongId === song.id
                                     }
-                                    className="rounded-xl border border-stone-300 bg-stone-100 px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     {activeSetlistActionId === song.id
                                       ? "Removing from Setlist..."
@@ -18939,7 +18930,7 @@ export function ShowPage({
                                     disabled={
                                       activeSetlistActionId === song.id || activeLibraryDeleteSongId === song.id
                                     }
-                                    className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     {activeLibraryDeleteSongId === song.id ? "Deleting Song..." : "Delete Song"}
                                   </button>
