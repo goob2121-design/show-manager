@@ -246,7 +246,18 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
   const prepaidTickets = useMemo(
     () =>
-      compTickets.filter((item) => normalizeGuestListTicketType(item.ticket_type) === "paid_online"),
+      compTickets
+        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "paid_online")
+        .sort((left, right) => {
+          const leftComplete = left.checked_in_count >= left.ticket_count;
+          const rightComplete = right.checked_in_count >= right.ticket_count;
+
+          if (leftComplete !== rightComplete) {
+            return leftComplete ? 1 : -1;
+          }
+
+          return left.created_at.localeCompare(right.created_at);
+        }),
     [compTickets],
   );
   const compAndOtherTickets = useMemo(
@@ -701,7 +712,14 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                 </p>
               ) : (
                 prepaidTickets.map((item) => (
-                  <article key={item.id} className="rounded-[20px] border border-stone-800 bg-stone-950/60 p-3">
+                  <article
+                    key={item.id}
+                    className={`rounded-[20px] border p-3 transition ${
+                      item.checked_in_count >= item.ticket_count
+                        ? "border-emerald-900/70 bg-emerald-500/10 opacity-80"
+                        : "border-stone-800 bg-stone-950/60"
+                    }`}
+                  >
                     <div className="flex flex-col gap-2.5">
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -712,6 +730,11 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           <span className="rounded-full border border-sky-700 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-300">
                             {item.checked_in_count} Checked In
                           </span>
+                          {item.checked_in_count >= item.ticket_count ? (
+                            <span className="rounded-full border border-emerald-700/70 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
+                              ✅ Fully Checked In
+                            </span>
+                          ) : null}
                         </div>
                         {item.notes?.trim() ? (
                           <p className="whitespace-pre-wrap text-xs leading-5 text-stone-300">
@@ -732,7 +755,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           disabled={
                             Boolean(activeActionId) || item.checked_in_count >= item.ticket_count
                           }
-                          className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-3 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-3 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Check In All
                         </button>
@@ -740,7 +763,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           type="button"
                           onClick={() => void handleAdjustTicketCheckIn(item, 1)}
                           disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
-                          className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-800"
+                          className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
                         >
                           +1 Check In
                         </button>
