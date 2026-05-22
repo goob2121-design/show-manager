@@ -1,6 +1,9 @@
 import Image from "next/image";
 import { PromoLinksView } from "@/app/components/promo-links-view";
-import { PromoMaterialsView } from "@/app/components/promo-materials-view";
+import {
+  getPromoMaterialGroup,
+  PromoMaterialsView,
+} from "@/app/components/promo-materials-view";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { PromoLink, PromoMaterial, ShowRecord } from "@/lib/types";
 
@@ -24,6 +27,29 @@ function getErrorMessage(error: unknown) {
 
   return "Something went wrong while loading promo materials.";
 }
+
+const promoMaterialSections = [
+  {
+    key: "graphics",
+    title: "Graphics & Flyers",
+    helperText: "Download and share official show graphics, flyers, and images.",
+  },
+  {
+    key: "videos",
+    title: "Videos",
+    helperText: "Video promos and motion assets for sharing online.",
+  },
+  {
+    key: "documents",
+    title: "Documents",
+    helperText: "Printable or downloadable promo documents and handouts.",
+  },
+  {
+    key: "other",
+    title: "Other Promo Materials",
+    helperText: "Additional promo files that do not fit the standard categories above.",
+  },
+] as const;
 
 type PromoHubPageProps = {
   showSlug: string;
@@ -78,6 +104,13 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
   } catch (error) {
     errorMessage = getErrorMessage(error);
   }
+
+  const groupedPromoMaterials = promoMaterialSections
+    .map((section) => ({
+      ...section,
+      materials: materials.filter((material) => getPromoMaterialGroup(material) === section.key),
+    }))
+    .filter((section) => section.materials.length > 0);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 px-4 py-8 text-slate-100 sm:px-6 sm:py-10 lg:px-8">
@@ -185,12 +218,29 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
           />
         </section>
 
-        <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
-          <PromoMaterialsView
-            materials={materials}
-            emptyMessage="No visible promo materials have been added for this show yet."
-          />
-        </section>
+        {groupedPromoMaterials.length === 0 ? (
+          <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+            <PromoMaterialsView
+              materials={materials}
+              emptyMessage="No visible promo materials have been added for this show yet."
+            />
+          </section>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {groupedPromoMaterials.map((section) => (
+              <section
+                key={section.key}
+                className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm sm:p-6"
+              >
+                <div className="mb-5 flex flex-col gap-1">
+                  <h2 className="text-xl font-semibold text-stone-900">{section.title}</h2>
+                  <p className="text-sm text-stone-600">{section.helperText}</p>
+                </div>
+                <PromoMaterialsView materials={section.materials} />
+              </section>
+            ))}
+          </div>
+        )}
 
         <p className="px-2 text-center text-xs leading-5 text-slate-400 sm:px-6">
           Promo materials are provided for promotional use for the Cumberland Mountain Music Show. Please do not alter,

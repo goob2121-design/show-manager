@@ -1,6 +1,8 @@
 import type { PromoMaterial } from "@/lib/types";
 
 const imageFileExtensions = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+const videoFileExtensions = new Set(["mp4", "mov", "webm"]);
+const documentFileExtensions = new Set(["pdf", "doc", "docx"]);
 
 export function getPromoFileExtension(fileName: string | null | undefined) {
   const extension = fileName?.split(".").pop()?.trim().toLowerCase();
@@ -14,6 +16,45 @@ export function isPromoMaterialImage(material: Pick<PromoMaterial, "file_mime_ty
 
   const extension = getPromoFileExtension(material.file_name);
   return extension ? imageFileExtensions.has(extension) : false;
+}
+
+export function getPromoMaterialGroup(
+  material: Pick<PromoMaterial, "file_mime_type" | "file_name">,
+): "graphics" | "videos" | "documents" | "other" {
+  const mimeType = material.file_mime_type?.toLowerCase() ?? "";
+  const extension = getPromoFileExtension(material.file_name);
+
+  if (mimeType.startsWith("image/")) {
+    return "graphics";
+  }
+
+  if (mimeType.startsWith("video/")) {
+    return "videos";
+  }
+
+  if (
+    mimeType === "application/pdf" ||
+    mimeType.includes("wordprocessingml") ||
+    mimeType === "application/msword"
+  ) {
+    return "documents";
+  }
+
+  if (extension) {
+    if (imageFileExtensions.has(extension)) {
+      return "graphics";
+    }
+
+    if (videoFileExtensions.has(extension)) {
+      return "videos";
+    }
+
+    if (documentFileExtensions.has(extension)) {
+      return "documents";
+    }
+  }
+
+  return "other";
 }
 
 export function formatPromoMaterialCategory(category: string | null | undefined) {
