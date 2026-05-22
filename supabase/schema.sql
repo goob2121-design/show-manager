@@ -159,6 +159,8 @@ create table if not exists public.show_sponsors (
   mc_anchor_song_id uuid references public.setlist_entries(id) on delete set null,
   linked_performer text,
   custom_note text,
+  comp_ticket_allowance integer not null default 0,
+  comp_tickets_checked_in integer not null default 0,
   created_at timestamptz not null default now()
 );
 
@@ -186,6 +188,20 @@ create index if not exists promo_materials_show_id_created_at_idx
 create index if not exists promo_materials_show_id_visible_idx
   on public.promo_materials(show_id, is_visible);
 
+create table if not exists public.promo_links (
+  id uuid primary key default gen_random_uuid(),
+  show_id uuid not null references public.shows(id) on delete cascade,
+  title text not null,
+  url text not null,
+  link_type text,
+  description text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists promo_links_show_id_created_at_idx
+  on public.promo_links(show_id, created_at);
+
 alter table public.show_sponsors
   add column if not exists sponsor_id uuid references public.sponsor_library(id) on delete cascade,
   add column if not exists placement_order integer not null default 1,
@@ -197,6 +213,8 @@ alter table public.show_sponsors
   add column if not exists default_contribution text,
   add column if not exists estimated_value numeric,
   add column if not exists recognition_notes text,
+  add column if not exists comp_ticket_allowance integer not null default 0,
+  add column if not exists comp_tickets_checked_in integer not null default 0,
   add column if not exists name text,
   add column if not exists short_message text,
   add column if not exists full_message text,
@@ -333,6 +351,7 @@ create index if not exists show_comp_tickets_show_id_created_at_idx
 alter table public.show_checklist_items enable row level security;
 alter table public.show_payout_items enable row level security;
 alter table public.show_comp_tickets enable row level security;
+alter table public.promo_links enable row level security;
 
 create unique index if not exists guest_profiles_show_id_name_unique
   on public.guest_profiles(show_id, lower(name));
@@ -456,6 +475,63 @@ begin
       for delete
       to public
       using (bucket_id = 'promo-materials');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'promo_links'
+      and policyname = 'Allow public read promo links'
+  ) then
+    create policy "Allow public read promo links"
+      on public.promo_links
+      for select
+      to anon, authenticated
+      using (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'promo_links'
+      and policyname = 'Allow public insert promo links'
+  ) then
+    create policy "Allow public insert promo links"
+      on public.promo_links
+      for insert
+      to anon, authenticated
+      with check (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'promo_links'
+      and policyname = 'Allow public update promo links'
+  ) then
+    create policy "Allow public update promo links"
+      on public.promo_links
+      for update
+      to anon, authenticated
+      using (true)
+      with check (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'promo_links'
+      and policyname = 'Allow public delete promo links'
+  ) then
+    create policy "Allow public delete promo links"
+      on public.promo_links
+      for delete
+      to anon, authenticated
+      using (true);
   end if;
 
   if not exists (

@@ -25,6 +25,7 @@ import {
   isPromoMaterialImage,
   PromoMaterialsView,
 } from "@/app/components/promo-materials-view";
+import { formatPromoLinkType } from "@/app/components/promo-links-view";
 import {
   buildShowReminderSummary,
   buildShowTimelineMessages,
@@ -42,6 +43,9 @@ import type {
   PayoutFormState,
   PotentialSponsor,
   PotentialSponsorStatus,
+  PromoLink,
+  PromoLinkFormState,
+  PromoLinkType,
   PromoMaterial,
   PromoMaterialCategory,
   PromoMaterialFormState,
@@ -242,6 +246,13 @@ const initialPromoMaterialFormState: PromoMaterialFormState = {
   isVisible: true,
 };
 
+const initialPromoLinkFormState: PromoLinkFormState = {
+  title: "",
+  url: "",
+  linkType: "other",
+  description: "",
+};
+
 const initialFinanceItemFormState: FinanceItemFormState = {
   label: "",
   category: "",
@@ -287,6 +298,20 @@ const promoMaterialCategoryOptions: Array<{
   { value: "audio_promo", label: "Audio Promo" },
   { value: "printable", label: "Printable" },
   { value: "logo_branding", label: "Logo/Branding" },
+  { value: "other", label: "Other" },
+];
+
+const promoLinkTypeOptions: Array<{
+  value: PromoLinkType;
+  label: string;
+}> = [
+  { value: "facebook_event", label: "Facebook Event" },
+  { value: "facebook_page", label: "Facebook Page" },
+  { value: "ticket_link", label: "Ticket Link" },
+  { value: "main_website", label: "Main Website" },
+  { value: "youtube_promo_video", label: "YouTube Promo Video" },
+  { value: "instagram", label: "Instagram" },
+  { value: "sponsor_link", label: "Sponsor Link" },
   { value: "other", label: "Other" },
 ];
 
@@ -541,6 +566,7 @@ const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
   defaultContribution: "",
   estimatedValue: "",
   recognitionNotes: "",
+  compTicketAllowance: "0",
 };
 
 const sponsorTypeOptions: SponsorTypeOption[] = [
@@ -1239,6 +1265,7 @@ type DataSectionKey =
   | "compTickets"
   | "payoutItems"
   | "financeItems"
+  | "promoLinks"
   | "promoMaterials"
   | "guestProfiles"
   | "mcBlockNotes";
@@ -1294,6 +1321,16 @@ function buildShowSponsorAssignmentFormState(sponsor: ShowSponsor): ShowSponsorA
           : "",
     recognitionNotes:
       sponsor.recognition_notes ?? sponsor.sponsor?.recognition_notes ?? "",
+    compTicketAllowance: String(Math.max(0, sponsor.comp_ticket_allowance ?? 0)),
+  };
+}
+
+function buildPromoLinkFormState(link: PromoLink): PromoLinkFormState {
+  return {
+    title: link.title,
+    url: link.url,
+    linkType: (link.link_type as PromoLinkType | null) ?? "other",
+    description: link.description ?? "",
   };
 }
 
@@ -3744,6 +3781,22 @@ function parseSponsorAmountInput(value: string) {
   return Number.isFinite(parsedValue) ? parsedValue : null;
 }
 
+function parseNonNegativeIntegerInput(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return 0;
+  }
+
+  const parsedValue = Number.parseInt(trimmedValue, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    return null;
+  }
+
+  return parsedValue;
+}
+
 function formatNumericInputValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
@@ -4309,6 +4362,18 @@ function normalizeShowSponsor(
       : typeof sponsor.estimated_value === "string"
         ? Number.parseFloat(sponsor.estimated_value)
         : null;
+  const parsedCompTicketAllowance =
+    typeof sponsor.comp_ticket_allowance === "number"
+      ? sponsor.comp_ticket_allowance
+      : typeof sponsor.comp_ticket_allowance === "string"
+        ? Number.parseInt(sponsor.comp_ticket_allowance, 10)
+        : 0;
+  const parsedCompTicketsCheckedIn =
+    typeof sponsor.comp_tickets_checked_in === "number"
+      ? sponsor.comp_tickets_checked_in
+      : typeof sponsor.comp_tickets_checked_in === "string"
+        ? Number.parseInt(sponsor.comp_tickets_checked_in, 10)
+        : 0;
 
   return {
     ...sponsor,
@@ -4316,6 +4381,14 @@ function normalizeShowSponsor(
     default_contribution: sponsor.default_contribution ?? null,
     estimated_value: Number.isFinite(parsedEstimatedValue) ? parsedEstimatedValue : null,
     recognition_notes: sponsor.recognition_notes ?? null,
+    comp_ticket_allowance:
+      Number.isFinite(parsedCompTicketAllowance) && parsedCompTicketAllowance > 0
+        ? parsedCompTicketAllowance
+        : 0,
+    comp_tickets_checked_in:
+      Number.isFinite(parsedCompTicketsCheckedIn) && parsedCompTicketsCheckedIn > 0
+        ? parsedCompTicketsCheckedIn
+        : 0,
     sponsor: relatedSponsor ? normalizeSponsorLibraryEntry(relatedSponsor) : null,
   };
 }
@@ -4828,12 +4901,19 @@ export function ShowPage({
   const [editingFinanceItemFormState, setEditingFinanceItemFormState] =
     useState<FinanceItemFormState>(initialFinanceItemFormState);
   const [promoMaterials, setPromoMaterials] = useState<PromoMaterial[]>([]);
+  const [promoLinks, setPromoLinks] = useState<PromoLink[]>([]);
+  const [promoLinkFormState, setPromoLinkFormState] = useState<PromoLinkFormState>(
+    initialPromoLinkFormState,
+  );
   const [promoMaterialFormState, setPromoMaterialFormState] = useState<PromoMaterialFormState>(
     initialPromoMaterialFormState,
   );
   const [promoMaterialFile, setPromoMaterialFile] = useState<File | null>(null);
   const [promoMaterialFilter, setPromoMaterialFilter] = useState<"all" | PromoMaterialCategory>("all");
   const [editingPromoMaterialId, setEditingPromoMaterialId] = useState<string | null>(null);
+  const [editingPromoLinkId, setEditingPromoLinkId] = useState<string | null>(null);
+  const [promoLinkEditFormState, setPromoLinkEditFormState] =
+    useState<PromoLinkFormState>(initialPromoLinkFormState);
   const [promoMaterialEditFormState, setPromoMaterialEditFormState] =
     useState<PromoMaterialFormState>(initialPromoMaterialFormState);
   const [editingPromoMaterialFile, setEditingPromoMaterialFile] = useState<File | null>(null);
@@ -4847,6 +4927,7 @@ export function ShowPage({
   const [isBandSongFormOpen, setIsBandSongFormOpen] = useState(false);
   const [isAdminSongFormOpen, setIsAdminSongFormOpen] = useState(false);
   const [isGuestSongFormOpen, setIsGuestSongFormOpen] = useState(false);
+  const [isPromoLinkFormOpen, setIsPromoLinkFormOpen] = useState(false);
   const [isPromoMaterialFormOpen, setIsPromoMaterialFormOpen] = useState(false);
   const [poolSongMp3File, setPoolSongMp3File] = useState<File | null>(null);
   const [poolSongMp3InputKey, setPoolSongMp3InputKey] = useState(0);
@@ -4898,6 +4979,8 @@ export function ShowPage({
     useState<ShowSponsorAssignmentFormState>(initialShowSponsorAssignmentFormState);
   const [editingShowSponsorFormState, setEditingShowSponsorFormState] =
     useState<ShowSponsorAssignmentFormState>(initialShowSponsorAssignmentFormState);
+  const [isSponsorCompTicketsOpen, setIsSponsorCompTicketsOpen] = useState(false);
+  const [sponsorCompCustomAmounts, setSponsorCompCustomAmounts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dataSectionErrors, setDataSectionErrors] = useState<DataSectionErrors>({});
@@ -4925,9 +5008,14 @@ export function ShowPage({
   const [activeLibraryDeleteSongId, setActiveLibraryDeleteSongId] = useState<string | null>(null);
   const [activeSponsorActionId, setActiveSponsorActionId] = useState<string | null>(null);
   const [activePromoMaterialActionId, setActivePromoMaterialActionId] = useState<string | null>(null);
+  const [activePromoLinkActionId, setActivePromoLinkActionId] = useState<string | null>(null);
+  const [isSavingPromoLink, setIsSavingPromoLink] = useState(false);
+  const [promoLinkMessage, setPromoLinkMessage] = useState<string | null>(null);
+  const [promoLinkError, setPromoLinkError] = useState<string | null>(null);
   const [isSavingPromoMaterial, setIsSavingPromoMaterial] = useState(false);
   const [promoMaterialMessage, setPromoMaterialMessage] = useState<string | null>(null);
   const [promoMaterialError, setPromoMaterialError] = useState<string | null>(null);
+  const [copiedPromoHubLinkId, setCopiedPromoHubLinkId] = useState<string | null>(null);
   const [copiedPromoTextKey, setCopiedPromoTextKey] = useState<string | null>(null);
   const [copiedSongLinkId, setCopiedSongLinkId] = useState<string | null>(null);
   const [copiedGuestProfileLinkId, setCopiedGuestProfileLinkId] = useState<string | null>(null);
@@ -5051,10 +5139,6 @@ export function ShowPage({
     () => payoutItems.reduce((sum, item) => sum + item.amount, 0),
     [payoutItems],
   );
-  const totalCompTickets = useMemo(
-    () => compTickets.reduce((sum, item) => sum + item.ticket_count, 0),
-    [compTickets],
-  );
   const paidOnlineOrders = useMemo(
     () =>
       compTickets.filter(
@@ -5072,6 +5156,30 @@ export function ShowPage({
   const paidOnlineRevenue = useMemo(
     () => paidOnlineTickets * PAID_ONLINE_TICKET_PRICE,
     [paidOnlineTickets],
+  );
+  const sponsorCompTicketsAllowed = useMemo(
+    () =>
+      showSponsors.reduce(
+        (sum, sponsor) => sum + Math.max(0, sponsor.comp_ticket_allowance ?? 0),
+        0,
+      ),
+    [showSponsors],
+  );
+  const sponsorCompTicketsCheckedIn = useMemo(
+    () =>
+      showSponsors.reduce(
+        (sum, sponsor) => sum + Math.max(0, sponsor.comp_tickets_checked_in ?? 0),
+        0,
+      ),
+    [showSponsors],
+  );
+  const sponsorCompTicketsRemaining = useMemo(
+    () => sponsorCompTicketsAllowed - sponsorCompTicketsCheckedIn,
+    [sponsorCompTicketsAllowed, sponsorCompTicketsCheckedIn],
+  );
+  const sponsorsWithCompTickets = useMemo(
+    () => showSponsors.filter((sponsor) => (sponsor.comp_ticket_allowance ?? 0) > 0),
+    [showSponsors],
   );
   const newCompTicketImportPreviewCount = useMemo(
     () => compTicketImportPreview.filter((entry) => entry.status === "new").length,
@@ -5096,8 +5204,14 @@ export function ShowPage({
     [compTickets],
   );
   const checkedInCompTickets = useMemo(
-    () => compTickets.reduce((sum, item) => sum + item.checked_in_count, 0),
-    [compTickets],
+    () =>
+      compTickets.reduce((sum, item) => sum + item.checked_in_count, 0) + sponsorCompTicketsCheckedIn,
+    [compTickets, sponsorCompTicketsCheckedIn],
+  );
+  const totalCompTickets = useMemo(
+    () =>
+      compTickets.reduce((sum, item) => sum + item.ticket_count, 0) + sponsorCompTicketsAllowed,
+    [compTickets, sponsorCompTicketsAllowed],
   );
   const areAllCompTicketsSelected = compTickets.length > 0 && compTickets.every((item) => selectedCompTicketIds.includes(item.id));
   const payoutItemsByCategory = useMemo(() => {
@@ -6183,6 +6297,87 @@ export function ShowPage({
     }
   }
 
+  async function handleAdjustSponsorCompCheckIn(
+    sponsor: ShowSponsor,
+    delta: number,
+    options?: { source?: "single" | "custom"; overrideConfirmed?: boolean },
+  ) {
+    if (!show) {
+      setCompTicketErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    if (delta === 0) {
+      return;
+    }
+
+    const nextCheckedInCount = Math.max(0, sponsor.comp_tickets_checked_in + delta);
+    const exceedsAllowance = nextCheckedInCount > sponsor.comp_ticket_allowance;
+
+    if (exceedsAllowance && !options?.overrideConfirmed) {
+      const confirmed = window.confirm(
+        `${sponsor.sponsor?.name ?? "This sponsor"} only has ${sponsor.comp_ticket_allowance} comp tickets allowed, but this check-in would bring them to ${nextCheckedInCount}. Continue with an override?`,
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+    setActiveSponsorActionId(`sponsor-comp-${sponsor.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_sponsors")
+        .update({
+          comp_tickets_checked_in: nextCheckedInCount,
+        })
+        .eq("id", sponsor.id)
+        .eq("show_id", show.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const normalizedSponsor = attachSponsorToShowAssignment(data as ShowSponsor, sponsorLibrary);
+
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((currentSponsor) =>
+          currentSponsor.id === sponsor.id ? normalizedSponsor : currentSponsor,
+        ),
+      );
+      setSponsorCompCustomAmounts((currentAmounts) => ({
+        ...currentAmounts,
+        [sponsor.id]: "",
+      }));
+      setCompTicketStatusMessage(
+        `${sponsor.sponsor?.name ?? "Sponsor"} comp check-ins updated to ${nextCheckedInCount}.`,
+      );
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleCheckInCustomSponsorCompAmount(sponsor: ShowSponsor) {
+    const customAmount = parseNonNegativeIntegerInput(sponsorCompCustomAmounts[sponsor.id] ?? "");
+
+    if (customAmount === null || customAmount <= 0) {
+      setCompTicketErrorMessage("Enter a valid sponsor comp check-in amount.");
+      return;
+    }
+
+    await handleAdjustSponsorCompCheckIn(sponsor, customAmount, {
+      source: "custom",
+    });
+  }
+
   async function handlePreviewPaidOnlineGuestList(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -6410,6 +6605,7 @@ export function ShowPage({
           setCompTickets([]);
           setFinanceItems([]);
           setPayoutItems([]);
+          setPromoLinks([]);
           setPromoMaterials([]);
           setGuestProfiles([]);
           setMcBlockNotes([]);
@@ -6454,6 +6650,7 @@ export function ShowPage({
           compTicketRows,
           financeItemRows,
           payoutItemRows,
+          promoLinkRows,
           promoMaterialRows,
           guestProfileRows,
           mcBlockNoteRows,
@@ -6589,6 +6786,16 @@ export function ShowPage({
             [],
           ),
           loadSection(
+            "promoLinks",
+            "promo links",
+            supabase
+              .from("promo_links")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("created_at", { ascending: false }),
+            [],
+          ),
+          loadSection(
             "promoMaterials",
             "promo materials",
             supabase
@@ -6703,6 +6910,7 @@ export function ShowPage({
             >).map((item) => normalizeShowPayoutItem(item)),
           ),
         );
+        setPromoLinks((promoLinkRows ?? []) as PromoLink[]);
         setPromoMaterials((promoMaterialRows ?? []) as PromoMaterial[]);
         setGuestProfiles(guestProfileRows ?? []);
         setMcBlockNotes((mcBlockNoteRows ?? []) as McBlockNote[]);
@@ -7169,6 +7377,7 @@ export function ShowPage({
             ? ""
             : formatNumericInputValue(selectedSponsor.estimated_value),
         recognitionNotes: selectedSponsor?.recognition_notes ?? "",
+        compTicketAllowance: "0",
       }));
       return;
     }
@@ -8039,9 +8248,17 @@ export function ShowPage({
 
     const sponsorId = showSponsorAssignmentFormState.sponsorId;
     const sponsorRecord = sponsorLibrary.find((sponsor) => sponsor.id === sponsorId);
+    const compTicketAllowance = parseNonNegativeIntegerInput(
+      showSponsorAssignmentFormState.compTicketAllowance,
+    );
 
     if (!sponsorRecord) {
       setActionError("Choose a sponsor from the library first.");
+      return;
+    }
+
+    if (compTicketAllowance === null) {
+      setActionError("Enter a valid sponsor comp ticket allowance.");
       return;
     }
 
@@ -8068,12 +8285,14 @@ export function ShowPage({
         default_contribution: normalizeOptionalField(showSponsorAssignmentFormState.defaultContribution),
         estimated_value: parseSponsorAmountInput(showSponsorAssignmentFormState.estimatedValue),
         recognition_notes: normalizeOptionalField(showSponsorAssignmentFormState.recognitionNotes),
+        comp_ticket_allowance: compTicketAllowance,
+        comp_tickets_checked_in: 0,
       };
 
       const { data, error } = await supabase
         .from("show_sponsors")
         .insert(payload)
-        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, sponsor_type, default_contribution, estimated_value, recognition_notes, created_at")
+        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, sponsor_type, default_contribution, estimated_value, recognition_notes, comp_ticket_allowance, comp_tickets_checked_in, created_at")
         .single();
 
       if (error) {
@@ -8129,6 +8348,15 @@ export function ShowPage({
     setActiveSponsorActionId(`show-${sponsorId}`);
 
     try {
+      const compTicketAllowance = parseNonNegativeIntegerInput(
+        editingShowSponsorFormState.compTicketAllowance,
+      );
+
+      if (compTicketAllowance === null) {
+        setActionError("Enter a valid sponsor comp ticket allowance.");
+        return;
+      }
+
       const supabase = createClient();
       const payload = {
         placement_type: normalizeOptionalField(editingShowSponsorFormState.placementType),
@@ -8139,6 +8367,7 @@ export function ShowPage({
         default_contribution: normalizeOptionalField(editingShowSponsorFormState.defaultContribution),
         estimated_value: parseSponsorAmountInput(editingShowSponsorFormState.estimatedValue),
         recognition_notes: normalizeOptionalField(editingShowSponsorFormState.recognitionNotes),
+        comp_ticket_allowance: compTicketAllowance,
       };
 
       const { data, error } = await supabase
@@ -8146,7 +8375,7 @@ export function ShowPage({
         .update(payload)
         .eq("id", sponsorId)
         .eq("show_id", show.id)
-        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, sponsor_type, default_contribution, estimated_value, recognition_notes, created_at")
+        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, sponsor_type, default_contribution, estimated_value, recognition_notes, comp_ticket_allowance, comp_tickets_checked_in, created_at")
         .single();
 
       if (error) {
@@ -8433,6 +8662,183 @@ export function ShowPage({
     }
 
     setPromoMaterialFile(file);
+  }
+
+  function handlePromoLinkChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    mode: "new" | "edit",
+  ) {
+    const { name, value } = event.target;
+    const setState = mode === "edit" ? setPromoLinkEditFormState : setPromoLinkFormState;
+
+    setState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function startEditingPromoLink(link: PromoLink) {
+    setEditingPromoLinkId(link.id);
+    setPromoLinkEditFormState(buildPromoLinkFormState(link));
+    setPromoLinkError(null);
+    setPromoLinkMessage(null);
+  }
+
+  function cancelEditingPromoLink() {
+    setEditingPromoLinkId(null);
+    setPromoLinkEditFormState(initialPromoLinkFormState);
+  }
+
+  async function handleCreatePromoLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!show) {
+      setPromoLinkError("The show is not loaded yet.");
+      return;
+    }
+
+    const title = promoLinkFormState.title.trim();
+    const url = promoLinkFormState.url.trim();
+
+    if (!title) {
+      setPromoLinkError("Link title is required.");
+      return;
+    }
+
+    try {
+      new URL(url);
+    } catch {
+      setPromoLinkError("Enter a valid link URL.");
+      return;
+    }
+
+    setIsSavingPromoLink(true);
+    setPromoLinkError(null);
+    setPromoLinkMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("promo_links")
+        .insert({
+          show_id: show.id,
+          title,
+          url,
+          link_type: normalizeOptionalField(promoLinkFormState.linkType) ?? "other",
+          description: normalizeOptionalField(promoLinkFormState.description),
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPromoLinks((currentLinks) => [data as PromoLink, ...currentLinks]);
+      setPromoLinkFormState(initialPromoLinkFormState);
+      setIsPromoLinkFormOpen(false);
+      setPromoLinkMessage("Promo link added.");
+    } catch (error) {
+      setPromoLinkError(getErrorMessage(error));
+    } finally {
+      setIsSavingPromoLink(false);
+    }
+  }
+
+  async function handleSavePromoLink(link: PromoLink) {
+    const title = promoLinkEditFormState.title.trim();
+    const url = promoLinkEditFormState.url.trim();
+
+    if (!title) {
+      setPromoLinkError("Link title is required.");
+      return;
+    }
+
+    try {
+      new URL(url);
+    } catch {
+      setPromoLinkError("Enter a valid link URL.");
+      return;
+    }
+
+    setActivePromoLinkActionId(link.id);
+    setPromoLinkError(null);
+    setPromoLinkMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("promo_links")
+        .update({
+          title,
+          url,
+          link_type: normalizeOptionalField(promoLinkEditFormState.linkType) ?? "other",
+          description: normalizeOptionalField(promoLinkEditFormState.description),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", link.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPromoLinks((currentLinks) =>
+        currentLinks.map((currentLink) => (currentLink.id === link.id ? (data as PromoLink) : currentLink)),
+      );
+      cancelEditingPromoLink();
+      setPromoLinkMessage("Promo link saved.");
+    } catch (error) {
+      setPromoLinkError(getErrorMessage(error));
+    } finally {
+      setActivePromoLinkActionId(null);
+    }
+  }
+
+  async function handleDeletePromoLink(link: PromoLink) {
+    const confirmed = window.confirm(`Delete promo link "${link.title}"?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActivePromoLinkActionId(link.id);
+    setPromoLinkError(null);
+    setPromoLinkMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from("promo_links").delete().eq("id", link.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setPromoLinks((currentLinks) => currentLinks.filter((currentLink) => currentLink.id !== link.id));
+
+      if (editingPromoLinkId === link.id) {
+        cancelEditingPromoLink();
+      }
+
+      setPromoLinkMessage("Promo link deleted.");
+    } catch (error) {
+      setPromoLinkError(getErrorMessage(error));
+    } finally {
+      setActivePromoLinkActionId(null);
+    }
+  }
+
+  async function handleCopyPromoLink(url: string, linkId: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedPromoHubLinkId(linkId);
+      window.setTimeout(() => {
+        setCopiedPromoHubLinkId((currentValue) => (currentValue === linkId ? null : currentValue));
+      }, 1800);
+    } catch {
+      setPromoLinkError("Unable to copy the promo link.");
+    }
   }
 
   async function handleCreatePromoMaterial(event: FormEvent<HTMLFormElement>) {
@@ -11729,6 +12135,7 @@ export function ShowPage({
             </div>
 
             <SectionLoadWarning message={dataSectionErrors.promoMaterials} />
+            <SectionLoadWarning message={dataSectionErrors.promoLinks} />
 
             <PromoMaterialsView
               materials={visiblePromoMaterials}
@@ -12636,6 +13043,27 @@ export function ShowPage({
                   <p className="mt-3 text-2xl font-semibold text-emerald-700">{checkedInCompTickets} of {totalCompTickets}</p>
                 </article>
               </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Sponsor Comps Allowed
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsAllowed}</p>
+                </article>
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Sponsor Comps Checked In
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsCheckedIn}</p>
+                </article>
+                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Sponsor Comps Remaining
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsRemaining}</p>
+                </article>
+              </div>
             </div>
 
             <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
@@ -12883,6 +13311,124 @@ export function ShowPage({
                 </div>
               ) : null}
                 </form>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-stone-900">Sponsor Comp Tickets</h3>
+                  <p className="text-sm text-stone-600">
+                    Track sponsor comp check-ins separately from paid online and door tickets.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSponsorCompTicketsOpen((currentValue) => !currentValue)}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  {isSponsorCompTicketsOpen ? "Hide Sponsor Comp Tickets" : "Show Sponsor Comp Tickets"}
+                </button>
+              </div>
+
+              {isSponsorCompTicketsOpen ? (
+                sponsorsWithCompTickets.length === 0 ? (
+                  <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                    No sponsor comp tickets have been assigned for this show.
+                  </div>
+                ) : (
+                  <div className="mt-4 grid gap-3">
+                    {sponsorsWithCompTickets.map((sponsor) => {
+                      const remainingComps = sponsor.comp_ticket_allowance - sponsor.comp_tickets_checked_in;
+                      const customAmountValue = sponsorCompCustomAmounts[sponsor.id] ?? "";
+
+                      return (
+                        <article
+                          key={`sponsor-comp-${sponsor.id}`}
+                          className="rounded-2xl border border-stone-200 bg-stone-50 p-4"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="flex gap-3">
+                              <SponsorLogoThumbnail
+                                logoUrl={sponsor.sponsor?.logo_url}
+                                sponsorName={sponsor.sponsor?.name ?? "Assigned sponsor"}
+                                className="h-12 w-12"
+                              />
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="text-base font-semibold text-stone-900">
+                                    {sponsor.sponsor?.name ?? "Assigned sponsor"}
+                                  </h4>
+                                  <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                                    Allowed {sponsor.comp_ticket_allowance}
+                                  </span>
+                                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
+                                    Checked In {sponsor.comp_tickets_checked_in}
+                                  </span>
+                                  <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-800">
+                                    {remainingComps >= 0 ? `Remaining ${remainingComps}` : `Over ${Math.abs(remainingComps)}`}
+                                  </span>
+                                </div>
+                                {sponsor.recognition_notes?.trim() ? (
+                                  <p className="text-sm text-stone-600">{sponsor.recognition_notes}</p>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 lg:min-w-[22rem]">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, 1, { source: "single" })}
+                                  disabled={activeSponsorActionId === `sponsor-comp-${sponsor.id}`}
+                                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                >
+                                  Check In 1
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, -1, { source: "single" })}
+                                  disabled={
+                                    activeSponsorActionId === `sponsor-comp-${sponsor.id}` ||
+                                    sponsor.comp_tickets_checked_in <= 0
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Undo 1
+                                </button>
+                              </div>
+
+                              <div className="flex flex-col gap-2 sm:flex-row">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={customAmountValue}
+                                  onChange={(event) =>
+                                    setSponsorCompCustomAmounts((currentAmounts) => ({
+                                      ...currentAmounts,
+                                      [sponsor.id]: event.target.value,
+                                    }))
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 sm:max-w-[8rem]"
+                                  placeholder="Custom #"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => void handleCheckInCustomSponsorCompAmount(sponsor)}
+                                  disabled={activeSponsorActionId === `sponsor-comp-${sponsor.id}`}
+                                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Check In Custom Amount
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )
               ) : null}
             </div>
 
@@ -13866,6 +14412,262 @@ export function ShowPage({
                 {promoMaterialError}
               </div>
             ) : null}
+
+            {promoLinkMessage ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {promoLinkMessage}
+              </div>
+            ) : null}
+
+            {promoLinkError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {promoLinkError}
+              </div>
+            ) : null}
+
+            <section className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-lg font-semibold text-stone-900">Links</h3>
+                  <p className="text-sm text-stone-600">
+                    Manage ticket links, event pages, videos, and other shareable promo URLs for this show.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsPromoLinkFormOpen((currentValue) => !currentValue)}
+                  className="w-full rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                >
+                  {isPromoLinkFormOpen ? "Hide Add Link" : "Add Promo Link"}
+                </button>
+              </div>
+
+              {isPromoLinkFormOpen ? (
+                <form className="grid gap-4" onSubmit={handleCreatePromoLink}>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Title
+                      <input
+                        type="text"
+                        name="title"
+                        value={promoLinkFormState.title}
+                        onChange={(event) => handlePromoLinkChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="June ticket link"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Link Type
+                      <select
+                        name="linkType"
+                        value={promoLinkFormState.linkType}
+                        onChange={(event) => handlePromoLinkChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        {promoLinkTypeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    URL
+                    <input
+                      type="url"
+                      name="url"
+                      value={promoLinkFormState.url}
+                      onChange={(event) => handlePromoLinkChange(event, "new")}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="https://..."
+                      required
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Description
+                    <textarea
+                      name="description"
+                      value={promoLinkFormState.description}
+                      onChange={(event) => handlePromoLinkChange(event, "new")}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional note about how to use or share this link"
+                    />
+                  </label>
+
+                  <div className="flex justify-start">
+                    <button
+                      type="submit"
+                      disabled={isSavingPromoLink}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {isSavingPromoLink ? "Saving..." : "Save Promo Link"}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {promoLinks.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
+                  No promo links have been added for this show yet.
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {promoLinks.map((link) => {
+                    const isEditingPromoLink = editingPromoLinkId === link.id;
+
+                    return (
+                      <article
+                        key={link.id}
+                        className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5"
+                      >
+                        {isEditingPromoLink ? (
+                          <div className="grid gap-4">
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Title
+                                <input
+                                  type="text"
+                                  name="title"
+                                  value={promoLinkEditFormState.title}
+                                  onChange={(event) => handlePromoLinkChange(event, "edit")}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  required
+                                />
+                              </label>
+
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Link Type
+                                <select
+                                  name="linkType"
+                                  value={promoLinkEditFormState.linkType}
+                                  onChange={(event) => handlePromoLinkChange(event, "edit")}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                >
+                                  {promoLinkTypeOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              URL
+                              <input
+                                type="url"
+                                name="url"
+                                value={promoLinkEditFormState.url}
+                                onChange={(event) => handlePromoLinkChange(event, "edit")}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                required
+                              />
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Description
+                              <textarea
+                                name="description"
+                                value={promoLinkEditFormState.description}
+                                onChange={(event) => handlePromoLinkChange(event, "edit")}
+                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => void handleSavePromoLink(link)}
+                                disabled={activePromoLinkActionId === link.id}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                Save Link
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingPromoLink}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap gap-2">
+                                  <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-800">
+                                    {formatPromoLinkType(link.link_type)}
+                                  </span>
+                                </div>
+                                <h4 className="mt-3 text-lg font-semibold text-stone-900">{link.title}</h4>
+                                <a
+                                  href={link.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-2 block break-all text-sm font-medium text-emerald-700 underline"
+                                >
+                                  {link.url}
+                                </a>
+                                {link.description?.trim() ? (
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-600">
+                                    {link.description}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="flex flex-col gap-2 sm:items-end">
+                                <a
+                                  href={link.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Open Link
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleCopyPromoLink(link.url, link.id)}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  {copiedPromoHubLinkId === link.id ? "Copied" : "Copy Link"}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => startEditingPromoLink(link)}
+                                disabled={activePromoLinkActionId === link.id}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeletePromoLink(link)}
+                                disabled={activePromoLinkActionId === link.id}
+                                className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
 
             <section className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -15937,6 +16739,19 @@ export function ShowPage({
                       />
                     </label>
 
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:max-w-xs">
+                      Sponsor Comp Ticket Allowance
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        name="compTicketAllowance"
+                        value={showSponsorAssignmentFormState.compTicketAllowance}
+                        onChange={(event) => handleShowSponsorAssignmentChange(event, "new")}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      />
+                    </label>
+
                     <div className="flex justify-start">
                       <button
                         type="submit"
@@ -16073,6 +16888,21 @@ export function ShowPage({
                               />
                             </label>
 
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:max-w-xs">
+                              Sponsor Comp Ticket Allowance
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                name="compTicketAllowance"
+                                value={editingShowSponsorFormState.compTicketAllowance}
+                                onChange={(event) =>
+                                  handleShowSponsorAssignmentChange(event, "edit")
+                                }
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              />
+                            </label>
+
                             <div className="flex flex-col gap-3 sm:flex-row">
                               <button
                                 type="button"
@@ -16138,6 +16968,9 @@ export function ShowPage({
                                       Linked performer: {sponsor.linked_performer}
                                     </p>
                                   ) : null}
+                                  <p className="text-sm text-stone-600">
+                                    Sponsor comps: {sponsor.comp_tickets_checked_in} checked in of {sponsor.comp_ticket_allowance} allowed
+                                  </p>
                                   {sponsor.custom_note ? (
                                     <p className="text-sm text-stone-600">
                                       Note: {sponsor.custom_note}
@@ -16183,7 +17016,7 @@ export function ShowPage({
                                   onClick={() => startEditingShowSponsor(sponsor.id)}
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                                 >
-                                  Edit Placement
+                                  Edit
                                 </button>
                                 <button
                                   type="button"

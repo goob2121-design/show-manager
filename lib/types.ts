@@ -16,6 +16,15 @@ export type PromoMaterialCategory =
   | "logo"
   | "promo_photo"
   | "other";
+export type PromoLinkType =
+  | "facebook_event"
+  | "facebook_page"
+  | "ticket_link"
+  | "main_website"
+  | "youtube_promo_video"
+  | "instagram"
+  | "sponsor_link"
+  | "other";
 export type FinanceItemType = "income" | "expense";
 export type GuestListTicketType = "paid_online" | "door_paid" | "complimentary" | "manual";
 export type SponsorTypeOption =
@@ -180,6 +189,8 @@ export type ShowSponsor = {
   default_contribution: string | null;
   estimated_value: number | null;
   recognition_notes: string | null;
+  comp_ticket_allowance: number;
+  comp_tickets_checked_in: number;
   created_at: string;
   sponsor?: SponsorLibraryEntry | null;
 };
@@ -196,6 +207,17 @@ export type PromoMaterial = {
   file_mime_type: string | null;
   file_size: number | null;
   is_visible: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PromoLink = {
+  id: string;
+  show_id: string;
+  title: string;
+  url: string;
+  link_type: PromoLinkType | string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -254,6 +276,13 @@ export type PromoMaterialFormState = {
   isVisible: boolean;
 };
 
+export type PromoLinkFormState = {
+  title: string;
+  url: string;
+  linkType: "" | PromoLinkType;
+  description: string;
+};
+
 export type SponsorLibraryFormState = {
   name: string;
   shortMessage: string;
@@ -275,6 +304,7 @@ export type ShowSponsorAssignmentFormState = {
   defaultContribution: string;
   estimatedValue: string;
   recognitionNotes: string;
+  compTicketAllowance: string;
 };
 
 export type FinanceItemFormState = {

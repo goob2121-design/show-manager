@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { ShowCompTicket, ShowRecord } from "@/lib/types";
+import type { ShowCompTicket, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
 const PAID_ONLINE_TICKET_PRICE = 8;
 const DOOR_TICKET_PRICE = 10;
@@ -19,6 +19,10 @@ type DoorModeActivity = {
   label: string;
   createdAt: number;
   undo: () => Promise<void>;
+};
+
+type DoorModeShowSponsor = ShowSponsor & {
+  sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
 };
 
 function normalizeGuestListTicketType(value: string | null | undefined) {
@@ -149,11 +153,106 @@ function createDoorSaleOrderId() {
   return `DOOR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
+function normalizeSponsorLibraryEntry(
+  sponsor: SponsorLibraryEntry & { estimated_value?: number | string | null },
+): SponsorLibraryEntry {
+  const parsedEstimatedValue =
+    typeof sponsor.estimated_value === "number"
+      ? sponsor.estimated_value
+      : typeof sponsor.estimated_value === "string"
+        ? Number.parseFloat(sponsor.estimated_value)
+        : null;
+
+  return {
+    ...sponsor,
+    estimated_value: Number.isFinite(parsedEstimatedValue) ? parsedEstimatedValue : null,
+  };
+}
+
+function normalizeShowSponsor(
+  sponsor: DoorModeShowSponsor,
+): ShowSponsor {
+  const relatedSponsor = Array.isArray(sponsor.sponsor) ? sponsor.sponsor[0] : sponsor.sponsor;
+  const parsedEstimatedValue =
+    typeof sponsor.estimated_value === "number"
+      ? sponsor.estimated_value
+      : typeof sponsor.estimated_value === "string"
+        ? Number.parseFloat(sponsor.estimated_value)
+        : null;
+  const parsedCompTicketAllowance =
+    typeof sponsor.comp_ticket_allowance === "number"
+      ? sponsor.comp_ticket_allowance
+      : typeof sponsor.comp_ticket_allowance === "string"
+        ? Number.parseInt(sponsor.comp_ticket_allowance, 10)
+        : 0;
+  const parsedCompTicketsCheckedIn =
+    typeof sponsor.comp_tickets_checked_in === "number"
+      ? sponsor.comp_tickets_checked_in
+      : typeof sponsor.comp_tickets_checked_in === "string"
+        ? Number.parseInt(sponsor.comp_tickets_checked_in, 10)
+        : 0;
+
+  return {
+    ...sponsor,
+    sponsor_type: sponsor.sponsor_type ?? null,
+    default_contribution: sponsor.default_contribution ?? null,
+    estimated_value: Number.isFinite(parsedEstimatedValue) ? parsedEstimatedValue : null,
+    recognition_notes: sponsor.recognition_notes ?? null,
+    comp_ticket_allowance:
+      Number.isFinite(parsedCompTicketAllowance) && parsedCompTicketAllowance > 0
+        ? parsedCompTicketAllowance
+        : 0,
+    comp_tickets_checked_in:
+      Number.isFinite(parsedCompTicketsCheckedIn) && parsedCompTicketsCheckedIn > 0
+        ? parsedCompTicketsCheckedIn
+        : 0,
+    sponsor: relatedSponsor ? normalizeSponsorLibraryEntry(relatedSponsor) : null,
+  };
+}
+
+function getSponsorCardName(sponsor: ShowSponsor) {
+  return sponsor.sponsor?.name ?? "Assigned sponsor";
+}
+
+function SponsorLogoThumbnail({
+  logoUrl,
+  sponsorName,
+}: {
+  logoUrl: string | null | undefined;
+  sponsorName: string;
+}) {
+  const initials = sponsorName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "SP";
+
+  return (
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-stone-700 bg-stone-800/70">
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt={`${sponsorName} logo`}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <span className="text-sm font-semibold uppercase tracking-[0.14em] text-stone-300">
+          {initials}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [compTickets, setCompTickets] = useState<ShowCompTicket[]>([]);
+  const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
   const [recentActivities, setRecentActivities] = useState<DoorModeActivity[]>([]);
   const [isTotalsPanelOpen, setIsTotalsPanelOpen] = useState(false);
+  const [isSponsorCompPanelOpen, setIsSponsorCompPanelOpen] = useState(false);
+  const [sponsorCompCustomAmounts, setSponsorCompCustomAmounts] = useState<Record<string, string>>({});
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -189,6 +288,17 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
         throw ticketError;
       }
 
+      const { data: showSponsorData, error: showSponsorError } = await supabase
+        .from("show_sponsors")
+        .select("*, sponsor:sponsor_library(*)")
+        .eq("show_id", normalizedShow.id)
+        .order("placement_order", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      if (showSponsorError) {
+        throw showSponsorError;
+      }
+
       setCompTickets(
         sortCompTickets(
           ((ticketData ?? []) as Array<
@@ -198,6 +308,9 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             }
           >).map((item) => normalizeShowCompTicket(item)),
         ),
+      );
+      setShowSponsors(
+        ((showSponsorData ?? []) as DoorModeShowSponsor[]).map((item) => normalizeShowSponsor(item)),
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to load Door Mode.");
@@ -241,6 +354,22 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
         .reduce((sum, item) => sum + item.checked_in_count, 0),
     [compTickets],
   );
+  const sponsorCompTicketsAllowed = useMemo(
+    () => showSponsors.reduce((sum, sponsor) => sum + sponsor.comp_ticket_allowance, 0),
+    [showSponsors],
+  );
+  const sponsorCompTicketsCheckedIn = useMemo(
+    () => showSponsors.reduce((sum, sponsor) => sum + sponsor.comp_tickets_checked_in, 0),
+    [showSponsors],
+  );
+  const sponsorCompTicketsRemaining = useMemo(
+    () =>
+      showSponsors.reduce(
+        (sum, sponsor) => sum + Math.max(0, sponsor.comp_ticket_allowance - sponsor.comp_tickets_checked_in),
+        0,
+      ),
+    [showSponsors],
+  );
   const manualCheckedInTickets = useMemo(
     () =>
       compTickets
@@ -252,7 +381,8 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const prepaidOnlineRevenue = prepaidOnlineTickets * PAID_ONLINE_TICKET_PRICE;
   const estimatedCompValue = compCheckedInTickets * COMP_TICKET_VALUE;
   const totalPaidAttendance = doorPaidTickets + prepaidOnlineTickets;
-  const totalAttendance = totalPaidAttendance + compCheckedInTickets + manualCheckedInTickets;
+  const totalAttendance =
+    totalPaidAttendance + compCheckedInTickets + sponsorCompTicketsCheckedIn + manualCheckedInTickets;
   const totalRevenue = doorPaidRevenue + prepaidOnlineRevenue;
   const formattedCurrentTime = currentTime.toLocaleTimeString([], {
     hour: "numeric",
@@ -276,6 +406,10 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
         }),
     [compTickets],
   );
+  const sponsorsWithCompTickets = useMemo(
+    () => showSponsors.filter((sponsor) => (sponsor.comp_ticket_allowance ?? 0) > 0),
+    [showSponsors],
+  );
   const compAndOtherTickets = useMemo(
     () =>
       compTickets.filter((item) => {
@@ -291,6 +425,110 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
   function removeRecentActivity(activityId: string) {
     setRecentActivities((current) => current.filter((item) => item.id !== activityId));
+  }
+
+  async function handleAdjustSponsorCompCheckIn(
+    sponsor: ShowSponsor,
+    delta: number,
+    options?: { overrideConfirmed?: boolean },
+  ) {
+    if (!show || delta === 0) {
+      return;
+    }
+
+    const nextCheckedInCount = Math.max(0, sponsor.comp_tickets_checked_in + delta);
+    const exceedsAllowance = nextCheckedInCount > sponsor.comp_ticket_allowance;
+
+    if (exceedsAllowance && !options?.overrideConfirmed) {
+      const confirmed = window.confirm(
+        `${getSponsorCardName(sponsor)} only has ${sponsor.comp_ticket_allowance} sponsor comp tickets allowed, but this check-in would bring them to ${nextCheckedInCount}. Continue with an override?`,
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setActiveActionId(`sponsor-comp-${sponsor.id}`);
+
+    try {
+      const supabase = createClient();
+      const previousCheckedInCount = sponsor.comp_tickets_checked_in;
+      const { data, error } = await supabase
+        .from("show_sponsors")
+        .update({
+          comp_tickets_checked_in: nextCheckedInCount,
+        })
+        .eq("id", sponsor.id)
+        .eq("show_id", show.id)
+        .select("*, sponsor:sponsor_library(*)")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const updatedSponsor = normalizeShowSponsor(data as DoorModeShowSponsor);
+      setShowSponsors((current) =>
+        current.map((currentSponsor) =>
+          currentSponsor.id === sponsor.id ? updatedSponsor : currentSponsor,
+        ),
+      );
+      setSponsorCompCustomAmounts((current) => ({
+        ...current,
+        [sponsor.id]: "",
+      }));
+      setStatusMessage(
+        `${getSponsorCardName(sponsor)} sponsor comp check-ins updated to ${nextCheckedInCount}.`,
+      );
+
+      pushRecentActivity({
+        id: `sponsor-comp-${sponsor.id}-${Date.now()}`,
+        label: `${getSponsorCardName(sponsor)} ${delta > 0 ? `+${delta}` : `${delta}`} sponsor comp${Math.abs(delta) === 1 ? "" : "s"}`,
+        createdAt: Date.now(),
+        undo: async () => {
+          const undoSupabase = createClient();
+          const { data: undoData, error: undoError } = await undoSupabase
+            .from("show_sponsors")
+            .update({
+              comp_tickets_checked_in: previousCheckedInCount,
+            })
+            .eq("id", sponsor.id)
+            .eq("show_id", show.id)
+            .select("*, sponsor:sponsor_library(*)")
+            .single();
+
+          if (undoError) {
+            throw undoError;
+          }
+
+          const restoredSponsor = normalizeShowSponsor(undoData as DoorModeShowSponsor);
+          setShowSponsors((current) =>
+            current.map((currentSponsor) =>
+              currentSponsor.id === sponsor.id ? restoredSponsor : currentSponsor,
+            ),
+          );
+        },
+      });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update sponsor comp check-ins.");
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
+  async function handleCheckInCustomSponsorCompAmount(sponsor: ShowSponsor) {
+    const rawValue = sponsorCompCustomAmounts[sponsor.id] ?? "";
+    const customAmount = Number.parseInt(rawValue, 10);
+
+    if (!Number.isFinite(customAmount) || customAmount <= 0) {
+      setErrorMessage("Enter a valid sponsor comp check-in amount.");
+      return;
+    }
+
+    await handleAdjustSponsorCompCheckIn(sponsor, customAmount);
   }
 
   async function handleAddDoorSale(quantity: number) {
@@ -691,11 +929,12 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
         <section className="sticky top-3 z-20 rounded-[20px] border border-stone-800 bg-stone-900/95 p-2.5 shadow-xl shadow-black/30 backdrop-blur">
           <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
-            <div className="grid flex-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid flex-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-6">
               {[
                 { label: "Paid Door", value: doorPaidTickets, tone: "text-emerald-300" },
                 { label: "Prepaid In", value: prepaidOnlineTickets, tone: "text-sky-300" },
                 { label: "Comp In", value: compCheckedInTickets, tone: "text-amber-300" },
+                { label: "Sponsor Comps", value: sponsorCompTicketsCheckedIn, tone: "text-fuchsia-300" },
                 { label: "Attendance", value: totalAttendance, tone: "text-white" },
                 { label: "Revenue", value: formatCurrency(totalRevenue), tone: "text-emerald-300" },
               ].map((item) => (
@@ -708,13 +947,22 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               ))}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsTotalsPanelOpen(true)}
-              className="inline-flex items-center justify-center rounded-xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
-            >
-              View Totals
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => setIsSponsorCompPanelOpen(true)}
+                className="inline-flex items-center justify-center rounded-xl border border-fuchsia-700/70 bg-fuchsia-500/10 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-500/20"
+              >
+                Sponsor Comp Tickets
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsTotalsPanelOpen(true)}
+                className="inline-flex items-center justify-center rounded-xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
+              >
+                View Totals
+              </button>
+            </div>
           </div>
         </section>
 
@@ -935,6 +1183,8 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                     { label: "Paid Door Tickets", value: doorPaidTickets, secondary: formatCurrency(doorPaidRevenue), tone: "text-emerald-300" },
                     { label: "Prepaid / Online Checked In", value: prepaidOnlineTickets, secondary: formatCurrency(prepaidOnlineRevenue), tone: "text-sky-300" },
                     { label: "Comp Tickets Checked In", value: compCheckedInTickets, secondary: `Value ${formatCurrency(estimatedCompValue)}`, tone: "text-amber-300" },
+                    { label: "Sponsor Comps Allowed", value: sponsorCompTicketsAllowed, secondary: `Remaining ${sponsorCompTicketsRemaining}`, tone: "text-fuchsia-300" },
+                    { label: "Sponsor Comps Checked In", value: sponsorCompTicketsCheckedIn, secondary: "Separate from paid tickets", tone: "text-fuchsia-200" },
                     { label: "Total Paid Attendance", value: totalPaidAttendance, secondary: "Door + Prepaid", tone: "text-white" },
                     { label: "Total Attendance", value: totalAttendance, secondary: "Including comps", tone: "text-white" },
                     { label: "Total Revenue", value: formatCurrency(totalRevenue), secondary: "Paid tickets only", tone: "text-emerald-300" },
@@ -982,6 +1232,137 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                     )}
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isSponsorCompPanelOpen ? (
+          <div className="fixed inset-0 z-40 flex items-start justify-end bg-black/60 p-3 sm:p-6">
+            <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-stone-800 bg-stone-900 shadow-2xl shadow-black/40">
+              <div className="flex items-center justify-between border-b border-stone-800 px-5 py-4 sm:px-6">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Sponsor Comp Tickets</h2>
+                  <p className="text-sm text-stone-400">
+                    Check sponsor comps separately from paid door and prepaid online tickets.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSponsorCompPanelOpen(false)}
+                  className="rounded-2xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+                <div className="mb-5 grid gap-3 sm:grid-cols-3">
+                  {[
+                    { label: "Allowed", value: sponsorCompTicketsAllowed, tone: "text-fuchsia-300" },
+                    { label: "Checked In", value: sponsorCompTicketsCheckedIn, tone: "text-fuchsia-100" },
+                    { label: "Remaining", value: sponsorCompTicketsRemaining, tone: "text-sky-300" },
+                  ].map((item) => (
+                    <article key={item.label} className="rounded-[22px] border border-stone-800 bg-stone-950/60 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">{item.label}</p>
+                      <p className={`mt-2 text-2xl font-semibold ${item.tone}`}>{item.value}</p>
+                    </article>
+                  ))}
+                </div>
+
+                {sponsorsWithCompTickets.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-stone-700 bg-stone-950/50 px-4 py-5 text-sm text-stone-400">
+                    No sponsor comp tickets have been assigned for this show.
+                  </p>
+                ) : (
+                  <div className="grid gap-3">
+                    {sponsorsWithCompTickets.map((sponsor) => {
+                      const remainingComps = sponsor.comp_ticket_allowance - sponsor.comp_tickets_checked_in;
+                      const customAmountValue = sponsorCompCustomAmounts[sponsor.id] ?? "";
+
+                      return (
+                        <article
+                          key={`door-sponsor-comp-${sponsor.id}`}
+                          className="rounded-[24px] border border-stone-800 bg-stone-950/60 p-4"
+                        >
+                          <div className="flex flex-col gap-3">
+                            <div className="flex gap-3">
+                              <SponsorLogoThumbnail
+                                logoUrl={sponsor.sponsor?.logo_url}
+                                sponsorName={getSponsorCardName(sponsor)}
+                              />
+                              <div className="min-w-0 flex-1 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h3 className="min-w-0 truncate text-base font-semibold text-white">
+                                    {getSponsorCardName(sponsor)}
+                                  </h3>
+                                  <span className="rounded-full border border-stone-700 bg-stone-800 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-300">
+                                    Allowed {sponsor.comp_ticket_allowance}
+                                  </span>
+                                  <span className="rounded-full border border-fuchsia-700/70 bg-fuchsia-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-fuchsia-200">
+                                    {sponsor.comp_tickets_checked_in} Checked In
+                                  </span>
+                                  <span className="rounded-full border border-sky-700/70 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200">
+                                    {remainingComps >= 0 ? `${remainingComps} Remaining` : `${Math.abs(remainingComps)} Over`}
+                                  </span>
+                                </div>
+                                {sponsor.recognition_notes?.trim() ? (
+                                  <p className="text-xs leading-5 text-stone-300">{sponsor.recognition_notes}</p>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-3">
+                              <button
+                                type="button"
+                                onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, 1)}
+                                disabled={Boolean(activeActionId)}
+                                className="rounded-xl bg-fuchsia-600 px-3 py-3 text-sm font-semibold text-white transition hover:bg-fuchsia-500 disabled:cursor-not-allowed disabled:bg-fuchsia-900 disabled:opacity-40"
+                              >
+                                Check In 1
+                              </button>
+                              <div className="flex gap-2 sm:col-span-2">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={customAmountValue}
+                                  onChange={(event) =>
+                                    setSponsorCompCustomAmounts((current) => ({
+                                      ...current,
+                                      [sponsor.id]: event.target.value,
+                                    }))
+                                  }
+                                  className="min-w-0 flex-1 rounded-xl border border-stone-700 bg-stone-900 px-3 py-3 text-sm text-stone-100 outline-none transition focus:border-fuchsia-500"
+                                  placeholder="Custom amount"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => void handleCheckInCustomSponsorCompAmount(sponsor)}
+                                  disabled={Boolean(activeActionId)}
+                                  className="rounded-xl border border-fuchsia-700/70 bg-fuchsia-500/10 px-3 py-3 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  Check In Custom
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, -1)}
+                                disabled={Boolean(activeActionId) || sponsor.comp_tickets_checked_in <= 0}
+                                className="rounded-xl border border-stone-700 bg-stone-800 px-3 py-2.5 text-sm font-semibold text-stone-100 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Undo
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>

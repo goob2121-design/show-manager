@@ -1,7 +1,8 @@
 import Image from "next/image";
+import { PromoLinksView } from "@/app/components/promo-links-view";
 import { PromoMaterialsView } from "@/app/components/promo-materials-view";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { PromoMaterial, ShowRecord } from "@/lib/types";
+import type { PromoLink, PromoMaterial, ShowRecord } from "@/lib/types";
 
 function formatShowDate(showDate: string | null) {
   if (!showDate) {
@@ -31,6 +32,7 @@ type PromoHubPageProps = {
 export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
   let show: ShowRecord | null = null;
   let materials: PromoMaterial[] = [];
+  let promoLinks: PromoLink[] = [];
   let errorMessage: string | null = null;
 
   try {
@@ -59,8 +61,19 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
         throw promoError;
       }
 
+      const { data: promoLinkRows, error: promoLinkError } = await supabase
+        .from("promo_links")
+        .select("*")
+        .eq("show_id", showRecord.id)
+        .order("created_at", { ascending: false });
+
+      if (promoLinkError) {
+        throw promoLinkError;
+      }
+
       show = showRecord as ShowRecord;
       materials = (promoRows ?? []) as PromoMaterial[];
+      promoLinks = (promoLinkRows ?? []) as PromoLink[];
     }
   } catch (error) {
     errorMessage = getErrorMessage(error);
@@ -123,6 +136,54 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
             {errorMessage}
           </div>
         ) : null}
+
+        <section className="rounded-[2rem] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.9fr)]">
+            <div className="space-y-3">
+              <h2 className="text-xl font-semibold text-stone-900">Help Spread the Word</h2>
+              <div className="space-y-3 text-sm leading-7 text-stone-600 sm:text-base">
+                <p>
+                  Thank you for helping promote the show. Sharing flyers, graphics, links, and posts on social media
+                  genuinely helps more people hear about the event and helps live local music keep growing through
+                  community support and word of mouth. Guests, sponsors, friends, and fans are welcome to share
+                  anything here that feels helpful.
+                </p>
+                <p>
+                  We do ask that promotional graphics, logos, and wording not be altered or modified so information
+                  stays accurate and consistent. If you need a different size graphic, custom wording, sponsor
+                  additions, or help with anything promotional, feel free to reach out and we&apos;ll do our best to
+                  help however we can.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-700">
+                Quick Share Tips
+              </h3>
+              <ul className="mt-3 space-y-2 text-sm leading-6 text-stone-600">
+                <li>Share event graphics to Facebook.</li>
+                <li>Invite friends to the event.</li>
+                <li>Share ticket links when available.</li>
+                <li>Tag sponsors and performers.</li>
+                <li>Re-share posts from the official page.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="mb-5 flex flex-col gap-1">
+            <h2 className="text-xl font-semibold text-stone-900">Shareable Links</h2>
+            <p className="text-sm text-stone-600">
+              Easy links for tickets, event pages, videos, and other show promotion.
+            </p>
+          </div>
+          <PromoLinksView
+            links={promoLinks}
+            emptyMessage="No promo links have been added for this show yet."
+          />
+        </section>
 
         <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
           <PromoMaterialsView
