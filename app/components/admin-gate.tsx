@@ -142,7 +142,16 @@ export function AdminGate({
   if (!isReady) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-stone-950 px-4 py-10 text-slate-100 sm:px-6">
-        <section className="mx-auto w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.85)] backdrop-blur sm:p-8">
+        <section
+          className="mx-auto w-full max-w-md overflow-hidden rounded-3xl border border-white/10 p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.85)] sm:p-8"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(4,10,24,0.7), rgba(4,10,24,0.7)), url('/gate_bkg.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        >
           <p className="text-sm font-medium text-slate-300">Checking admin access...</p>
         </section>
       </main>
@@ -155,8 +164,17 @@ export function AdminGate({
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-stone-950 px-4 py-10 text-slate-100 sm:px-6">
-      <section className="w-full max-w-2xl rounded-[2rem] border border-slate-800 bg-slate-900/92 p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.85)] backdrop-blur sm:p-10">
-        <div className="flex flex-col gap-6 text-center">
+      <section
+        className="w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/10 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.85)] sm:p-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(4,10,24,0.68), rgba(4,10,24,0.68)), url('/gate_bkg.png')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      >
+        <div className="flex flex-col gap-6 bg-slate-950/35 p-6 text-center backdrop-blur-[2px] sm:p-10">
           <header className="flex flex-col items-center gap-4">
             {showLogo ? (
               <div className="w-full max-w-[88%] overflow-visible sm:max-w-[480px]">

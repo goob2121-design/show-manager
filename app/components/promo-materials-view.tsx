@@ -116,7 +116,7 @@ export function PromoMaterialsView({
 }: PromoMaterialsViewProps) {
   if (materials.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500">
+      <div className="rounded-2xl border border-dashed border-[rgba(255,255,255,0.10)] bg-[#111111] px-4 py-8 text-sm text-[#b8b8b8]">
         {emptyMessage}
       </div>
     );
@@ -133,7 +133,7 @@ export function PromoMaterialsView({
         return (
           <article
             key={material.id}
-            className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-stone-50"
+            className="flex flex-col overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#161616]"
           >
             {isImage ? (
               <a
@@ -141,7 +141,7 @@ export function PromoMaterialsView({
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`Open ${material.title} preview`}
-                className="flex h-56 items-center justify-center border-b border-stone-200 bg-slate-900 p-4 transition hover:opacity-90"
+                className="flex h-56 items-center justify-center border-b border-[rgba(255,255,255,0.08)] bg-[#0d0d0d] p-4 transition hover:opacity-90"
               >
                 <img
                   src={material.file_url}
@@ -151,12 +151,12 @@ export function PromoMaterialsView({
                 />
               </a>
             ) : (
-              <div className="flex h-56 items-center justify-center border-b border-stone-200 bg-white">
-                <div className="flex h-24 w-20 flex-col items-center justify-center rounded-xl border border-stone-300 bg-stone-50 text-center shadow-sm">
-                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+              <div className="flex h-56 items-center justify-center border-b border-[rgba(255,255,255,0.08)] bg-[#111111]">
+                <div className="flex h-24 w-20 flex-col items-center justify-center rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] text-center shadow-sm">
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#b8b8b8]">
                     File
                   </span>
-                  <span className="mt-2 text-lg font-semibold uppercase text-stone-800">
+                  <span className="mt-2 text-lg font-semibold uppercase text-[#f5f5f5]">
                     {fileExtension ?? "Doc"}
                   </span>
                 </div>
@@ -166,26 +166,26 @@ export function PromoMaterialsView({
             <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
+                <span className="rounded-full border border-[rgba(200,155,60,0.24)] bg-[rgba(200,155,60,0.12)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#f1dfb7]">
                   {formatPromoMaterialCategory(material.category)}
                 </span>
                 {material.file_mime_type ? (
-                  <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                  <span className="rounded-full bg-[#1f1f1f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#b8b8b8]">
                     {material.file_mime_type.split("/").pop() || "File"}
                   </span>
                 ) : null}
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-stone-900">{material.title}</h3>
+                <h3 className="text-lg font-semibold text-[#f5f5f5]">{material.title}</h3>
                 {material.description?.trim() ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-600">
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#b8b8b8]">
                     {material.description}
                   </p>
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap gap-2 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+              <div className="flex flex-wrap gap-2 text-xs font-medium uppercase tracking-[0.12em] text-[#b8b8b8]">
                 <span className="break-all normal-case tracking-normal">{material.file_name}</span>
                 {uploadDate ? <span>Uploaded {uploadDate}</span> : null}
                 {fileSize ? <span>{fileSize}</span> : null}
@@ -197,7 +197,7 @@ export function PromoMaterialsView({
               download={material.file_name}
               target="_blank"
               rel="noreferrer"
-              className="mt-auto flex min-h-11 items-center justify-center rounded-xl bg-emerald-700 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-emerald-800"
+              className="mt-auto flex min-h-11 items-center justify-center rounded-xl border border-[rgba(200,155,60,0.28)] bg-[#c89b3c] px-4 py-2.5 text-center text-sm font-semibold text-[#080808] transition hover:bg-[#d6ad4a]"
             >
               Download
             </a>

@@ -15,12 +15,82 @@ type AdminQuickNavProps = {
   timelineMessages?: string[];
 };
 
+function NavIcon({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+      {children}
+    </span>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M3.5 8.5 10 3.5l6.5 5v7a1 1 0 0 1-1 1h-3.75v-4.5h-3.5V16.5H4.5a1 1 0 0 1-1-1v-7Z" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M10 2.75 15.75 5v4.8c0 3.7-2.25 6.05-5.75 7.45C6.5 15.85 4.25 13.5 4.25 9.8V5L10 2.75Z" />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <rect x="7" y="2.75" width="6" height="9" rx="3" />
+      <path d="M5.5 9.5a4.5 4.5 0 0 0 9 0M10 14v3.25M7 17.25h6" />
+    </svg>
+  );
+}
+
+function MusicIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12.5 3.5v8.25a2.5 2.5 0 1 1-1.5-2.28V5.2l5-1.2v6.55a2.5 2.5 0 1 1-1.5-2.28V3.5l-2 .48Z" />
+    </svg>
+  );
+}
+
+function UserGroupIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M7 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM13.25 8.25a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM3.75 15.75a3.75 3.75 0 0 1 7.5 0M11 15.75a3.1 3.1 0 0 1 5.25-2.25" />
+    </svg>
+  );
+}
+
+function FileChartIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M6 2.75h5.5L15.75 7v10.25a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-13.5a1 1 0 0 1 1-1Z" />
+      <path d="M11.5 2.75V7h4.25M7.5 14.5l1.75-2 1.75 1.25 2.5-3" />
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M8 4.25H5.75a1 1 0 0 0-1 1v9.5a1 1 0 0 0 1 1H8M11.5 6.25l3.75 3.75-3.75 3.75M15 10H8.25" />
+    </svg>
+  );
+}
+
 const quickNavLinks = [
-  { key: "dashboard", label: "Dashboard", href: "/shows" },
-  { key: "admin", label: "Admin", href: (slug: string) => `/admin/${slug}` },
-  { key: "mc", label: "MC", href: (slug: string) => `/mc/${slug}` },
-  { key: "band", label: "Band", href: (slug: string) => `/band/${slug}` },
-  { key: "guest", label: "Guest", href: (slug: string) => `/guest/${slug}` },
+  { key: "dashboard", label: "Dashboard", href: "/shows", icon: <HomeIcon /> },
+  { key: "admin", label: "Admin", href: (slug: string) => `/admin/${slug}`, icon: <ShieldIcon /> },
+  { key: "mc", label: "MC", href: (slug: string) => `/mc/${slug}`, icon: <MicIcon /> },
+  { key: "band", label: "Band", href: (slug: string) => `/band/${slug}`, icon: <MusicIcon /> },
+  { key: "guest", label: "Guest", href: (slug: string) => `/guest/${slug}`, icon: <UserGroupIcon /> },
 ] as const;
 const chartBuilderUrl = "https://charts.pinnaclestudiotn.com";
 type ScannerConnectionState = "checking" | "online" | "offline";
@@ -122,12 +192,13 @@ export function AdminQuickNav({
               <Link
                 key={link.key}
                 href={href}
-                className={`rounded-full px-3 py-1.5 transition ${
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
                   isActive
-                    ? "border border-emerald-600 bg-emerald-700 text-white shadow-sm hover:bg-emerald-600 dark:border-emerald-500 dark:bg-emerald-700 dark:text-white dark:hover:bg-emerald-600"
+                    ? "border border-emerald-300 bg-emerald-700 text-white shadow-sm hover:bg-emerald-600 dark:border-emerald-300 dark:bg-emerald-700 dark:text-white dark:hover:bg-emerald-600"
                     : "border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
                 }`}
               >
+                <NavIcon>{link.icon}</NavIcon>
                 {link.label}
               </Link>
             );
@@ -136,15 +207,17 @@ export function AdminQuickNav({
             href={chartBuilderUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           >
+            <NavIcon><FileChartIcon /></NavIcon>
             ChartBuilder
           </a>
           <button
             type="button"
             onClick={handleLogout}
-            className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           >
+            <NavIcon><LogoutIcon /></NavIcon>
             Logout
           </button>
         </div>
@@ -166,7 +239,7 @@ export function AdminQuickNav({
         </div>
 
         <div className="flex shrink-0 items-center justify-end">
-          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/15 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-50/80 dark:border-white/10 dark:bg-slate-950/60">
+          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/15 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-200 dark:border-white/10 dark:bg-slate-950/60">
             <span className={`h-2 w-2 rounded-full ${scannerDotClass}`} />
             <div
               className={`stageflow-scanner stageflow-scanner--${connectionState}`}

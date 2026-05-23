@@ -42,6 +42,7 @@ export type ShowRecord = {
   name: string;
   show_date: string | null;
   venue: string | null;
+  show_logo_url: string | null;
   is_archived: boolean;
   venue_address: string | null;
   directions_url: string | null;
@@ -368,6 +369,7 @@ export type GuestProfileFormState = {
 
 export type ShowDetailsFormState = {
   venue: string;
+  showLogoUrl: string;
   venueAddress: string;
   directionsUrl: string;
   callTime: string;

@@ -113,30 +113,52 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
     .filter((section) => section.materials.length > 0);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 px-4 py-8 text-slate-100 sm:px-6 sm:py-10 lg:px-8">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(29,78,216,0.10),transparent_36%),linear-gradient(180deg,#020817,#071126_50%,#0b1629)] px-4 py-8 text-[#f5f5f5] sm:px-6 sm:py-10 lg:px-8">
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <header className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
-          <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-              <div className="w-full max-w-[220px] overflow-hidden sm:max-w-[240px]">
+        <header
+          className="relative overflow-hidden rounded-[2rem] border border-white/10 shadow-sm"
+        >
+          <Image
+            src="/portal_bkg.png"
+            alt=""
+            fill
+            priority
+            aria-hidden="true"
+            className="object-cover object-center"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[linear-gradient(rgba(4,10,24,0.4),rgba(4,10,24,0.4))]"
+          />
+          <div className="relative px-6 py-8 text-[#f5f5f5] sm:px-8">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-5 right-5 hidden w-32 rounded-r-[24px] opacity-45 lg:block"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(135deg, rgba(200,155,60,0.28) 0px, rgba(200,155,60,0.28) 1px, transparent 1px, transparent 18px)",
+              }}
+            />
+            <div className="grid items-center gap-8 md:grid-cols-[320px_minmax(0,1fr)] md:gap-10 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-12">
+              <div className="w-full max-w-[280px] sm:max-w-[300px] md:max-w-[320px] lg:max-w-[360px]">
                 <Image
                   src="/stageflow-logo-v2.png"
                   alt="StageFlow logo"
-                  width={240}
-                  height={120}
-                  className="h-auto w-full object-contain -translate-y-1.5 scale-[1.11] transform-gpu"
+                  width={360}
+                  height={180}
+                  className="h-auto w-full object-contain"
                   priority
                 />
               </div>
 
-              <div className="max-w-2xl space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-100">
+              <div className="stage-gold-divider max-w-3xl space-y-2 md:space-y-3">
+                <p className="inline-flex w-fit rounded-full border border-emerald-400/35 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.14)]">
                   Promo Hub
                 </p>
                 <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                   Promo Materials
                 </h1>
-                <p className="text-sm leading-6 text-emerald-50/90 sm:text-base">
+                <p className="max-w-2xl text-sm leading-6 text-[#d7d7d7] sm:text-base">
                   Download flyers, graphics, and promotional items for this show.
                 </p>
               </div>
@@ -144,19 +166,19 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
           </div>
 
           {show ? (
-            <div className="grid gap-3 border-t border-stone-200 bg-stone-50/70 px-6 py-5 sm:grid-cols-3 sm:px-8">
-              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 sm:col-span-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+            <div className="grid gap-3 border-t border-[rgba(255,255,255,0.10)] bg-[#141414] px-6 py-5 sm:grid-cols-3 sm:px-8">
+              <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#181818] px-4 py-4 sm:col-span-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c89b3c]">
                   Show
                 </p>
-                <p className="mt-2 text-xl font-semibold text-stone-900">{show.name}</p>
-                <p className="mt-1 text-sm text-stone-600">{show.venue || "Venue not set"}</p>
+                <p className="mt-2 text-xl font-semibold text-[#f5f5f5]">{show.name}</p>
+                <p className="mt-1 text-sm text-[#b8b8b8]">{show.venue || "Venue not set"}</p>
               </div>
-              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+              <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#181818] px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c89b3c]">
                   Date
                 </p>
-                <p className="mt-2 text-sm font-semibold text-stone-900">
+                <p className="mt-2 text-sm font-semibold text-[#f5f5f5]">
                   {formatShowDate(show.show_date)}
                 </p>
               </div>
@@ -170,11 +192,11 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
           </div>
         ) : null}
 
-        <section className="rounded-[2rem] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+        <section className="stage-premium-panel rounded-[2rem] border border-[rgba(255,255,255,0.10)] bg-[#111111] p-5 shadow-sm sm:p-6">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.9fr)]">
             <div className="space-y-3">
-              <h2 className="text-xl font-semibold text-stone-900">Help Spread the Word</h2>
-              <div className="space-y-3 text-sm leading-7 text-stone-600 sm:text-base">
+              <h2 className="stage-gold-divider text-xl font-semibold text-[#f5f5f5]">Help Spread the Word</h2>
+              <div className="space-y-3 text-sm leading-7 text-[#b8b8b8] sm:text-base">
                 <p>
                   Thank you for helping promote the show. Sharing flyers, graphics, links, and posts on social media
                   genuinely helps more people hear about the event and helps live local music keep growing through
@@ -190,11 +212,11 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-700">
+            <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#181818] p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-[#c89b3c]">
                 Quick Share Tips
               </h3>
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-stone-600">
+              <ul className="mt-3 space-y-2 text-sm leading-6 text-[#b8b8b8]">
                 <li>Share event graphics to Facebook.</li>
                 <li>Invite friends to the event.</li>
                 <li>Share ticket links when available.</li>
@@ -205,10 +227,10 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
           </div>
         </section>
 
-        <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+        <section className="stage-premium-panel rounded-[2rem] border border-[rgba(255,255,255,0.10)] bg-[#111111] p-4 shadow-sm sm:p-6">
           <div className="mb-5 flex flex-col gap-1">
-            <h2 className="text-xl font-semibold text-stone-900">Shareable Links</h2>
-            <p className="text-sm text-stone-600">
+            <h2 className="stage-gold-divider text-xl font-semibold text-[#f5f5f5]">Shareable Links</h2>
+            <p className="text-sm text-[#b8b8b8]">
               Easy links for tickets, event pages, videos, and other show promotion.
             </p>
           </div>
@@ -219,7 +241,7 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
         </section>
 
         {groupedPromoMaterials.length === 0 ? (
-          <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+          <section className="stage-premium-panel rounded-[2rem] border border-[rgba(255,255,255,0.10)] bg-[#111111] p-4 shadow-sm sm:p-6">
             <PromoMaterialsView
               materials={materials}
               emptyMessage="No visible promo materials have been added for this show yet."
@@ -230,11 +252,11 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
             {groupedPromoMaterials.map((section) => (
               <section
                 key={section.key}
-                className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm sm:p-6"
+                className="stage-premium-panel rounded-[2rem] border border-[rgba(255,255,255,0.10)] bg-[#111111] p-4 shadow-sm sm:p-6"
               >
                 <div className="mb-5 flex flex-col gap-1">
-                  <h2 className="text-xl font-semibold text-stone-900">{section.title}</h2>
-                  <p className="text-sm text-stone-600">{section.helperText}</p>
+                  <h2 className="stage-gold-divider text-xl font-semibold text-[#f5f5f5]">{section.title}</h2>
+                  <p className="text-sm text-[#b8b8b8]">{section.helperText}</p>
                 </div>
                 <PromoMaterialsView materials={section.materials} />
               </section>
@@ -242,7 +264,7 @@ export async function PromoHubPage({ showSlug }: PromoHubPageProps) {
           </div>
         )}
 
-        <p className="px-2 text-center text-xs leading-5 text-slate-400 sm:px-6">
+        <p className="px-2 text-center text-xs leading-5 text-[#8f8f8f] sm:px-6">
           Promo materials are provided for promotional use for the Cumberland Mountain Music Show. Please do not alter,
           resell, or use these materials in a misleading way without permission.
         </p>

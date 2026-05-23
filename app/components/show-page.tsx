@@ -218,6 +218,7 @@ const initialGuestProfileFormState: GuestProfileFormState = {
 
 const initialShowDetailsFormState: ShowDetailsFormState = {
   venue: "",
+  showLogoUrl: "",
   venueAddress: "",
   directionsUrl: "",
   callTime: "",
@@ -4661,6 +4662,7 @@ function getMcSponsorPlacementFromNeighbor(
 function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
   return {
     venue: show.venue ?? "",
+    showLogoUrl: show.show_logo_url ?? "",
     venueAddress: show.venue_address ?? "",
     directionsUrl: show.directions_url ?? "",
     callTime: show.call_time ?? "",
@@ -4835,6 +4837,8 @@ export function ShowPage({
   const [showDetailsFormState, setShowDetailsFormState] = useState<ShowDetailsFormState>(
     initialShowDetailsFormState,
   );
+  const [showLogoFile, setShowLogoFile] = useState<File | null>(null);
+  const [showLogoInputKey, setShowLogoInputKey] = useState(0);
   const [guestProfileFormState, setGuestProfileFormState] = useState<GuestProfileFormState>(
     initialGuestProfileFormState,
   );
@@ -5082,6 +5086,7 @@ export function ShowPage({
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
   const portalLabel = getPortalLabel(viewMode);
   const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band" || viewMode === "admin";
+  const shouldUsePortalHero = shouldShowPortalLogo;
   const isAdminView = viewMode === "admin";
   const isBandView = viewMode === "band";
   const isGuestView = viewMode === "guest";
@@ -6936,6 +6941,8 @@ export function ShowPage({
     }
 
     setShowDetailsFormState(mapShowToDetailsFormState(show));
+    setShowLogoFile(null);
+    setShowLogoInputKey((currentKey) => currentKey + 1);
     setMcScriptFormState(buildScriptFormState(show));
   }, [show]);
 
@@ -8677,6 +8684,10 @@ export function ShowPage({
     }));
   }
 
+  function handleShowLogoFileChange(event: ChangeEvent<HTMLInputElement>) {
+    setShowLogoFile(event.target.files?.[0] ?? null);
+  }
+
   function startEditingPromoLink(link: PromoLink) {
     setEditingPromoLinkId(link.id);
     setPromoLinkEditFormState(buildPromoLinkFormState(link));
@@ -9066,8 +9077,17 @@ export function ShowPage({
 
     try {
       const supabase = createClient();
+      const uploadedShowLogo = showLogoFile
+        ? await uploadPromoMaterialFile({
+            file: showLogoFile,
+            showId: show.id,
+            title: `${show.name}-show-logo`,
+          })
+        : null;
       const payload = {
         venue: normalizeOptionalField(showDetailsFormState.venue),
+        show_logo_url:
+          uploadedShowLogo?.file_url ?? normalizeOptionalField(showDetailsFormState.showLogoUrl),
         venue_address: normalizeOptionalField(showDetailsFormState.venueAddress),
         directions_url: normalizeOptionalField(showDetailsFormState.directionsUrl),
         call_time: normalizeOptionalField(showDetailsFormState.callTime),
@@ -9098,6 +9118,9 @@ export function ShowPage({
       }
 
       setShow(data);
+      setShowDetailsFormState(mapShowToDetailsFormState(data as ShowRecord));
+      setShowLogoFile(null);
+      setShowLogoInputKey((currentKey) => currentKey + 1);
       setShowDetailsMessage("Show details saved.");
     } catch (error) {
       setShowDetailsError(getErrorMessage(error));
@@ -11489,33 +11512,104 @@ export function ShowPage({
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
         <AdminQuickNav slug={showSlug} currentView={viewMode} timelineMessages={quickNavTimelineMessages} />
 
-        <header className="print-hidden flex flex-col gap-3 border-b border-stone-200 pb-5">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              {shouldShowPortalLogo ? (
-                <div className="mb-0.5 w-full max-w-[300px] sm:max-w-[340px] lg:max-w-[360px] xl:max-w-[390px]">
-                  <Image
-                    src="/stageflow-logo-v2.png"
-                    alt="StageFlow logo"
-                    width={420}
-                    height={210}
-                    priority
-                    className="h-auto w-full max-w-full object-contain"
-                  />
+        <header
+          className={`print-hidden overflow-hidden ${
+            shouldUsePortalHero
+              ? "relative rounded-[28px] border border-white/10 shadow-sm"
+              : "flex flex-col gap-3 border-b border-stone-200 pb-5"
+          }`}
+        >
+          {shouldUsePortalHero ? (
+            <>
+              <Image
+                src="/portal_bkg.png"
+                alt=""
+                fill
+                priority
+                aria-hidden="true"
+                className="object-cover object-center"
+              />
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 bg-[linear-gradient(rgba(4,10,24,0.2),rgba(4,10,24,0.2))]"
+              />
+            </>
+          ) : null}
+          <div className={`relative ${shouldUsePortalHero ? "px-6 py-8 text-white sm:px-8" : "flex flex-col gap-3"}`}>
+            {shouldUsePortalHero ? (
+              <div className="grid items-center gap-8 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-10 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="flex flex-col gap-4">
+                  {shouldShowPortalLogo ? (
+                    <div className="w-full max-w-[280px] sm:max-w-[300px] lg:max-w-[320px]">
+                      <Image
+                        src="/stageflow-logo-v2.png"
+                        alt="StageFlow logo"
+                        width={420}
+                        height={210}
+                        priority
+                        className="h-auto w-full object-contain"
+                    />
+                  </div>
+                ) : null}
+                  <p className="text-sm font-semibold uppercase tracking-[0.22em] text-emerald-200">
+                    {portalLabel}
+                  </p>
                 </div>
-              ) : null}
-              <p
-                className={`uppercase ${
-                  isGuestView
-                    ? "text-lg font-black tracking-[0.3em] text-emerald-700 sm:text-xl"
-                    : "text-sm font-semibold tracking-[0.16em] text-stone-500"
-                }`}
-              >
-                {portalLabel}
-              </p>
-              <h1 className="text-[2.15rem] font-bold tracking-tight sm:text-[2.7rem]">{show.name}</h1>
-              <p className="text-[0.95rem] text-stone-600 sm:text-base">{formatShowDate(show.show_date)}</p>
-            </div>
+
+                <div className="flex flex-col justify-center gap-3 lg:min-h-[180px]">
+                  {show.show_logo_url ? (
+                    <div>
+                      <img
+                        src={show.show_logo_url}
+                        alt={`${show.name} logo`}
+                        className="h-auto max-h-[70px] w-full max-w-[180px] object-contain"
+                      />
+                    </div>
+                  ) : null}
+                  <h1 className="max-w-[720px] text-[2.15rem] font-bold tracking-tight text-white sm:text-[2.7rem]">
+                    {show.name}
+                  </h1>
+                  <p className="text-[0.95rem] text-slate-200 sm:text-base">
+                    {formatShowDate(show.show_date)}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {shouldShowPortalLogo ? (
+                  <div className="mb-0.5 w-full max-w-[300px] sm:max-w-[340px] lg:max-w-[360px] xl:max-w-[390px]">
+                    <Image
+                      src="/stageflow-logo-v2.png"
+                      alt="StageFlow logo"
+                      width={420}
+                      height={210}
+                      priority
+                      className="h-auto w-full max-w-full object-contain"
+                    />
+                  </div>
+                ) : null}
+                <p
+                  className={`uppercase ${
+                    isGuestView
+                      ? "text-lg font-black tracking-[0.3em] text-emerald-700 sm:text-xl"
+                      : "text-sm font-semibold tracking-[0.16em] text-stone-500"
+                  }`}
+                >
+                  {portalLabel}
+                </p>
+                {show.show_logo_url ? (
+                  <div className="mt-2">
+                    <img
+                      src={show.show_logo_url}
+                      alt={`${show.name} logo`}
+                      className="h-auto max-h-20 w-full max-w-[220px] object-contain"
+                    />
+                  </div>
+                ) : null}
+                <h1 className="text-[2.15rem] font-bold tracking-tight sm:text-[2.7rem]">{show.name}</h1>
+                <p className="text-[0.95rem] text-stone-600 sm:text-base">{formatShowDate(show.show_date)}</p>
+              </div>
+            )}
           </div>
         </header>
 
@@ -12646,6 +12740,37 @@ export function ShowPage({
                   />
                 </label>
               </div>
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                Show Logo
+                <input
+                  key={showLogoInputKey}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleShowLogoFileChange}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                />
+                <span className="text-xs font-normal text-stone-500">
+                  Optional logo displayed on dashboard and show portals.
+                </span>
+                {showLogoFile ? (
+                  <span className="text-xs font-normal text-stone-500">
+                    New file selected: {showLogoFile.name}
+                  </span>
+                ) : null}
+                {showDetailsFormState.showLogoUrl ? (
+                  <div className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-white p-3">
+                    <img
+                      src={showDetailsFormState.showLogoUrl}
+                      alt={`${show.name} logo`}
+                      className="h-auto max-h-20 w-full max-w-[220px] object-contain"
+                    />
+                    <p className="break-all text-xs font-normal text-stone-500">
+                      Current logo: {showDetailsFormState.showLogoUrl}
+                    </p>
+                  </div>
+                ) : null}
+              </label>
 
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                 Directions URL
@@ -14389,11 +14514,11 @@ export function ShowPage({
             <SectionLoadWarning message={dataSectionErrors.promoMaterials} />
 
             {show ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+              <div className="rounded-2xl border border-[rgba(200,155,60,0.28)] bg-[rgba(200,155,60,0.10)] px-4 py-3 text-sm text-[#f1dfb7]">
                 Shareable promo hub:{" "}
                 <Link
                   href={`/promo/${show.slug}`}
-                  className="font-semibold underline"
+                  className="font-semibold text-[#c89b3c] underline decoration-[rgba(200,155,60,0.35)] underline-offset-4 transition hover:text-[#d6ad4a]"
                   target="_blank"
                 >
                   /promo/{show.slug}

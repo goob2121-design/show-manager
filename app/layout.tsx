@@ -30,7 +30,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body className="flex min-h-full flex-col bg-slate-950 text-slate-100">{children}</body>
+      <body className="flex min-h-full flex-col bg-[#050505] text-slate-100">{children}</body>
     </html>
   );
 }

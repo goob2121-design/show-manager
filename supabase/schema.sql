@@ -12,6 +12,7 @@ create table if not exists public.shows (
 alter table public.shows
   add column if not exists venue_address text,
   add column if not exists directions_url text,
+  add column if not exists show_logo_url text,
   add column if not exists call_time text,
   add column if not exists soundcheck_time text,
   add column if not exists guest_arrival_time text,

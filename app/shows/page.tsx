@@ -39,6 +39,105 @@ type CurrentShowDashboardMetrics = {
   setlistEntries: Array<Pick<SetlistEntry, "id" | "guest_song_id" | "section">>;
 };
 
+function DashboardIcon({
+  children,
+  className = "h-4 w-4",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center text-[#c89b3c] ${className}`} aria-hidden="true">
+      {children}
+    </span>
+  );
+}
+
+function MusicNoteIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12.5 3.5v8.25a2.5 2.5 0 1 1-1.5-2.28V5.2l5-1.2v6.55a2.5 2.5 0 1 1-1.5-2.28V3.5l-2 .48Z" />
+    </svg>
+  );
+}
+
+function GuestsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M7 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM13.25 8.25a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM3.75 15.75a3.75 3.75 0 0 1 7.5 0M11 15.75a3.1 3.1 0 0 1 5.25-2.25" />
+    </svg>
+  );
+}
+
+function CheckCircleIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="m7.25 10.25 1.75 1.75 3.75-4" />
+    </svg>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M6.5 5.5h8M6.5 10h8M6.5 14.5h8M4 5.5h.01M4 10h.01M4 14.5h.01" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3.5" y="4.5" width="13" height="11.5" rx="1.5" />
+      <path d="M6.5 2.75v3.5M13.5 2.75v3.5M3.5 8h13" />
+    </svg>
+  );
+}
+
+function MapPinIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M10 16.25s4.25-4.16 4.25-7.25a4.25 4.25 0 1 0-8.5 0c0 3.09 4.25 7.25 4.25 7.25Z" />
+      <circle cx="10" cy="8.75" r="1.5" />
+    </svg>
+  );
+}
+
+function HashIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M7 3.5 5 16.5M15 3.5l-2 13M4 7.5h12M3 12.5h12" />
+    </svg>
+  );
+}
+
+function MicrophoneIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <rect x="7" y="2.75" width="6" height="9" rx="3" />
+      <path d="M5.5 9.5a4.5 4.5 0 0 0 9 0M10 14v3.25M7 17.25h6" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M10 2.75 15.75 5v4.8c0 3.7-2.25 6.05-5.75 7.45C6.5 15.85 4.25 13.5 4.25 9.8V5L10 2.75Z" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <rect x="7" y="5" width="8.5" height="10.5" rx="1.5" />
+      <path d="M4.5 12V4.5A1.5 1.5 0 0 1 6 3h6.5" />
+    </svg>
+  );
+}
+
 const initialFormState: ShowFormState = {
   name: "",
   showDate: "",
@@ -879,7 +978,7 @@ function getShowCardTone(isArchived: boolean) {
 
   return {
     card: "border-stone-200 bg-white",
-    badge: "bg-emerald-100 text-emerald-800",
+    badge: "bg-amber-200 text-amber-900",
     divider: "border-stone-200",
     metaCard: "border-stone-200 bg-stone-50",
     status: "Active",
@@ -1917,26 +2016,30 @@ export default function ShowsDashboardPage() {
       <>
         <Link
           href={`/guest/${show.slug}`}
-          className="inline-flex min-w-[105px] shrink-0 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
         >
+          <DashboardIcon><GuestsIcon /></DashboardIcon>
           Guest
         </Link>
         <Link
           href={`/band/${show.slug}`}
-          className="inline-flex min-w-[105px] shrink-0 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
         >
+          <DashboardIcon><MusicNoteIcon /></DashboardIcon>
           Band
         </Link>
         <Link
           href={`/mc/${show.slug}`}
-          className="inline-flex min-w-[105px] shrink-0 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
         >
+          <DashboardIcon><MicrophoneIcon /></DashboardIcon>
           MC
         </Link>
         <Link
           href={`/admin/${show.slug}`}
-          className="inline-flex min-w-[105px] shrink-0 items-center justify-center rounded-xl bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-emerald-800"
+          className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-emerald-800"
         >
+          <DashboardIcon><ShieldIcon /></DashboardIcon>
           Admin
         </Link>
       </>
@@ -2299,7 +2402,7 @@ export default function ShowsDashboardPage() {
       resourceLabel="the show management dashboard"
       continueLabel="Continue to Dashboard"
     >
-      <main className="min-h-screen bg-gradient-to-b from-stone-100 via-stone-50 to-stone-100 px-4 py-8 text-stone-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100 sm:px-6 sm:py-10 lg:px-8">
+      <main className="min-h-screen bg-[#020817] px-4 py-8 text-stone-900 dark:bg-[radial-gradient(circle_at_top_right,rgba(29,78,216,0.10),transparent_34%),linear-gradient(180deg,#020817,#071126_48%,#0b1629)] dark:text-slate-100 sm:px-6 sm:py-10 lg:px-8">
         <section className="mx-auto flex w-full max-w-7xl flex-col gap-8">
           {currentShow ? (
             <div className="sticky top-3 z-30">
@@ -2312,8 +2415,25 @@ export default function ShowsDashboardPage() {
             </div>
           ) : null}
 
-          <header className="overflow-visible rounded-[28px] border border-stone-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="rounded-[28px] bg-gradient-to-r from-emerald-900 via-emerald-800 to-stone-900 px-6 py-8 text-white sm:px-8">
+          <header
+            className="overflow-hidden rounded-[28px] border border-white/10 shadow-sm"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(0,0,0,0.15), rgba(0,0,0,0.15)), url('/portal_bkg.png')",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+            }}
+          >
+            <div className="relative overflow-hidden rounded-[28px] px-6 py-8 text-white sm:px-8">
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-4 right-4 hidden w-40 rounded-r-[24px] opacity-50 lg:block"
+                  style={{
+                    backgroundImage:
+                      "repeating-linear-gradient(135deg, rgba(200,155,60,0.28) 0px, rgba(200,155,60,0.28) 1px, transparent 1px, transparent 18px)",
+                  }}
+                />
                 <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
                   <div className="flex flex-col gap-5 lg:flex-row lg:flex-wrap lg:items-center lg:gap-6 xl:flex-nowrap">
                     {showLogo ? (
@@ -2330,18 +2450,18 @@ export default function ShowsDashboardPage() {
                     </div>
                   ) : null}
 
-                  <div className="max-w-2xl space-y-2 xl:max-w-xl">
+                  <div className="stage-gold-divider max-w-2xl space-y-2 xl:max-w-xl">
                     <p className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
                       Control Center
                     </p>
-                    <p className="text-sm leading-6 text-emerald-50/90 sm:text-base">
+                    <p className="text-sm leading-6 text-stone-300 sm:text-base">
                       Shows, songs, setlists, guests, rehearsal tools, and promo materials in one place.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-col items-stretch gap-3 sm:items-end">
-                  <div className="w-fit self-start rounded-full border border-white/15 bg-black/15 px-3 py-1 text-[11px] font-medium tracking-[0.12em] text-emerald-50/80 sm:self-end">
+                  <div className="w-fit self-start rounded-full border border-[rgba(200,155,60,0.24)] bg-[rgba(200,155,60,0.12)] px-3 py-1 text-[11px] font-medium tracking-[0.12em] text-[#f1dfb7] shadow-[0_0_20px_rgba(200,155,60,0.12)] sm:self-end">
                     {stageflowDashboardVersion}
                   </div>
                 </div>
@@ -2355,16 +2475,16 @@ export default function ShowsDashboardPage() {
             </div>
           ) : null}
 
-          <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <section className="stage-premium-panel rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm dark:border-[rgba(255,255,255,0.10)] dark:bg-[#111111] sm:p-6">
             <div className="grid gap-6">
-              <section className="rounded-3xl border border-stone-200 bg-stone-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:p-5">
+              <section className="stage-premium-panel rounded-3xl border border-stone-200 bg-stone-50/70 p-4 dark:border-[rgba(255,255,255,0.10)] dark:bg-gradient-to-br dark:from-[#111111] dark:via-[#0d0d0d] dark:to-[#080808] sm:p-5">
                 <button
                   type="button"
                   onClick={() => toggleMainDashboardPanel("showSnapshot")}
                   className="flex w-full items-start justify-between gap-4 text-left"
                 >
                   <div className="flex flex-col gap-1">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-900 dark:text-emerald-300">
                       What Matters Right Now
                     </p>
                     <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
@@ -2374,7 +2494,7 @@ export default function ShowsDashboardPage() {
                       A quick operations view of the next show, nearby upcoming events, and anything that still needs attention.
                     </p>
                   </div>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#181818] dark:text-slate-200">
                     {expandedMainPanels.showSnapshot ? "-" : "+"}
                   </span>
                 </button>
@@ -2382,31 +2502,51 @@ export default function ShowsDashboardPage() {
                 {expandedMainPanels.showSnapshot ? (
                   <div className="mt-5">
                 {isLoading ? (
-                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-600 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#141414] dark:text-slate-300">
                     Loading control-center highlights...
                   </div>
                 ) : currentShow ? (
                   <div className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
-                    <section className="rounded-3xl border border-stone-200 bg-gradient-to-br from-white via-stone-50 to-emerald-50 p-5 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-emerald-950/20 sm:p-6">
+                    <section className="stage-premium-card rounded-3xl border border-slate-700/60 bg-gradient-to-br from-[#101827] via-[#111b2d] to-[#0b1220] p-5 sm:p-6">
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
+                          <div className="stage-gold-divider">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
                               Next Show
                             </p>
-                            <h3 className="mt-2 text-3xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
+                            {currentShow.show_logo_url ? (
+                              <div className="mt-3">
+                                <img
+                                  src={currentShow.show_logo_url}
+                                  alt={`${currentShow.name} logo`}
+                                  className="h-auto max-h-20 w-full max-w-[220px] object-contain"
+                                />
+                              </div>
+                            ) : null}
+                            <h3 className="mt-2 text-3xl font-semibold tracking-tight text-[#f5f5f5]">
                               {currentShow.name}
                             </h3>
-                            <div className="mt-2 grid gap-1 text-sm text-stone-600 dark:text-slate-300">
-                              <p>{formatShowDate(currentShow.show_date)}</p>
-                              <p>{currentShow.venue || "Venue not set"}</p>
+                            <div className="mt-2 grid gap-1 text-sm text-[#b8b8b8]">
+                              <p className="flex items-center gap-2">
+                                <DashboardIcon><CalendarIcon /></DashboardIcon>
+                                {formatShowDate(currentShow.show_date)}
+                              </p>
+                              <p className="flex items-center gap-2">
+                                <DashboardIcon><MapPinIcon /></DashboardIcon>
+                                {currentShow.venue || "Venue not set"}
+                              </p>
+                              <p className="flex items-center gap-2">
+                                <DashboardIcon><HashIcon /></DashboardIcon>
+                                {currentShow.slug}
+                              </p>
                             </div>
                           </div>
 
                           <Link
                             href={`/admin/${currentShow.slug}`}
-                            className="w-fit rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                            className="inline-flex w-fit items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_24px_rgba(5,150,105,0.22)] transition hover:bg-emerald-600"
                           >
+                            <DashboardIcon><ShieldIcon /></DashboardIcon>
                             Open Admin Portal
                           </Link>
                         </div>
@@ -2417,34 +2557,41 @@ export default function ShowsDashboardPage() {
                               label: "Song Library",
                               value: currentShowMetrics.songLibraryCount?.toString() ?? "0",
                               detail: "Reusable songs ready for planning",
+                              icon: <MusicNoteIcon />,
                             },
                             {
                               label: "Guest Songs",
                               value: currentShowMetrics.guestSongs.length.toString(),
                               detail: "Submitted for this show",
+                              icon: <MicrophoneIcon />,
                             },
                             {
                               label: "Guests Ready",
                               value: `${guestsReadyCount}/${currentShowMetrics.guestProfiles.length}`,
                               detail: "Permission granted and photo added",
+                              icon: <CheckCircleIcon />,
                             },
                             {
                               label: "Setlist Entries",
                               value: nextShowSetlistTotal.toString(),
                               detail: "Official songs already placed",
+                              icon: <ListIcon />,
                             },
                           ].map((card) => (
                             <div
                               key={card.label}
-                              className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60"
+                              className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4"
                             >
-                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
-                                {card.label}
-                              </p>
-                              <p className="mt-2 text-2xl font-semibold text-stone-900 dark:text-slate-100">
+                              <div className="flex items-center gap-2">
+                                <DashboardIcon className="h-8 w-8 text-emerald-300 sm:h-9 sm:w-9">{card.icon}</DashboardIcon>
+                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
+                                  {card.label}
+                                </p>
+                              </div>
+                              <p className="mt-2 text-2xl font-semibold text-[#f5f5f5]">
                                 {card.value}
                               </p>
-                              <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">
+                              <p className="mt-1 text-sm text-[#b8b8b8]">
                                 {card.detail}
                               </p>
                             </div>
@@ -2452,8 +2599,8 @@ export default function ShowsDashboardPage() {
                         </div>
 
                         <div id="next-show-links" className="grid gap-4 lg:grid-cols-[1fr_auto]">
-                          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                          <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
                               Portal Access
                             </p>
                             <div className="mt-4 flex flex-row flex-wrap items-center justify-center gap-3">
@@ -2461,49 +2608,50 @@ export default function ShowsDashboardPage() {
                             </div>
                           </div>
 
-                          <div className="relative rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                          <div className="stage-premium-card relative rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
                               Copy Links
                             </p>
                             <button
                               type="button"
                               onClick={(event) => handleToggleCopyMenu(event, currentShow.id)}
-                              className="mt-4 w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+                              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-2.5 text-sm font-semibold text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
                             >
+                              <DashboardIcon><CopyIcon /></DashboardIcon>
                               Open Copy Menu
                             </button>
 
                             {openCopyMenuShowId === currentShow.id ? (
                               <div
-                                className={`absolute left-4 right-4 z-20 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                                className={`absolute left-4 right-4 z-20 overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#181818] shadow-lg ${
                                   copyMenuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2"
                                 }`}
                               >
                                 <button
                                   type="button"
                                   onClick={() => handleCopyLink(currentShow.slug, "guest")}
-                                  className="flex w-full items-center justify-center px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                  className="flex w-full items-center justify-center px-4 py-2.5 text-center text-sm font-medium text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
                                 >
                                   {copiedLinkKey === `guest-${currentShow.slug}` ? "Copied Guest Link" : "Copy Guest Link"}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleCopyLink(currentShow.slug, "band")}
-                                  className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                                  className="flex w-full items-center justify-center border-t border-[rgba(255,255,255,0.10)] px-4 py-2.5 text-center text-sm font-medium text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
                                 >
                                   {copiedLinkKey === `band-${currentShow.slug}` ? "Copied Band Link" : "Copy Band Link"}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleCopyLink(currentShow.slug, "mc")}
-                                  className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                                  className="flex w-full items-center justify-center border-t border-[rgba(255,255,255,0.10)] px-4 py-2.5 text-center text-sm font-medium text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
                                 >
                                   {copiedLinkKey === `mc-${currentShow.slug}` ? "Copied MC Link" : "Copy MC Link"}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleCopyLink(currentShow.slug, "admin")}
-                                  className="flex w-full items-center justify-center border-t border-stone-200 px-4 py-2.5 text-center text-sm font-medium text-stone-700 transition hover:bg-stone-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                                  className="flex w-full items-center justify-center border-t border-[rgba(255,255,255,0.10)] px-4 py-2.5 text-center text-sm font-medium text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
                                 >
                                   {copiedLinkKey === `admin-${currentShow.slug}` ? "Copied Admin Link" : "Copy Admin Link"}
                                 </button>
@@ -2513,12 +2661,12 @@ export default function ShowsDashboardPage() {
                         </div>
 
                         <div className="grid gap-4 lg:grid-cols-3">
-                          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                          <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
                               Guests
                             </p>
                             {nextShowPreviewGuests.length === 0 ? (
-                              <p className="mt-3 text-sm text-stone-500 dark:text-slate-400">
+                              <p className="mt-3 text-sm text-[#b8b8b8]">
                                 No guest profiles added yet.
                               </p>
                             ) : (
@@ -2527,7 +2675,7 @@ export default function ShowsDashboardPage() {
                                   <Link
                                     key={guest.id}
                                     href={`/admin/${currentShow.slug}?tab=guests`}
-                                    className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-sm font-medium text-stone-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-emerald-900 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-100"
+                                    className="rounded-full border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-3 py-1 text-sm font-medium text-[#f5f5f5] transition hover:border-[rgba(200,155,60,0.38)] hover:bg-[rgba(200,155,60,0.14)] hover:text-[#f1dfb7]"
                                   >
                                     {guest.name || "Unnamed guest"}
                                   </Link>
@@ -2536,12 +2684,12 @@ export default function ShowsDashboardPage() {
                             )}
                           </div>
 
-                          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                          <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
                               Submitted Songs
                             </p>
                             {nextShowPreviewSongs.length === 0 ? (
-                              <p className="mt-3 text-sm text-stone-500 dark:text-slate-400">
+                              <p className="mt-3 text-sm text-[#b8b8b8]">
                                 No guest songs submitted yet.
                               </p>
                             ) : (
@@ -2550,7 +2698,7 @@ export default function ShowsDashboardPage() {
                                   <Link
                                     key={song.id}
                                     href={`/admin/${currentShow.slug}?tab=songs`}
-                                    className="rounded-xl bg-stone-50 px-3 py-2 text-sm text-stone-700 transition hover:bg-emerald-50 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-emerald-950/40"
+                                    className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0f0f0f] px-3 py-2 text-sm text-[#f5f5f5] transition hover:bg-[rgba(200,155,60,0.14)]"
                                   >
                                     <span className="font-medium">{song.title}</span>
                                     {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
@@ -2560,12 +2708,12 @@ export default function ShowsDashboardPage() {
                             )}
                           </div>
 
-                          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500 dark:text-slate-400">
+                          <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
                               Setlist Preview
                             </p>
                             {nextShowSetlistTotal === 0 ? (
-                              <p className="mt-3 text-sm text-stone-500 dark:text-slate-400">
+                              <p className="mt-3 text-sm text-[#b8b8b8]">
                                 No setlist entries added yet.
                               </p>
                             ) : (
@@ -2574,12 +2722,12 @@ export default function ShowsDashboardPage() {
                                   <Link
                                     key={item.section}
                                     href={`/admin/${currentShow.slug}?tab=setlist`}
-                                    className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-sm transition hover:bg-emerald-50 dark:bg-slate-950 dark:hover:bg-emerald-950/40"
+                                    className="flex items-center justify-between rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0f0f0f] px-3 py-2 text-sm transition hover:bg-[rgba(200,155,60,0.14)]"
                                   >
-                                    <span className="font-medium text-stone-700 dark:text-slate-200">
+                                    <span className="font-medium text-[#f5f5f5]">
                                       {getSetlistSectionLabel(item.section)}
                                     </span>
-                                    <span className="font-semibold text-stone-900 dark:text-slate-100">
+                                    <span className="font-semibold text-[#f1dfb7]">
                                       {item.count}
                                     </span>
                                   </Link>
@@ -2592,9 +2740,9 @@ export default function ShowsDashboardPage() {
                     </section>
 
                     <div className="grid gap-5">
-                      <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5">
+                      <section className="stage-premium-card rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#141414] sm:p-5">
                         <div className="flex flex-col gap-1">
-                          <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
+                          <h3 className="stage-gold-divider text-lg font-semibold text-stone-900 dark:text-slate-100">
                             Nearby Upcoming Shows
                           </h3>
                           <p className="text-sm text-stone-600 dark:text-slate-300">
@@ -2607,7 +2755,7 @@ export default function ShowsDashboardPage() {
                             <Link
                               key={show.id}
                               href={`/admin/${show.slug}`}
-                              className="rounded-2xl border border-stone-200 bg-white px-4 py-4 transition hover:-translate-y-0.5 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-900"
+                              className="rounded-2xl border border-stone-200 bg-white px-4 py-4 transition hover:-translate-y-0.5 hover:border-emerald-300 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#181818] dark:hover:border-[rgba(200,155,60,0.28)]"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -2622,7 +2770,7 @@ export default function ShowsDashboardPage() {
                                     </p>
                                   </div>
                                 </div>
-                                <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 dark:bg-slate-950 dark:text-slate-300">
+                                <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 dark:bg-[#0f0f0f] dark:text-slate-300">
                                   {show.id === currentShow.id ? "Next" : "Upcoming"}
                                 </span>
                               </div>
@@ -2631,9 +2779,9 @@ export default function ShowsDashboardPage() {
                         </div>
                       </section>
 
-                      <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 sm:p-5">
+                      <section className="stage-premium-card rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#141414] sm:p-5">
                         <div className="flex flex-col gap-1">
-                          <h3 className="text-lg font-semibold text-stone-900 dark:text-slate-100">
+                          <h3 className="stage-gold-divider text-lg font-semibold text-stone-900 dark:text-slate-100">
                             Needs Attention
                           </h3>
                           <p className="text-sm text-stone-600 dark:text-slate-300">
@@ -2642,7 +2790,7 @@ export default function ShowsDashboardPage() {
                         </div>
 
                         {needsAttentionItems.length === 0 ? (
-                          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-100">
+                          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-sm text-emerald-900 dark:border-[rgba(200,155,60,0.22)] dark:bg-[rgba(200,155,60,0.14)] dark:text-[#f1dfb7]">
                             Everything for this show is looking good.
                           </div>
                         ) : (
@@ -2650,7 +2798,7 @@ export default function ShowsDashboardPage() {
                             {needsAttentionItems.map((item) => (
                               <article
                                 key={`${item.title}-${item.detail}`}
-                                className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900"
+                                className="rounded-2xl border border-stone-200 bg-white px-4 py-4 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#181818]"
                               >
                                 <h4 className="text-sm font-semibold text-stone-900 dark:text-slate-100">
                                   {item.title}
@@ -2666,7 +2814,7 @@ export default function ShowsDashboardPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-400">
+                  <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-stone-500 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#141414] dark:text-slate-400">
                     No active show is available yet. Create a show to light up the control center.
                   </div>
                 )}

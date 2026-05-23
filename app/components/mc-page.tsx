@@ -1390,48 +1390,77 @@ export function McPage({
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
         <AdminQuickNav slug={showSlug} currentView="mc" timelineMessages={quickNavTimelineMessages} />
 
-        <header className="print-hidden flex flex-col gap-4 border-b border-stone-200 pb-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-col gap-3">
-              {showLogo ? (
-                <div className="w-fit overflow-visible">
-                  <Image
-                    src="/stageflow-logo-v2.png"
-                    alt="StageFlow logo"
-                    width={420}
-                    height={210}
-                    priority
-                    className="h-auto w-full max-w-[88vw] object-contain sm:max-w-[300px] lg:max-w-[340px]"
-                    onError={() => setShowLogo(false)}
-                  />
-                </div>
-              ) : null}
-              <div className="flex flex-col gap-2">
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                  StageFlow
-                </p>
-                <p className="text-xs font-medium text-stone-500">
-                  by Pinnacle Recording Studio
-                </p>
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-500">
+        <header className="print-hidden relative overflow-hidden rounded-[28px] border border-white/10 shadow-sm">
+          <Image
+            src="/portal_bkg.png"
+            alt=""
+            fill
+            priority
+            aria-hidden="true"
+            className="object-cover object-center"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[linear-gradient(rgba(4,10,24,0.2),rgba(4,10,24,0.2))]"
+          />
+          <div className="relative px-6 py-8 text-white sm:px-8">
+            <div className="grid items-center gap-8 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-10 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <div className="flex flex-col gap-4">
+                {showLogo ? (
+                  <div className="w-full max-w-[280px] sm:max-w-[300px] lg:max-w-[320px]">
+                    <Image
+                      src="/stageflow-logo-v2.png"
+                      alt="StageFlow logo"
+                      width={420}
+                      height={210}
+                      priority
+                      className="h-auto w-full object-contain"
+                      onError={() => setShowLogo(false)}
+                    />
+                  </div>
+                ) : null}
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-emerald-200">
                   MC Portal
                 </p>
-                <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{show.name}</h1>
-                <p className="text-base text-stone-600">
-                  One clean run sheet generated from the official setlist, with sponsor reads
-                  placed directly in the flow.
-                </p>
               </div>
-            </div>
 
-            <div className="flex flex-col items-start gap-3 sm:items-end">
-              <button
-                type="button"
-                onClick={handlePrintPacket}
-                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
-              >
-                Print MC Packet
-              </button>
+              <div className="flex flex-col justify-center gap-4 lg:min-h-[180px]">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="flex flex-col gap-3">
+                    {show.show_logo_url ? (
+                      <div>
+                        <img
+                          src={show.show_logo_url}
+                          alt={`${show.name} logo`}
+                          className="h-auto max-h-[70px] w-full max-w-[180px] object-contain"
+                        />
+                      </div>
+                    ) : null}
+                    <h1 className="max-w-[720px] text-[2.15rem] font-bold tracking-tight text-white sm:text-[2.7rem]">
+                      {show.name}
+                    </h1>
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-[0.95rem] text-slate-200 sm:text-base">
+                        {formatShowDate(show.show_date)}
+                      </p>
+                      <p className="max-w-[680px] text-sm text-slate-200 sm:text-[0.95rem]">
+                        One clean run sheet generated from the official setlist, with sponsor reads
+                        placed directly in the flow.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-start xl:items-end">
+                    <button
+                      type="button"
+                      onClick={handlePrintPacket}
+                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                    >
+                      Print MC Packet
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </header>
