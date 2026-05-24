@@ -207,6 +207,11 @@ export type PromoMaterial = {
   file_url: string;
   file_mime_type: string | null;
   file_size: number | null;
+  download_file_name: string | null;
+  download_file_path: string | null;
+  download_file_url: string | null;
+  download_file_mime_type: string | null;
+  download_file_size: number | null;
   is_visible: boolean;
   created_at: string;
   updated_at: string;

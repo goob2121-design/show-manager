@@ -18,6 +18,38 @@ export function isPromoMaterialImage(material: Pick<PromoMaterial, "file_mime_ty
   return extension ? imageFileExtensions.has(extension) : false;
 }
 
+export function isPromoMaterialPdf(material: Pick<PromoMaterial, "file_mime_type" | "file_name">) {
+  if (material.file_mime_type?.toLowerCase() === "application/pdf") {
+    return true;
+  }
+
+  return getPromoFileExtension(material.file_name) === "pdf";
+}
+
+function isPromoMaterialCompanionPdf(
+  material: Pick<PromoMaterial, "download_file_mime_type" | "download_file_name">,
+) {
+  if (material.download_file_mime_type?.toLowerCase() === "application/pdf") {
+    return true;
+  }
+
+  return getPromoFileExtension(material.download_file_name) === "pdf";
+}
+
+function getPromoMaterialPreviewAsset(material: PromoMaterial) {
+  const primaryIsImage = isPromoMaterialImage(material);
+
+  if (primaryIsImage) {
+    return {
+      kind: "image" as const,
+      url: material.file_url,
+      name: material.file_name,
+    };
+  }
+
+  return null;
+}
+
 export function getPromoMaterialGroup(
   material: Pick<PromoMaterial, "file_mime_type" | "file_name">,
 ): "graphics" | "videos" | "documents" | "other" {
@@ -128,6 +160,14 @@ export function PromoMaterialsView({
         const uploadDate = formatPromoUploadDate(material.created_at);
         const fileSize = formatPromoFileSize(material.file_size);
         const isImage = isPromoMaterialImage(material);
+        const isPdf = isPromoMaterialPdf(material);
+        const previewAsset = getPromoMaterialPreviewAsset(material);
+        const hasCompanionDownload = Boolean(material.download_file_url && material.download_file_name);
+        const companionIsPdf = hasCompanionDownload
+          ? isPromoMaterialCompanionPdf(material)
+          : false;
+        const hasImagePreview = Boolean(previewAsset);
+        const primaryDownloadLabel = isPdf ? "Download PDF" : "Download Image";
         const fileExtension = getPromoFileExtension(material.file_name);
 
         return (
@@ -135,16 +175,16 @@ export function PromoMaterialsView({
             key={material.id}
             className="flex flex-col overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#161616]"
           >
-            {isImage ? (
+            {previewAsset ? (
               <a
-                href={material.file_url}
+                href={previewAsset.url}
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`Open ${material.title} preview`}
                 className="flex h-56 items-center justify-center border-b border-[rgba(255,255,255,0.08)] bg-[#0d0d0d] p-4 transition hover:opacity-90"
               >
                 <img
-                  src={material.file_url}
+                  src={previewAsset.url}
                   alt={material.title}
                   className="h-full w-full object-contain"
                   loading="lazy"
@@ -164,43 +204,69 @@ export function PromoMaterialsView({
             )}
 
             <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-[rgba(200,155,60,0.24)] bg-[rgba(200,155,60,0.12)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#f1dfb7]">
-                  {formatPromoMaterialCategory(material.category)}
-                </span>
-                {material.file_mime_type ? (
-                  <span className="rounded-full bg-[#1f1f1f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#b8b8b8]">
-                    {material.file_mime_type.split("/").pop() || "File"}
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-[rgba(200,155,60,0.24)] bg-[rgba(200,155,60,0.12)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#f1dfb7]">
+                    {formatPromoMaterialCategory(material.category)}
                   </span>
-                ) : null}
+                  {material.file_mime_type ? (
+                    <span className="rounded-full bg-[#1f1f1f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#b8b8b8]">
+                      {material.file_mime_type.split("/").pop() || "File"}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold text-[#f5f5f5]">{material.title}</h3>
+                  {material.description?.trim() ? (
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#b8b8b8]">
+                      {material.description}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap gap-2 text-xs font-medium uppercase tracking-[0.12em] text-[#b8b8b8]">
+                  <span className="break-all normal-case tracking-normal">{material.file_name}</span>
+                  {uploadDate ? <span>Uploaded {uploadDate}</span> : null}
+                  {fileSize ? <span>{fileSize}</span> : null}
+                </div>
               </div>
 
-              <div>
-                <h3 className="text-lg font-semibold text-[#f5f5f5]">{material.title}</h3>
-                {material.description?.trim() ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#b8b8b8]">
-                    {material.description}
+              <div className="mt-auto flex flex-col gap-2">
+                {hasImagePreview && hasCompanionDownload ? (
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#9fb0c9]">
+                    Available downloads
                   </p>
                 ) : null}
-              </div>
 
-              <div className="flex flex-wrap gap-2 text-xs font-medium uppercase tracking-[0.12em] text-[#b8b8b8]">
-                <span className="break-all normal-case tracking-normal">{material.file_name}</span>
-                {uploadDate ? <span>Uploaded {uploadDate}</span> : null}
-                {fileSize ? <span>{fileSize}</span> : null}
-              </div>
-            </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <a
+                    href={material.file_url}
+                    download={material.file_name}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`flex min-h-11 flex-1 items-center justify-center rounded-xl px-4 py-2.5 text-center text-sm font-semibold transition ${
+                      hasCompanionDownload
+                        ? "border border-[rgba(148,163,184,0.20)] bg-[#101827] text-[#f5f5f5] hover:bg-[#172033]"
+                        : "border border-emerald-500/30 bg-emerald-600 text-white hover:bg-emerald-500"
+                    }`}
+                  >
+                    {primaryDownloadLabel}
+                  </a>
 
-            <a
-              href={material.file_url}
-              download={material.file_name}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-auto flex min-h-11 items-center justify-center rounded-xl border border-[rgba(200,155,60,0.28)] bg-[#c89b3c] px-4 py-2.5 text-center text-sm font-semibold text-[#080808] transition hover:bg-[#d6ad4a]"
-            >
-              Download
-            </a>
+                  {hasCompanionDownload ? (
+                    <a
+                      href={material.download_file_url ?? material.file_url}
+                      download={material.download_file_name ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex min-h-11 flex-1 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-emerald-500"
+                    >
+                      {companionIsPdf ? "Download PDF" : "Download File"}
+                    </a>
+                  ) : null}
+                </div>
+              </div>
             </div>
           </article>
         );

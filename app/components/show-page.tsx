@@ -4270,7 +4270,7 @@ async function deletePromoMaterialFile(filePath: string | null | undefined) {
   }
 
   const supabase = createClient();
-  await supabase.storage.from(SONG_AUDIO_BUCKET).remove([filePath]);
+  await supabase.storage.from("promo-materials").remove([filePath]);
 }
 
 async function updateSongNotesField<RowType>({
@@ -4913,6 +4913,7 @@ export function ShowPage({
     initialPromoMaterialFormState,
   );
   const [promoMaterialFile, setPromoMaterialFile] = useState<File | null>(null);
+  const [promoMaterialDownloadFile, setPromoMaterialDownloadFile] = useState<File | null>(null);
   const [promoMaterialFilter, setPromoMaterialFilter] = useState<"all" | PromoMaterialCategory>("all");
   const [editingPromoMaterialId, setEditingPromoMaterialId] = useState<string | null>(null);
   const [editingPromoLinkId, setEditingPromoLinkId] = useState<string | null>(null);
@@ -4921,6 +4922,7 @@ export function ShowPage({
   const [promoMaterialEditFormState, setPromoMaterialEditFormState] =
     useState<PromoMaterialFormState>(initialPromoMaterialFormState);
   const [editingPromoMaterialFile, setEditingPromoMaterialFile] = useState<File | null>(null);
+  const [editingPromoMaterialDownloadFile, setEditingPromoMaterialDownloadFile] = useState<File | null>(null);
   const [expandedMcBlockNoteIds, setExpandedMcBlockNoteIds] = useState<string[]>([]);
   const [editingPoolSongId, setEditingPoolSongId] = useState<string | null>(null);
   const [editingSetlistSongId, setEditingSetlistSongId] = useState<string | null>(null);
@@ -8660,15 +8662,24 @@ export function ShowPage({
   function handlePromoMaterialFileChange(
     event: ChangeEvent<HTMLInputElement>,
     mode: "new" | "edit",
+    fileRole: "primary" | "download" = "primary",
   ) {
     const file = event.target.files?.[0] ?? null;
 
     if (mode === "edit") {
-      setEditingPromoMaterialFile(file);
+      if (fileRole === "download") {
+        setEditingPromoMaterialDownloadFile(file);
+      } else {
+        setEditingPromoMaterialFile(file);
+      }
       return;
     }
 
-    setPromoMaterialFile(file);
+    if (fileRole === "download") {
+      setPromoMaterialDownloadFile(file);
+    } else {
+      setPromoMaterialFile(file);
+    }
   }
 
   function handlePromoLinkChange(
@@ -8883,6 +8894,13 @@ export function ShowPage({
         showId: show.id,
         title,
       });
+      const uploadedDownloadFile = promoMaterialDownloadFile
+        ? await uploadPromoMaterialFile({
+            file: promoMaterialDownloadFile,
+            showId: show.id,
+            title: `${title}-download`,
+          })
+        : null;
 
       const { data, error } = await supabase
         .from("promo_materials")
@@ -8893,6 +8911,11 @@ export function ShowPage({
           category: promoMaterialFormState.category || "other",
           is_visible: promoMaterialFormState.isVisible,
           ...uploadedFile,
+          download_file_name: uploadedDownloadFile?.file_name ?? null,
+          download_file_path: uploadedDownloadFile?.file_path ?? null,
+          download_file_url: uploadedDownloadFile?.file_url ?? null,
+          download_file_mime_type: uploadedDownloadFile?.file_mime_type ?? null,
+          download_file_size: uploadedDownloadFile?.file_size ?? null,
         })
         .select("*")
         .single();
@@ -8904,6 +8927,7 @@ export function ShowPage({
       setPromoMaterials((currentMaterials) => [data as PromoMaterial, ...currentMaterials]);
       setPromoMaterialFormState(initialPromoMaterialFormState);
       setPromoMaterialFile(null);
+      setPromoMaterialDownloadFile(null);
       setIsPromoMaterialFormOpen(false);
       setPromoMaterialMessage("Promo material uploaded.");
     } catch (error) {
@@ -8917,6 +8941,7 @@ export function ShowPage({
     setEditingPromoMaterialId(material.id);
     setPromoMaterialEditFormState(buildPromoMaterialFormState(material));
     setEditingPromoMaterialFile(null);
+    setEditingPromoMaterialDownloadFile(null);
     setPromoMaterialError(null);
     setPromoMaterialMessage(null);
   }
@@ -8925,6 +8950,7 @@ export function ShowPage({
     setEditingPromoMaterialId(null);
     setPromoMaterialEditFormState(initialPromoMaterialFormState);
     setEditingPromoMaterialFile(null);
+    setEditingPromoMaterialDownloadFile(null);
   }
 
   async function handleSavePromoMaterial(material: PromoMaterial) {
@@ -8948,6 +8974,13 @@ export function ShowPage({
             title,
           })
         : null;
+      const uploadedDownloadFile = editingPromoMaterialDownloadFile
+        ? await uploadPromoMaterialFile({
+            file: editingPromoMaterialDownloadFile,
+            showId: material.show_id,
+            title: `${title}-download`,
+          })
+        : null;
 
       const { data, error } = await supabase
         .from("promo_materials")
@@ -8958,6 +8991,15 @@ export function ShowPage({
           is_visible: promoMaterialEditFormState.isVisible,
           updated_at: new Date().toISOString(),
           ...(uploadedFile ?? {}),
+          ...(uploadedDownloadFile
+            ? {
+                download_file_name: uploadedDownloadFile.file_name,
+                download_file_path: uploadedDownloadFile.file_path,
+                download_file_url: uploadedDownloadFile.file_url,
+                download_file_mime_type: uploadedDownloadFile.file_mime_type,
+                download_file_size: uploadedDownloadFile.file_size,
+              }
+            : {}),
         })
         .eq("id", material.id)
         .select("*")
@@ -8969,6 +9011,9 @@ export function ShowPage({
 
       if (uploadedFile) {
         await supabase.storage.from("promo-materials").remove([material.file_path]);
+      }
+      if (uploadedDownloadFile && material.download_file_path) {
+        await supabase.storage.from("promo-materials").remove([material.download_file_path]);
       }
 
       setPromoMaterials((currentMaterials) =>
@@ -9007,7 +9052,9 @@ export function ShowPage({
         throw error;
       }
 
-      await supabase.storage.from("promo-materials").remove([material.file_path]);
+      await supabase.storage
+        .from("promo-materials")
+        .remove([material.file_path, material.download_file_path].filter(Boolean) as string[]);
       setPromoMaterials((currentMaterials) =>
         currentMaterials.filter((currentMaterial) => currentMaterial.id !== material.id),
       );
@@ -14857,12 +14904,21 @@ export function ShowPage({
                   </label>
 
                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    File
+                    Preview Image or File
                     <input
                       type="file"
-                      onChange={(event) => handlePromoMaterialFileChange(event, "new")}
+                      onChange={(event) => handlePromoMaterialFileChange(event, "new", "primary")}
                       className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                       required
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Download File (Optional PDF or other file)
+                    <input
+                      type="file"
+                      onChange={(event) => handlePromoMaterialFileChange(event, "new", "download")}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                     />
                   </label>
 
@@ -14932,6 +14988,10 @@ export function ShowPage({
                     const uploadDate = formatPromoUploadDate(material.created_at);
                     const isImage = isPromoMaterialImage(material);
                     const fileExtension = getPromoFileExtension(material.file_name);
+                    const hasCompanionDownload = Boolean(
+                      material.download_file_url && material.download_file_name,
+                    );
+                    const companionFileExtension = getPromoFileExtension(material.download_file_name);
 
                     return (
                       <article
@@ -14981,13 +15041,27 @@ export function ShowPage({
                             </label>
 
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Replace File
+                              Replace Preview Image or File
                               <input
                                 type="file"
-                                onChange={(event) => handlePromoMaterialFileChange(event, "edit")}
+                                onChange={(event) => handlePromoMaterialFileChange(event, "edit", "primary")}
                                 className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                               />
                             </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Replace Download File (Optional PDF or other file)
+                              <input
+                                type="file"
+                                onChange={(event) => handlePromoMaterialFileChange(event, "edit", "download")}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                              />
+                            </label>
+                            {material.download_file_name ? (
+                              <p className="text-xs text-stone-500">
+                                Current download file: {material.download_file_name}
+                              </p>
+                            ) : null}
 
                             <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
                               <input
@@ -15082,14 +15156,28 @@ export function ShowPage({
                                 download={material.file_name}
                                 className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
-                                Download
+                                {isImage ? "Download Preview" : "Download"}
                               </a>
+                              {hasCompanionDownload ? (
+                                <a
+                                  href={material.download_file_url ?? material.file_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  download={material.download_file_name ?? undefined}
+                                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-center text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                                >
+                                  {companionFileExtension === "pdf" ? "Download PDF" : "Download File"}
+                                </a>
+                              ) : null}
                             </div>
 
                             <div className="flex flex-wrap gap-3 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
                               <span>{material.file_name}</span>
                               {fileSize ? <span>{fileSize}</span> : null}
                               {uploadDate ? <span>Uploaded {uploadDate}</span> : null}
+                              {material.download_file_name ? (
+                                <span>Download file: {material.download_file_name}</span>
+                              ) : null}
                             </div>
 
                             <div className="flex flex-col gap-3 sm:flex-row">

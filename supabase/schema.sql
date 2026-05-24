@@ -178,6 +178,11 @@ create table if not exists public.promo_materials (
   file_url text not null,
   file_mime_type text,
   file_size bigint,
+  download_file_name text,
+  download_file_path text,
+  download_file_url text,
+  download_file_mime_type text,
+  download_file_size bigint,
   is_visible boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
