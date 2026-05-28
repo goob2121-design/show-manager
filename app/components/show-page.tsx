@@ -49,6 +49,8 @@ import type {
   PromoMaterial,
   PromoMaterialCategory,
   PromoMaterialFormState,
+  RehearsalEntry,
+  RehearsalRecording,
   SetSection,
   SponsorTypeOption,
   SetlistEntry,
@@ -98,6 +100,19 @@ type SetlistSong = SetlistEntry & {
   source_role: string | null;
 };
 
+type RehearsalEntryRow = RehearsalEntry & {
+  library_song?: Partial<SongLibrarySong> | Array<Partial<SongLibrarySong>> | null;
+};
+
+type RehearsalEntryWithSong = RehearsalEntry & {
+  title: string;
+  artist: string | null;
+  song_key: string | null;
+  tempo: SongTempo | null;
+  song_type: SongType | null;
+  is_library_linked: boolean;
+};
+
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab =
   | "overview"
@@ -110,7 +125,7 @@ type AdminTab =
   | "sponsors"
   | "mc-builder"
   | "show-details";
-type BandTab = "setlist" | "songs" | "itinerary" | "promo-materials";
+type BandTab = "setlist" | "songs" | "rehearsal" | "itinerary" | "promo-materials";
 type GuestTab = "welcome" | "songs" | "artist-info" | "itinerary" | "promo-materials";
 type SponsorAdminTab = "library" | "show";
 type FinanceAdminSubTab = "reporting" | "payouts";
@@ -137,9 +152,14 @@ function normalizeAdminTab(value: string | null): AdminTab | null {
   return adminTabItems.some((tab) => tab.key === value) ? (value as AdminTab) : null;
 }
 
+function normalizeBandTab(value: string | null): BandTab | null {
+  return bandTabItems.some((tab) => tab.key === value) ? (value as BandTab) : null;
+}
+
 const bandTabItems: Array<{ key: BandTab; label: string }> = [
   { key: "setlist", label: "Setlist" },
   { key: "songs", label: "Songs" },
+  { key: "rehearsal", label: "Rehearsal" },
   { key: "itinerary", label: "Itinerary" },
   { key: "promo-materials", label: "Promo Materials" },
 ];
@@ -357,6 +377,7 @@ const stageflowPortalVersion = "StageFlow v1.1.15";
 const PAID_ONLINE_TICKET_PRICE = 8;
 const COMP_TICKET_VALUE = 10;
 const SONG_AUDIO_BUCKET = "promo-materials";
+const REHEARSAL_RECORDINGS_BUCKET = "rehearsal-recordings";
 const MAX_SONG_MP3_BYTES = 30 * 1024 * 1024;
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
 const urlPattern = /(https?:\/\/[^\s]+)/g;
@@ -1259,6 +1280,8 @@ type DataSectionKey =
   | "setlist"
   | "guestSongs"
   | "songLibrary"
+  | "rehearsalEntries"
+  | "rehearsalRecordings"
   | "sponsorLibrary"
   | "potentialSponsors"
   | "showSponsors"
@@ -1527,6 +1550,49 @@ function getCompTicketCheckInStatus(item: ShowCompTicket) {
 
 function sortShowCompTickets(items: ShowCompTicket[]) {
   return [...items].sort((itemA, itemB) => itemA.created_at.localeCompare(itemB.created_at));
+}
+
+function normalizeRehearsalEntry(item: RehearsalEntryRow): RehearsalEntryWithSong {
+  const librarySong = Array.isArray(item.library_song)
+    ? item.library_song[0] ?? null
+    : item.library_song ?? null;
+  const customTitle = item.custom_title?.trim() ?? "";
+  const libraryTitle = librarySong?.title?.trim() ?? "";
+  const isLibraryLinked = Boolean(item.song_id && libraryTitle);
+
+  return {
+    ...item,
+    custom_title: item.custom_title ?? null,
+    notes: item.notes ?? null,
+    title: customTitle || libraryTitle || "Untitled Song",
+    artist: librarySong?.artist ?? librarySong?.created_by_name ?? null,
+    song_key: librarySong?.song_key ?? librarySong?.key ?? null,
+    tempo: librarySong?.tempo ?? null,
+    song_type: librarySong?.song_type ?? null,
+    is_library_linked: isLibraryLinked,
+  };
+}
+
+function sortRehearsalEntries(items: RehearsalEntryWithSong[]) {
+  return [...items].sort((itemA, itemB) => {
+    if (itemA.sort_order !== itemB.sort_order) {
+      return itemA.sort_order - itemB.sort_order;
+    }
+
+    return itemA.created_at.localeCompare(itemB.created_at);
+  });
+}
+
+function normalizeRehearsalRecording(item: RehearsalRecording): RehearsalRecording {
+  return {
+    ...item,
+    file_url: item.file_url ?? null,
+    rehearsal_entry_id: item.rehearsal_entry_id ?? null,
+  };
+}
+
+function sortRehearsalRecordings(items: RehearsalRecording[]) {
+  return [...items].sort((itemA, itemB) => itemB.created_at.localeCompare(itemA.created_at));
 }
 
 type ParsedGuestListImportEntry = {
@@ -3000,6 +3066,16 @@ function buildSongMp3StoragePath(showSlug: string, songId: string) {
   return `song-audio/shows/${safeShowSlug}/songs/${songId}.mp3`;
 }
 
+function buildRehearsalRecordingStoragePath(
+  showSlug: string,
+  rehearsalEntryId: string,
+  originalFileName: string,
+) {
+  const safeShowSlug = sanitizeFileName(showSlug || "show");
+  const safeFileName = sanitizeFileName(originalFileName || "recording.mp3");
+  return `shows/${safeShowSlug}/rehearsal/${rehearsalEntryId}/${Date.now()}-${safeFileName}`;
+}
+
 function extractMp3PathFromNotes(notes: string | null | undefined) {
   const match = notes?.match(MP3_PATH_MARKER_PATTERN);
   return match?.[1] ?? null;
@@ -3031,6 +3107,22 @@ function getSongMp3DownloadUrl(path: string | null | undefined) {
 
   const supabase = createClient();
   const { data } = supabase.storage.from(SONG_AUDIO_BUCKET).getPublicUrl(path);
+  return data.publicUrl || null;
+}
+
+function getRehearsalRecordingUrl(recording: Pick<RehearsalRecording, "file_url" | "file_path">) {
+  const existingUrl = recording.file_url?.trim();
+
+  if (existingUrl) {
+    return existingUrl;
+  }
+
+  if (!recording.file_path) {
+    return null;
+  }
+
+  const supabase = createClient();
+  const { data } = supabase.storage.from(REHEARSAL_RECORDINGS_BUCKET).getPublicUrl(recording.file_path);
   return data.publicUrl || null;
 }
 
@@ -3070,6 +3162,13 @@ function buildGuestPrivatePortalUrl(guestIdentifier: string) {
   const siteBaseUrl = getSiteBaseUrl();
 
   return siteBaseUrl ? `${siteBaseUrl}${guestPath}` : guestPath;
+}
+
+function buildBandRehearsalUrl(showSlug: string) {
+  const bandPath = `/band/${encodeURIComponent(showSlug)}?tab=rehearsal`;
+  const siteBaseUrl = getSiteBaseUrl();
+
+  return siteBaseUrl ? `${siteBaseUrl}${bandPath}` : bandPath;
 }
 
 function buildGuestReminderEmailText(profile: GuestProfile) {
@@ -3194,6 +3293,89 @@ function buildSongPrintHtml(song: SongLibrarySong) {
         <section class="section">
           <div class="label">Lyrics</div>
           <div class="body">${escapeHtml(lyrics)}</div>
+        </section>
+      </body>
+    </html>
+  `;
+}
+
+function buildRehearsalSheetPrintHtml({
+  showName,
+  showDate,
+  entries,
+}: {
+  showName: string;
+  showDate: string | null;
+  entries: Array<{
+    title: string;
+    notes: string | null;
+    artist: string | null;
+    songKey: string | null;
+    tempo: SongTempo | null;
+    songType: SongType | null;
+    isLibraryLinked: boolean;
+  }>;
+}) {
+  const formattedShowDate = formatShowDate(showDate);
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(showName)} — Rehearsal Sheet</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #111827; background: #ffffff; margin: 24px; }
+          .header { margin-bottom: 20px; }
+          .brand { margin: 0 0 8px; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.14em; }
+          h1 { margin: 0; font-size: 28px; }
+          .meta { margin: 8px 0 0; font-size: 14px; color: #4b5563; }
+          .list { display: grid; gap: 12px; }
+          .card {
+            border: 1px solid #d6d3d1;
+            border-radius: 16px;
+            padding: 12px 14px;
+            background: #ffffff;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .eyebrow { margin: 0 0 6px; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.12em; }
+          .title { margin: 0; font-size: 18px; font-weight: 700; }
+          .notes-label { margin: 10px 0 0; font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.12em; }
+          .notes { margin: 6px 0 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+          @page { margin: 0.5in; }
+        </style>
+      </head>
+      <body>
+        <header class="header">
+          <p class="brand">StageFlow Rehearsal Sheet</p>
+          <h1>${escapeHtml(showName)}</h1>
+          <p class="meta">${escapeHtml(formattedShowDate || "Date not set")}</p>
+        </header>
+        <section class="list">
+          ${entries
+            .map((entry, index) => {
+              const details = [
+                entry.isLibraryLinked ? "Linked Library Song" : "Manual Song",
+                entry.artist ? `Artist: ${entry.artist}` : null,
+                entry.songKey ? `Key: ${entry.songKey}` : null,
+                entry.tempo ? `Tempo: ${entry.tempo}` : null,
+                entry.songType ? `Type: ${entry.songType}` : null,
+              ]
+                .filter(Boolean)
+                .map((value) => escapeHtml(value ?? ""))
+                .join(" • ");
+
+              return `
+                <article class="card">
+                  <p class="eyebrow">Rehearsal Song ${index + 1}</p>
+                  <h2 class="title">${escapeHtml(entry.title)}</h2>
+                  <p class="notes-label">Notes</p>
+                  <p class="notes">${escapeHtml(entry.notes?.trim() || "No rehearsal notes added.")}</p>
+                </article>
+              `;
+            })
+            .join("")}
         </section>
       </body>
     </html>
@@ -4264,6 +4446,45 @@ async function uploadSongMp3File({
   return filePath;
 }
 
+async function uploadRehearsalRecordingFile({
+  file,
+  showSlug,
+  rehearsalEntryId,
+}: {
+  file: File;
+  showSlug: string;
+  rehearsalEntryId: string;
+}) {
+  const validationError = validateSongMp3File(file);
+
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const supabase = createClient();
+  const filePath = buildRehearsalRecordingStoragePath(showSlug, rehearsalEntryId, file.name);
+  const { error: uploadError } = await supabase.storage
+    .from(REHEARSAL_RECORDINGS_BUCKET)
+    .upload(filePath, file, {
+      upsert: false,
+      contentType: file.type || "audio/mpeg",
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from(REHEARSAL_RECORDINGS_BUCKET)
+    .getPublicUrl(filePath);
+
+  return {
+    file_name: sanitizeFileName(file.name),
+    file_path: filePath,
+    file_url: publicUrlData.publicUrl || null,
+  };
+}
+
 async function deletePromoMaterialFile(filePath: string | null | undefined) {
   if (!filePath) {
     return;
@@ -4271,6 +4492,15 @@ async function deletePromoMaterialFile(filePath: string | null | undefined) {
 
   const supabase = createClient();
   await supabase.storage.from("promo-materials").remove([filePath]);
+}
+
+async function deleteRehearsalRecordingFile(filePath: string | null | undefined) {
+  if (!filePath) {
+    return;
+  }
+
+  const supabase = createClient();
+  await supabase.storage.from(REHEARSAL_RECORDINGS_BUCKET).remove([filePath]);
 }
 
 async function updateSongNotesField<RowType>({
@@ -4851,6 +5081,18 @@ export function ShowPage({
   const [mcBlockNotes, setMcBlockNotes] = useState<McBlockNote[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
   const [songLibrary, setSongLibrary] = useState<SongLibrarySong[]>([]);
+  const [rehearsalEntries, setRehearsalEntries] = useState<RehearsalEntryWithSong[]>([]);
+  const [rehearsalRecordings, setRehearsalRecordings] = useState<RehearsalRecording[]>([]);
+  const [selectedRehearsalSongId, setSelectedRehearsalSongId] = useState("");
+  const [manualRehearsalTitle, setManualRehearsalTitle] = useState("");
+  const [rehearsalTitleDrafts, setRehearsalTitleDrafts] = useState<Record<string, string>>({});
+  const [rehearsalNoteDrafts, setRehearsalNoteDrafts] = useState<Record<string, string>>({});
+  const [rehearsalRecordingFiles, setRehearsalRecordingFiles] = useState<Record<string, File | null>>({});
+  const [rehearsalRecordingInputKeys, setRehearsalRecordingInputKeys] = useState<Record<string, number>>({});
+  const [rehearsalStatusMessage, setRehearsalStatusMessage] = useState<string | null>(null);
+  const [rehearsalErrorMessage, setRehearsalErrorMessage] = useState<string | null>(null);
+  const [activeRehearsalActionId, setActiveRehearsalActionId] = useState<string | null>(null);
+  const [copiedRehearsalLink, setCopiedRehearsalLink] = useState(false);
   const [libraryTempoFilter, setLibraryTempoFilter] = useState<"" | SongTempo>("");
   const [librarySongTypeFilter, setLibrarySongTypeFilter] = useState<"" | SongType>("");
   const [sponsorLibrary, setSponsorLibrary] = useState<SponsorLibraryEntry[]>([]);
@@ -5095,6 +5337,7 @@ export function ShowPage({
   const shouldShowAdminSongSubmission =
     isAdminView && activeAdminTab === "songs";
   const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
+  const shouldShowBandRehearsalTab = isBandView && activeBandTab === "rehearsal";
   const shouldShowGuestWelcomeTab = isGuestView && activeGuestTab === "welcome";
   const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
   const shouldShowGuestArtistInfoTab = isGuestView && activeGuestTab === "artist-info";
@@ -5404,6 +5647,28 @@ export function ShowPage({
         return lookup;
       }, {}),
     [songLibrary],
+  );
+  const rehearsalRecordingsByEntryId = useMemo(
+    () =>
+      rehearsalRecordings.reduce<Record<string, RehearsalRecording[]>>((lookup, recording) => {
+        if (!recording.rehearsal_entry_id) {
+          return lookup;
+        }
+
+        const currentRecordings = lookup[recording.rehearsal_entry_id] ?? [];
+        currentRecordings.push(recording);
+        lookup[recording.rehearsal_entry_id] = currentRecordings;
+        return lookup;
+      }, {}),
+    [rehearsalRecordings],
+  );
+  const rehearsalEntriesById = useMemo(
+    () =>
+      rehearsalEntries.reduce<Record<string, RehearsalEntryWithSong>>((lookup, entry) => {
+        lookup[entry.id] = entry;
+        return lookup;
+      }, {}),
+    [rehearsalEntries],
   );
   const librarySongSetlistUsageCounts = useMemo(
     () =>
@@ -6605,6 +6870,10 @@ export function ShowPage({
           setSetlist([]);
           setPendingSongs([]);
           setSongLibrary([]);
+          setRehearsalEntries([]);
+          setRehearsalRecordings([]);
+          setRehearsalTitleDrafts({});
+          setRehearsalNoteDrafts({});
           setSponsorLibrary([]);
           setPotentialSponsors([]);
           setShowSponsors([]);
@@ -6650,6 +6919,8 @@ export function ShowPage({
           setlistRows,
           pendingRows,
           libraryRows,
+          rehearsalEntryRows,
+          rehearsalRecordingRows,
           sponsorLibraryRows,
           potentialSponsorRows,
           showSponsorRows,
@@ -6722,6 +6993,41 @@ export function ShowPage({
               .from("songs")
               .select("*")
               .order("title", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "rehearsalEntries",
+            "rehearsal entries",
+            supabase
+              .from("rehearsal_entries")
+              .select(`
+                *,
+                library_song:song_id (
+                  id,
+                  title,
+                  key,
+                  tempo,
+                  song_type,
+                  notes,
+                  lyrics,
+                  created_by_role,
+                  created_by_name,
+                  created_at
+                )
+              `)
+              .eq("show_id", showRecord.id)
+              .order("sort_order", { ascending: true })
+              .order("created_at", { ascending: true }),
+            [],
+          ),
+          loadSection(
+            "rehearsalRecordings",
+            "rehearsal recordings",
+            supabase
+              .from("rehearsal_recordings")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("created_at", { ascending: false }),
             [],
           ),
           loadSection(
@@ -6879,6 +7185,31 @@ export function ShowPage({
         setSongLibrary(
           (libraryRows ?? []).map((song: SongLibrarySong) => normalizeSongLibrarySong(song)),
         );
+        const normalizedRehearsalEntries = sortRehearsalEntries(
+          ((rehearsalEntryRows ?? []) as RehearsalEntryRow[]).map((entry) =>
+            normalizeRehearsalEntry(entry),
+          ),
+        );
+        setRehearsalEntries(normalizedRehearsalEntries);
+        setRehearsalTitleDrafts(
+          normalizedRehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+            lookup[entry.id] = entry.title;
+            return lookup;
+          }, {}),
+        );
+        setRehearsalNoteDrafts(
+          normalizedRehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+            lookup[entry.id] = entry.notes ?? "";
+            return lookup;
+          }, {}),
+        );
+        setRehearsalRecordings(
+          sortRehearsalRecordings(
+            ((rehearsalRecordingRows ?? []) as RehearsalRecording[]).map((recording) =>
+              normalizeRehearsalRecording(recording),
+            ),
+          ),
+        );
         const normalizedSponsorLibrary = (sponsorLibraryRows ?? []).map(
           (sponsor: SponsorLibraryEntry) => normalizeSponsorLibraryEntry(sponsor),
         );
@@ -6936,6 +7267,18 @@ export function ShowPage({
   useEffect(() => {
     void loadShowData();
   }, [loadShowData]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const requestedBandTab = normalizeBandTab(new URLSearchParams(window.location.search).get("tab"));
+
+    if (requestedBandTab) {
+      setActiveBandTab(requestedBandTab);
+    }
+  }, []);
 
   useEffect(() => {
     if (!show) {
@@ -10936,6 +11279,557 @@ export function ShowPage({
     window.open(buildGuestSongsUrl(show.slug), "_blank", "noopener,noreferrer");
   }
 
+  async function handleCopyRehearsalLink() {
+    if (!show?.slug) {
+      setRehearsalErrorMessage("Rehearsal link is not available until this show has a valid slug.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildBandRehearsalUrl(show.slug));
+      setRehearsalErrorMessage(null);
+      setCopiedRehearsalLink(true);
+
+      window.setTimeout(() => {
+        setCopiedRehearsalLink(false);
+      }, 1800);
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  function handleRehearsalRecordingFileChange(
+    rehearsalEntryId: string,
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0] ?? null;
+    setRehearsalRecordingFiles((currentFiles) => ({
+      ...currentFiles,
+      [rehearsalEntryId]: file,
+    }));
+  }
+
+  function resetRehearsalRecordingInput(rehearsalEntryId: string) {
+    setRehearsalRecordingFiles((currentFiles) => ({
+      ...currentFiles,
+      [rehearsalEntryId]: null,
+    }));
+    setRehearsalRecordingInputKeys((currentKeys) => ({
+      ...currentKeys,
+      [rehearsalEntryId]: (currentKeys[rehearsalEntryId] ?? 0) + 1,
+    }));
+  }
+
+  async function handleAddRehearsalSong() {
+    if (!show) {
+      setRehearsalErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const selectedSong = songLibrary.find((song) => song.id === selectedRehearsalSongId);
+
+    if (!selectedSong) {
+      setRehearsalErrorMessage("Choose a song from the library first.");
+      return;
+    }
+
+    const nextSortOrder =
+      rehearsalEntries.reduce((maxSortOrder, entry) => Math.max(maxSortOrder, entry.sort_order), 0) + 1;
+
+    setActiveRehearsalActionId("create");
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("rehearsal_entries")
+        .insert({
+          show_id: show.id,
+          song_id: selectedSong.id,
+          custom_title: null,
+          notes: null,
+          sort_order: nextSortOrder,
+        })
+        .select(`
+          *,
+          library_song:song_id (
+            id,
+            title,
+            key,
+            tempo,
+            song_type,
+            notes,
+            lyrics,
+            created_by_role,
+            created_by_name,
+            created_at
+          )
+        `)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const normalizedEntry = normalizeRehearsalEntry(data as RehearsalEntryRow);
+      setRehearsalEntries((currentEntries) =>
+        sortRehearsalEntries([...currentEntries, normalizedEntry]),
+      );
+      setRehearsalTitleDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.title,
+      }));
+      setRehearsalNoteDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.notes ?? "",
+      }));
+      setSelectedRehearsalSongId("");
+      setRehearsalStatusMessage(`Added "${normalizedEntry.title}" to rehearsal.`);
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
+  async function handleAddManualRehearsalSong() {
+    if (!show) {
+      setRehearsalErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const title = manualRehearsalTitle.trim();
+
+    if (!title) {
+      setRehearsalErrorMessage("Enter a manual rehearsal song title first.");
+      return;
+    }
+
+    const nextSortOrder =
+      rehearsalEntries.reduce((maxSortOrder, entry) => Math.max(maxSortOrder, entry.sort_order), 0) + 1;
+
+    setActiveRehearsalActionId("create-manual");
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("rehearsal_entries")
+        .insert({
+          show_id: show.id,
+          song_id: null,
+          custom_title: title,
+          notes: null,
+          sort_order: nextSortOrder,
+        })
+        .select(`
+          *,
+          library_song:song_id (
+            id,
+            title,
+            key,
+            tempo,
+            song_type,
+            notes,
+            lyrics,
+            created_by_role,
+            created_by_name,
+            created_at
+          )
+        `)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const normalizedEntry = normalizeRehearsalEntry(data as RehearsalEntryRow);
+      setRehearsalEntries((currentEntries) =>
+        sortRehearsalEntries([...currentEntries, normalizedEntry]),
+      );
+      setRehearsalTitleDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.title,
+      }));
+      setRehearsalNoteDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.notes ?? "",
+      }));
+      setManualRehearsalTitle("");
+      setRehearsalStatusMessage(`Added manual rehearsal song "${normalizedEntry.title}".`);
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
+  async function handleSaveRehearsalNotes(entry: RehearsalEntryWithSong) {
+    const notes = normalizeOptionalField(rehearsalNoteDrafts[entry.id] ?? "");
+    const nextTitle = normalizeOptionalField(rehearsalTitleDrafts[entry.id] ?? entry.title);
+
+    setActiveRehearsalActionId(entry.id);
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("rehearsal_entries")
+        .update({
+          notes,
+          custom_title: entry.is_library_linked ? null : nextTitle,
+        })
+        .eq("id", entry.id)
+        .select(`
+          *,
+          library_song:song_id (
+            id,
+            title,
+            key,
+            tempo,
+            song_type,
+            notes,
+            lyrics,
+            created_by_role,
+            created_by_name,
+            created_at
+          )
+        `)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const normalizedEntry = normalizeRehearsalEntry(data as RehearsalEntryRow);
+      setRehearsalEntries((currentEntries) =>
+        sortRehearsalEntries(
+          currentEntries.map((currentEntry) =>
+            currentEntry.id === entry.id ? normalizedEntry : currentEntry,
+          ),
+        ),
+      );
+      setRehearsalTitleDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.title,
+      }));
+      setRehearsalStatusMessage(`Saved notes for "${normalizedEntry.title}".`);
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
+  async function handleAddManualRehearsalSongToLibrary(entry: RehearsalEntryWithSong) {
+    if (!show) {
+      setRehearsalErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    if (entry.is_library_linked) {
+      setRehearsalErrorMessage("This rehearsal song is already linked to the song library.");
+      return;
+    }
+
+    const rehearsalTitle = (rehearsalTitleDrafts[entry.id] ?? entry.title).trim();
+
+    if (!rehearsalTitle) {
+      setRehearsalErrorMessage("Enter a song title before adding this rehearsal entry to the library.");
+      return;
+    }
+
+    setActiveRehearsalActionId(`library-${entry.id}`);
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const normalizedTitle = rehearsalTitle.toLowerCase();
+      const existingLibrarySong = songLibrary.find(
+        (song) => song.title.trim().toLowerCase() === normalizedTitle,
+      );
+      const supabase = createClient();
+
+      let linkedSong = existingLibrarySong ?? null;
+
+      if (!linkedSong) {
+        const createdByRole = viewMode === "admin" ? "admin" : "band";
+        const { data: createdSong, error: createSongError } = await supabase
+          .from("songs")
+          .insert({
+            title: rehearsalTitle,
+            created_by_role: createdByRole,
+            created_by_name: null,
+          })
+          .select("*")
+          .single();
+
+        if (createSongError) {
+          throw createSongError;
+        }
+
+        linkedSong = normalizeSongLibrarySong(createdSong as SongLibrarySong);
+      }
+
+      const ensuredLinkedSong = linkedSong;
+
+      if (!existingLibrarySong) {
+        setSongLibrary((currentSongs) =>
+          [...currentSongs, ensuredLinkedSong].sort((songA, songB) => songA.title.localeCompare(songB.title)),
+        );
+      }
+
+      const { data: updatedEntry, error: updateEntryError } = await supabase
+        .from("rehearsal_entries")
+        .update({
+          song_id: ensuredLinkedSong.id,
+          custom_title: null,
+        })
+        .eq("id", entry.id)
+        .select(`
+          *,
+          library_song:song_id (
+            id,
+            title,
+            key,
+            tempo,
+            song_type,
+            notes,
+            lyrics,
+            created_by_role,
+            created_by_name,
+            created_at
+          )
+        `)
+        .single();
+
+      if (updateEntryError) {
+        throw updateEntryError;
+      }
+
+      const normalizedEntry = normalizeRehearsalEntry(updatedEntry as RehearsalEntryRow);
+      setRehearsalEntries((currentEntries) =>
+        sortRehearsalEntries(
+          currentEntries.map((currentEntry) =>
+            currentEntry.id === entry.id ? normalizedEntry : currentEntry,
+          ),
+        ),
+      );
+      setRehearsalTitleDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.title,
+      }));
+      setRehearsalStatusMessage(
+        existingLibrarySong
+          ? `"${normalizedEntry.title}" was linked to the existing Song Library entry.`
+          : `"${normalizedEntry.title}" was added to the Song Library and linked to rehearsal.`,
+      );
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
+  async function handleDeleteRehearsalEntry(entry: RehearsalEntryWithSong) {
+    const shouldDelete = window.confirm(`Remove "${entry.title}" from this rehearsal list?`);
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setActiveRehearsalActionId(entry.id);
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const linkedRecordings = rehearsalRecordings.filter(
+        (recording) => recording.rehearsal_entry_id === entry.id,
+      );
+      const supabase = createClient();
+      const { error } = await supabase.from("rehearsal_entries").delete().eq("id", entry.id);
+
+      if (error) {
+        throw error;
+      }
+
+      await Promise.all(
+        linkedRecordings.map((recording) => deleteRehearsalRecordingFile(recording.file_path)),
+      );
+
+      setRehearsalEntries((currentEntries) =>
+        currentEntries.filter((currentEntry) => currentEntry.id !== entry.id),
+      );
+      setRehearsalRecordings((currentRecordings) =>
+        currentRecordings.filter((recording) => recording.rehearsal_entry_id !== entry.id),
+      );
+      setRehearsalNoteDrafts((currentDrafts) => {
+        const nextDrafts = { ...currentDrafts };
+        delete nextDrafts[entry.id];
+        return nextDrafts;
+      });
+      setRehearsalTitleDrafts((currentDrafts) => {
+        const nextDrafts = { ...currentDrafts };
+        delete nextDrafts[entry.id];
+        return nextDrafts;
+      });
+      setRehearsalStatusMessage(`Removed "${entry.title}" from rehearsal.`);
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
+  async function handleUploadRehearsalRecording(entry: RehearsalEntryWithSong) {
+    if (!show?.slug || !show?.id) {
+      setRehearsalErrorMessage("The show is not ready for uploads yet.");
+      return;
+    }
+
+    const file = rehearsalRecordingFiles[entry.id] ?? null;
+    const validationError = validateSongMp3File(file);
+
+    if (validationError) {
+      setRehearsalErrorMessage(validationError);
+      return;
+    }
+
+    if (!file) {
+      setRehearsalErrorMessage("Choose an MP3 recording first.");
+      return;
+    }
+
+    setActiveRehearsalActionId(`upload-${entry.id}`);
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const uploadedRecording = await uploadRehearsalRecordingFile({
+        file,
+        showSlug: show.slug,
+        rehearsalEntryId: entry.id,
+      });
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("rehearsal_recordings")
+        .insert({
+          show_id: show.id,
+          rehearsal_entry_id: entry.id,
+          file_name: uploadedRecording.file_name,
+          file_path: uploadedRecording.file_path,
+          file_url: uploadedRecording.file_url,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        await deleteRehearsalRecordingFile(uploadedRecording.file_path);
+        throw error;
+      }
+
+      setRehearsalRecordings((currentRecordings) =>
+        sortRehearsalRecordings([
+          normalizeRehearsalRecording(data as RehearsalRecording),
+          ...currentRecordings,
+        ]),
+      );
+      resetRehearsalRecordingInput(entry.id);
+      setRehearsalStatusMessage(`Uploaded rehearsal recording for "${entry.title}".`);
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
+  async function handleDeleteRehearsalRecording(recording: RehearsalRecording) {
+    const shouldDelete = window.confirm(`Delete rehearsal recording "${recording.file_name}"?`);
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setActiveRehearsalActionId(`recording-${recording.id}`);
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from("rehearsal_recordings").delete().eq("id", recording.id);
+
+      if (error) {
+        throw error;
+      }
+
+      await deleteRehearsalRecordingFile(recording.file_path);
+      setRehearsalRecordings((currentRecordings) =>
+        currentRecordings.filter((currentRecording) => currentRecording.id !== recording.id),
+      );
+      setRehearsalStatusMessage(`Deleted rehearsal recording "${recording.file_name}".`);
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
+  function handlePrintRehearsalSheet() {
+    if (!show) {
+      setRehearsalErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      window.alert("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+
+    const printHtml = buildRehearsalSheetPrintHtml({
+      showName: show.name,
+      showDate: show.show_date,
+      entries: rehearsalEntries.map((entry) => ({
+        title: entry.is_library_linked
+          ? entry.title
+          : (rehearsalTitleDrafts[entry.id] ?? entry.title).trim() || entry.title,
+        notes: rehearsalNoteDrafts[entry.id] ?? entry.notes ?? null,
+        artist: entry.artist,
+        songKey: entry.song_key,
+        tempo: entry.tempo,
+        songType: entry.song_type,
+        isLibraryLinked: entry.is_library_linked,
+      })),
+    });
+
+    const triggerPrint = () => {
+      if (printWindow.closed) {
+        return;
+      }
+
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    printWindow.onload = triggerPrint;
+    printWindow.onafterprint = () => {
+      printWindow.close();
+    };
+
+    const { document } = printWindow;
+    document.open();
+    document.write(printHtml);
+    document.close();
+
+    if (document.readyState === "complete") {
+      triggerPrint();
+    }
+  }
+
   async function handleCopyGuestProfileLink(profile: GuestProfile) {
     try {
       const guestIdentifier = profile.guest_token ?? profile.id;
@@ -12106,12 +13000,12 @@ export function ShowPage({
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Band Sections</h2>
               <p className="text-sm text-stone-600">
-                Jump between the show-day setlist, song collaboration tools, and itinerary details.
+                Jump between the show-day setlist, song collaboration tools, rehearsal prep, and itinerary details.
               </p>
             </div>
 
             <div
-              className="grid grid-cols-1 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-4"
+              className="grid grid-cols-1 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-2 xl:grid-cols-5"
               role="tablist"
               aria-label="Band portal sections"
             >
@@ -12264,6 +13158,406 @@ export function ShowPage({
             subtitle="Show details, timing, and logistics for the band."
             items={bandShowInfoItems}
           />
+        ) : null}
+
+        {shouldShowBandRehearsalTab ? (
+          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-semibold">Rehearsal</h2>
+                <p className="text-sm text-stone-600">
+                  Build a small rehearsal list for this show and attach MP3 reference recordings for the band.
+                </p>
+              </div>
+
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handlePrintRehearsalSheet}
+                  className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                >
+                  Print Rehearsal Sheet
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyRehearsalLink}
+                  className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                >
+                  {copiedRehearsalLink ? "Rehearsal link copied!" : "Copy Rehearsal Link"}
+                </button>
+              </div>
+            </div>
+
+            <SectionLoadWarning
+              message={dataSectionErrors.rehearsalEntries || dataSectionErrors.rehearsalRecordings}
+            />
+
+            {rehearsalStatusMessage ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {rehearsalStatusMessage}
+              </div>
+            ) : null}
+
+            {rehearsalErrorMessage ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {rehearsalErrorMessage}
+              </div>
+            ) : null}
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="flex flex-col gap-3">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Add Song from Library
+                      <select
+                        value={selectedRehearsalSongId}
+                        onChange={(event) => setSelectedRehearsalSongId(event.target.value)}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Select a song...</option>
+                        {songLibrary.map((song) => (
+                          <option key={song.id} value={song.id}>
+                            {song.title}
+                            {song.song_key ? ` (${song.song_key})` : ""}
+                            {song.artist ? ` - ${song.artist}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleAddRehearsalSong()}
+                      disabled={activeRehearsalActionId === "create"}
+                      className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
+                    >
+                      {activeRehearsalActionId === "create" ? "Adding..." : "Add Library Song"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="flex flex-col gap-3">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Add Manual Song Title
+                      <input
+                        type="text"
+                        value={manualRehearsalTitle}
+                        onChange={(event) => setManualRehearsalTitle(event.target.value)}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Enter a rehearsal-only song title"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleAddManualRehearsalSong()}
+                      disabled={activeRehearsalActionId === "create-manual"}
+                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      {activeRehearsalActionId === "create-manual" ? "Adding..." : "Add Manual Song"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {rehearsalEntries.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                No rehearsal songs yet. Add a song from the existing library to start a rehearsal list.
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {rehearsalEntries.map((entry, index) => {
+                  const recordings = rehearsalRecordingsByEntryId[entry.id] ?? [];
+                  const selectedRecordingFile = rehearsalRecordingFiles[entry.id] ?? null;
+                  const isSavingNotes = activeRehearsalActionId === entry.id;
+                  const isUploadingRecording = activeRehearsalActionId === `upload-${entry.id}`;
+                  const linkedLibrarySong = entry.song_id ? songLibraryById[entry.song_id] ?? null : null;
+                  const libraryMp3Url = linkedLibrarySong?.mp3_path
+                    ? getSongMp3DownloadUrl(linkedLibrarySong.mp3_path)
+                    : null;
+                  const displayRehearsalTitle = entry.is_library_linked
+                    ? entry.title
+                    : (rehearsalTitleDrafts[entry.id] ?? entry.title).trim() || entry.title;
+
+                  return (
+                    <article
+                      key={entry.id}
+                      className="rounded-2xl border border-stone-200 bg-stone-50 p-4 shadow-sm"
+                    >
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
+                              Rehearsal Song {index + 1}
+                            </p>
+                            <h3 className="text-lg font-semibold text-stone-900">{displayRehearsalTitle}</h3>
+                            <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              <span>{entry.is_library_linked ? "Linked Library Song" : "Manual Song"}</span>
+                              {entry.artist ? <span>{getDisplaySingerName(entry.artist)}</span> : null}
+                              {entry.song_key ? <span>Key: {entry.song_key}</span> : null}
+                              {entry.tempo ? <span>Tempo: {entry.tempo}</span> : null}
+                              {entry.song_type ? <span>Type: {entry.song_type}</span> : null}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteRehearsalEntry(entry)}
+                            disabled={Boolean(activeRehearsalActionId)}
+                            className="w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                          >
+                            Remove Song
+                          </button>
+                        </div>
+
+                        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                          <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                            {!entry.is_library_linked ? (
+                              <label className="mb-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                Manual Song Title
+                                <input
+                                  type="text"
+                                  value={rehearsalTitleDrafts[entry.id] ?? entry.title}
+                                  onChange={(event) =>
+                                    setRehearsalTitleDrafts((currentDrafts) => ({
+                                      ...currentDrafts,
+                                      [entry.id]: event.target.value,
+                                    }))
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  placeholder="Enter rehearsal song title"
+                                />
+                              </label>
+                            ) : null}
+
+                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Rehearsal Notes
+                              <textarea
+                                value={rehearsalNoteDrafts[entry.id] ?? ""}
+                                onChange={(event) =>
+                                  setRehearsalNoteDrafts((currentDrafts) => ({
+                                    ...currentDrafts,
+                                    [entry.id]: event.target.value,
+                                  }))
+                                }
+                                className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                placeholder="Arrangement reminders, rehearsal priorities, or anything the band should know."
+                              />
+                            </label>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveRehearsalNotes(entry)}
+                                disabled={isSavingNotes}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                {isSavingNotes ? "Saving..." : "Save Notes"}
+                              </button>
+                              {!entry.is_library_linked ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleAddManualRehearsalSongToLibrary(entry)}
+                                  disabled={activeRehearsalActionId === `library-${entry.id}`}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {activeRehearsalActionId === `library-${entry.id}`
+                                    ? "Adding to Library..."
+                                    : "Add to Song Library"}
+                                </button>
+                              ) : null}
+                            </div>
+
+                            {libraryMp3Url ? (
+                              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                                <div className="flex flex-col gap-2">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                                    Library MP3
+                                  </p>
+                                  <audio controls src={libraryMp3Url} className="w-full" />
+                                  <a
+                                    href={libraryMp3Url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    download
+                                    className="w-fit rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                                  >
+                                    Download Library MP3
+                                  </a>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                            <div className="flex flex-col gap-3">
+                              <div>
+                                <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                  Rehearsal Recording
+                                </h4>
+                                <p className="mt-1 text-sm text-stone-600">
+                                  Upload MP3 reference recordings for this rehearsal song.
+                                </p>
+                              </div>
+
+                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                MP3 Recording
+                                <input
+                                  key={rehearsalRecordingInputKeys[entry.id] ?? 0}
+                                  type="file"
+                                  accept="audio/mpeg,.mp3"
+                                  onChange={(event) => handleRehearsalRecordingFileChange(entry.id, event)}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                                />
+                              </label>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleUploadRehearsalRecording(entry)}
+                                  disabled={!selectedRecordingFile || isUploadingRecording}
+                                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                >
+                                  {isUploadingRecording ? "Uploading..." : "Upload Recording"}
+                                </button>
+                                {selectedRecordingFile ? (
+                                  <span className="text-xs text-stone-500">{selectedRecordingFile.name}</span>
+                                ) : null}
+                              </div>
+
+                              {recordings.length === 0 ? (
+                                <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-3 py-4 text-sm text-stone-500">
+                                  No rehearsal recordings uploaded yet.
+                                </p>
+                              ) : (
+                                <div className="grid gap-3">
+                                  {recordings.map((recording) => {
+                                    const recordingUrl = getRehearsalRecordingUrl(recording);
+                                    return (
+                                      <div
+                                        key={recording.id}
+                                        className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-3"
+                                      >
+                                        <div className="flex flex-col gap-3">
+                                          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                            <div>
+                                              <p className="text-sm font-semibold text-stone-900">
+                                                {recording.file_name}
+                                              </p>
+                                              <p className="text-xs text-stone-500">
+                                                Uploaded {formatPromoUploadDate(recording.created_at)}
+                                              </p>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => void handleDeleteRehearsalRecording(recording)}
+                                              disabled={activeRehearsalActionId === `recording-${recording.id}`}
+                                              className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {activeRehearsalActionId === `recording-${recording.id}`
+                                                ? "Deleting..."
+                                                : "Delete"}
+                                            </button>
+                                          </div>
+
+                                  {recordingUrl ? (
+                                            <>
+                                              <audio controls src={recordingUrl} className="w-full" />
+                                              <a
+                                                href={recordingUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                download
+                                                className="w-fit rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                                              >
+                                                Download Recording
+                                              </a>
+                                            </>
+                                          ) : (
+                                            <p className="text-xs text-rose-600">
+                                              This recording is missing a playable URL.
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-stone-900">Rehearsal MP3 Pool</h3>
+                <p className="text-sm text-stone-600">
+                  All rehearsal recordings uploaded for this show only.
+                </p>
+              </div>
+
+              {rehearsalRecordings.length === 0 ? (
+                <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
+                  No rehearsal recordings have been uploaded for this show yet.
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-3">
+                  {rehearsalRecordings.map((recording) => {
+                    const recordingUrl = getRehearsalRecordingUrl(recording);
+                    const relatedEntry = recording.rehearsal_entry_id
+                      ? rehearsalEntriesById[recording.rehearsal_entry_id] ?? null
+                      : null;
+
+                    return (
+                      <article
+                        key={`pool-${recording.id}`}
+                        className="rounded-2xl border border-stone-200 bg-white p-4"
+                      >
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-sm font-semibold text-stone-900">{recording.file_name}</p>
+                            <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              <span>
+                                Song: {relatedEntry?.title ?? "General rehearsal recording"}
+                              </span>
+                              <span>Uploaded {formatPromoUploadDate(recording.created_at)}</span>
+                            </div>
+                          </div>
+
+                          {recordingUrl ? (
+                            <div className="flex flex-col gap-3">
+                              <audio controls src={recordingUrl} className="w-full" />
+                              <a
+                                href={recordingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                download
+                                className="w-fit rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Download Recording
+                              </a>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-rose-600">
+                              This recording is missing a playable URL.
+                            </p>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
         ) : null}
 
         {shouldShowGuestPromoMaterialsTab || shouldShowBandPromoMaterialsTab ? (

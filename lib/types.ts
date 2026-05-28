@@ -275,6 +275,26 @@ export type ShowCompTicket = {
   created_at: string;
 };
 
+export type RehearsalEntry = {
+  id: string;
+  show_id: string;
+  song_id: string | null;
+  custom_title: string | null;
+  notes: string | null;
+  sort_order: number;
+  created_at: string;
+};
+
+export type RehearsalRecording = {
+  id: string;
+  show_id: string;
+  rehearsal_entry_id: string | null;
+  file_name: string;
+  file_path: string;
+  file_url: string | null;
+  created_at: string;
+};
+
 export type PromoMaterialFormState = {
   title: string;
   description: string;
