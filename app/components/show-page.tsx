@@ -7309,7 +7309,12 @@ export function ShowPage({
     }
 
     if (viewMode === "band") {
-      setActiveBandTab("setlist");
+      if (typeof window !== "undefined") {
+        const requestedBandTab = normalizeBandTab(new URLSearchParams(window.location.search).get("tab"));
+        setActiveBandTab(requestedBandTab ?? "setlist");
+      } else {
+        setActiveBandTab("setlist");
+      }
     }
 
     if (viewMode === "guest") {
@@ -11286,7 +11291,12 @@ export function ShowPage({
     }
 
     try {
-      await navigator.clipboard.writeText(buildBandRehearsalUrl(show.slug));
+      const rehearsalUrl =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/band/${encodeURIComponent(show.slug)}?tab=rehearsal`
+          : buildBandRehearsalUrl(show.slug);
+
+      await navigator.clipboard.writeText(rehearsalUrl);
       setRehearsalErrorMessage(null);
       setCopiedRehearsalLink(true);
 
