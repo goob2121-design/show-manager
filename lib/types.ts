@@ -281,6 +281,7 @@ export type RehearsalEntry = {
   song_id: string | null;
   custom_title: string | null;
   notes: string | null;
+  section_label: string | null;
   sort_order: number;
   created_at: string;
 };

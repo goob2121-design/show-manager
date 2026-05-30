@@ -214,6 +214,7 @@ create table if not exists public.rehearsal_entries (
   song_id uuid references public.songs(id) on delete set null,
   custom_title text,
   notes text,
+  section_label text,
   sort_order integer not null default 1,
   created_at timestamptz not null default now()
 );

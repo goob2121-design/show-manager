@@ -113,6 +113,8 @@ type RehearsalEntryWithSong = RehearsalEntry & {
   is_library_linked: boolean;
 };
 
+type RehearsalSectionLabel = "" | "set1" | "set2";
+
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab =
   | "overview"
@@ -1574,13 +1576,52 @@ function normalizeRehearsalEntry(item: RehearsalEntryRow): RehearsalEntryWithSon
 }
 
 function sortRehearsalEntries(items: RehearsalEntryWithSong[]) {
+  const getSectionSortOrder = (sectionLabel: string | null | undefined) => {
+    if (sectionLabel === "set1") {
+      return 1;
+    }
+
+    if (sectionLabel === "set2") {
+      return 2;
+    }
+
+    return 0;
+  };
+
   return [...items].sort((itemA, itemB) => {
+    const sectionDifference =
+      getSectionSortOrder(itemA.section_label) - getSectionSortOrder(itemB.section_label);
+
+    if (sectionDifference !== 0) {
+      return sectionDifference;
+    }
+
     if (itemA.sort_order !== itemB.sort_order) {
       return itemA.sort_order - itemB.sort_order;
     }
 
     return itemA.created_at.localeCompare(itemB.created_at);
   });
+}
+
+function normalizeRehearsalSectionLabel(value: string | null | undefined): RehearsalSectionLabel {
+  if (value === "set1" || value === "set2") {
+    return value;
+  }
+
+  return "";
+}
+
+function formatRehearsalSectionHeading(value: string | null | undefined) {
+  if (value === "set1") {
+    return "SET 1";
+  }
+
+  if (value === "set2") {
+    return "SET 2";
+  }
+
+  return "";
 }
 
 function normalizeRehearsalRecording(item: RehearsalRecording): RehearsalRecording {
@@ -3309,6 +3350,7 @@ function buildRehearsalSheetPrintHtml({
   entries: Array<{
     title: string;
     notes: string | null;
+    sectionLabel: string | null;
     artist: string | null;
     songKey: string | null;
     tempo: SongTempo | null;
@@ -3331,18 +3373,40 @@ function buildRehearsalSheetPrintHtml({
           h1 { margin: 0; font-size: 28px; }
           .meta { margin: 8px 0 0; font-size: 14px; color: #4b5563; }
           .list { display: grid; gap: 12px; }
+          .section-header {
+            margin: 8px 0 0;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            color: #4b5563;
+            text-transform: uppercase;
+            page-break-after: avoid;
+            break-after: avoid;
+          }
           .card {
             border: 1px solid #d6d3d1;
             border-radius: 16px;
-            padding: 12px 14px;
+            padding: 10px 12px;
             background: #ffffff;
             page-break-inside: avoid;
             break-inside: avoid;
           }
-          .eyebrow { margin: 0 0 6px; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.12em; }
-          .title { margin: 0; font-size: 18px; font-weight: 700; }
-          .notes-label { margin: 10px 0 0; font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.12em; }
-          .notes { margin: 6px 0 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+          .song-grid {
+            display: grid;
+            grid-template-columns: 38% 62%;
+            gap: 12px;
+            align-items: start;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .song-left,
+          .song-right {
+            min-width: 0;
+          }
+          .eyebrow { margin: 0 0 4px; font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.12em; }
+          .title { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.25; }
+          .notes-label { margin: 0 0 4px; font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.12em; }
+          .notes { margin: 0; font-size: 12px; line-height: 1.45; white-space: pre-wrap; min-height: 1.2em; }
           @page { margin: 0.5in; }
         </style>
       </head>
@@ -3355,6 +3419,9 @@ function buildRehearsalSheetPrintHtml({
         <section class="list">
           ${entries
             .map((entry, index) => {
+              const previousEntry = index > 0 ? entries[index - 1] : null;
+              const sectionHeading = formatRehearsalSectionHeading(entry.sectionLabel);
+              const previousSectionHeading = formatRehearsalSectionHeading(previousEntry?.sectionLabel);
               const details = [
                 entry.isLibraryLinked ? "Linked Library Song" : "Manual Song",
                 entry.artist ? `Artist: ${entry.artist}` : null,
@@ -3367,11 +3434,18 @@ function buildRehearsalSheetPrintHtml({
                 .join(" • ");
 
               return `
+                ${sectionHeading && sectionHeading !== previousSectionHeading ? `<p class="section-header">${sectionHeading}</p>` : ""}
                 <article class="card">
-                  <p class="eyebrow">Rehearsal Song ${index + 1}</p>
-                  <h2 class="title">${escapeHtml(entry.title)}</h2>
-                  <p class="notes-label">Notes</p>
-                  <p class="notes">${escapeHtml(entry.notes?.trim() || "No rehearsal notes added.")}</p>
+                  <div class="song-grid">
+                    <div class="song-left">
+                      <p class="eyebrow">Rehearsal Song ${index + 1}</p>
+                      <h2 class="title">${escapeHtml(entry.title)}</h2>
+                    </div>
+                    <div class="song-right">
+                      <p class="notes-label">Notes</p>
+                      <p class="notes">${escapeHtml(entry.notes?.trim() || "")}</p>
+                    </div>
+                  </div>
                 </article>
               `;
             })
@@ -5084,6 +5158,7 @@ export function ShowPage({
   const [rehearsalEntries, setRehearsalEntries] = useState<RehearsalEntryWithSong[]>([]);
   const [rehearsalRecordings, setRehearsalRecordings] = useState<RehearsalRecording[]>([]);
   const [selectedRehearsalSongId, setSelectedRehearsalSongId] = useState("");
+  const [selectedRehearsalGuestSongId, setSelectedRehearsalGuestSongId] = useState("");
   const [manualRehearsalTitle, setManualRehearsalTitle] = useState("");
   const [rehearsalTitleDrafts, setRehearsalTitleDrafts] = useState<Record<string, string>>({});
   const [rehearsalNoteDrafts, setRehearsalNoteDrafts] = useState<Record<string, string>>({});
@@ -11359,6 +11434,7 @@ export function ShowPage({
           song_id: selectedSong.id,
           custom_title: null,
           notes: null,
+          section_label: null,
           sort_order: nextSortOrder,
         })
         .select(`
@@ -11432,6 +11508,7 @@ export function ShowPage({
           song_id: null,
           custom_title: title,
           notes: null,
+          section_label: null,
           sort_order: nextSortOrder,
         })
         .select(`
@@ -11476,9 +11553,101 @@ export function ShowPage({
     }
   }
 
+  async function handleAddGuestRehearsalSong() {
+    if (!show) {
+      setRehearsalErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const selectedGuestSong = pendingSongs.find((song) => song.id === selectedRehearsalGuestSongId);
+
+    if (!selectedGuestSong) {
+      setRehearsalErrorMessage("Choose a guest song first.");
+      return;
+    }
+
+    const nextSortOrder =
+      rehearsalEntries.reduce((maxSortOrder, entry) => Math.max(maxSortOrder, entry.sort_order), 0) + 1;
+    const matchedLibrarySong =
+      songLibrary.find((song) => song.title.trim().toLowerCase() === selectedGuestSong.title.trim().toLowerCase()) ??
+      null;
+    const normalizedNotes = [
+      selectedGuestSong.submitted_by_name?.trim()
+        ? `Guest: ${selectedGuestSong.submitted_by_name.trim()}`
+        : null,
+      normalizeOptionalField(selectedGuestSong.notes ?? ""),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    setActiveRehearsalActionId("create-guest");
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("rehearsal_entries")
+        .insert({
+          show_id: show.id,
+          song_id: matchedLibrarySong?.id ?? null,
+          custom_title: matchedLibrarySong ? null : selectedGuestSong.title,
+          notes: normalizeOptionalField(normalizedNotes),
+          section_label: null,
+          sort_order: nextSortOrder,
+        })
+        .select(`
+          *,
+          library_song:song_id (
+            id,
+            title,
+            key,
+            tempo,
+            song_type,
+            notes,
+            lyrics,
+            created_by_role,
+            created_by_name,
+            created_at
+          )
+        `)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const normalizedEntry = normalizeRehearsalEntry(data as RehearsalEntryRow);
+      setRehearsalEntries((currentEntries) =>
+        sortRehearsalEntries([...currentEntries, normalizedEntry]),
+      );
+      setRehearsalTitleDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.title,
+      }));
+      setRehearsalNoteDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.notes ?? "",
+      }));
+      setSelectedRehearsalGuestSongId("");
+      setRehearsalStatusMessage(
+        matchedLibrarySong
+          ? `Added guest song "${normalizedEntry.title}" to rehearsal and linked it to the library.`
+          : `Added guest song "${normalizedEntry.title}" to rehearsal.`,
+      );
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
   async function handleSaveRehearsalNotes(entry: RehearsalEntryWithSong) {
     const notes = normalizeOptionalField(rehearsalNoteDrafts[entry.id] ?? "");
     const nextTitle = normalizeOptionalField(rehearsalTitleDrafts[entry.id] ?? entry.title);
+    const nextSectionLabel = normalizeRehearsalSectionLabel(
+      (document.getElementById(`rehearsal-section-${entry.id}`) as HTMLSelectElement | null)?.value,
+    );
 
     setActiveRehearsalActionId(entry.id);
     setRehearsalErrorMessage(null);
@@ -11491,6 +11660,7 @@ export function ShowPage({
         .update({
           notes,
           custom_title: entry.is_library_linked ? null : nextTitle,
+          section_label: nextSectionLabel || null,
         })
         .eq("id", entry.id)
         .select(`
@@ -11694,6 +11864,74 @@ export function ShowPage({
     }
   }
 
+  async function handleMoveRehearsalEntry(
+    entry: RehearsalEntryWithSong,
+    direction: "up" | "down",
+  ) {
+    const sectionEntries = sortRehearsalEntries(rehearsalEntries).filter(
+      (currentEntry) =>
+        normalizeRehearsalSectionLabel(currentEntry.section_label) ===
+        normalizeRehearsalSectionLabel(entry.section_label),
+    );
+    const currentIndex = sectionEntries.findIndex((currentEntry) => currentEntry.id === entry.id);
+
+    if (currentIndex === -1) {
+      return;
+    }
+
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    const neighbor = sectionEntries[targetIndex];
+
+    if (!neighbor) {
+      return;
+    }
+
+    setActiveRehearsalActionId(`move-${entry.id}`);
+    setRehearsalErrorMessage(null);
+    setRehearsalStatusMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { error: currentError } = await supabase
+        .from("rehearsal_entries")
+        .update({ sort_order: neighbor.sort_order })
+        .eq("id", entry.id);
+
+      if (currentError) {
+        throw currentError;
+      }
+
+      const { error: neighborError } = await supabase
+        .from("rehearsal_entries")
+        .update({ sort_order: entry.sort_order })
+        .eq("id", neighbor.id);
+
+      if (neighborError) {
+        throw neighborError;
+      }
+
+      setRehearsalEntries((currentEntries) =>
+        sortRehearsalEntries(
+          currentEntries.map((currentEntry) => {
+            if (currentEntry.id === entry.id) {
+              return { ...currentEntry, sort_order: neighbor.sort_order };
+            }
+
+            if (currentEntry.id === neighbor.id) {
+              return { ...currentEntry, sort_order: entry.sort_order };
+            }
+
+            return currentEntry;
+          }),
+        ),
+      );
+    } catch (error) {
+      setRehearsalErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveRehearsalActionId(null);
+    }
+  }
+
   async function handleUploadRehearsalRecording(entry: RehearsalEntryWithSong) {
     if (!show?.slug || !show?.id) {
       setRehearsalErrorMessage("The show is not ready for uploads yet.");
@@ -11808,6 +12046,7 @@ export function ShowPage({
           ? entry.title
           : (rehearsalTitleDrafts[entry.id] ?? entry.title).trim() || entry.title,
         notes: rehearsalNoteDrafts[entry.id] ?? entry.notes ?? null,
+        sectionLabel: entry.section_label ?? null,
         artist: entry.artist,
         songKey: entry.song_key,
         tempo: entry.tempo,
@@ -13215,7 +13454,7 @@ export function ShowPage({
             ) : null}
 
             <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-              <div className="grid gap-4 xl:grid-cols-2">
+              <div className="grid gap-4 xl:grid-cols-3">
                 <div className="rounded-2xl border border-stone-200 bg-white p-4">
                   <div className="flex flex-col gap-3">
                     <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
@@ -13243,6 +13482,36 @@ export function ShowPage({
                       className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
                     >
                       {activeRehearsalActionId === "create" ? "Adding..." : "Add Library Song"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="flex flex-col gap-3">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Add Guest Song
+                      <select
+                        value={selectedRehearsalGuestSongId}
+                        onChange={(event) => setSelectedRehearsalGuestSongId(event.target.value)}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Select a guest song...</option>
+                        {pendingSongs.map((song) => (
+                          <option key={song.id} value={song.id}>
+                            {song.title}
+                            {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleAddGuestRehearsalSong()}
+                      disabled={activeRehearsalActionId === "create-guest"}
+                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      {activeRehearsalActionId === "create-guest" ? "Adding..." : "Add Guest Song"}
                     </button>
                   </div>
                 </div>
@@ -13284,6 +13553,7 @@ export function ShowPage({
                   const selectedRecordingFile = rehearsalRecordingFiles[entry.id] ?? null;
                   const isSavingNotes = activeRehearsalActionId === entry.id;
                   const isUploadingRecording = activeRehearsalActionId === `upload-${entry.id}`;
+                  const isMovingEntry = activeRehearsalActionId === `move-${entry.id}`;
                   const linkedLibrarySong = entry.song_id ? songLibraryById[entry.song_id] ?? null : null;
                   const libraryMp3Url = linkedLibrarySong?.mp3_path
                     ? getSongMp3DownloadUrl(linkedLibrarySong.mp3_path)
@@ -13291,13 +13561,21 @@ export function ShowPage({
                   const displayRehearsalTitle = entry.is_library_linked
                     ? entry.title
                     : (rehearsalTitleDrafts[entry.id] ?? entry.title).trim() || entry.title;
+                  const currentSectionHeading = formatRehearsalSectionHeading(entry.section_label);
+                  const previousSectionHeading =
+                    index > 0
+                      ? formatRehearsalSectionHeading(rehearsalEntries[index - 1]?.section_label)
+                      : "";
 
                   return (
-                    <article
-                      key={entry.id}
-                      className="rounded-2xl border border-stone-200 bg-stone-50 p-4 shadow-sm"
-                    >
-                      <div className="flex flex-col gap-4">
+                    <div key={entry.id} className="flex flex-col gap-3">
+                      {currentSectionHeading && currentSectionHeading !== previousSectionHeading ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold uppercase tracking-[0.18em] text-emerald-800">
+                          {currentSectionHeading}
+                        </div>
+                      ) : null}
+                      <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4 shadow-sm">
+                        <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="flex flex-col gap-1">
                             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
@@ -13313,14 +13591,32 @@ export function ShowPage({
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteRehearsalEntry(entry)}
-                            disabled={Boolean(activeRehearsalActionId)}
-                            className="w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                          >
-                            Remove Song
-                          </button>
+                          <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
+                            <button
+                              type="button"
+                              onClick={() => void handleMoveRehearsalEntry(entry, "up")}
+                              disabled={index === 0 || Boolean(activeRehearsalActionId)}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Move Up
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleMoveRehearsalEntry(entry, "down")}
+                              disabled={index === rehearsalEntries.length - 1 || Boolean(activeRehearsalActionId)}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Move Down
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteRehearsalEntry(entry)}
+                              disabled={Boolean(activeRehearsalActionId)}
+                              className="w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                            >
+                              Remove Song
+                            </button>
+                          </div>
                         </div>
 
                         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
@@ -13343,6 +13639,19 @@ export function ShowPage({
                               </label>
                             ) : null}
 
+                            <label className="mb-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
+                              Section
+                              <select
+                                id={`rehearsal-section-${entry.id}`}
+                                defaultValue={normalizeRehearsalSectionLabel(entry.section_label)}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              >
+                                <option value="">No Section</option>
+                                <option value="set1">Set 1</option>
+                                <option value="set2">Set 2</option>
+                              </select>
+                            </label>
+
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                               Rehearsal Notes
                               <textarea
@@ -13361,7 +13670,7 @@ export function ShowPage({
                               <button
                                 type="button"
                                 onClick={() => void handleSaveRehearsalNotes(entry)}
-                                disabled={isSavingNotes}
+                                disabled={isSavingNotes || isMovingEntry}
                                 className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                               >
                                 {isSavingNotes ? "Saving..." : "Save Notes"}
@@ -13501,6 +13810,7 @@ export function ShowPage({
                         </div>
                       </div>
                     </article>
+                    </div>
                   );
                 })}
               </div>
