@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Fragment } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import {
   buildBlockNoteDrafts,
@@ -93,6 +94,7 @@ type SongLibrarySong = SongRecord & {
 type SetlistSong = SetlistEntry & {
   set_section: SetSection;
   artist: string | null;
+  sung_by?: string | null;
   song_key: string | null;
   notes: string | null;
   lyrics: string | null;
@@ -218,6 +220,7 @@ const setlistSectionConfigs: SetlistSectionConfig[] = [
 const initialFormState: SongFormState = {
   title: "",
   key: "",
+  sungBy: "",
   tempo: "",
   songType: "",
   notes: "",
@@ -455,6 +458,7 @@ type BlockNoteFormState = {
 type SongEditFormState = {
   title: string;
   key: string;
+  sungBy: string;
   tempo: "" | SongTempo;
   songType: "" | SongType;
   artist?: string;
@@ -1131,10 +1135,11 @@ function getGuestSongSaveErrorMessage(error: unknown) {
 
     if (
       code === "PGRST204" ||
+      message.includes("Could not find the 'sung_by' column of 'show_guest_songs'") ||
       message.includes("Could not find the 'notes' column of 'show_guest_songs'") ||
       message.includes("Could not find the 'lyrics' column of 'show_guest_songs'")
     ) {
-      return "Guest song notes fields are missing from Supabase. Apply the show_guest_songs notes/lyrics migration, then try again.";
+      return "Guest song Lead Vocal / notes fields are missing from Supabase. Apply the show_guest_songs migration, then try again.";
     }
   }
 
@@ -1234,6 +1239,7 @@ function sortSetlistSongs(songs: SetlistSong[]) {
 function buildSongEditFormState(song: {
   title: string;
   key: string | null;
+  sung_by?: string | null;
   tempo: SongTempo | null;
   song_type: SongType | null;
   notes?: string | null;
@@ -1243,6 +1249,7 @@ function buildSongEditFormState(song: {
   return {
     title: song.title,
     key: song.key ?? "",
+    sungBy: song.sung_by ?? "",
     tempo: song.tempo ?? "",
     songType: song.song_type ?? "",
     notes: song.notes ?? "",
@@ -1269,6 +1276,7 @@ type SetlistEntryQueryRow = {
   created_at: string;
   title?: string;
   key?: string | null;
+  sung_by?: string | null;
   tempo?: SongTempo | null;
   song_type?: SongType | null;
   notes?: string | null;
@@ -1566,8 +1574,9 @@ function normalizeRehearsalEntry(item: RehearsalEntryRow): RehearsalEntryWithSon
     ...item,
     custom_title: item.custom_title ?? null,
     notes: item.notes ?? null,
+    sung_by: librarySong?.sung_by ?? item.sung_by ?? null,
     title: customTitle || libraryTitle || "Untitled Song",
-    artist: librarySong?.artist ?? librarySong?.created_by_name ?? null,
+    artist: librarySong?.artist ?? librarySong?.sung_by ?? item.sung_by ?? null,
     song_key: librarySong?.song_key ?? librarySong?.key ?? item.key ?? null,
     tempo: librarySong?.tempo ?? null,
     song_type: librarySong?.song_type ?? null,
@@ -2816,6 +2825,7 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
   const resolvedSongType = librarySong?.song_type ?? guestSong?.song_type ?? song.song_type ?? null;
   const resolvedNotes = librarySong?.notes ?? guestSong?.notes ?? song.notes ?? null;
   const resolvedLyrics = librarySong?.lyrics ?? guestSong?.lyrics ?? song.lyrics ?? null;
+  const resolvedLeadVocal = librarySong?.sung_by ?? guestSong?.sung_by ?? song.sung_by ?? null;
   const resolvedMp3Path =
     extractMp3PathFromNotes(librarySong?.notes) ??
     extractMp3PathFromNotes(guestSong?.notes) ??
@@ -2823,8 +2833,9 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     null;
   const resolvedPerformer =
     guestSong?.submitted_by_name?.trim() ||
+    resolvedLeadVocal?.trim() ||
     ("performer_name" in song ? song.performer_name : null) ||
-    defaultSingerName;
+    null;
 
   return {
     ...song,
@@ -2832,6 +2843,7 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     source_type: song.source_type === "guest" ? "guest" : "library",
     title: resolvedTitle,
     key: resolvedKey,
+    sung_by: resolvedLeadVocal,
     tempo: normalizeSongTempo(resolvedTempo),
     song_type: normalizeSongType(resolvedSongType),
     performer_name: resolvedPerformer,
@@ -3352,6 +3364,7 @@ function buildRehearsalSheetPrintHtml({
     notes: string | null;
     sectionLabel: string | null;
     artist: string | null;
+    sungBy: string | null;
     songKey: string | null;
     tempo: SongTempo | null;
     songType: SongType | null;
@@ -3425,6 +3438,7 @@ function buildRehearsalSheetPrintHtml({
               const details = [
                 entry.isLibraryLinked ? "Linked Library Song" : "Manual Song",
                 entry.artist ? `Artist: ${entry.artist}` : null,
+                entry.sungBy ? `Lead Vocal: ${entry.sungBy}` : null,
                 entry.songKey ? `Key: ${entry.songKey}` : null,
                 entry.tempo ? `Tempo: ${entry.tempo}` : null,
                 entry.songType ? `Type: ${entry.songType}` : null,
@@ -3440,6 +3454,7 @@ function buildRehearsalSheetPrintHtml({
                     <div class="song-left">
                       <p class="eyebrow">Rehearsal Song ${index + 1}</p>
                       <h2 class="title">${escapeHtml(entry.title)}</h2>
+                      ${entry.sungBy ? `<p class="eyebrow">Lead Vocal: ${escapeHtml(entry.sungBy)}</p>` : ""}
                     </div>
                     <div class="song-right">
                       <p class="notes-label">Notes</p>
@@ -3911,8 +3926,9 @@ function normalizePendingSubmission(
     key: submission.key ?? null,
     tempo: normalizeSongTempo(submission.tempo),
     song_type: normalizeSongType(submission.song_type),
+    sung_by: submission.sung_by ?? null,
     submitted_by_name: submission.submitted_by_name ?? null,
-    artist: submission.submitted_by_name ?? null,
+    artist: submission.sung_by ?? submission.submitted_by_name ?? null,
     song_key: submission.key ?? null,
     notes: stripMp3MarkerFromNotes(submission.notes),
     lyrics: submission.lyrics ?? null,
@@ -3946,9 +3962,10 @@ function normalizeSongLibrarySong(
     tempo: normalizeSongTempo(song.tempo),
     song_type: normalizeSongType(song.song_type),
     chart_url: normalizeChartUrl(song.chart_url),
+    sung_by: song.sung_by ?? null,
     created_by_role: normalizeSubmittedByRole(song.created_by_role) as SongLibrarySong["created_by_role"],
     created_by_name: song.created_by_name ?? null,
-    artist: null,
+    artist: song.sung_by ?? null,
     song_key: song.key ?? null,
     notes: stripMp3MarkerFromNotes(song.notes),
     lyrics: song.lyrics ?? null,
@@ -5123,6 +5140,7 @@ export function ShowPage({
   const requestedAdminTab = normalizeAdminTab(initialAdminTab);
   const shouldOpenPayoutsInsideFinance = initialAdminTab === "payouts";
   const [viewMode, setViewMode] = useState<ViewMode>(initialRole);
+  const [isBandAdminUnlocked, setIsBandAdminUnlocked] = useState(false);
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(
     requestedAdminTab ?? (shouldOpenPayoutsInsideFinance ? "finance" : "overview"),
   );
@@ -5162,6 +5180,7 @@ export function ShowPage({
   const [manualRehearsalTitle, setManualRehearsalTitle] = useState("");
   const [rehearsalTitleDrafts, setRehearsalTitleDrafts] = useState<Record<string, string>>({});
   const [rehearsalKeyDrafts, setRehearsalKeyDrafts] = useState<Record<string, string>>({});
+  const [rehearsalSungByDrafts, setRehearsalSungByDrafts] = useState<Record<string, string>>({});
   const [rehearsalNoteDrafts, setRehearsalNoteDrafts] = useState<Record<string, string>>({});
   const [openRehearsalEntryIds, setOpenRehearsalEntryIds] = useState<Record<string, boolean>>({});
   const [rehearsalRecordingFiles, setRehearsalRecordingFiles] = useState<Record<string, File | null>>({});
@@ -5264,6 +5283,7 @@ export function ShowPage({
   const [poolSongEditFormState, setPoolSongEditFormState] = useState<SongEditFormState>({
     title: "",
     key: "",
+    sungBy: "",
     tempo: "",
     songType: "",
     notes: "",
@@ -5275,6 +5295,7 @@ export function ShowPage({
   const [librarySongEditFormState, setLibrarySongEditFormState] = useState<SongEditFormState>({
     title: "",
     key: "",
+    sungBy: "",
     tempo: "",
     songType: "",
     notes: "",
@@ -5417,6 +5438,8 @@ export function ShowPage({
     isAdminView && activeAdminTab === "songs";
   const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
   const shouldShowBandRehearsalTab = isBandView && activeBandTab === "rehearsal";
+  const canEditBandRehearsal = isBandView && isBandAdminUnlocked;
+  const isBandRehearsalReadOnly = isBandView && !isBandAdminUnlocked;
   const shouldShowGuestWelcomeTab = isGuestView && activeGuestTab === "welcome";
   const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
   const shouldShowGuestArtistInfoTab = isGuestView && activeGuestTab === "artist-info";
@@ -6953,6 +6976,7 @@ export function ShowPage({
           setRehearsalRecordings([]);
           setRehearsalTitleDrafts({});
           setRehearsalKeyDrafts({});
+          setRehearsalSungByDrafts({});
           setRehearsalNoteDrafts({});
           setOpenRehearsalEntryIds({});
           setSponsorLibrary([]);
@@ -7033,6 +7057,7 @@ export function ShowPage({
                   id,
                   title,
                   key,
+                  sung_by,
                   tempo,
                   song_type,
                   notes,
@@ -7041,16 +7066,19 @@ export function ShowPage({
                   created_by_name,
                   created_at
                 ),
-                guest_song:guest_song_id (
-                  id,
-                  show_id,
-                  title,
-                  key,
-                  tempo,
-                  song_type,
-                  submitted_by_name,
-                  created_at
-                )
+          guest_song:guest_song_id (
+            id,
+            show_id,
+            title,
+            key,
+            sung_by,
+            tempo,
+            song_type,
+            notes,
+            lyrics,
+            submitted_by_name,
+            created_at
+          )
               `)
               .eq("show_id", showRecord.id)
               .order("section", { ascending: true })
@@ -7087,6 +7115,7 @@ export function ShowPage({
                   id,
                   title,
                   key,
+                  sung_by,
                   tempo,
                   song_type,
                   notes,
@@ -7284,6 +7313,12 @@ export function ShowPage({
             return lookup;
           }, {}),
         );
+        setRehearsalSungByDrafts(
+          normalizedRehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+            lookup[entry.id] = entry.sung_by ?? "";
+            return lookup;
+          }, {}),
+        );
         setRehearsalNoteDrafts(
           normalizedRehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
             lookup[entry.id] = entry.notes ?? "";
@@ -7421,6 +7456,21 @@ export function ShowPage({
       setActiveGuestTab("welcome");
     }
   }, [requestedAdminTab, viewMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isBandView || !show?.slug) {
+      setIsBandAdminUnlocked(false);
+      return;
+    }
+
+    const syncBandAdminAccess = () => {
+      setIsBandAdminUnlocked(readAdminAccess(show.slug));
+    };
+
+    syncBandAdminAccess();
+
+    return subscribeToAdminAccess(syncBandAdminAccess);
+  }, [isBandView, show?.slug]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -9692,6 +9742,7 @@ export function ShowPage({
           show_id: show.id,
           title,
           key,
+          sung_by: null,
           tempo,
           song_type: songType,
           notes: guestNotes,
@@ -10480,6 +10531,7 @@ export function ShowPage({
             show_id,
             title,
             key,
+            sung_by,
             tempo,
             song_type,
             submitted_by_name,
@@ -10699,6 +10751,7 @@ export function ShowPage({
     setPoolSongEditFormState({
       title: "",
       key: "",
+      sungBy: "",
       tempo: "",
       songType: "",
     });
@@ -10742,6 +10795,7 @@ export function ShowPage({
       const updatePayload = {
         title,
         key: normalizeOptionalField(poolSongEditFormState.key),
+        sung_by: normalizeOptionalField(poolSongEditFormState.sungBy),
         tempo: poolSongEditFormState.tempo || null,
         song_type: poolSongEditFormState.songType || null,
         notes: normalizeOptionalField(poolSongEditFormState.notes ?? ""),
@@ -10760,7 +10814,7 @@ export function ShowPage({
       let savedGuestSong: PendingSubmission = {
         ...songToUpdate,
         ...updatePayload,
-        artist: guestAssociationName,
+        artist: updatePayload.sung_by ?? guestAssociationName,
         song_key: updatePayload.key,
       };
 
@@ -10828,6 +10882,7 @@ export function ShowPage({
     setLibrarySongEditFormState({
       title: "",
       key: "",
+      sungBy: "",
       tempo: "",
       songType: "",
       notes: "",
@@ -10915,6 +10970,7 @@ export function ShowPage({
         .update({
           title,
           key: normalizeOptionalField(librarySongEditFormState.key),
+          sung_by: normalizeOptionalField(librarySongEditFormState.sungBy),
           tempo: librarySongEditFormState.tempo || null,
           song_type: librarySongEditFormState.songType || null,
           notes: appendMp3MarkerToNotes(
@@ -11015,6 +11071,7 @@ export function ShowPage({
             id,
             title,
             key,
+            sung_by,
             tempo,
             song_type,
             notes,
@@ -11468,6 +11525,7 @@ export function ShowPage({
             id,
             title,
             key,
+            sung_by,
             tempo,
             song_type,
             notes,
@@ -11494,6 +11552,10 @@ export function ShowPage({
       setRehearsalKeyDrafts((currentDrafts) => ({
         ...currentDrafts,
         [normalizedEntry.id]: normalizedEntry.song_key ?? "",
+      }));
+      setRehearsalSungByDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.sung_by ?? "",
       }));
       setRehearsalNoteDrafts((currentDrafts) => ({
         ...currentDrafts,
@@ -11541,6 +11603,7 @@ export function ShowPage({
           song_id: null,
           custom_title: title,
           key: null,
+          sung_by: null,
           notes: null,
           section_label: null,
           sort_order: nextSortOrder,
@@ -11551,6 +11614,7 @@ export function ShowPage({
             id,
             title,
             key,
+            sung_by,
             tempo,
             song_type,
             notes,
@@ -11577,6 +11641,10 @@ export function ShowPage({
       setRehearsalKeyDrafts((currentDrafts) => ({
         ...currentDrafts,
         [normalizedEntry.id]: normalizedEntry.song_key ?? "",
+      }));
+      setRehearsalSungByDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.sung_by ?? "",
       }));
       setRehearsalNoteDrafts((currentDrafts) => ({
         ...currentDrafts,
@@ -11635,6 +11703,9 @@ export function ShowPage({
           song_id: matchedLibrarySong?.id ?? null,
           custom_title: matchedLibrarySong ? null : selectedGuestSong.title,
           key: matchedLibrarySong ? null : selectedGuestSong.key ?? null,
+          sung_by: matchedLibrarySong
+            ? null
+            : selectedGuestSong.sung_by ?? selectedGuestSong.submitted_by_name ?? null,
           notes: normalizeOptionalField(normalizedNotes),
           section_label: null,
           sort_order: nextSortOrder,
@@ -11645,6 +11716,7 @@ export function ShowPage({
             id,
             title,
             key,
+            sung_by,
             tempo,
             song_type,
             notes,
@@ -11672,6 +11744,10 @@ export function ShowPage({
         ...currentDrafts,
         [normalizedEntry.id]: normalizedEntry.song_key ?? "",
       }));
+      setRehearsalSungByDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.sung_by ?? "",
+      }));
       setRehearsalNoteDrafts((currentDrafts) => ({
         ...currentDrafts,
         [normalizedEntry.id]: normalizedEntry.notes ?? "",
@@ -11697,6 +11773,7 @@ export function ShowPage({
     const notes = normalizeOptionalField(rehearsalNoteDrafts[entry.id] ?? "");
     const nextTitle = normalizeOptionalField(rehearsalTitleDrafts[entry.id] ?? entry.title);
     const nextKey = normalizeOptionalField(rehearsalKeyDrafts[entry.id] ?? entry.song_key ?? "");
+    const nextSungBy = normalizeOptionalField(rehearsalSungByDrafts[entry.id] ?? entry.sung_by ?? "");
     const nextSectionLabel = normalizeRehearsalSectionLabel(
       (document.getElementById(`rehearsal-section-${entry.id}`) as HTMLSelectElement | null)?.value,
     );
@@ -11713,6 +11790,7 @@ export function ShowPage({
           notes,
           custom_title: entry.is_library_linked ? null : nextTitle,
           key: entry.is_library_linked ? null : nextKey,
+          sung_by: entry.is_library_linked ? null : nextSungBy,
           section_label: nextSectionLabel || null,
         })
         .eq("id", entry.id)
@@ -11722,6 +11800,7 @@ export function ShowPage({
             id,
             title,
             key,
+            sung_by,
             tempo,
             song_type,
             notes,
@@ -11753,6 +11832,10 @@ export function ShowPage({
         ...currentDrafts,
         [normalizedEntry.id]: normalizedEntry.song_key ?? "",
       }));
+      setRehearsalSungByDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.sung_by ?? "",
+      }));
       setRehearsalStatusMessage(`Saved notes for "${normalizedEntry.title}".`);
     } catch (error) {
       setRehearsalErrorMessage(getErrorMessage(error));
@@ -11774,6 +11857,7 @@ export function ShowPage({
 
     const rehearsalTitle = (rehearsalTitleDrafts[entry.id] ?? entry.title).trim();
     const rehearsalKey = normalizeOptionalField(rehearsalKeyDrafts[entry.id] ?? entry.song_key ?? "");
+    const rehearsalSungBy = normalizeOptionalField(rehearsalSungByDrafts[entry.id] ?? entry.sung_by ?? "");
     const rehearsalNotes = normalizeOptionalField(rehearsalNoteDrafts[entry.id] ?? entry.notes ?? "");
 
     if (!rehearsalTitle) {
@@ -11801,6 +11885,7 @@ export function ShowPage({
           .insert({
             title: rehearsalTitle,
             key: rehearsalKey,
+            sung_by: rehearsalSungBy,
             notes: rehearsalNotes,
             created_by_role: createdByRole,
             created_by_name: null,
@@ -11836,6 +11921,7 @@ export function ShowPage({
             id,
             title,
             key,
+            sung_by,
             tempo,
             song_type,
             notes,
@@ -11866,6 +11952,10 @@ export function ShowPage({
       setRehearsalKeyDrafts((currentDrafts) => ({
         ...currentDrafts,
         [normalizedEntry.id]: normalizedEntry.song_key ?? "",
+      }));
+      setRehearsalSungByDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [normalizedEntry.id]: normalizedEntry.sung_by ?? "",
       }));
       setRehearsalStatusMessage(
         existingLibrarySong
@@ -11922,6 +12012,11 @@ export function ShowPage({
         return nextDrafts;
       });
       setRehearsalKeyDrafts((currentDrafts) => {
+        const nextDrafts = { ...currentDrafts };
+        delete nextDrafts[entry.id];
+        return nextDrafts;
+      });
+      setRehearsalSungByDrafts((currentDrafts) => {
         const nextDrafts = { ...currentDrafts };
         delete nextDrafts[entry.id];
         return nextDrafts;
@@ -12186,6 +12281,7 @@ export function ShowPage({
         section: SetSection;
         title: string;
         key: string | null;
+        sungBy: string | null;
         tempo: SongTempo | null;
         songType: SongType | null;
         notes: string | null;
@@ -12217,6 +12313,9 @@ export function ShowPage({
             .from("songs")
             .insert({
               title: manualTitle,
+              key: workingEntry.song_key ?? null,
+              sung_by: workingEntry.sung_by ?? null,
+              notes: workingEntry.notes ?? null,
               created_by_role: createdByRole,
               created_by_name: null,
             })
@@ -12245,6 +12344,7 @@ export function ShowPage({
                 id,
                 title,
                 key,
+                sung_by,
                 tempo,
                 song_type,
                 notes,
@@ -12275,6 +12375,29 @@ export function ShowPage({
           continue;
         }
 
+        const rehearsalLeadVocal = workingEntry.sung_by?.trim() ?? "";
+        const linkedLibraryLeadVocal = linkedLibrarySong?.sung_by?.trim() ?? "";
+
+        if (linkedLibrarySong && rehearsalLeadVocal && !linkedLibraryLeadVocal) {
+          const { data: updatedSong, error: updateSongError } = await supabase
+            .from("songs")
+            .update({
+              sung_by: rehearsalLeadVocal,
+            })
+            .eq("id", linkedLibrarySong.id)
+            .select("*")
+            .single();
+
+          if (updateSongError) {
+            throw updateSongError;
+          }
+
+          linkedLibrarySong = normalizeSongLibrarySong(updatedSong as SongLibrarySong);
+          nextSongLibrary = nextSongLibrary.map((song) =>
+            song.id === linkedLibrarySong?.id ? linkedLibrarySong : song,
+          );
+        }
+
         if (seenSongIds.has(workingSongId)) {
           skippedCount += 1;
           continue;
@@ -12291,6 +12414,7 @@ export function ShowPage({
               : "encore",
           title: workingEntry.title,
           key: workingEntry.song_key ?? null,
+          sungBy: workingEntry.sung_by ?? null,
           tempo: workingEntry.tempo ?? null,
           songType: workingEntry.song_type ?? null,
           notes: workingEntry.notes ?? null,
@@ -12430,6 +12554,12 @@ export function ShowPage({
           return lookup;
         }, {}),
       );
+      setRehearsalSungByDrafts((currentDrafts) =>
+        nextRehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+          lookup[entry.id] = currentDrafts[entry.id] ?? entry.sung_by ?? "";
+          return lookup;
+        }, {}),
+      );
       setSetlist(sortSetlistSongs(finalSetlist));
       setRehearsalStatusMessage(
         `Synced setlist: Added ${addedCount}, updated ${updatedCount}, skipped ${skippedCount}.`,
@@ -12465,6 +12595,7 @@ export function ShowPage({
         notes: rehearsalNoteDrafts[entry.id] ?? entry.notes ?? null,
         sectionLabel: entry.section_label ?? null,
         artist: entry.artist,
+        sungBy: rehearsalSungByDrafts[entry.id] ?? entry.sung_by ?? null,
         songKey: entry.song_key,
         tempo: entry.tempo,
         songType: entry.song_type,
@@ -13837,16 +13968,18 @@ export function ShowPage({
               </div>
 
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => void handleSyncRehearsalToSetlist()}
-                  disabled={Boolean(activeRehearsalActionId)}
-                  className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
-                >
-                  {activeRehearsalActionId === "sync-setlist"
-                    ? "Syncing..."
-                    : "Sync Rehearsal to Setlist"}
-                </button>
+                {canEditBandRehearsal ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleSyncRehearsalToSetlist()}
+                    disabled={Boolean(activeRehearsalActionId)}
+                    className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
+                  >
+                    {activeRehearsalActionId === "sync-setlist"
+                      ? "Syncing..."
+                      : "Sync Rehearsal to Setlist"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={handlePrintRehearsalSheet}
@@ -13880,94 +14013,102 @@ export function ShowPage({
               </div>
             ) : null}
 
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-              <div className="grid gap-4 xl:grid-cols-3">
-                <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                  <div className="flex flex-col gap-3">
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Add Song from Library
-                      <select
-                        value={selectedRehearsalSongId}
-                        onChange={(event) => setSelectedRehearsalSongId(event.target.value)}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+            {canEditBandRehearsal ? (
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="grid gap-4 xl:grid-cols-3">
+                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                    <div className="flex flex-col gap-3">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Add Song from Library
+                        <select
+                          value={selectedRehearsalSongId}
+                          onChange={(event) => setSelectedRehearsalSongId(event.target.value)}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        >
+                          <option value="">Select a song...</option>
+                          {songLibrary.map((song) => (
+                            <option key={song.id} value={song.id}>
+                              {song.title}
+                              {song.song_key ? ` (${song.song_key})` : ""}
+                              {song.artist ? ` - ${song.artist}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => void handleAddRehearsalSong()}
+                        disabled={activeRehearsalActionId === "create"}
+                        className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
                       >
-                        <option value="">Select a song...</option>
-                        {songLibrary.map((song) => (
-                          <option key={song.id} value={song.id}>
-                            {song.title}
-                            {song.song_key ? ` (${song.song_key})` : ""}
-                            {song.artist ? ` - ${song.artist}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleAddRehearsalSong()}
-                      disabled={activeRehearsalActionId === "create"}
-                      className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
-                    >
-                      {activeRehearsalActionId === "create" ? "Adding..." : "Add Library Song"}
-                    </button>
+                        {activeRehearsalActionId === "create" ? "Adding..." : "Add Library Song"}
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                  <div className="flex flex-col gap-3">
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Add Guest Song
-                      <select
-                        value={selectedRehearsalGuestSongId}
-                        onChange={(event) => setSelectedRehearsalGuestSongId(event.target.value)}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                    <div className="flex flex-col gap-3">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Add Guest Song
+                        <select
+                          value={selectedRehearsalGuestSongId}
+                          onChange={(event) => setSelectedRehearsalGuestSongId(event.target.value)}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        >
+                          <option value="">Select a guest song...</option>
+                          {pendingSongs.map((song) => (
+                            <option key={song.id} value={song.id}>
+                              {song.title}
+                              {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => void handleAddGuestRehearsalSong()}
+                        disabled={activeRehearsalActionId === "create-guest"}
+                        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                       >
-                        <option value="">Select a guest song...</option>
-                        {pendingSongs.map((song) => (
-                          <option key={song.id} value={song.id}>
-                            {song.title}
-                            {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleAddGuestRehearsalSong()}
-                      disabled={activeRehearsalActionId === "create-guest"}
-                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                    >
-                      {activeRehearsalActionId === "create-guest" ? "Adding..." : "Add Guest Song"}
-                    </button>
+                        {activeRehearsalActionId === "create-guest" ? "Adding..." : "Add Guest Song"}
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                  <div className="flex flex-col gap-3">
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Add Manual Song Title
-                      <input
-                        type="text"
-                        value={manualRehearsalTitle}
-                        onChange={(event) => setManualRehearsalTitle(event.target.value)}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Enter a rehearsal-only song title"
-                      />
-                    </label>
+                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                    <div className="flex flex-col gap-3">
+                      <div className="grid gap-3">
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Add Manual Song Title
+                          <input
+                            type="text"
+                            value={manualRehearsalTitle}
+                            onChange={(event) => setManualRehearsalTitle(event.target.value)}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Enter a rehearsal-only song title"
+                          />
+                        </label>
+                      </div>
 
-                    <button
-                      type="button"
-                      onClick={() => void handleAddManualRehearsalSong()}
-                      disabled={activeRehearsalActionId === "create-manual"}
-                      className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                    >
-                      {activeRehearsalActionId === "create-manual" ? "Adding..." : "Add Manual Song"}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleAddManualRehearsalSong()}
+                        disabled={activeRehearsalActionId === "create-manual"}
+                        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                      >
+                        {activeRehearsalActionId === "create-manual" ? "Adding..." : "Add Manual Song"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : isBandRehearsalReadOnly ? (
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                Rehearsal editing is admin-only. Unlock admin access for this show to add, move, or edit rehearsal items.
+              </div>
+            ) : null}
 
             {rehearsalEntries.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
@@ -13992,9 +14133,16 @@ export function ShowPage({
                   const displayRehearsalTitle = entry.is_library_linked
                     ? entry.title
                     : (rehearsalTitleDrafts[entry.id] ?? entry.title).trim() || entry.title;
+                  const linkedRehearsalLibrarySong = entry.song_id ? songLibraryById[entry.song_id] ?? null : null;
+                  const displayRehearsalSungBy =
+                    entry.sung_by ?? linkedRehearsalLibrarySong?.sung_by ?? null;
                   const shouldShowAddRehearsalSongToLibraryButton =
                     !entry.song_id && Boolean((entry.custom_title ?? displayRehearsalTitle).trim());
                   const isRehearsalEntryOpen = openRehearsalEntryIds[entry.id] ?? false;
+                  const shouldShowReadOnlyRehearsalDetails = isBandRehearsalReadOnly;
+                  const shouldShowRehearsalEntryDetails = shouldShowReadOnlyRehearsalDetails
+                    ? isRehearsalEntryOpen
+                    : isRehearsalEntryOpen;
                   const currentSectionHeading = formatRehearsalSectionHeading(entry.section_label);
                   const previousSectionHeading =
                     index > 0
@@ -14016,15 +14164,15 @@ export function ShowPage({
                               Rehearsal Song {index + 1}
                             </p>
                             <h3 className="text-lg font-semibold text-stone-900">{displayRehearsalTitle}</h3>
-                            {isRehearsalEntryOpen ? (
-                              <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                                <span>{entry.is_library_linked ? "Linked Library Song" : "Manual Song"}</span>
-                                {entry.artist ? <span>{getDisplaySingerName(entry.artist)}</span> : null}
-                                {entry.song_key ? <span>Key: {entry.song_key}</span> : null}
-                                {entry.tempo ? <span>Tempo: {entry.tempo}</span> : null}
-                                {entry.song_type ? <span>Type: {entry.song_type}</span> : null}
-                              </div>
+                            {displayRehearsalSungBy ? (
+                              <p className="text-sm font-medium text-stone-700">Lead Vocal: {displayRehearsalSungBy}</p>
                             ) : null}
+                            <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              <span>{entry.is_library_linked ? "Linked Library Song" : "Manual Song"}</span>
+                              {entry.song_key ? <span>Key: {entry.song_key}</span> : null}
+                              {entry.tempo ? <span>Tempo: {entry.tempo}</span> : null}
+                              {entry.song_type ? <span>Type: {entry.song_type}</span> : null}
+                            </div>
                           </div>
 
                           <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
@@ -14044,6 +14192,17 @@ export function ShowPage({
                                   : "Play MP3"}
                               </button>
                             ) : null}
+                            {!isRehearsalEntryOpen && libraryMp3Url ? (
+                              <a
+                                href={libraryMp3Url}
+                                target="_blank"
+                                rel="noreferrer"
+                                download
+                                className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                              >
+                                Download MP3
+                              </a>
+                            ) : null}
                             {!isRehearsalEntryOpen && firstRehearsalRecordingUrl ? (
                               <button
                                 type="button"
@@ -14060,7 +14219,18 @@ export function ShowPage({
                                   : "Play Rehearsal MP3"}
                               </button>
                             ) : null}
-                            {!isRehearsalEntryOpen && shouldShowAddRehearsalSongToLibraryButton ? (
+                            {!isRehearsalEntryOpen && firstRehearsalRecordingUrl ? (
+                              <a
+                                href={firstRehearsalRecordingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                download
+                                className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
+                              >
+                                Download Rehearsal MP3
+                              </a>
+                            ) : null}
+                            {!isRehearsalEntryOpen && canEditBandRehearsal && shouldShowAddRehearsalSongToLibraryButton ? (
                               <button
                                 type="button"
                                 onClick={() => void handleAddManualRehearsalSongToLibrary(entry)}
@@ -14084,37 +14254,41 @@ export function ShowPage({
                             >
                               {isRehearsalEntryOpen ? "Collapse" : "Expand"}
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleMoveRehearsalEntry(entry, "up")}
-                              disabled={index === 0 || Boolean(activeRehearsalActionId)}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              Move Up
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleMoveRehearsalEntry(entry, "down")}
-                              disabled={index === rehearsalEntries.length - 1 || Boolean(activeRehearsalActionId)}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              Move Down
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleDeleteRehearsalEntry(entry)}
-                              disabled={Boolean(activeRehearsalActionId)}
-                              className="w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                            >
-                              Remove Song
-                            </button>
+                            {canEditBandRehearsal ? (
+                              <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleMoveRehearsalEntry(entry, "up")}
+                                  disabled={index === 0 || Boolean(activeRehearsalActionId)}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Move Up
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleMoveRehearsalEntry(entry, "down")}
+                                  disabled={index === rehearsalEntries.length - 1 || Boolean(activeRehearsalActionId)}
+                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Move Down
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteRehearsalEntry(entry)}
+                                  disabled={Boolean(activeRehearsalActionId)}
+                                  className="w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                                >
+                                  Remove Song
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
 
-                        {isRehearsalEntryOpen ? (
+                        {shouldShowRehearsalEntryDetails ? (
                         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                           <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                            {!entry.is_library_linked ? (
+                            {canEditBandRehearsal && !entry.is_library_linked ? (
                               <div className="mb-4 grid gap-4 md:grid-cols-2">
                                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                                   Manual Song Title
@@ -14147,58 +14321,100 @@ export function ShowPage({
                                     placeholder="Optional key"
                                   />
                                 </label>
+
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 md:col-span-2">
+                                  Lead Vocal
+                                  <input
+                                    type="text"
+                                    value={rehearsalSungByDrafts[entry.id] ?? entry.sung_by ?? ""}
+                                    onChange={(event) =>
+                                      setRehearsalSungByDrafts((currentDrafts) => ({
+                                        ...currentDrafts,
+                                        [entry.id]: event.target.value,
+                                      }))
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder="Optional singer / lead vocal"
+                                  />
+                                </label>
                               </div>
                             ) : null}
 
-                            <label className="mb-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Section
-                              <select
-                                id={`rehearsal-section-${entry.id}`}
-                                defaultValue={normalizeRehearsalSectionLabel(entry.section_label)}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              >
-                                <option value="">No Section</option>
-                                <option value="set1">Set 1</option>
-                                <option value="set2">Set 2</option>
-                              </select>
-                            </label>
+                            {canEditBandRehearsal ? (
+                              <>
+                                <label className="mb-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Section
+                                  <select
+                                    id={`rehearsal-section-${entry.id}`}
+                                    defaultValue={normalizeRehearsalSectionLabel(entry.section_label)}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  >
+                                    <option value="">No Section</option>
+                                    <option value="set1">Set 1</option>
+                                    <option value="set2">Set 2</option>
+                                  </select>
+                                </label>
 
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Rehearsal Notes
-                              <textarea
-                                value={rehearsalNoteDrafts[entry.id] ?? ""}
-                                onChange={(event) =>
-                                  setRehearsalNoteDrafts((currentDrafts) => ({
-                                    ...currentDrafts,
-                                    [entry.id]: event.target.value,
-                                  }))
-                                }
-                                className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                placeholder="Arrangement reminders, rehearsal priorities, or anything the band should know."
-                              />
-                            </label>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => void handleSaveRehearsalNotes(entry)}
-                                disabled={isSavingNotes || isMovingEntry}
-                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                              >
-                                {isSavingNotes ? "Saving..." : "Save Notes"}
-                              </button>
-                              {shouldShowAddRehearsalSongToLibraryButton ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void handleAddManualRehearsalSongToLibrary(entry)}
-                                  disabled={activeRehearsalActionId === `library-${entry.id}`}
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {activeRehearsalActionId === `library-${entry.id}`
-                                    ? "Adding to Library..."
-                                    : "Add to Song Library"}
-                                </button>
-                              ) : null}
-                            </div>
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Rehearsal Notes
+                                  <textarea
+                                    value={rehearsalNoteDrafts[entry.id] ?? ""}
+                                    onChange={(event) =>
+                                      setRehearsalNoteDrafts((currentDrafts) => ({
+                                        ...currentDrafts,
+                                        [entry.id]: event.target.value,
+                                      }))
+                                    }
+                                    className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder="Arrangement reminders, rehearsal priorities, or anything the band should know."
+                                  />
+                                </label>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSaveRehearsalNotes(entry)}
+                                    disabled={isSavingNotes || isMovingEntry}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    {isSavingNotes ? "Saving..." : "Save Notes"}
+                                  </button>
+                                  {shouldShowAddRehearsalSongToLibraryButton ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleAddManualRehearsalSongToLibrary(entry)}
+                                      disabled={activeRehearsalActionId === `library-${entry.id}`}
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {activeRehearsalActionId === `library-${entry.id}`
+                                        ? "Adding to Library..."
+                                        : "Add to Song Library"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                    Song Details
+                                  </p>
+                                  <div className="mt-3 flex flex-col gap-2 text-sm text-stone-700">
+                                    <p><span className="font-semibold text-stone-900">Key:</span> {entry.song_key ?? "Not set"}</p>
+                                    <p><span className="font-semibold text-stone-900">Lead Vocal:</span> {entry.sung_by ?? "Not set"}</p>
+                                    <p><span className="font-semibold text-stone-900">Tempo:</span> {entry.tempo ?? "Not set"}</p>
+                                    <p><span className="font-semibold text-stone-900">Type:</span> {entry.song_type ?? "Not set"}</p>
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                                    Rehearsal Notes
+                                  </p>
+                                  <p className="mt-3 whitespace-pre-wrap text-sm text-stone-700">
+                                    {rehearsalNoteDrafts[entry.id] ?? entry.notes ?? "No rehearsal notes yet."}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
 
                             {libraryMp3Url ? (
                               <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
@@ -14228,34 +14444,40 @@ export function ShowPage({
                                   Rehearsal Recording
                                 </h4>
                                 <p className="mt-1 text-sm text-stone-600">
-                                  Upload MP3 reference recordings for this rehearsal song.
+                                  {canEditBandRehearsal
+                                    ? "Upload MP3 reference recordings for this rehearsal song."
+                                    : "MP3 reference recordings attached to this rehearsal song."}
                                 </p>
                               </div>
 
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                MP3 Recording
-                                <input
-                                  key={rehearsalRecordingInputKeys[entry.id] ?? 0}
-                                  type="file"
-                                  accept="audio/mpeg,.mp3"
-                                  onChange={(event) => handleRehearsalRecordingFileChange(entry.id, event)}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                                />
-                              </label>
+                              {canEditBandRehearsal ? (
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  MP3 Recording
+                                  <input
+                                    key={rehearsalRecordingInputKeys[entry.id] ?? 0}
+                                    type="file"
+                                    accept="audio/mpeg,.mp3"
+                                    onChange={(event) => handleRehearsalRecordingFileChange(entry.id, event)}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                                  />
+                                </label>
+                              ) : null}
 
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => void handleUploadRehearsalRecording(entry)}
-                                  disabled={!selectedRecordingFile || isUploadingRecording}
-                                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                                >
-                                  {isUploadingRecording ? "Uploading..." : "Upload Recording"}
-                                </button>
-                                {selectedRecordingFile ? (
-                                  <span className="text-xs text-stone-500">{selectedRecordingFile.name}</span>
-                                ) : null}
-                              </div>
+                              {canEditBandRehearsal ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleUploadRehearsalRecording(entry)}
+                                    disabled={!selectedRecordingFile || isUploadingRecording}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    {isUploadingRecording ? "Uploading..." : "Upload Recording"}
+                                  </button>
+                                  {selectedRecordingFile ? (
+                                    <span className="text-xs text-stone-500">{selectedRecordingFile.name}</span>
+                                  ) : null}
+                                </div>
+                              ) : null}
 
                               {recordings.length === 0 ? (
                                 <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-3 py-4 text-sm text-stone-500">
@@ -14280,16 +14502,18 @@ export function ShowPage({
                                                 Uploaded {formatPromoUploadDate(recording.created_at)}
                                               </p>
                                             </div>
-                                            <button
-                                              type="button"
-                                              onClick={() => void handleDeleteRehearsalRecording(recording)}
-                                              disabled={activeRehearsalActionId === `recording-${recording.id}`}
-                                              className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                            >
-                                              {activeRehearsalActionId === `recording-${recording.id}`
-                                                ? "Deleting..."
-                                                : "Delete"}
-                                            </button>
+                                            {canEditBandRehearsal ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleDeleteRehearsalRecording(recording)}
+                                                disabled={activeRehearsalActionId === `recording-${recording.id}`}
+                                                className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                {activeRehearsalActionId === `recording-${recording.id}`
+                                                  ? "Deleting..."
+                                                  : "Delete"}
+                                              </button>
+                                            ) : null}
                                           </div>
 
                                   {recordingUrl ? (
@@ -19481,6 +19705,7 @@ export function ShowPage({
                           songLibrary,
                           pendingSongs,
                         );
+                        const displaySetlistSungBy = song.sung_by ?? librarySong?.sung_by ?? null;
 
                         return (
                         <li key={song.id} className="pl-1">
@@ -19494,7 +19719,7 @@ export function ShowPage({
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-start gap-2">
                                 <p className="text-base font-medium text-stone-900 sm:text-lg">
-                                  {song.title} - {getDisplaySingerName(song.artist)}
+                                  {song.title}
                                   {song.song_key ? ` (${song.song_key})` : ""}
                                 </p>
                                 {isGuestSetlistSong ? (
@@ -19503,6 +19728,11 @@ export function ShowPage({
                                   </span>
                                 ) : null}
                               </div>
+                              {displaySetlistSungBy ? (
+                                <p className="mt-1 text-sm font-medium text-stone-700">
+                                  Lead Vocal: {displaySetlistSungBy}
+                                </p>
+                              ) : null}
                               <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                                 <span>{song.source_type === "guest" ? "Guest Song" : "Library Song"}</span>
                                 {song.tempo ? <span>Tempo: {song.tempo}</span> : null}
@@ -20724,6 +20954,18 @@ export function ShowPage({
                           </label>
 
                           <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Lead Vocal
+                            <input
+                              type="text"
+                              name="sungBy"
+                              value={poolSongEditFormState.sungBy}
+                              onChange={handlePoolSongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Optional lead vocal"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                             Tempo
                             <select
                               name="tempo"
@@ -21564,6 +21806,18 @@ export function ShowPage({
                             />
                           </label>
 
+                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                            Lead Vocal
+                            <input
+                              type="text"
+                              name="sungBy"
+                              value={poolSongEditFormState.sungBy}
+                              onChange={handlePoolSongEditChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                              placeholder="Optional lead vocal"
+                            />
+                          </label>
+
                           <div className="grid gap-4 sm:grid-cols-2">
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                               Tempo
@@ -21660,11 +21914,12 @@ export function ShowPage({
                             </p>
                           </div>
 
-                          <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
-                            {song.song_key ? <p>Key: {song.song_key}</p> : null}
-                            {isUsedInSetlist ? (
-                              <p className="font-medium text-emerald-700">
-                                Used in {setlistUsageCount} setlist entr{setlistUsageCount === 1 ? "y" : "ies"}
+                        <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
+                          {song.sung_by ? <p>Lead Vocal: {song.sung_by}</p> : null}
+                          {song.song_key ? <p>Key: {song.song_key}</p> : null}
+                          {isUsedInSetlist ? (
+                            <p className="font-medium text-emerald-700">
+                              Used in {setlistUsageCount} setlist entr{setlistUsageCount === 1 ? "y" : "ies"}
                               </p>
                             ) : (
                               <p>Not currently in this show&apos;s setlist.</p>
@@ -21865,6 +22120,18 @@ export function ShowPage({
                           />
                         </label>
 
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Lead Vocal
+                          <input
+                            type="text"
+                            name="sungBy"
+                            value={librarySongEditFormState.sungBy}
+                            onChange={handleLibrarySongEditChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Optional singer / lead vocal"
+                          />
+                        </label>
+
                         <div className="grid gap-4 sm:grid-cols-2">
                           <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                             Tempo
@@ -21977,6 +22244,7 @@ export function ShowPage({
 
                         <div className="mt-3 flex flex-col gap-2 text-sm text-stone-600">
                           {song.song_key ? <p>Key: {song.song_key}</p> : null}
+                          {song.sung_by ? <p>Lead Vocal: {song.sung_by}</p> : null}
                           {song.tempo ? <p>Tempo: {song.tempo}</p> : null}
                           {song.song_type ? <p>Type: {song.song_type}</p> : null}
                           {isUsedInSetlist ? (

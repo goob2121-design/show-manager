@@ -70,6 +70,7 @@ export type SongRecord = {
   id: string;
   title: string;
   key: string | null;
+  sung_by: string | null;
   tempo: SongTempo | null;
   song_type: SongType | null;
   notes?: string | null;
@@ -85,6 +86,7 @@ export type ShowGuestSong = {
   show_id: string;
   title: string;
   key: string | null;
+  sung_by: string | null;
   tempo: SongTempo | null;
   song_type: SongType | null;
   notes?: string | null;
@@ -281,6 +283,7 @@ export type RehearsalEntry = {
   song_id: string | null;
   custom_title: string | null;
   key: string | null;
+  sung_by: string | null;
   notes: string | null;
   section_label: string | null;
   sort_order: number;
@@ -374,6 +377,7 @@ export type McBlockNote = {
 export type SongFormState = {
   title: string;
   key: string;
+  sungBy: string;
   tempo: "" | SongTempo;
   songType: "" | SongType;
   notes: string;

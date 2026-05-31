@@ -44,6 +44,7 @@ create table if not exists public.songs (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   key text,
+  sung_by text,
   tempo text check (tempo in ('fast', 'medium', 'slow')),
   song_type text check (song_type in ('vocal', 'instrumental')),
   notes text,
@@ -62,6 +63,7 @@ create table if not exists public.show_guest_songs (
   show_id uuid not null references public.shows(id) on delete cascade,
   title text not null,
   key text,
+  sung_by text,
   tempo text check (tempo in ('fast', 'medium', 'slow')),
   song_type text check (song_type in ('vocal', 'instrumental')),
   notes text,
@@ -72,7 +74,8 @@ create table if not exists public.show_guest_songs (
 
 alter table public.show_guest_songs
   add column if not exists notes text,
-  add column if not exists lyrics text;
+  add column if not exists lyrics text,
+  add column if not exists sung_by text;
 
 create table if not exists public.setlist_entries (
   id uuid primary key default gen_random_uuid(),
@@ -214,6 +217,7 @@ create table if not exists public.rehearsal_entries (
   song_id uuid references public.songs(id) on delete set null,
   custom_title text,
   key text,
+  sung_by text,
   notes text,
   section_label text,
   sort_order integer not null default 1,
