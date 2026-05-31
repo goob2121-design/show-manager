@@ -213,6 +213,7 @@ create table if not exists public.rehearsal_entries (
   show_id uuid not null references public.shows(id) on delete cascade,
   song_id uuid references public.songs(id) on delete set null,
   custom_title text,
+  key text,
   notes text,
   section_label text,
   sort_order integer not null default 1,
