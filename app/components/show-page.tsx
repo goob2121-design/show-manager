@@ -1664,6 +1664,8 @@ type CompTicketImportPreviewEntry = ParsedGuestListImportEntry & {
   matchedTicketId: string | null;
 };
 
+type CompTicketImportSource = "website_text" | "square_csv";
+
 function normalizeImportedGuestName(value: string) {
   const trimmedValue = value.trim().replace(/\s+/g, " ");
 
@@ -1677,6 +1679,130 @@ function normalizeImportedGuestName(value: string) {
   }
 
   return trimmedValue;
+}
+
+function parseSimpleCsv(text: string) {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentValue = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    const nextCharacter = text[index + 1];
+
+    if (character === "\"") {
+      if (inQuotes && nextCharacter === "\"") {
+        currentValue += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (character === "," && !inQuotes) {
+      currentRow.push(currentValue);
+      currentValue = "";
+      continue;
+    }
+
+    if ((character === "\n" || character === "\r") && !inQuotes) {
+      if (character === "\r" && nextCharacter === "\n") {
+        index += 1;
+      }
+      currentRow.push(currentValue);
+      rows.push(currentRow);
+      currentRow = [];
+      currentValue = "";
+      continue;
+    }
+
+    currentValue += character;
+  }
+
+  currentRow.push(currentValue);
+  rows.push(currentRow);
+
+  return rows
+    .map((row) => row.map((value) => value.trim()))
+    .filter((row) => row.some((value) => value.length > 0));
+}
+
+function normalizeCsvHeader(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function parseSquareCsvImportText(text: string): ParsedGuestListImportEntry[] {
+  const rows = parseSimpleCsv(text);
+
+  if (rows.length < 2) {
+    return [];
+  }
+
+  const headerRow = rows[0] ?? [];
+  const normalizedHeaders = headerRow.map(normalizeCsvHeader);
+  const headerIndexLookup = normalizedHeaders.reduce<Record<string, number>>((lookup, header, index) => {
+    if (header) {
+      lookup[header] = index;
+    }
+    return lookup;
+  }, {});
+
+  const getColumnValue = (row: string[], possibleHeaders: string[]) => {
+    for (const header of possibleHeaders) {
+      const index = headerIndexLookup[header];
+      if (typeof index === "number") {
+        return row[index]?.trim() ?? "";
+      }
+    }
+    return "";
+  };
+
+  const parseAmount = (value: string) => {
+    const normalizedValue = value.replace(/[^0-9.-]+/g, "");
+    const parsedValue = Number.parseFloat(normalizedValue);
+    return Number.isFinite(parsedValue) ? parsedValue : null;
+  };
+
+  return rows
+    .slice(1)
+    .map((row) => {
+      const guestName = normalizeImportedGuestName(
+        getColumnValue(row, ["name_recipient", "recipient_name", "customer_name", "name"]),
+      );
+      const email = getColumnValue(row, ["email_recipient", "recipient_email", "customer_email", "email"]);
+      const quantityValue = getColumnValue(row, ["quantity_item", "item_quantity", "quantity"]);
+      const totalOrderValue = getColumnValue(
+        row,
+        ["total_order", "order_total", "total", "amount_total", "net_total"],
+      );
+      const orderId = normalizeImportedOrderId(
+        getColumnValue(row, ["order_id", "transaction_id", "sale_id", "payment_id"]),
+      );
+
+      const parsedQuantity = Number.parseInt(quantityValue, 10);
+      const parsedTotalOrder = parseAmount(totalOrderValue);
+      const fallbackQuantity =
+        parsedTotalOrder !== null ? Math.max(1, Math.round(parsedTotalOrder / PAID_ONLINE_TICKET_PRICE)) : 1;
+      const ticketCount =
+        Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : fallbackQuantity;
+
+      if (!guestName && !email) {
+        return null;
+      }
+
+      return {
+        guestName: guestName || email || "Square Customer",
+        email,
+        ticketCount: Math.max(1, ticketCount),
+        ticketType: "paid_online" as GuestListTicketType,
+        orderId,
+        notes: "",
+        checkedInCount: 0,
+      };
+    })
+    .filter((entry): entry is ParsedGuestListImportEntry => Boolean(entry));
 }
 
 function normalizeImportedOrderId(value: string) {
@@ -5208,6 +5334,8 @@ export function ShowPage({
   const [editingCompTicketFormState, setEditingCompTicketFormState] =
     useState<CompTicketFormState>(initialCompTicketFormState);
   const [compTicketImportText, setCompTicketImportText] = useState("");
+  const [compTicketImportSource, setCompTicketImportSource] =
+    useState<CompTicketImportSource>("website_text");
   const [compTicketImportPreview, setCompTicketImportPreview] = useState<
     CompTicketImportPreviewEntry[]
   >([]);
@@ -6760,10 +6888,17 @@ export function ShowPage({
       return;
     }
 
-    const parsedEntries = parseGuestListImportText(compTicketImportText);
+    const parsedEntries =
+      compTicketImportSource === "square_csv"
+        ? parseSquareCsvImportText(compTicketImportText)
+        : parseGuestListImportText(compTicketImportText);
 
     if (parsedEntries.length === 0) {
-      setCompTicketErrorMessage("Paste website ticket order text to import paid online entries.");
+      setCompTicketErrorMessage(
+        compTicketImportSource === "square_csv"
+          ? "Could not parse Square CSV."
+          : "Paste website ticket order text to import paid online entries.",
+      );
       return;
     }
 
@@ -15737,9 +15872,41 @@ export function ShowPage({
                   className="mt-4 grid gap-4"
                   onSubmit={(event) => void handlePreviewPaidOnlineGuestList(event)}
                 >
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompTicketImportSource("website_text");
+                    setCompTicketImportPreview([]);
+                    setCompTicketErrorMessage(null);
+                  }}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    compTicketImportSource === "website_text"
+                      ? "bg-emerald-700 text-white shadow-sm"
+                      : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
+                  }`}
+                >
+                  Website Orders
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompTicketImportSource("square_csv");
+                    setCompTicketImportPreview([]);
+                    setCompTicketErrorMessage(null);
+                  }}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    compTicketImportSource === "square_csv"
+                      ? "bg-emerald-700 text-white shadow-sm"
+                      : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
+                  }`}
+                >
+                  Import Square CSV
+                </button>
+              </div>
 
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                Website Order Text
+                {compTicketImportSource === "square_csv" ? "Square CSV Text" : "Website Order Text"}
                 <textarea
                   value={compTicketImportText}
                   onChange={(event) => {
@@ -15747,7 +15914,11 @@ export function ShowPage({
                     setCompTicketImportPreview([]);
                   }}
                   className="min-h-32 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                  placeholder={"Example:\n177186438 John Smith john@example.com\n177186438-2 John Smith john@example.com"}
+                  placeholder={
+                    compTicketImportSource === "square_csv"
+                      ? "Name_Recipient,Email_Recipient,Quantity_Item,Total_Order\nJohn Smith,john@example.com,2,16.00"
+                      : "Example:\n177186438 John Smith john@example.com\n177186438-2 John Smith john@example.com"
+                  }
                 />
               </label>
 
