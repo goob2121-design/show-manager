@@ -180,7 +180,7 @@ export function AdminQuickNav({
       className="print-hidden rounded-2xl border border-stone-200 bg-stone-50/90 px-3 py-2 dark:border-stone-700 dark:bg-stone-900/70"
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-medium text-stone-500 dark:text-stone-400">
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 text-xs font-medium text-stone-500 [-ms-overflow-style:none] [scrollbar-width:none] dark:text-stone-400 [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
           <span className="pr-1 uppercase tracking-[0.14em] text-stone-400 dark:text-stone-500">
             Quick Nav
           </span>
@@ -192,7 +192,7 @@ export function AdminQuickNav({
               <Link
                 key={link.key}
                 href={href}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
+                className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-2 transition sm:min-h-0 sm:py-1.5 ${
                   isActive
                     ? "border border-emerald-300 bg-emerald-700 text-white shadow-sm hover:bg-emerald-600 dark:border-emerald-300 dark:bg-emerald-700 dark:text-white dark:hover:bg-emerald-600"
                     : "border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
@@ -207,7 +207,7 @@ export function AdminQuickNav({
             href={chartBuilderUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100 sm:min-h-0 sm:py-1.5"
           >
             <NavIcon><FileChartIcon /></NavIcon>
             ChartBuilder
@@ -215,7 +215,7 @@ export function AdminQuickNav({
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100 sm:min-h-0 sm:py-1.5"
           >
             <NavIcon><LogoutIcon /></NavIcon>
             Logout

@@ -13273,12 +13273,12 @@ export function ShowPage({
               />
             </>
           ) : null}
-          <div className={`relative ${shouldUsePortalHero ? "px-6 py-8 text-white sm:px-8" : "flex flex-col gap-3"}`}>
+          <div className={`relative ${shouldUsePortalHero ? "px-4 py-6 text-white sm:px-6 sm:py-8 lg:px-8" : "flex flex-col gap-3"}`}>
             {shouldUsePortalHero ? (
-              <div className="grid items-center gap-8 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-10 xl:grid-cols-[320px_minmax(0,1fr)]">
-                <div className="flex flex-col gap-4">
+              <div className="grid items-center gap-5 sm:gap-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-10 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="flex flex-col gap-3">
                   {shouldShowPortalLogo ? (
-                    <div className="w-full max-w-[280px] sm:max-w-[300px] lg:max-w-[320px]">
+                    <div className="w-full max-w-[220px] sm:max-w-[260px] lg:max-w-[320px]">
                       <Image
                         src="/stageflow-logo-v2.png"
                         alt="StageFlow logo"
@@ -13294,20 +13294,20 @@ export function ShowPage({
                   </p>
                 </div>
 
-                <div className="flex flex-col justify-center gap-3 lg:min-h-[180px]">
+                <div className="flex min-w-0 flex-col justify-center gap-3 lg:min-h-[180px]">
                   {show.show_logo_url ? (
                     <div>
                       <img
                         src={show.show_logo_url}
                         alt={`${show.name} logo`}
-                        className="h-auto max-h-[70px] w-full max-w-[180px] object-contain"
+                        className="h-auto max-h-[56px] w-full max-w-[140px] object-contain sm:max-h-[64px] sm:max-w-[160px] lg:max-h-[70px] lg:max-w-[180px]"
                       />
                     </div>
                   ) : null}
-                  <h1 className="max-w-[720px] text-[2.15rem] font-bold tracking-tight text-white sm:text-[2.7rem]">
+                  <h1 className="max-w-[720px] text-[1.75rem] font-bold tracking-tight text-white sm:text-[2.2rem] lg:text-[2.7rem]">
                     {show.name}
                   </h1>
-                  <p className="text-[0.95rem] text-slate-200 sm:text-base">
+                  <p className="text-sm text-slate-200 sm:text-base">
                     {formatShowDate(show.show_date)}
                   </p>
                 </div>
@@ -13430,7 +13430,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="grid grid-cols-2 gap-3 rounded-2xl bg-stone-100 p-2 sm:grid-cols-3 lg:grid-cols-5"
+              className="flex gap-2 overflow-x-auto rounded-2xl bg-stone-100 p-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:gap-3 lg:grid-cols-5"
               role="tablist"
               aria-label="Admin portal sections"
             >
@@ -13441,7 +13441,7 @@ export function ShowPage({
                   role="tab"
                   aria-selected={activeAdminTab === tab.key}
                   onClick={() => setActiveAdminTab(tab.key)}
-                  className={`w-full rounded-2xl px-6 py-4 text-base font-semibold leading-none transition ${
+                  className={`min-h-11 w-full shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold leading-tight transition sm:min-h-0 sm:px-6 sm:py-4 sm:text-base sm:leading-none ${
                     activeAdminTab === tab.key
                       ? "bg-emerald-700 text-white shadow-sm"
                       : "bg-white text-stone-700 hover:bg-stone-50"
@@ -13802,7 +13802,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="grid grid-cols-1 gap-2 rounded-2xl bg-stone-100 p-2 sm:grid-cols-2 xl:grid-cols-5"
+              className="flex gap-2 overflow-x-auto rounded-2xl bg-stone-100 p-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-2 sm:gap-2 xl:grid-cols-5"
               role="tablist"
               aria-label="Band portal sections"
             >
@@ -13813,7 +13813,7 @@ export function ShowPage({
                   role="tab"
                   aria-selected={activeBandTab === tab.key}
                   onClick={() => setActiveBandTab(tab.key)}
-                  className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                  className={`min-h-11 shrink-0 rounded-xl px-4 py-3 text-sm font-semibold transition ${
                     activeBandTab === tab.key
                       ? "bg-emerald-700 text-white shadow-sm"
                       : "bg-white text-stone-700 hover:bg-stone-50"
@@ -14156,7 +14156,7 @@ export function ShowPage({
                           {currentSectionHeading}
                         </div>
                       ) : null}
-                      <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4 shadow-sm">
+                      <article className="rounded-2xl border border-stone-200 bg-stone-50 p-3 shadow-sm sm:p-4">
                         <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                           <div className="flex flex-col gap-1">
@@ -14167,7 +14167,7 @@ export function ShowPage({
                             {displayRehearsalSungBy ? (
                               <p className="text-sm font-medium text-stone-700">Lead Vocal: {displayRehearsalSungBy}</p>
                             ) : null}
-                            <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                            <div className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 sm:flex-row sm:flex-wrap sm:gap-2">
                               <span>{entry.is_library_linked ? "Linked Library Song" : "Manual Song"}</span>
                               {entry.song_key ? <span>Key: {entry.song_key}</span> : null}
                               {entry.tempo ? <span>Tempo: {entry.tempo}</span> : null}
@@ -14175,7 +14175,7 @@ export function ShowPage({
                             </div>
                           </div>
 
-                          <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
+                          <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:flex-wrap lg:w-auto lg:justify-end">
                             {!isRehearsalEntryOpen && libraryMp3Url ? (
                               <button
                                 type="button"
@@ -14185,7 +14185,7 @@ export function ShowPage({
                                     `library-${entry.id}`,
                                   )
                                 }
-                                className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                                className="min-h-11 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
                               >
                                 {activeRehearsalPreviewAudioKey === `library-${entry.id}`
                                   ? "Pause MP3"
@@ -14198,7 +14198,7 @@ export function ShowPage({
                                 target="_blank"
                                 rel="noreferrer"
                                 download
-                                className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                                className="flex min-h-11 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
                               >
                                 Download MP3
                               </a>
@@ -14212,7 +14212,7 @@ export function ShowPage({
                                     `recording-${entry.id}`,
                                   )
                                 }
-                                className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
+                                className="min-h-11 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
                               >
                                 {activeRehearsalPreviewAudioKey === `recording-${entry.id}`
                                   ? "Pause Rehearsal MP3"
@@ -14225,7 +14225,7 @@ export function ShowPage({
                                 target="_blank"
                                 rel="noreferrer"
                                 download
-                                className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
+                                className="flex min-h-11 items-center justify-center rounded-xl border border-sky-300 bg-white px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
                               >
                                 Download Rehearsal MP3
                               </a>
@@ -14235,7 +14235,7 @@ export function ShowPage({
                                 type="button"
                                 onClick={() => void handleAddManualRehearsalSongToLibrary(entry)}
                                 disabled={activeRehearsalActionId === `library-${entry.id}`}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {activeRehearsalActionId === `library-${entry.id}`
                                   ? "Adding to Library..."
@@ -14250,17 +14250,17 @@ export function ShowPage({
                                   [entry.id]: !isRehearsalEntryOpen,
                                 }))
                               }
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                             >
                               {isRehearsalEntryOpen ? "Collapse" : "Expand"}
                             </button>
                             {canEditBandRehearsal ? (
-                              <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              <div className="grid grid-cols-1 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 sm:flex sm:flex-wrap">
                                 <button
                                   type="button"
                                   onClick={() => void handleMoveRehearsalEntry(entry, "up")}
                                   disabled={index === 0 || Boolean(activeRehearsalActionId)}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Move Up
                                 </button>
@@ -14268,7 +14268,7 @@ export function ShowPage({
                                   type="button"
                                   onClick={() => void handleMoveRehearsalEntry(entry, "down")}
                                   disabled={index === rehearsalEntries.length - 1 || Boolean(activeRehearsalActionId)}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Move Down
                                 </button>
