@@ -3482,9 +3482,11 @@ function buildRehearsalSheetPrintHtml({
   showName,
   showDate,
   entries,
+  printMode,
 }: {
   showName: string;
   showDate: string | null;
+  printMode: "all" | "set1" | "set2";
   entries: Array<{
     title: string;
     notes: string | null;
@@ -3511,9 +3513,9 @@ function buildRehearsalSheetPrintHtml({
           .brand { margin: 0 0 8px; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.14em; }
           h1 { margin: 0; font-size: 28px; }
           .meta { margin: 8px 0 0; font-size: 14px; color: #4b5563; }
-          .list { display: grid; gap: 12px; }
+          .list { display: grid; gap: 4px; }
           .section-header {
-            margin: 8px 0 0;
+            margin: 6px 0 0;
             font-size: 12px;
             font-weight: 700;
             letter-spacing: 0.18em;
@@ -3522,18 +3524,22 @@ function buildRehearsalSheetPrintHtml({
             page-break-after: avoid;
             break-after: avoid;
           }
+          .section-header.set2-break {
+            break-before: page;
+            page-break-before: always;
+          }
           .card {
             border: 1px solid #d6d3d1;
-            border-radius: 16px;
-            padding: 10px 12px;
+            border-radius: 8px;
+            padding: 6px 8px;
             background: #ffffff;
             page-break-inside: avoid;
             break-inside: avoid;
           }
           .song-grid {
             display: grid;
-            grid-template-columns: 38% 62%;
-            gap: 12px;
+            grid-template-columns: 46% 54%;
+            gap: 4px;
             align-items: start;
             page-break-inside: avoid;
             break-inside: avoid;
@@ -3574,17 +3580,17 @@ function buildRehearsalSheetPrintHtml({
                 .join(" • ");
 
               return `
-                ${sectionHeading && sectionHeading !== previousSectionHeading ? `<p class="section-header">${sectionHeading}</p>` : ""}
+                ${sectionHeading && sectionHeading !== previousSectionHeading ? `<p class="section-header${printMode === "all" && sectionHeading === "SET 2" ? " set2-break" : ""}">${sectionHeading}</p>` : ""}
                 <article class="card">
                   <div class="song-grid">
                     <div class="song-left">
                       <p class="eyebrow">Rehearsal Song ${index + 1}</p>
-                      <h2 class="title">${escapeHtml(entry.title)}</h2>
+                      <h2 class="title">${escapeHtml(entry.songKey ? `${entry.title} — Key: ${entry.songKey}` : entry.title)}</h2>
                       ${entry.sungBy ? `<p class="eyebrow">Lead Vocal: ${escapeHtml(entry.sungBy)}</p>` : ""}
                     </div>
                     <div class="song-right">
                       <p class="notes-label">Notes</p>
-                      <p class="notes">${escapeHtml(entry.notes?.trim() || "")}</p>
+                      <p class="notes">${escapeHtml(normalizeRehearsalPrintNotes(entry.notes))}</p>
                     </div>
                   </div>
                 </article>
@@ -3595,6 +3601,20 @@ function buildRehearsalSheetPrintHtml({
       </body>
     </html>
   `;
+}
+
+function normalizeRehearsalPrintNotes(notes: string | null | undefined) {
+  const trimmedNotes = notes?.trim();
+
+  if (!trimmedNotes) {
+    return "";
+  }
+
+  return trimmedNotes
+    .replace(/\r\n/g, "\n")
+    .replace(/\n\s*(https?:\/\/)/gi, "\n$1")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
 }
 
 function normalizeLyricsBlockForRepeatCheck(block: string) {
@@ -12707,7 +12727,7 @@ export function ShowPage({
     }
   }
 
-  function handlePrintRehearsalSheet() {
+  function handlePrintRehearsalSheet(printMode: "all" | "set1" | "set2") {
     if (!show) {
       setRehearsalErrorMessage("The show is not loaded yet.");
       return;
@@ -12723,7 +12743,19 @@ export function ShowPage({
     const printHtml = buildRehearsalSheetPrintHtml({
       showName: show.name,
       showDate: show.show_date,
-      entries: rehearsalEntries.map((entry) => ({
+      printMode,
+      entries: rehearsalEntries
+        .filter((entry) => {
+          const normalizedSection = normalizeRehearsalSectionLabel(entry.section_label);
+          if (printMode === "set1") {
+            return normalizedSection === "set1";
+          }
+          if (printMode === "set2") {
+            return normalizedSection === "set2";
+          }
+          return true;
+        })
+        .map((entry) => ({
         title: entry.is_library_linked
           ? entry.title
           : (rehearsalTitleDrafts[entry.id] ?? entry.title).trim() || entry.title,
@@ -14115,13 +14147,29 @@ export function ShowPage({
                       : "Sync Rehearsal to Setlist"}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={handlePrintRehearsalSheet}
-                  className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                >
-                  Print Rehearsal Sheet
-                </button>
+                <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintRehearsalSheet("all")}
+                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                  >
+                    Print All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintRehearsalSheet("set1")}
+                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                  >
+                    Print Set 1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintRehearsalSheet("set2")}
+                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                  >
+                    Print Set 2
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={handleCopyRehearsalLink}
@@ -14291,26 +14339,27 @@ export function ShowPage({
                           {currentSectionHeading}
                         </div>
                       ) : null}
-                      <article className="rounded-2xl border border-stone-200 bg-stone-50 p-3 shadow-sm sm:p-4">
-                        <div className="flex flex-col gap-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="flex flex-col gap-1">
-                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
-                              Rehearsal Song {index + 1}
+                      <article className="rounded-2xl border border-stone-200 bg-stone-50 p-3 shadow-sm">
+                        <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="flex min-w-0 flex-col gap-1">
+                            <h3 className="text-base font-semibold text-stone-900 sm:text-lg">
+                              {index + 1}. {displayRehearsalTitle}
+                            </h3>
+                            <p className="text-xs font-medium text-stone-600">
+                              {[
+                                displayRehearsalSungBy ? `Lead Vocal: ${displayRehearsalSungBy}` : null,
+                                entry.is_library_linked ? "Library Song" : "Manual Song",
+                                entry.song_key ? `Key: ${entry.song_key}` : null,
+                                entry.tempo ? `Tempo: ${entry.tempo}` : null,
+                                entry.song_type ? `Type: ${entry.song_type}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" • ")}
                             </p>
-                            <h3 className="text-lg font-semibold text-stone-900">{displayRehearsalTitle}</h3>
-                            {displayRehearsalSungBy ? (
-                              <p className="text-sm font-medium text-stone-700">Lead Vocal: {displayRehearsalSungBy}</p>
-                            ) : null}
-                            <div className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 sm:flex-row sm:flex-wrap sm:gap-2">
-                              <span>{entry.is_library_linked ? "Linked Library Song" : "Manual Song"}</span>
-                              {entry.song_key ? <span>Key: {entry.song_key}</span> : null}
-                              {entry.tempo ? <span>Tempo: {entry.tempo}</span> : null}
-                              {entry.song_type ? <span>Type: {entry.song_type}</span> : null}
-                            </div>
                           </div>
 
-                          <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:flex-wrap lg:w-auto lg:justify-end">
+                          <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
                             {!isRehearsalEntryOpen && libraryMp3Url ? (
                               <button
                                 type="button"
@@ -14320,23 +14369,12 @@ export function ShowPage({
                                     `library-${entry.id}`,
                                   )
                                 }
-                                className="min-h-11 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                                className="min-h-10 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
                               >
                                 {activeRehearsalPreviewAudioKey === `library-${entry.id}`
                                   ? "Pause MP3"
                                   : "Play MP3"}
                               </button>
-                            ) : null}
-                            {!isRehearsalEntryOpen && libraryMp3Url ? (
-                              <a
-                                href={libraryMp3Url}
-                                target="_blank"
-                                rel="noreferrer"
-                                download
-                                className="flex min-h-11 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
-                              >
-                                Download MP3
-                              </a>
                             ) : null}
                             {!isRehearsalEntryOpen && firstRehearsalRecordingUrl ? (
                               <button
@@ -14347,35 +14385,31 @@ export function ShowPage({
                                     `recording-${entry.id}`,
                                   )
                                 }
-                                className="min-h-11 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
+                                className="min-h-10 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
                               >
                                 {activeRehearsalPreviewAudioKey === `recording-${entry.id}`
                                   ? "Pause Rehearsal MP3"
                                   : "Play Rehearsal MP3"}
                               </button>
                             ) : null}
-                            {!isRehearsalEntryOpen && firstRehearsalRecordingUrl ? (
-                              <a
-                                href={firstRehearsalRecordingUrl}
+                            {!isRehearsalEntryOpen && linkedRehearsalLibrarySong?.lyrics?.trim() && entry.song_id ? (
+                              <Link
+                                href={`/songs/${entry.song_id}`}
                                 target="_blank"
-                                rel="noreferrer"
-                                download
-                                className="flex min-h-11 items-center justify-center rounded-xl border border-sky-300 bg-white px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
+                                className="flex min-h-10 items-center justify-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
-                                Download Rehearsal MP3
-                              </a>
+                                Lyrics
+                              </Link>
                             ) : null}
-                            {!isRehearsalEntryOpen && canEditBandRehearsal && shouldShowAddRehearsalSongToLibraryButton ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleAddManualRehearsalSongToLibrary(entry)}
-                                disabled={activeRehearsalActionId === `library-${entry.id}`}
-                                className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            {!isRehearsalEntryOpen && normalizeChartUrl(linkedRehearsalLibrarySong?.chart_url) ? (
+                              <a
+                                href={normalizeChartUrl(linkedRehearsalLibrarySong?.chart_url) ?? undefined}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex min-h-10 items-center justify-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
-                                {activeRehearsalActionId === `library-${entry.id}`
-                                  ? "Adding to Library..."
-                                  : "Add to Song Library"}
-                              </button>
+                                Chart
+                              </a>
                             ) : null}
                             <button
                               type="button"
@@ -14385,38 +14419,10 @@ export function ShowPage({
                                   [entry.id]: !isRehearsalEntryOpen,
                                 }))
                               }
-                              className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              className="min-h-10 rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                             >
                               {isRehearsalEntryOpen ? "Collapse" : "Expand"}
                             </button>
-                            {canEditBandRehearsal ? (
-                              <div className="grid grid-cols-1 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 sm:flex sm:flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={() => void handleMoveRehearsalEntry(entry, "up")}
-                                  disabled={index === 0 || Boolean(activeRehearsalActionId)}
-                                  className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  Move Up
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleMoveRehearsalEntry(entry, "down")}
-                                  disabled={index === rehearsalEntries.length - 1 || Boolean(activeRehearsalActionId)}
-                                  className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  Move Down
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDeleteRehearsalEntry(entry)}
-                                  disabled={Boolean(activeRehearsalActionId)}
-                                  className="w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                                >
-                                  Remove Song
-                                </button>
-                              </div>
-                            ) : null}
                           </div>
                         </div>
 
@@ -14525,6 +14531,30 @@ export function ShowPage({
                                         : "Add to Song Library"}
                                     </button>
                                   ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleMoveRehearsalEntry(entry, "up")}
+                                    disabled={index === 0 || Boolean(activeRehearsalActionId)}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move Up
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleMoveRehearsalEntry(entry, "down")}
+                                    disabled={index === rehearsalEntries.length - 1 || Boolean(activeRehearsalActionId)}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move Down
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteRehearsalEntry(entry)}
+                                    disabled={Boolean(activeRehearsalActionId)}
+                                    className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Remove Song
+                                  </button>
                                 </div>
                               </>
                             ) : (
