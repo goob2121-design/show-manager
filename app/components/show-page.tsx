@@ -3177,6 +3177,11 @@ function normalizeChartUrl(value: string | null | undefined) {
   return chartUrlPattern.test(trimmedValue) ? trimmedValue : null;
 }
 
+function extractFirstYouTubeUrl(value: string | null | undefined) {
+  const match = value?.match(/https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\/[^\s)]+/i);
+  return match?.[0] ?? null;
+}
+
 function getChartUrlValidationMessage(value: string | null | undefined) {
   const trimmedValue = value?.trim() ?? "";
 
@@ -13597,7 +13602,7 @@ export function ShowPage({
             </div>
 
             <div
-              className="flex gap-2 overflow-x-auto rounded-2xl bg-stone-100 p-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:gap-3 lg:grid-cols-5"
+              className="flex gap-2 overflow-x-auto rounded-2xl bg-stone-100 p-2 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:gap-3 sm:pb-2 lg:grid-cols-5"
               role="tablist"
               aria-label="Admin portal sections"
             >
@@ -13608,7 +13613,7 @@ export function ShowPage({
                   role="tab"
                   aria-selected={activeAdminTab === tab.key}
                   onClick={() => setActiveAdminTab(tab.key)}
-                  className={`min-h-11 w-full shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold leading-tight transition sm:min-h-0 sm:px-6 sm:py-4 sm:text-base sm:leading-none ${
+                  className={`min-h-11 shrink-0 whitespace-nowrap rounded-2xl px-5 py-3 text-sm font-semibold leading-tight transition sm:min-h-0 sm:w-full sm:px-6 sm:py-4 sm:text-base sm:leading-none ${
                     activeAdminTab === tab.key
                       ? "bg-emerald-700 text-white shadow-sm"
                       : "bg-white text-stone-700 hover:bg-stone-50"
@@ -14319,6 +14324,7 @@ export function ShowPage({
                   const linkedRehearsalLibrarySong = entry.song_id ? songLibraryById[entry.song_id] ?? null : null;
                   const displayRehearsalSungBy =
                     entry.sung_by ?? linkedRehearsalLibrarySong?.sung_by ?? null;
+                  const firstRehearsalYouTubeUrl = extractFirstYouTubeUrl(entry.notes);
                   const shouldShowAddRehearsalSongToLibraryButton =
                     !entry.song_id && Boolean((entry.custom_title ?? displayRehearsalTitle).trim());
                   const isRehearsalEntryOpen = openRehearsalEntryIds[entry.id] ?? false;
@@ -14409,6 +14415,16 @@ export function ShowPage({
                                 className="flex min-h-10 items-center justify-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
                                 Chart
+                              </a>
+                            ) : null}
+                            {!isRehearsalEntryOpen && firstRehearsalYouTubeUrl ? (
+                              <a
+                                href={firstRehearsalYouTubeUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex min-h-10 items-center justify-center rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+                              >
+                                YouTube
                               </a>
                             ) : null}
                             <button
