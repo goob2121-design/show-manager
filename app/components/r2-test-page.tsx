@@ -163,6 +163,32 @@ export function R2TestPage({ configSummary, configError = null }: R2TestPageProp
     }
   }
 
+  async function handleOpen(file: R2TestFile) {
+    setErrorMessage(null);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch("/api/r2-test/open", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ key: file.key }),
+      });
+      const payload = (await response.json()) as
+        | { success: true; url: string }
+        | { success: false; error?: string };
+
+      if (!response.ok || !payload.success) {
+        throw new Error("error" in payload ? payload.error || "Unable to open the R2 test file." : "Unable to open the R2 test file.");
+      }
+
+      window.open(payload.url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to open the R2 test file.");
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#020817] px-4 py-8 text-slate-100 sm:px-6 sm:py-10">
       <section className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -291,8 +317,10 @@ export function R2TestPage({ configSummary, configError = null }: R2TestPageProp
                         <div className="flex flex-wrap gap-2">
                           <a
                             href={file.url}
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              void handleOpen(file);
+                            }}
                             className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
                           >
                             Open

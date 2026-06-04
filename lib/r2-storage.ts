@@ -172,6 +172,52 @@ function buildPublicTestUrl(key: string) {
   return `${endpoint}/${encodeURIComponent(bucketName)}/${encodeR2Key(key)}`;
 }
 
+export function getSignedR2TestFileUrl(key: string, expiresInSeconds = 900) {
+  if (!key.startsWith(r2TestPrefix)) {
+    throw new Error("Only files inside the R2 test prefix can be opened from this tool.");
+  }
+
+  const config = getR2Config();
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const endpointUrl = new URL(config.endpoint);
+  const canonicalUri = `/${encodeURIComponent(config.bucketName)}/${encodeR2Key(key)}`;
+  const credentialScope = `${dateStamp}/${awsRegion}/${awsService}/aws4_request`;
+  const signedHeaders = "host";
+  const query = new URLSearchParams({
+    "X-Amz-Algorithm": awsAlgorithm,
+    "X-Amz-Credential": `${config.accessKeyId}/${credentialScope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(expiresInSeconds),
+    "X-Amz-SignedHeaders": signedHeaders,
+  });
+  const canonicalQueryString = buildCanonicalQuery(query);
+  const canonicalRequest = [
+    "GET",
+    canonicalUri,
+    canonicalQueryString,
+    `host:${endpointUrl.host}\n`,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+  const stringToSign = [
+    awsAlgorithm,
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join("\n");
+  const signingKey = hmac(
+    hmac(hmac(hmac(`AWS4${config.secretAccessKey}`, dateStamp), awsRegion), awsService),
+    "aws4_request",
+  );
+  const signature = createHmac("sha256", signingKey).update(stringToSign).digest("hex");
+
+  query.set("X-Amz-Signature", signature);
+
+  return `${config.endpoint}${canonicalUri}?${buildCanonicalQuery(query)}`;
+}
+
 function normalizeTestKey(fileName: string) {
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-");
   return `${r2TestPrefix}${Date.now()}-${randomUUID()}-${safeName || "upload.bin"}`;
