@@ -89,6 +89,7 @@ export function R2TestPage({ configSummary, configError = null }: R2TestPageProp
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const uploadForm = event.currentTarget;
 
     if (!selectedFile) {
       setErrorMessage("Choose a file before uploading to R2.");
@@ -118,7 +119,6 @@ export function R2TestPage({ configSummary, configError = null }: R2TestPageProp
       setFiles((currentFiles) => [payload.file, ...currentFiles]);
       setSelectedFile(null);
       setStatusMessage(`Uploaded "${payload.file.name}" to R2.`);
-      const uploadForm = event.currentTarget;
       uploadForm.reset();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to upload the R2 test file.");
