@@ -1769,16 +1769,19 @@ function parseSquareCsvImportText(text: string): ParsedGuestListImportEntry[] {
     .slice(1)
     .map((row) => {
       const guestName = normalizeImportedGuestName(
-        getColumnValue(row, ["name_recipient", "recipient_name", "customer_name", "name"]),
+        getColumnValue(row, ["name_recipient", "recipient_name", "customer_name", "order_name", "name"]),
       );
-      const email = getColumnValue(row, ["email_recipient", "recipient_email", "customer_email", "email"]);
+      const email = getColumnValue(
+        row,
+        ["email_recipient", "recipient_email", "customer_email", "recipient_email_address", "email"],
+      );
       const quantityValue = getColumnValue(row, ["quantity_item", "item_quantity", "quantity"]);
       const totalOrderValue = getColumnValue(
         row,
         ["total_order", "order_total", "total", "amount_total", "net_total"],
       );
       const orderId = normalizeImportedOrderId(
-        getColumnValue(row, ["order_id", "transaction_id", "sale_id", "payment_id"]),
+        getColumnValue(row, ["order_id", "transaction_id", "sale_id", "payment_id", "order"]),
       );
 
       const parsedQuantity = Number.parseInt(quantityValue, 10);
@@ -1898,18 +1901,21 @@ function buildPaidOnlineImportPreviewEntry(
     const existingOrderImportKey = ticket.order_id
       ? buildPaidOnlineOrderImportKey(showId, ticket.order_id)
       : "";
-    const existingFallbackImportKey = buildPaidOnlineFallbackImportKey(
-      showId,
-      ticket.guest_name,
-      ticket.email ?? "",
-      ticket.ticket_count,
-      getPaidOnlineTicketAmount(ticket.ticket_count),
-    );
+    const canUseFallbackAsImportedMatch = Boolean(existingImportKey || existingOrderImportKey);
+    const existingFallbackImportKey = canUseFallbackAsImportedMatch
+      ? buildPaidOnlineFallbackImportKey(
+          showId,
+          ticket.guest_name,
+          ticket.email ?? "",
+          ticket.ticket_count,
+          getPaidOnlineTicketAmount(ticket.ticket_count),
+        )
+      : "";
 
     return (
       existingImportKey === importKey ||
-      existingOrderImportKey === orderImportKey ||
-      existingFallbackImportKey === fallbackImportKey
+      (Boolean(orderImportKey) && existingOrderImportKey === orderImportKey) ||
+      (Boolean(existingFallbackImportKey) && existingFallbackImportKey === fallbackImportKey)
     );
   });
 
