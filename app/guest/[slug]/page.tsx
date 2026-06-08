@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ShowPage } from "@/app/components/show-page";
-import { getGuestPortalMetadataBySlug } from "@/lib/route-metadata";
+import { buildPublicPageMetadata, getGuestPortalMetadataBySlug } from "@/lib/route-metadata";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { headers } from "next/headers";
 
@@ -24,18 +24,30 @@ export async function generateMetadata({
     const metadata = await getGuestPortalMetadataBySlug(slug);
 
     if (metadata.guestName) {
-      return {
-        title: `${metadata.guestName} Guest Portal | StageFlow`,
-      };
+      const showName = metadata.showName ?? "StageFlow";
+
+      return buildPublicPageMetadata({
+        title: `${metadata.guestName} Guest Portal | ${showName}`,
+        description: `Guest portal for ${metadata.guestName} for the ${showName}. Submit songs, notes, and appearance details here.`,
+        path: `/guest/${slug}`,
+      });
     }
 
-    return {
-      title: metadata.showName ? `Guest Portal | ${metadata.showName}` : "Guest Portal | StageFlow",
-    };
+    const showName = metadata.showName ?? null;
+
+    return buildPublicPageMetadata({
+      title: showName ? `Guest Portal | ${showName}` : "Guest Portal | StageFlow",
+      description: showName
+        ? `Guest portal for the ${showName}. Submit songs, notes, and appearance details here.`
+        : "Guest portal for StageFlow. Submit songs, notes, and appearance details here.",
+      path: `/guest/${slug}`,
+    });
   } catch {
-    return {
+    return buildPublicPageMetadata({
       title: "Guest Portal | StageFlow",
-    };
+      description: "Guest portal for StageFlow. Submit songs, notes, and appearance details here.",
+      path: `/guest/${slug}`,
+    });
   }
 }
 

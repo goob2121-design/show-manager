@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { getShowNameBySlug } from "@/lib/route-metadata";
+import { buildPublicPageMetadata, getShowNameBySlug } from "@/lib/route-metadata";
 import { notFound } from "next/navigation";
 import { Fragment } from "react";
 
@@ -20,13 +20,20 @@ export async function generateMetadata({
 
   try {
     const showName = await getShowNameBySlug(slug);
-    return {
-      title: showName ? `Guest Songs | ${showName}` : "Guest Songs | StageFlow",
-    };
+
+    return buildPublicPageMetadata({
+      title: showName ? `Guest Submitted Songs | ${showName}` : "Guest Submitted Songs | StageFlow",
+      description: showName
+        ? `Guest-submitted song prep for ${showName}. Review submitted songs, notes, audio links, and charts.`
+        : "Guest-submitted song prep for StageFlow.",
+      path: `/guest-songs/${slug}`,
+    });
   } catch {
-    return {
-      title: "Guest Songs | StageFlow",
-    };
+    return buildPublicPageMetadata({
+      title: "Guest Submitted Songs | StageFlow",
+      description: "Guest-submitted song prep for StageFlow.",
+      path: `/guest-songs/${slug}`,
+    });
   }
 }
 

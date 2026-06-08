@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { PromoHubPage } from "@/app/components/promo-hub-page";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildPublicPageMetadata, getShowNameBySlug } from "@/lib/route-metadata";
 
 export async function generateMetadata({
   params,
@@ -10,26 +10,21 @@ export async function generateMetadata({
   const { slug } = await params;
 
   try {
-    const supabase = await createServerSupabaseClient();
-    const { data: showRecord, error } = await supabase
-      .from("shows")
-      .select("name")
-      .eq("slug", slug)
-      .maybeSingle();
+    const showName = await getShowNameBySlug(slug);
 
-    if (error) {
-      throw error;
-    }
-
-    return {
-      title: showRecord?.name
-        ? `Promo Materials | ${showRecord.name}`
-        : "Promo Materials | StageFlow",
-    };
+    return buildPublicPageMetadata({
+      title: showName ? `Promo Materials | ${showName}` : "Promo Materials | StageFlow",
+      description: showName
+        ? `Promo hub for ${showName}. Download flyers, graphics, and shareable links for this show.`
+        : "Promo hub for StageFlow. Download flyers, graphics, and shareable links.",
+      path: `/promo/${slug}`,
+    });
   } catch {
-    return {
+    return buildPublicPageMetadata({
       title: "Promo Materials | StageFlow",
-    };
+      description: "Promo hub for StageFlow. Download flyers, graphics, and shareable links.",
+      path: `/promo/${slug}`,
+    });
   }
 }
 
