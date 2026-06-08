@@ -28,7 +28,7 @@ export async function generateMetadata({
 
       return buildPublicPageMetadata({
         title: `${metadata.guestName} Guest Portal | ${showName}`,
-        description: `Guest portal for ${metadata.guestName} for the ${showName}. Submit songs, notes, and appearance details here.`,
+        description: `Guest portal for ${metadata.guestName}. Submit songs, notes, appearance details, and performance information for ${showName}.`,
         path: `/guest/${slug}`,
       });
     }
