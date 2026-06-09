@@ -4,6 +4,8 @@ import { buildPublicPageMetadata, getGuestPortalMetadataBySlug } from "@/lib/rou
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { headers } from "next/headers";
 
+export const runtime = "nodejs";
+
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -28,7 +30,7 @@ export async function generateMetadata({
 
       return buildPublicPageMetadata({
         title: `${metadata.guestName} Guest Portal | ${showName}`,
-        description: `Guest portal for ${metadata.guestName}. Submit songs, notes, appearance details, and performance information for ${showName}.`,
+        description: `Guest portal for ${metadata.guestName}. Submit songs, notes, and appearance details here.`,
         path: `/guest/${slug}`,
       });
     }
@@ -42,7 +44,8 @@ export async function generateMetadata({
         : "Guest portal for StageFlow. Submit songs, notes, and appearance details here.",
       path: `/guest/${slug}`,
     });
-  } catch {
+  } catch (error) {
+    console.error("Guest portal metadata generation failed.", error);
     return buildPublicPageMetadata({
       title: "Guest Portal | StageFlow",
       description: "Guest portal for StageFlow. Submit songs, notes, and appearance details here.",

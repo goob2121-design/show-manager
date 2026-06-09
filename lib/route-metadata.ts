@@ -6,6 +6,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const defaultOgImagePath = "/stageflow-logo-v2.png";
+
 type GuestPortalMetadata = {
   guestName: string | null;
   showName: string | null;
@@ -16,6 +18,7 @@ type PublicPageMetadataOptions = {
   title: string;
   description: string;
   path: string;
+  imageUrl?: string;
 };
 
 function createServiceRoleSupabaseClient() {
@@ -49,9 +52,12 @@ export async function buildPublicPageMetadata({
   title,
   description,
   path,
+  imageUrl,
 }: PublicPageMetadataOptions): Promise<Metadata> {
   const origin = await getRequestOrigin();
   const absoluteUrl = origin ? `${origin}${path}` : undefined;
+  const absoluteImageUrl =
+    imageUrl ?? (origin ? `${origin}${defaultOgImagePath}` : undefined);
 
   return {
     title,
@@ -61,11 +67,19 @@ export async function buildPublicPageMetadata({
       description,
       type: "website",
       url: absoluteUrl,
+      images: absoluteImageUrl
+        ? [
+            {
+              url: absoluteImageUrl,
+            },
+          ]
+        : undefined,
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: absoluteImageUrl ? [absoluteImageUrl] : undefined,
     },
   };
 }
