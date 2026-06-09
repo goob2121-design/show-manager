@@ -1780,9 +1780,15 @@ function parseSquareCsvImportText(text: string): ParsedGuestListImportEntry[] {
         row,
         ["total_order", "order_total", "total", "amount_total", "net_total"],
       );
-      const orderId = normalizeImportedOrderId(
-        getColumnValue(row, ["order_id", "transaction_id", "sale_id", "payment_id", "order"]),
-      );
+      const rawOrderId = getColumnValue(row, [
+        "order_id",
+        "transaction_id",
+        "sale_id",
+        "payment_id",
+      ]);
+      const orderId = isLikelyImportedOrderId(rawOrderId)
+        ? normalizeImportedOrderId(rawOrderId)
+        : "";
 
       const parsedQuantity = Number.parseInt(quantityValue, 10);
       const parsedTotalOrder = parseAmount(totalOrderValue);
@@ -1821,6 +1827,20 @@ function normalizeImportedOrderId(value: string) {
   }
 
   return trimmedValue;
+}
+
+function isLikelyImportedOrderId(value: string) {
+  const normalizedValue = normalizeImportedOrderId(value);
+
+  if (!normalizedValue) {
+    return false;
+  }
+
+  if (/\s/.test(normalizedValue)) {
+    return false;
+  }
+
+  return /[0-9]/.test(normalizedValue);
 }
 
 function extractImportedOrderId(value: string) {

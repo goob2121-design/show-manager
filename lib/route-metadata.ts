@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const uuidPattern =
@@ -20,25 +19,6 @@ type PublicPageMetadataOptions = {
   path: string;
   imageUrl?: string;
 };
-
-function createServiceRoleSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error(
-      "Missing server-side Supabase environment variables. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to your environment.",
-    );
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
 
 async function getRequestOrigin() {
   const headerStore = await headers();
@@ -115,7 +95,7 @@ export async function getSongTitleById(songId: string) {
 }
 
 export async function getGuestPortalMetadataBySlug(slug: string) {
-  const supabase = createServiceRoleSupabaseClient();
+  const supabase = await createServerSupabaseClient();
 
   if (uuidPattern.test(slug)) {
     const { data: guestProfile, error: guestProfileError } = await supabase
@@ -128,15 +108,17 @@ export async function getGuestPortalMetadataBySlug(slug: string) {
       throw guestProfileError;
     }
 
-    const fallbackGuestProfile =
-      guestProfile ??
-      (
-        await supabase
-          .from("guest_profiles")
-          .select("id, name, show_id")
-          .eq("id", slug)
-          .maybeSingle()
-      ).data;
+    const fallbackGuestProfileById = await supabase
+      .from("guest_profiles")
+      .select("id, name, show_id")
+      .eq("id", slug)
+      .maybeSingle();
+
+    if (fallbackGuestProfileById.error) {
+      throw fallbackGuestProfileById.error;
+    }
+
+    const fallbackGuestProfile = guestProfile ?? fallbackGuestProfileById.data;
 
     if (fallbackGuestProfile) {
       const { data: showRecord, error: showError } = await supabase
