@@ -626,6 +626,10 @@ const initialMcSponsorReadFormState: McSponsorReadFormState = {
   anchorSongId: "",
 };
 
+function isSponsorPlacedInMcBuilder(sponsor: ShowSponsor) {
+  return Boolean(sponsor.placement_type?.trim());
+}
+
 const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
   sponsorId: "",
   placementType: "",
@@ -946,7 +950,11 @@ function buildAdminMcSponsorPlacementItems(
   }
 
   orderedSponsors.forEach((sponsor) => {
-    const placementType = sponsor.placement_type;
+    const placementType = sponsor.placement_type?.trim();
+
+    if (!placementType) {
+      return;
+    }
 
     if (placementType === "before_intermission") {
       beforeIntermission.push(sponsor);
@@ -1007,7 +1015,11 @@ function buildAdminMcSponsorPlacementItems(
       return segmentA.created_at.localeCompare(segmentB.created_at);
     })
     .forEach((segment) => {
-      const placementType = segment.placement_type;
+      const placementType = segment.placement_type?.trim();
+
+      if (!placementType) {
+        return;
+      }
 
       if (placementType === "before_intermission") {
         beforeIntermissionSegments.push({
@@ -1091,7 +1103,11 @@ function buildAdminMcSponsorPlacementItems(
 
     function appendSongsWithSponsors(songs: SetlistSong[]) {
       songs.forEach((song) => {
-        sortMixedItems(beforeBySongId[song.id] ?? []).forEach((entry) => {
+        const beforeItems = sortMixedItems([
+          ...(beforeBySongId[song.id] ?? []),
+          ...(beforeSegmentsBySongId[song.id] ?? []),
+        ]);
+        beforeItems.forEach((entry) => {
           items.push(
             entry.kind === "segment"
               ? {
@@ -1113,7 +1129,11 @@ function buildAdminMcSponsorPlacementItems(
           song,
         });
 
-        sortMixedItems(afterBySongId[song.id] ?? []).forEach((entry) => {
+        const afterItems = sortMixedItems([
+          ...(afterBySongId[song.id] ?? []),
+          ...(afterSegmentsBySongId[song.id] ?? []),
+        ]);
+        afterItems.forEach((entry) => {
           items.push(
             entry.kind === "segment"
               ? {
@@ -5917,6 +5937,11 @@ export function ShowPage({
   >({});
   const [isMcSpecialSegmentFormOpen, setIsMcSpecialSegmentFormOpen] = useState(false);
   const [isMcSponsorReadFormOpen, setIsMcSponsorReadFormOpen] = useState(false);
+  const [pendingMcSponsorInsertIndex, setPendingMcSponsorInsertIndex] = useState<number | null>(null);
+  const [pendingMcSpecialSegmentInsertIndex, setPendingMcSpecialSegmentInsertIndex] = useState<number | null>(null);
+  const [collapsedMcSponsorIds, setCollapsedMcSponsorIds] = useState<string[]>([]);
+  const [collapsedMcSongIds, setCollapsedMcSongIds] = useState<string[]>([]);
+  const [collapsedMcSegmentIds, setCollapsedMcSegmentIds] = useState<string[]>([]);
   const [mcBlockNoteDrafts, setMcBlockNoteDrafts] = useState<Record<string, BlockNoteFormState>>(
     {},
   );
@@ -5925,6 +5950,7 @@ export function ShowPage({
     id: string;
   } | null>(null);
   const mcSponsorReadFormRef = useRef<HTMLFormElement | null>(null);
+  const mcSpecialSegmentFormRef = useRef<HTMLFormElement | null>(null);
   const [isSavingMcScripts, setIsSavingMcScripts] = useState(false);
   const [activeMcBlockActionId, setActiveMcBlockActionId] = useState<string | null>(null);
   const [activePendingActionId, setActivePendingActionId] = useState<string | null>(null);
@@ -10798,6 +10824,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     placementType: "before_performer" | "after_performer",
     anchorSongId: string,
   ) {
+    const targetIndex = adminMcSponsorPlacementItems.findIndex(
+      (item) => item.kind === "song" && item.song.id === anchorSongId,
+    );
+    setPendingMcSponsorInsertIndex(targetIndex >= 0 ? targetIndex : null);
     setIsMcSponsorReadFormOpen(true);
     setMcSponsorReadFormState((currentState) => ({
       ...currentState,
@@ -10807,6 +10837,127 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     window.setTimeout(() => {
       mcSponsorReadFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 0);
+  }
+
+  async function handleRemoveSponsorReadFromMcBuilder(sponsorId: string) {
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-remove-${sponsorId}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_sponsors")
+        .update({
+          placement_type: null,
+          mc_anchor_song_id: null,
+          linked_performer: null,
+        })
+        .eq("id", sponsorId)
+        .eq("show_id", show.id)
+        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, sponsor_type, default_contribution, estimated_value, recognition_notes, comp_ticket_allowance, comp_tickets_checked_in, created_at")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((sponsor) =>
+          sponsor.id === sponsorId
+            ? attachSponsorToShowAssignment(data as ShowSponsor, sponsorLibrary)
+            : sponsor,
+        ),
+      );
+      setMcStatusMessage("Sponsor read removed from MC Builder.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  function openMcSponsorReadFormForNamedPlacement(
+    placementType: NonNullable<McSponsorReadFormState["placementType"]>,
+    anchorSongId?: string | null,
+    targetIndex?: number | null,
+  ) {
+    setPendingMcSponsorInsertIndex(targetIndex ?? null);
+    setIsMcSponsorReadFormOpen(true);
+    setMcSponsorReadFormState((currentState) => ({
+      ...currentState,
+      placementType,
+      anchorSongId:
+        placementType === "before_performer" || placementType === "after_performer"
+          ? anchorSongId ?? ""
+          : "",
+    }));
+    window.setTimeout(() => {
+      mcSponsorReadFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
+
+  function openMcSpecialSegmentFormForPlacement(
+    placementType: NonNullable<McSpecialSegmentFormState["placementType"]>,
+    anchorSongId?: string | null,
+    targetIndex?: number | null,
+  ) {
+    setPendingMcSpecialSegmentInsertIndex(targetIndex ?? null);
+    setIsMcSpecialSegmentFormOpen(true);
+    setMcSpecialSegmentFormState({
+      ...initialMcSpecialSegmentFormState,
+      placementType,
+      anchorSongId:
+        placementType === "before_performer" || placementType === "after_performer"
+          ? anchorSongId ?? ""
+          : "",
+    });
+    window.setTimeout(() => {
+      mcSpecialSegmentFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
+
+  function toggleCollapsedMcSponsor(sponsorId: string) {
+    setCollapsedMcSponsorIds((currentIds) =>
+      currentIds.includes(sponsorId)
+        ? currentIds.filter((currentId) => currentId !== sponsorId)
+        : [...currentIds, sponsorId],
+    );
+  }
+
+  function toggleCollapsedMcSong(songId: string) {
+    setCollapsedMcSongIds((currentIds) =>
+      currentIds.includes(songId)
+        ? currentIds.filter((currentId) => currentId !== songId)
+        : [...currentIds, songId],
+    );
+  }
+
+  function toggleCollapsedMcSegment(segmentId: string) {
+    setCollapsedMcSegmentIds((currentIds) =>
+      currentIds.includes(segmentId)
+        ? currentIds.filter((currentId) => currentId !== segmentId)
+        : [...currentIds, segmentId],
+    );
+  }
+
+  function getMcInsertPlacementOrder(targetIndex: number | null) {
+    if (targetIndex === null || targetIndex < 0) {
+      return adminMcSponsorPlacementItems.filter(
+        (item) => item.kind === "sponsor" || item.kind === "segment",
+      ).length + 1;
+    }
+
+    return (
+      adminMcSponsorPlacementItems
+        .slice(0, targetIndex)
+        .filter((item) => item.kind === "sponsor" || item.kind === "segment").length + 1
+    );
   }
 
   function buildMcSpecialSegmentPayload(formState: McSpecialSegmentFormState) {
@@ -10857,11 +11008,43 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     try {
       const supabase = createClient();
+      const insertOrder = getMcInsertPlacementOrder(pendingMcSpecialSegmentInsertIndex);
+      const shiftedSponsors = showSponsors
+        .filter((sponsor) => isSponsorPlacedInMcBuilder(sponsor) && sponsor.placement_order >= insertOrder)
+        .map((sponsor) => ({ ...sponsor, placement_order: sponsor.placement_order + 1 }));
+      const shiftedSegments = mcSpecialSegments
+        .filter((segment) => segment.placement_order >= insertOrder)
+        .map((segment) => ({ ...segment, placement_order: segment.placement_order + 1 }));
+
+      for (const sponsor of shiftedSponsors) {
+        const { error } = await supabase
+          .from("show_sponsors")
+          .update({ placement_order: sponsor.placement_order })
+          .eq("id", sponsor.id)
+          .eq("show_id", show.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      for (const segment of shiftedSegments) {
+        const { error } = await supabase
+          .from("mc_special_segments")
+          .update({ placement_order: segment.placement_order })
+          .eq("id", segment.id)
+          .eq("show_id", show.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
       const { data, error } = await supabase
         .from("mc_special_segments")
         .insert({
           show_id: show.id,
-          placement_order: mcSpecialSegments.length + 1,
+          placement_order: insertOrder,
           ...payload,
         })
         .select("*")
@@ -10871,8 +11054,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         throw error;
       }
 
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((sponsor) => {
+          const shiftedSponsor = shiftedSponsors.find((candidate) => candidate.id === sponsor.id);
+          return shiftedSponsor ?? sponsor;
+        }),
+      );
       setMcSpecialSegments((currentSegments) =>
-        [...currentSegments, data as McSpecialSegment].sort((segmentA, segmentB) => {
+        [
+          ...currentSegments.map((segment) => {
+            const shiftedSegment = shiftedSegments.find((candidate) => candidate.id === segment.id);
+            return shiftedSegment ?? segment;
+          }),
+          data as McSpecialSegment,
+        ].sort((segmentA, segmentB) => {
           if (segmentA.placement_order !== segmentB.placement_order) {
             return segmentA.placement_order - segmentB.placement_order;
           }
@@ -10882,6 +11077,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       );
       setMcSpecialSegmentFormState(initialMcSpecialSegmentFormState);
       setIsMcSpecialSegmentFormOpen(false);
+      setPendingMcSpecialSegmentInsertIndex(null);
+      await loadShowData(false);
       setMcStatusMessage("Special segment added to MC flow.");
     } catch (error) {
       setMcErrorMessage(getErrorMessage(error));
@@ -10913,10 +11110,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     try {
       const supabase = createClient();
-      const nextPlacementOrder =
-        adminMcSponsorPlacementItems.filter(
-          (item) => item.kind === "sponsor" || item.kind === "segment",
-        ).length + 1;
+      const nextPlacementOrder = getMcInsertPlacementOrder(pendingMcSponsorInsertIndex);
       const anchorSongId =
         mcSponsorReadFormState.placementType === "before_performer" ||
         mcSponsorReadFormState.placementType === "after_performer"
@@ -10941,6 +11135,42 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         }
       }
 
+      const shiftedSponsors = showSponsors
+        .filter(
+          (sponsor) =>
+            sponsor.id !== selectedShowSponsor.id &&
+            isSponsorPlacedInMcBuilder(sponsor) &&
+            sponsor.placement_order >= nextPlacementOrder,
+        )
+        .map((sponsor) => ({ ...sponsor, placement_order: sponsor.placement_order + 1 }));
+      const shiftedSegments = mcSpecialSegments
+        .filter((segment) => segment.placement_order >= nextPlacementOrder)
+        .map((segment) => ({ ...segment, placement_order: segment.placement_order + 1 }));
+
+      for (const sponsor of shiftedSponsors) {
+        const { error } = await supabase
+          .from("show_sponsors")
+          .update({ placement_order: sponsor.placement_order })
+          .eq("id", sponsor.id)
+          .eq("show_id", show.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      for (const segment of shiftedSegments) {
+        const { error } = await supabase
+          .from("mc_special_segments")
+          .update({ placement_order: segment.placement_order })
+          .eq("id", segment.id)
+          .eq("show_id", show.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
       const { data, error } = await supabase
         .from("show_sponsors")
         .update({
@@ -10959,9 +11189,25 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         throw error;
       }
 
-      await loadShowData(false);
+      setShowSponsors((currentSponsors) =>
+        currentSponsors.map((sponsor) => {
+          if (sponsor.id === selectedShowSponsor.id) {
+            return attachSponsorToShowAssignment(data as ShowSponsor, sponsorLibrary);
+          }
+
+          const shiftedSponsor = shiftedSponsors.find((candidate) => candidate.id === sponsor.id);
+          return shiftedSponsor ?? sponsor;
+        }),
+      );
+      setMcSpecialSegments((currentSegments) =>
+        currentSegments.map((segment) => {
+          const shiftedSegment = shiftedSegments.find((candidate) => candidate.id === segment.id);
+          return shiftedSegment ?? segment;
+        }),
+      );
       setMcSponsorReadFormState(initialMcSponsorReadFormState);
       setIsMcSponsorReadFormOpen(false);
+      setPendingMcSponsorInsertIndex(null);
       setMcStatusMessage("Sponsor read added to MC flow.");
     } catch (error) {
       setMcErrorMessage(getErrorMessage(error));
@@ -11049,6 +11295,49 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         cancelEditingMcSpecialSegment();
       }
       setMcStatusMessage("Special segment removed.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleRemoveMcSpecialSegmentFromFlow(segmentId: string) {
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-special-segment-remove-${segmentId}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("mc_special_segments")
+        .update({
+          placement_type: null,
+          anchor_song_id: null,
+        })
+        .eq("id", segmentId)
+        .eq("show_id", show.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setMcSpecialSegments((currentSegments) =>
+        currentSegments.map((segment) =>
+          segment.id === segmentId ? (data as McSpecialSegment) : segment,
+        ),
+      );
+      if (editingMcSpecialSegmentId === segmentId) {
+        cancelEditingMcSpecialSegment();
+      }
+      setMcStatusMessage("Special segment removed from MC flow.");
     } catch (error) {
       setMcErrorMessage(getErrorMessage(error));
     } finally {
@@ -15974,7 +16263,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsMcSponsorReadFormOpen((currentValue) => !currentValue)}
+                  onClick={() => {
+                    setPendingMcSponsorInsertIndex(null);
+                    setIsMcSponsorReadFormOpen((currentValue) => !currentValue);
+                  }}
                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                 >
                   {isMcSponsorReadFormOpen ? "Hide Sponsor Read Form" : "Add Sponsor Read"}
@@ -16092,7 +16384,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsMcSpecialSegmentFormOpen((currentValue) => !currentValue)}
+                  onClick={() => {
+                    setPendingMcSpecialSegmentInsertIndex(null);
+                    setIsMcSpecialSegmentFormOpen((currentValue) => !currentValue);
+                  }}
                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                 >
                   {isMcSpecialSegmentFormOpen ? "Hide Special Segment Form" : "Add Special Segment"}
@@ -16101,6 +16396,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
               {isMcSpecialSegmentFormOpen ? (
                 <form
+                  ref={mcSpecialSegmentFormRef}
                   className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
                   onSubmit={handleCreateMcSpecialSegment}
                 >
@@ -16205,13 +16501,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       const isEditingSegment = editingMcSpecialSegmentId === segment.id;
                       const isSavingSegment =
                         activeSponsorActionId === `mc-special-segment-${segment.id}`;
+                      const isRemovingSegmentFromFlow =
+                        activeSponsorActionId === `mc-special-segment-remove-${segment.id}`;
                       const isDeletingSegment =
                         activeSponsorActionId === `mc-special-segment-delete-${segment.id}`;
+                      const isSegmentCollapsed = collapsedMcSegmentIds.includes(segment.id);
+                      const hasMcPlacement = Boolean(segment.placement_type?.trim());
 
                       return (
                         <article
                           key={segment.id}
-                          className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-4"
+                          className="rounded-2xl border border-cyan-700/70 bg-slate-900 px-4 py-4 shadow-[0_0_0_1px_rgba(8,145,178,0.12)]"
                           draggable={!isEditingSegment}
                           onDragStart={() =>
                             setDraggedMcPlacementItem({ kind: "segment", id: segment.id })
@@ -16220,16 +16520,23 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         >
                           <div className="grid gap-3">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded-full bg-cyan-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-900">
+                              <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
                                 Special Segment
                               </span>
-                              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                              <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-200">
                                 {formatSponsorPlacementType(
                                   isEditingSegment
                                     ? editingMcSpecialSegmentFormState.placementType
                                     : segment.placement_type,
                                 )}
                               </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleCollapsedMcSegment(segment.id)}
+                                className="ml-auto rounded-xl border border-cyan-700 bg-slate-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-slate-700"
+                              >
+                                {isSegmentCollapsed ? "Expand" : "Collapse"}
+                              </button>
                             </div>
 
                             {isEditingSegment ? (
@@ -16321,21 +16628,36 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   </button>
                                 </div>
                               </div>
+                            ) : isSegmentCollapsed ? (
+                              <div className="grid gap-2">
+                                <h5 className="text-base font-semibold text-white">
+                                  {segment.title}
+                                </h5>
+                                {segment.placement_type ? (
+                                  <p className="text-xs font-medium uppercase tracking-[0.12em] text-cyan-200/90">
+                                    {formatSponsorPlacementType(segment.placement_type)}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">
+                                    Not currently in MC flow
+                                  </p>
+                                )}
+                              </div>
                             ) : (
                               <>
-                                <h5 className="text-base font-semibold text-stone-900">
+                                <h5 className="text-base font-semibold text-white">
                                   {segment.title}
                                 </h5>
                                 {segment.notes?.trim() ? (
-                                  <p className="whitespace-pre-wrap text-sm text-stone-700">
+                                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">
                                     {segment.notes.trim()}
                                   </p>
                                 ) : (
-                                  <p className="text-sm text-stone-500">No MC notes added yet.</p>
+                                  <p className="text-sm text-slate-400">No MC notes added yet.</p>
                                 )}
                                 {setlist.length > 0 ? (
                                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
                                       Place Before Song
                                       <select
                                         value={mcSpecialSegmentPlacementDrafts[segment.id] ?? ""}
@@ -16345,7 +16667,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                             [segment.id]: event.target.value,
                                           }))
                                         }
-                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-500"
                                       >
                                         <option value="">Select a song</option>
                                         {setlist.map((song) => (
@@ -16375,17 +16697,31 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   <button
                                     type="button"
                                     onClick={() => startEditingMcSpecialSegment(segment)}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-slate-700"
                                   >
                                     Edit Placement
                                   </button>
+                                  {hasMcPlacement ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveMcSpecialSegmentFromFlow(segment.id)}
+                                      disabled={isRemovingSegmentFromFlow}
+                                      className="rounded-xl border border-amber-700 bg-amber-950/40 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:bg-amber-900/50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {isRemovingSegmentFromFlow
+                                        ? "Removing..."
+                                        : "Remove from MC Flow"}
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     onClick={() => handleDeleteMcSpecialSegment(segment.id)}
                                     disabled={isDeletingSegment}
-                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                    className="rounded-xl bg-red-900/80 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-red-950/60"
                                   >
-                                    {isDeletingSegment ? "Removing..." : "Remove"}
+                                    {isDeletingSegment
+                                      ? "Deleting..."
+                                      : "Delete Special Segment Permanently"}
                                   </button>
                                 </div>
                               </>
@@ -16473,7 +16809,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         sponsorIndex >= 0 &&
                         sponsorIndex < adminMcSponsorPlacementItems.length - 1;
                       const isMovingSponsor = activeSponsorActionId === `mc-${item.sponsor.id}`;
-                      const isEditingSponsor = activeSponsorActionId === `show-${item.sponsor.id}`;
+                      const isRemovingSponsorRead =
+                        activeSponsorActionId === `mc-remove-${item.sponsor.id}`;
+                      const isSponsorCollapsed = collapsedMcSponsorIds.includes(item.sponsor.id);
 
                       return (
                         <div
@@ -16490,7 +16828,35 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               {index + 1}
                             </div>
                             <div className="min-w-0 flex-1 grid gap-3">
-                              <SponsorReadCard sponsor={item.sponsor} />
+                              <article className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4">
+                                <div className="grid gap-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
+                                        Sponsor Read
+                                      </p>
+                                      <h5 className="truncate text-base font-semibold text-stone-900">
+                                        {item.sponsor.sponsor?.name ?? "Assigned sponsor"}
+                                      </h5>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleCollapsedMcSponsor(item.sponsor.id)}
+                                      className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 transition hover:bg-amber-100"
+                                    >
+                                      {isSponsorCollapsed ? "Expand" : "Collapse"}
+                                    </button>
+                                  </div>
+
+                                  {isSponsorCollapsed ? (
+                                    <p className="text-sm text-stone-600">
+                                      Sponsor Read: {item.sponsor.sponsor?.name ?? "Assigned sponsor"}
+                                    </p>
+                                  ) : (
+                                    <SponsorReadCard sponsor={item.sponsor} />
+                                  )}
+                                </div>
+                              </article>
                               <div className="flex flex-wrap gap-3">
                                 <button
                                   type="button"
@@ -16517,11 +16883,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveShowSponsor(item.sponsor.id)}
-                                  disabled={isEditingSponsor}
+                                  onClick={() => handleRemoveSponsorReadFromMcBuilder(item.sponsor.id)}
+                                  disabled={isRemovingSponsorRead}
                                   className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
                                 >
-                                  {isEditingSponsor ? "Removing..." : "Remove"}
+                                  {isRemovingSponsorRead ? "Removing..." : "Remove from MC Builder"}
                                 </button>
                               </div>
                             </div>
@@ -16543,9 +16909,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         activeSponsorActionId === `mc-special-segment-move-${item.segment.id}`;
                       const isSavingSegment =
                         activeSponsorActionId === `mc-special-segment-${item.segment.id}`;
-                      const isDeletingSegment =
-                        activeSponsorActionId === `mc-special-segment-delete-${item.segment.id}`;
+                      const isRemovingSegmentFromFlow =
+                        activeSponsorActionId === `mc-special-segment-remove-${item.segment.id}`;
                       const isEditingSegment = editingMcSpecialSegmentId === item.segment.id;
+                      const isSegmentCollapsed = collapsedMcSegmentIds.includes(item.segment.id);
 
                       return (
                         <div
@@ -16583,15 +16950,22 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               {index + 1}
                             </div>
                             <div className="min-w-0 flex-1 grid gap-3">
-                              <article className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-4">
+                              <article className="rounded-2xl border border-cyan-700/70 bg-slate-900 px-4 py-4 shadow-[0_0_0_1px_rgba(8,145,178,0.12)]">
                                 <div className="grid gap-3">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="rounded-full bg-cyan-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-900">
+                                    <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
                                       Special Segment
                                     </span>
-                                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                                    <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-200">
                                       {formatSponsorPlacementType(item.segment.placement_type)}
                                     </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleCollapsedMcSegment(item.segment.id)}
+                                      className="ml-auto rounded-xl border border-cyan-700 bg-slate-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-slate-700"
+                                    >
+                                      {isSegmentCollapsed ? "Expand" : "Collapse"}
+                                    </button>
                                   </div>
                                   {isEditingSegment ? (
                                     <div className="grid gap-4">
@@ -16678,23 +17052,34 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                         </button>
                                       </div>
                                     </div>
+                                  ) : isSegmentCollapsed ? (
+                                    <div className="grid gap-2">
+                                      <h5 className="text-base font-semibold text-white">
+                                        {item.segment.title}
+                                      </h5>
+                                      {item.segment.placement_type ? (
+                                        <p className="text-xs font-medium uppercase tracking-[0.12em] text-cyan-200/90">
+                                          {formatSponsorPlacementType(item.segment.placement_type)}
+                                        </p>
+                                      ) : null}
+                                    </div>
                                   ) : (
                                     <>
-                                      <h5 className="text-base font-semibold text-stone-900">
+                                      <h5 className="text-base font-semibold text-white">
                                         {item.segment.title}
                                       </h5>
                                       {item.segment.notes?.trim() ? (
-                                        <p className="whitespace-pre-wrap text-sm text-stone-700">
+                                        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">
                                           {item.segment.notes.trim()}
                                         </p>
                                       ) : (
-                                        <p className="text-sm text-stone-500">No MC notes added yet.</p>
+                                        <p className="text-sm text-slate-400">No MC notes added yet.</p>
                                       )}
                                     </>
                                   )}
                                 </div>
                               </article>
-                              {!isEditingSegment ? (
+                              {!isEditingSegment && !isSegmentCollapsed ? (
                                 <div className="flex flex-wrap gap-3">
                                   <button
                                     type="button"
@@ -16721,11 +17106,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteMcSpecialSegment(item.segment.id)}
-                                    disabled={isDeletingSegment}
+                                    onClick={() => handleRemoveMcSpecialSegmentFromFlow(item.segment.id)}
+                                    disabled={isRemovingSegmentFromFlow}
                                     className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
                                   >
-                                    {isDeletingSegment ? "Removing..." : "Remove"}
+                                    {isRemovingSegmentFromFlow ? "Removing..." : "Remove from MC Flow"}
                                   </button>
                                 </div>
                               ) : null}
@@ -16746,6 +17131,23 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       );
                     const shouldShowSectionHeader =
                       !priorSong || priorSong.song.section !== item.song.section;
+                    const nextSong = adminMcSponsorPlacementItems
+                      .slice(index + 1)
+                      .find(
+                        (
+                          flowItem,
+                        ): flowItem is Extract<McSponsorPlacementRenderableItem, { kind: "song" }> =>
+                          flowItem.kind === "song",
+                      );
+                    const isLastSongInSection =
+                      !nextSong || nextSong.song.section !== item.song.section;
+                    const isLastSongOverall = !nextSong;
+                    const specialSegmentPlacementAfterSong =
+                      item.song.section === "set1" && isLastSongInSection && nextSong?.song.section === "set2"
+                        ? { placementType: "before_intermission" as const, helperText: "This slot is before intermission." }
+                        : isLastSongOverall
+                          ? { placementType: "closing" as const, helperText: "This slot is after the final song." }
+                          : { placementType: "after_performer" as const, helperText: "This slot is between songs." };
                     const mcBlock = mcBlockLookup[item.song.id] ?? null;
                     const blockDraft = mcBlock
                       ? mcBlockNoteDrafts[mcBlock.anchorSongId] ?? {
@@ -16757,6 +17159,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     const areMcBlockNotesExpanded = mcBlock
                       ? expandedMcBlockNoteIds.includes(mcBlock.anchorSongId)
                       : false;
+                    const isSongCollapsed = collapsedMcSongIds.includes(item.song.id);
 
                     return (
                         <div
@@ -16798,12 +17201,59 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         >
                         {shouldShowSectionHeader ? (
                           <div className="flex flex-col gap-1 pt-2">
+                            {item.song.section === "set2" ? (
+                              <div className="mb-3 rounded-2xl border border-stone-300 bg-stone-100 px-4 py-4">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="flex flex-col gap-1">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                      Intermission
+                                    </p>
+                                    <h4 className="text-lg font-semibold text-stone-900">INTERMISSION</h4>
+                                    <p className="text-sm text-stone-600">
+                                      Break marker between Set 1 and Set 2.
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-wrap gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openMcSponsorReadFormForNamedPlacement("after_intermission", null, index)
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Add Sponsor Read Before Set 2
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openMcSpecialSegmentFormForPlacement("after_intermission", null, index)
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                    >
+                                      Add Special Segment Here
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+
                             <h4 className="text-lg font-semibold text-stone-900">
                               {formatMcBlockSectionLabel(item.song.section)}
                             </h4>
                             <p className="text-sm text-stone-600">
                               Individual song anchors for sponsor placement
                             </p>
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openMcSpecialSegmentFormForPlacement("before_performer", item.song.id, index)
+                                }
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Add Special Segment Here
+                              </button>
+                            </div>
                           </div>
                         ) : null}
 
@@ -16898,29 +17348,48 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               </div>
                             </div>
 
-                              <div className="flex flex-wrap gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    openMcSponsorReadFormForPlacement("before_performer", item.song.id)
-                                  }
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                >
-                                  Add Sponsor Read Before
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    openMcSponsorReadFormForPlacement("after_performer", item.song.id)
-                                  }
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                >
-                                  Add Sponsor Read After
-                                </button>
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                type="button"
+                                onClick={() => toggleCollapsedMcSong(item.song.id)}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                {isSongCollapsed ? "Expand" : "Collapse"}
+                              </button>
+                              {!isSongCollapsed ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openMcSponsorReadFormForPlacement("before_performer", item.song.id)
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Add Sponsor Read Before
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openMcSponsorReadFormForPlacement("after_performer", item.song.id)
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Add Sponsor Read After
+                                  </button>
+                                </>
+                              ) : null}
                             </div>
                           </div>
 
-                          {mcBlock && blockDraft ? (
+                          {isSongCollapsed ? (
+                            <div className="mt-3 flex items-center gap-3 text-sm text-stone-600">
+                              <span className="font-semibold text-stone-800">{item.song.position}.</span>
+                              <span className="font-medium text-stone-800">{item.song.title}</span>
+                              <span className="truncate text-stone-500">
+                                {getDisplaySingerName(item.song.artist)}
+                              </span>
+                            </div>
+                          ) : mcBlock && blockDraft ? (
                             <div className="mt-4 grid gap-4 border-t border-stone-200 pt-4">
                               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="flex flex-col gap-1">
@@ -17008,6 +17477,50 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   </div>
                                 </>
                               ) : null}
+                            </div>
+                          ) : null}
+
+                          {!isSongCollapsed ? (
+                            <div className="mt-4 flex flex-col gap-2 border-t border-stone-200 pt-4">
+                              <div className="flex flex-wrap gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openMcSpecialSegmentFormForPlacement(
+                                      specialSegmentPlacementAfterSong.placementType,
+                                      specialSegmentPlacementAfterSong.placementType === "after_performer"
+                                        ? item.song.id
+                                        : null,
+                                      isLastSongOverall ? null : index + 1,
+                                    )
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Add Special Segment Here
+                                </button>
+                                {item.song.section === "set1" && isLastSongInSection && nextSong?.song.section === "set2" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openMcSponsorReadFormForNamedPlacement("before_intermission", null, index + 1)
+                                    }
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Add Sponsor Read Before Intermission
+                                  </button>
+                                ) : isLastSongOverall ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openMcSponsorReadFormForNamedPlacement("closing")}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Add Sponsor Read After Final Song
+                                  </button>
+                                ) : null}
+                              </div>
+                              <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                                {specialSegmentPlacementAfterSong.helperText}
+                              </p>
                             </div>
                           ) : null}
                         </article>

@@ -20,6 +20,7 @@ type SetlistSong = SetlistEntry & {
   set_section: SetSection;
   source_role: string | null;
   artist: string | null;
+  sung_by?: string | null;
   song_key: string | null;
   notes: string | null;
 };
@@ -154,6 +155,19 @@ function stripMp3MarkerFromNotes(notes: string | null | undefined) {
   return cleanedNotes || null;
 }
 
+function getMcSongPerformerLabel(song: {
+  sung_by?: string | null;
+  artist?: string | null;
+  performer_name?: string | null;
+}) {
+  return (
+    song.sung_by?.trim() ||
+    song.artist?.trim() ||
+    song.performer_name?.trim() ||
+    defaultSingerName
+  );
+}
+
 function normalizeSetlistSong(song: SetlistEntryRow | SetlistSong): SetlistSong {
   const librarySong = "library_song" in song
     ? Array.isArray(song.library_song)
@@ -167,7 +181,13 @@ function normalizeSetlistSong(song: SetlistEntryRow | SetlistSong): SetlistSong 
     : null;
   const resolvedKey = librarySong?.key ?? guestSong?.key ?? song.key ?? null;
   const resolvedNotes = stripMp3MarkerFromNotes(librarySong?.notes ?? song.notes ?? null);
+  const resolvedLeadVocal =
+    librarySong?.sung_by?.trim() ||
+    guestSong?.sung_by?.trim() ||
+    ("sung_by" in song ? song.sung_by?.trim() ?? null : null) ||
+    null;
   const resolvedPerformer =
+    resolvedLeadVocal?.trim() ||
     guestSong?.submitted_by_name?.trim() ||
     ("performer_name" in song ? song.performer_name : null) ||
     defaultSingerName;
@@ -178,6 +198,7 @@ function normalizeSetlistSong(song: SetlistEntryRow | SetlistSong): SetlistSong 
     set_section: normalizeSetSection(song.section),
     title: song.custom_title?.trim() || librarySong?.title || guestSong?.title || song.title,
     key: resolvedKey,
+    sung_by: resolvedLeadVocal,
     performer_name: resolvedPerformer,
     source_role: song.source_type === "guest" ? "guest" : "band",
     artist: resolvedPerformer,
@@ -525,7 +546,11 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
   }
 
   orderedSponsors.forEach((sponsor) => {
-    const placementType = sponsor.placement_type;
+    const placementType = sponsor.placement_type?.trim();
+
+    if (!placementType) {
+      return;
+    }
 
     if (placementType === "before_intermission") {
       beforeIntermission.push(sponsor);
@@ -579,6 +604,10 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
 
   orderedSpecialSegments.forEach((segment) => {
     const placementType = normalizeSponsorPlacementType(segment.placement_type);
+
+    if (!placementType) {
+      return;
+    }
 
     if (placementType === "before_intermission") {
       beforeIntermissionItems.push({
@@ -663,7 +692,11 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
 
   function appendSongsWithSponsors(songs: TSong[]) {
     songs.forEach((song) => {
-      sortOrderedMcExtras(beforeBySongId[song.id] ?? []).forEach((extraItem) => {
+      const beforeItems = sortOrderedMcExtras([
+        ...(beforeBySongId[song.id] ?? []),
+        ...(segmentsBeforeBySongId[song.id] ?? []),
+      ]);
+      beforeItems.forEach((extraItem) => {
         items.push(
           extraItem.kind === "segment"
             ? {
@@ -685,7 +718,11 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
         song,
       });
 
-      sortOrderedMcExtras(afterBySongId[song.id] ?? []).forEach((extraItem) => {
+      const afterItems = sortOrderedMcExtras([
+        ...(afterBySongId[song.id] ?? []),
+        ...(segmentsAfterBySongId[song.id] ?? []),
+      ]);
+      afterItems.forEach((extraItem) => {
         items.push(
           extraItem.kind === "segment"
             ? {
@@ -705,7 +742,7 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
 
   appendSongsWithSponsors(set1Songs);
 
-  if (beforeIntermission.length > 0) {
+  if (beforeIntermission.length > 0 || beforeIntermissionItems.length > 0) {
     items.push({
       kind: "marker",
       id: "placement-marker-before-intermission",
@@ -904,7 +941,7 @@ export function buildMcRunSections(
       const blocks: McPerformanceBlock[] = [];
 
       songs.forEach((song) => {
-        const performer = song.artist?.trim() || defaultSingerName;
+        const performer = getMcSongPerformerLabel(song);
         const previousBlock = blocks[blocks.length - 1];
 
         if (previousBlock && previousBlock.performer === performer) {
@@ -1047,6 +1084,10 @@ export function buildMcRunSheetData(
 
   orderedSponsors.forEach((sponsor) => {
     const placementType = normalizeSponsorPlacementType(sponsor.placement_type);
+
+    if (!sponsor.placement_type?.trim()) {
+      return;
+    }
 
     if (placementType === "before_intermission") {
       beforeIntermission.push(sponsor);
@@ -1457,6 +1498,12 @@ export function McPage({
     (sponsor, index, allSponsors) =>
       allSponsors.findIndex((candidate) => candidate.id === sponsor.id) === index,
   );
+  const sponsorPrintChunks = useMemo(() => {
+    const chunkSize = 8;
+    return Array.from({ length: Math.ceil(sponsorPageEntries.length / chunkSize) }, (_, index) =>
+      sponsorPageEntries.slice(index * chunkSize, index * chunkSize + chunkSize),
+    );
+  }, [sponsorPageEntries]);
   const performerSetLabelLookup = useMemo(() => {
     const lookup = new Map<string, string>();
 
@@ -1528,6 +1575,12 @@ export function McPage({
         }),
     [guestProfiles, performerSetLabelLookup, setlist],
   );
+  const guestInfoPrintChunks = useMemo(() => {
+    const chunkSize = 3;
+    return Array.from({ length: Math.ceil(guestInfoEntries.length / chunkSize) }, (_, index) =>
+      guestInfoEntries.slice(index * chunkSize, index * chunkSize + chunkSize),
+    );
+  }, [guestInfoEntries]);
   const mcFlowGroups = useMemo(() => {
     const groups: Record<
       "set1" | "intermission" | "set2" | "encore" | "closing",
@@ -1577,17 +1630,16 @@ export function McPage({
   );
 
   function renderSongFlowCard(song: SetlistSong, printMode = false) {
-    const mcBlock = mcBlockLookup[song.id] ?? null;
-    const blockDraft = mcBlock
-      ? blockNoteDrafts[mcBlock.anchorSongId] ?? {
-          introNote: "",
-          sponsorMention: "",
-          transitionNote: "",
-        }
-      : null;
-    const guestIntroText = mcBlock ? getGuestIntroText(mcBlock.guestProfile) : null;
+  const mcBlock = mcBlockLookup[song.id] ?? null;
+  const blockDraft = mcBlock
+    ? blockNoteDrafts[mcBlock.anchorSongId] ?? {
+        introNote: "",
+        sponsorMention: "",
+        transitionNote: "",
+      }
+    : null;
 
-    return (
+  return (
       <article
         key={song.id}
         className={
@@ -1598,19 +1650,13 @@ export function McPage({
       >
         <div className={printMode ? "grid gap-2" : "grid gap-3"}>
           <h3 className={printMode ? "mc-print-song-line" : "text-lg font-semibold text-stone-900"}>
-            {song.title} - {song.artist || defaultSingerName}
+            {song.title} - {getMcSongPerformerLabel(song)}
             {song.song_key ? ` (${song.song_key})` : ""}
           </h3>
 
           {blockDraft?.introNote.trim() ? (
             <p className={printMode ? "mc-print-flow-note whitespace-pre-wrap" : "whitespace-pre-wrap text-sm text-stone-700"}>
               Intro: {blockDraft.introNote.trim()}
-            </p>
-          ) : null}
-
-          {guestIntroText ? (
-            <p className={printMode ? "mc-print-flow-note whitespace-pre-wrap" : "whitespace-pre-wrap text-sm text-stone-700"}>
-              Guest intro: {guestIntroText}
             </p>
           ) : null}
 
@@ -1645,12 +1691,18 @@ export function McPage({
           return printMode ? (
             <div
               key={item.id}
-              className="border-t border-stone-400 pt-3 first:border-t-0 first:pt-0"
+              className="border-t border-stone-400 pt-2 first:border-t-0 first:pt-0"
             >
               <article className="mc-print-flow-card mc-print-flow-card-sponsor mc-print-flow-card-compact">
-                <p className="mc-print-flow-type">Sponsor Read</p>
-                <h3>{item.sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
-                <p className="mc-print-flow-note">See Sponsor Reads</p>
+                <p className="mc-print-inline-line">
+                  <span className="mc-print-inline-label">Sponsor Read</span>
+                  <span className="mc-print-inline-separator"> - </span>
+                  <span className="mc-print-inline-value">
+                    {item.sponsor.sponsor?.name ?? "Assigned sponsor"}
+                  </span>
+                  <span className="mc-print-inline-separator"> - </span>
+                  <span className="mc-print-inline-note">See Sponsor Reads</span>
+                </p>
               </article>
             </div>
           ) : (
@@ -1677,16 +1729,22 @@ export function McPage({
           return printMode ? (
             <div
               key={item.id}
-              className="border-t border-stone-400 pt-3 first:border-t-0 first:pt-0"
+              className="border-t border-stone-400 pt-2 first:border-t-0 first:pt-0"
             >
               <article className="mc-print-flow-card mc-print-flow-card-compact">
-                <p className="mc-print-flow-type">Special Segment</p>
-                <h3>{item.segment.title}</h3>
-                {item.segment.notes?.trim() ? (
-                  <p className="mc-print-flow-note whitespace-pre-wrap">
-                    {item.segment.notes.trim()}
-                  </p>
-                ) : null}
+                <p className="mc-print-inline-line mc-print-inline-line-wrap">
+                  <span className="mc-print-inline-label">Special Segment</span>
+                  <span className="mc-print-inline-separator"> - </span>
+                  <span className="mc-print-inline-value">{item.segment.title}</span>
+                  {item.segment.notes?.trim() ? (
+                    <>
+                      <span className="mc-print-inline-separator"> - </span>
+                      <span className="mc-print-inline-note whitespace-pre-wrap">
+                        {item.segment.notes.trim()}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
               </article>
             </div>
           ) : (
@@ -1970,16 +2028,24 @@ export function McPage({
           </section>
         ) : null}
 
-        <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">Intermission Script</h2>
-            <p className="text-sm text-stone-600">
-              Welcome-back script used during the intermission return.
-            </p>
-          </div>
+        {hasIntermissionSection ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">INTERMISSION</h2>
+              <p className="text-sm text-stone-600">
+                Break marker between Set 1 and Set 2, including any sponsor reads or special segments placed around the intermission.
+              </p>
+            </div>
 
-          <ScriptCard title="Intermission Script" text={scriptFormState.intermissionScript} />
-        </section>
+            {mcFlowGroups.intermission.length > 0 ? (
+              <section className="mc-run-section flex flex-col gap-4">
+                <div className="grid gap-4">{renderFlowItems(mcFlowGroups.intermission)}</div>
+              </section>
+            ) : null}
+
+            <ScriptCard title="Intermission Script" text={scriptFormState.intermissionScript} />
+          </section>
+        ) : null}
 
         {mcFlowGroups.set2.length > 0 ? (
           <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
@@ -2015,6 +2081,12 @@ export function McPage({
               Final sign-off script for the end of the show.
             </p>
           </div>
+
+          {mcFlowGroups.closing.length > 0 ? (
+            <section className="mc-run-section flex flex-col gap-4">
+              <div className="grid gap-4">{renderFlowItems(mcFlowGroups.closing)}</div>
+            </section>
+          ) : null}
 
           <ScriptCard title="Closing Script" text={scriptFormState.closingScript} />
         </section>
@@ -2213,7 +2285,7 @@ export function McPage({
                 {performerListEntries.length > 0 ? (
                   <div className="mc-print-subsection">
                     <h3>Performers</h3>
-                    <ul className="mc-print-list">
+                    <ul className="mc-print-list mc-print-performer-summary-list">
                       {performerListEntries.map((entry) => (
                         <li key={entry.performer}>
                           <span className="font-semibold">{entry.performer}</span>
@@ -2270,11 +2342,16 @@ export function McPage({
           <section className="mc-print-page mc-print-page-forced">
             <header className="mc-print-page-header">
               <p className="mc-print-kicker">Scripts</p>
-              <h1>Intermission Script</h1>
+              <h1>INTERMISSION</h1>
               <p>{show.name}</p>
             </header>
             <div className="mc-print-stack">
               <section className="mc-print-panel">
+                {mcFlowGroups.intermission.length > 0 ? (
+                  <div className="mc-print-flow mc-print-set-flow">
+                    {renderFlowItems(mcFlowGroups.intermission, { printMode: true })}
+                  </div>
+                ) : null}
                 <p className="mc-print-script">
                   {scriptFormState.intermissionScript.trim() || "No intermission script added yet."}
                 </p>
@@ -2308,6 +2385,11 @@ export function McPage({
 
             <div className="mc-print-stack">
               <section className="mc-print-panel">
+                {mcFlowGroups.closing.length > 0 ? (
+                  <div className="mc-print-flow mc-print-set-flow">
+                    {renderFlowItems(mcFlowGroups.closing, { printMode: true })}
+                  </div>
+                ) : null}
                 <p className="mc-print-script">
                   {scriptFormState.closingScript.trim() || "No closing script added yet."}
                 </p>
@@ -2315,24 +2397,25 @@ export function McPage({
             </div>
           </section>
 
-          <section className="mc-print-page mc-print-page-forced">
-            <header className="mc-print-page-header">
-              <p className="mc-print-kicker">Sponsors</p>
-              <h1>Sponsor Reads / Sponsor Full Info</h1>
-              <p>{show.name}</p>
-            </header>
+          {sponsorPrintChunks.length > 0 ? sponsorPrintChunks.map((chunk, chunkIndex) => (
+            <section
+              key={`sponsor-print-chunk-${chunkIndex}`}
+              className="mc-print-page mc-print-page-forced mc-print-page-sponsors"
+            >
+              <header className="mc-print-page-header">
+                <p className="mc-print-kicker">Sponsors</p>
+                <h1>{chunkIndex === 0 ? "Sponsor Reads / Sponsor Full Info" : "Sponsor Reads (Continued)"}</h1>
+                <p>{show.name}</p>
+              </header>
 
-            <div className="mc-print-stack">
-              <section className="mc-print-panel">
-                <div className="mc-print-panel-heading">
-                  <h2>Sponsor Reads</h2>
-                </div>
+              <div className="mc-print-stack">
+                <section className="mc-print-panel mc-print-panel-sponsors">
+                  <div className="mc-print-panel-heading">
+                    <h2>{chunkIndex === 0 ? "Sponsor Reads" : "Sponsor Reads (Continued)"}</h2>
+                  </div>
 
-                {sponsorPageEntries.length === 0 ? (
-                  <p className="mc-print-empty">No sponsor reads have been assigned yet.</p>
-                ) : (
                   <div className="mc-print-note-stack">
-                    {sponsorPageEntries.map((sponsor) => (
+                    {chunk.map((sponsor) => (
                       <article key={sponsor.id} className="mc-print-note-card">
                         <h3>{sponsor.sponsor?.name ?? "Assigned sponsor"}</h3>
                         <p className="mc-print-script whitespace-pre-wrap">
@@ -2346,22 +2429,41 @@ export function McPage({
                       </article>
                     ))}
                   </div>
-                )}
-              </section>
-            </div>
-          </section>
+                </section>
+              </div>
+            </section>
+          )) : (
+            <section className="mc-print-page mc-print-page-forced mc-print-page-sponsors">
+              <header className="mc-print-page-header">
+                <p className="mc-print-kicker">Sponsors</p>
+                <h1>Sponsor Reads / Sponsor Full Info</h1>
+                <p>{show.name}</p>
+              </header>
+              <div className="mc-print-stack">
+                <section className="mc-print-panel mc-print-panel-sponsors">
+                  <div className="mc-print-panel-heading">
+                    <h2>Sponsor Reads</h2>
+                  </div>
+                  <p className="mc-print-empty">No sponsor reads have been assigned yet.</p>
+                </section>
+              </div>
+            </section>
+          )}
 
-          {guestInfoEntries.length > 0 ? (
-            <section className="mc-print-page mc-print-page-forced">
+          {guestInfoPrintChunks.length > 0 ? guestInfoPrintChunks.map((chunk, chunkIndex) => (
+            <section
+              key={`guest-print-chunk-${chunkIndex}`}
+              className="mc-print-page mc-print-page-forced mc-print-page-performers"
+            >
               <header className="mc-print-page-header">
                 <p className="mc-print-kicker">Performers</p>
-                <h1>Guest / Performer Profiles</h1>
+                <h1>{chunkIndex === 0 ? "Guest / Performer Profiles" : "Guest / Performer Profiles (Continued)"}</h1>
                 <p>{show.name}</p>
               </header>
 
               <div className="mc-print-stack mc-print-intro-stack">
-                {guestInfoEntries.map((entry) => (
-                  <section key={`intro-${entry.performer}`} className="mc-print-panel mc-print-intro-panel">
+                {chunk.map((entry) => (
+                  <section key={`intro-${entry.performer}-${chunkIndex}`} className="mc-print-panel mc-print-intro-panel mc-print-intro-entry">
                     <div className="mc-print-panel-heading">
                       <h2>{entry.performer}</h2>
                       {entry.setLabel ? <p>{entry.setLabel}</p> : null}
@@ -2462,7 +2564,7 @@ export function McPage({
                 ))}
               </div>
             </section>
-          ) : null}
+          )) : null}
 
         </div>
 
@@ -2491,10 +2593,10 @@ export function McPage({
               border-bottom: 2px solid #111827;
               break-after: avoid-page;
               break-inside: avoid;
-              margin-bottom: 20px;
+              margin-bottom: 12px;
               page-break-after: avoid;
               page-break-inside: avoid;
-              padding-bottom: 14px;
+              padding-bottom: 10px;
             }
 
             .mc-print-kicker {
@@ -2518,17 +2620,15 @@ export function McPage({
             }
 
             .mc-print-stack {
-              display: flex;
-              flex-direction: column;
-              gap: 14px;
+              display: block;
             }
 
             .mc-print-intro-stack {
-              gap: 10px;
+              display: block;
             }
 
             .mc-print-page-set .mc-print-stack {
-              gap: 10px;
+              display: block;
             }
 
             .mc-print-panel,
@@ -2543,19 +2643,19 @@ export function McPage({
             }
 
             .mc-print-panel {
-              padding: 14px 16px;
+              padding: 10px 12px;
             }
 
             .mc-print-intro-panel {
-              padding: 10px 12px;
+              padding: 8px 10px;
             }
 
             .mc-print-set-panel {
-              padding: 10px 12px;
+              padding: 8px 10px;
             }
 
             .mc-print-panel-heading {
-              margin-bottom: 10px;
+              margin-bottom: 6px;
             }
 
             .mc-print-page-set .mc-print-panel-heading {
@@ -2621,22 +2721,28 @@ export function McPage({
 
             .mc-print-note-stack,
             .mc-print-flow {
-              display: flex;
-              flex-direction: column;
-              gap: 9px;
+              display: block;
             }
 
             .mc-print-intro-notes {
-              gap: 6px;
+              display: block;
             }
 
             .mc-print-set-flow {
-              gap: 6px;
+              display: block;
+            }
+
+            .mc-print-stack > * + *,
+            .mc-print-note-stack > * + *,
+            .mc-print-flow > * + *,
+            .mc-print-intro-notes > * + *,
+            .mc-print-set-flow > * + * {
+              margin-top: 6px;
             }
 
             .mc-print-note-card,
             .mc-print-flow-card {
-              padding: 10px 12px;
+              padding: 8px 10px;
             }
 
             .mc-print-flow-card-compact,
@@ -2646,7 +2752,7 @@ export function McPage({
             }
 
             .mc-print-flow-card-compact {
-              padding: 8px 10px;
+              padding: 6px 8px;
             }
 
             .mc-print-flow-card-sponsor {
@@ -2692,6 +2798,85 @@ export function McPage({
               font-size: 12px;
               line-height: 1.45;
               margin: 3px 0 0;
+            }
+
+            .mc-print-inline-line {
+              font-size: 12px;
+              line-height: 1.4;
+              margin: 0;
+            }
+
+            .mc-print-inline-line-wrap {
+              white-space: pre-wrap;
+            }
+
+            .mc-print-inline-label {
+              font-size: 10px;
+              font-weight: 700;
+              letter-spacing: 0.16em;
+              text-transform: uppercase;
+            }
+
+            .mc-print-inline-value {
+              font-weight: 700;
+            }
+
+            .mc-print-inline-note {
+              font-style: normal;
+            }
+
+            .mc-print-performer-summary-list {
+              display: grid;
+              gap: 4px 24px;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              padding-left: 18px;
+            }
+
+            .mc-print-page-sponsors .mc-print-stack,
+            .mc-print-page-performers .mc-print-stack {
+              gap: 8px;
+            }
+
+            .mc-print-page-performers .mc-print-intro-stack > * + * {
+              margin-top: 8px;
+            }
+
+            .mc-print-panel-sponsors,
+            .mc-print-intro-entry {
+              break-before: auto;
+              break-inside: auto;
+              page-break-before: auto;
+              page-break-inside: auto;
+            }
+
+            .mc-print-intro-entry .mc-print-panel-heading,
+            .mc-print-intro-entry .mc-print-intro-notes,
+            .mc-print-panel-sponsors .mc-print-panel-heading,
+            .mc-print-panel-sponsors .mc-print-note-stack {
+              break-after: avoid-page;
+              break-before: auto;
+              break-inside: auto;
+              page-break-after: avoid;
+              page-break-before: auto;
+              page-break-inside: auto;
+            }
+
+            .mc-print-panel-sponsors .mc-print-panel-heading,
+            .mc-print-intro-entry .mc-print-panel-heading {
+              margin-bottom: 4px;
+            }
+
+            .mc-print-panel-sponsors .mc-print-note-card,
+            .mc-print-intro-entry .mc-print-note-card {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+
+            .mc-print-page-sponsors .mc-print-panel,
+            .mc-print-page-performers .mc-print-panel,
+            .mc-print-page-performers .mc-print-intro-panel {
+              min-height: 0;
+              height: auto;
             }
 
             .mc-print-flow-upnext {
