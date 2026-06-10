@@ -7,6 +7,7 @@ import { buildShowTimelineMessages } from "@/lib/show-reminders";
 import type {
   GuestProfile,
   McBlockNote,
+  McSpecialSegment,
   SetSection,
   SetlistEntry,
   ShowGuestSong,
@@ -47,6 +48,7 @@ type McPageProps = {
   initialGuestProfiles: GuestProfile[];
   initialSponsors: ShowSponsor[];
   initialBlockNotes: McBlockNote[];
+  initialSpecialSegments: McSpecialSegment[];
 };
 
 export type McPerformanceBlock = {
@@ -70,6 +72,11 @@ export type McRunSheetItem =
       id: string;
       block: McPerformanceBlock;
       upNext: McPerformanceBlock | null;
+    }
+  | {
+      kind: "segment";
+      id: string;
+      segment: McSpecialSegment;
     }
   | {
       kind: "sponsor";
@@ -104,6 +111,11 @@ export type McFlowRenderableItem<TSong extends McFlowSongBase = McFlowSongBase> 
       kind: "song";
       id: string;
       song: TSong;
+    }
+  | {
+      kind: "segment";
+      id: string;
+      segment: McSpecialSegment;
     }
   | {
       kind: "sponsor";
@@ -424,9 +436,24 @@ function findMatchingSetlistSongIndex<TSong extends McFlowSongBase>(
   return fallbackIndex;
 }
 
+type OrderedMcExtraItem =
+  | { kind: "sponsor"; sponsor: ShowSponsor; placement_order: number; created_at: string }
+  | { kind: "segment"; segment: McSpecialSegment; placement_order: number; created_at: string };
+
+function sortOrderedMcExtras(items: OrderedMcExtraItem[]) {
+  return [...items].sort((itemA, itemB) => {
+    if (itemA.placement_order !== itemB.placement_order) {
+      return itemA.placement_order - itemB.placement_order;
+    }
+
+    return itemA.created_at.localeCompare(itemB.created_at);
+  });
+}
+
 export function buildMcFlowItems<TSong extends McFlowSongBase>(
   setlist: TSong[],
   sponsors: ShowSponsor[],
+  specialSegments: McSpecialSegment[],
 ): McFlowRenderableItem<TSong>[] {
   const orderedSongs = [...setlist].sort((songA, songB) => {
     const sectionDifference =
@@ -443,15 +470,28 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
     return songA.id.localeCompare(songB.id);
   });
   const orderedSponsors = sortSponsors(sponsors);
-  const beforeBySongId: Record<string, ShowSponsor[]> = {};
-  const afterBySongId: Record<string, ShowSponsor[]> = {};
+  const orderedSpecialSegments = [...specialSegments].sort((segmentA, segmentB) => {
+    if (segmentA.placement_order !== segmentB.placement_order) {
+      return segmentA.placement_order - segmentB.placement_order;
+    }
+
+    return segmentA.created_at.localeCompare(segmentB.created_at);
+  });
+  const beforeBySongId: Record<string, OrderedMcExtraItem[]> = {};
+  const afterBySongId: Record<string, OrderedMcExtraItem[]> = {};
+  const segmentsBeforeBySongId: Record<string, OrderedMcExtraItem[]> = {};
+  const segmentsAfterBySongId: Record<string, OrderedMcExtraItem[]> = {};
   const beforeIntermission: ShowSponsor[] = [];
   const afterIntermission: ShowSponsor[] = [];
   const closing: ShowSponsor[] = [];
   const flexible: ShowSponsor[] = [];
+  const beforeIntermissionItems: OrderedMcExtraItem[] = [];
+  const afterIntermissionItems: OrderedMcExtraItem[] = [];
+  const closingItems: OrderedMcExtraItem[] = [];
+  const flexibleItems: OrderedMcExtraItem[] = [];
 
   function appendSponsor(
-    lookup: Record<string, ShowSponsor[]>,
+    lookup: Record<string, OrderedMcExtraItem[]>,
     songId: string,
     sponsor: ShowSponsor,
   ) {
@@ -459,7 +499,29 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
       lookup[songId] = [];
     }
 
-    lookup[songId].push(sponsor);
+    lookup[songId].push({
+      kind: "sponsor",
+      sponsor,
+      placement_order: sponsor.placement_order,
+      created_at: sponsor.created_at,
+    });
+  }
+
+  function appendSegment(
+    lookup: Record<string, OrderedMcExtraItem[]>,
+    songId: string,
+    segment: McSpecialSegment,
+  ) {
+    if (!lookup[songId]) {
+      lookup[songId] = [];
+    }
+
+    lookup[songId].push({
+      kind: "segment",
+      segment,
+      placement_order: segment.placement_order,
+      created_at: segment.created_at,
+    });
   }
 
   orderedSponsors.forEach((sponsor) => {
@@ -515,6 +577,85 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
     flexible.push(sponsor);
   });
 
+  orderedSpecialSegments.forEach((segment) => {
+    const placementType = normalizeSponsorPlacementType(segment.placement_type);
+
+    if (placementType === "before_intermission") {
+      beforeIntermissionItems.push({
+        kind: "segment",
+        segment,
+        placement_order: segment.placement_order,
+        created_at: segment.created_at,
+      });
+      return;
+    }
+
+    if (placementType === "after_intermission") {
+      afterIntermissionItems.push({
+        kind: "segment",
+        segment,
+        placement_order: segment.placement_order,
+        created_at: segment.created_at,
+      });
+      return;
+    }
+
+    if (placementType === "closing") {
+      closingItems.push({
+        kind: "segment",
+        segment,
+        placement_order: segment.placement_order,
+        created_at: segment.created_at,
+      });
+      return;
+    }
+
+    if (placementType === "before_performer") {
+      const targetIndex =
+        findSetlistSongIndexByAnchorSongId(orderedSongs, segment.anchor_song_id) ??
+        0;
+
+      if (targetIndex === null || !orderedSongs[targetIndex]) {
+        flexibleItems.push({
+          kind: "segment",
+          segment,
+          placement_order: segment.placement_order,
+          created_at: segment.created_at,
+        });
+        return;
+      }
+
+      appendSegment(segmentsBeforeBySongId, orderedSongs[targetIndex].id, segment);
+      return;
+    }
+
+    if (placementType === "after_performer") {
+      const targetIndex =
+        findSetlistSongIndexByAnchorSongId(orderedSongs, segment.anchor_song_id) ??
+        Math.max(orderedSongs.length - 1, 0);
+
+      if (targetIndex === null || !orderedSongs[targetIndex]) {
+        flexibleItems.push({
+          kind: "segment",
+          segment,
+          placement_order: segment.placement_order,
+          created_at: segment.created_at,
+        });
+        return;
+      }
+
+      appendSegment(segmentsAfterBySongId, orderedSongs[targetIndex].id, segment);
+      return;
+    }
+
+    flexibleItems.push({
+      kind: "segment",
+      segment,
+      placement_order: segment.placement_order,
+      created_at: segment.created_at,
+    });
+  });
+
   const items: McFlowRenderableItem<TSong>[] = [];
   const set1Songs = orderedSongs.filter((song) => song.section === "set1");
   const set2Songs = orderedSongs.filter((song) => song.section === "set2");
@@ -522,12 +663,20 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
 
   function appendSongsWithSponsors(songs: TSong[]) {
     songs.forEach((song) => {
-      (beforeBySongId[song.id] ?? []).forEach((sponsor) => {
-        items.push({
-          kind: "sponsor",
-          id: `before-song-${song.id}-${sponsor.id}`,
-          sponsor,
-        });
+      sortOrderedMcExtras(beforeBySongId[song.id] ?? []).forEach((extraItem) => {
+        items.push(
+          extraItem.kind === "segment"
+            ? {
+                kind: "segment",
+                id: `before-song-segment-${song.id}-${extraItem.segment.id}`,
+                segment: extraItem.segment,
+              }
+            : {
+                kind: "sponsor",
+                id: `before-song-${song.id}-${extraItem.sponsor.id}`,
+                sponsor: extraItem.sponsor,
+              },
+        );
       });
 
       items.push({
@@ -536,12 +685,20 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
         song,
       });
 
-      (afterBySongId[song.id] ?? []).forEach((sponsor) => {
-        items.push({
-          kind: "sponsor",
-          id: `after-song-${song.id}-${sponsor.id}`,
-          sponsor,
-        });
+      sortOrderedMcExtras(afterBySongId[song.id] ?? []).forEach((extraItem) => {
+        items.push(
+          extraItem.kind === "segment"
+            ? {
+                kind: "segment",
+                id: `after-song-segment-${song.id}-${extraItem.segment.id}`,
+                segment: extraItem.segment,
+              }
+            : {
+                kind: "sponsor",
+                id: `after-song-${song.id}-${extraItem.sponsor.id}`,
+                sponsor: extraItem.sponsor,
+              },
+        );
       });
     });
   }
@@ -563,7 +720,31 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
     });
   }
 
-  if (afterIntermission.length > 0) {
+  beforeIntermission.forEach((sponsor) => {
+    beforeIntermissionItems.push({
+      kind: "sponsor",
+      sponsor,
+      placement_order: sponsor.placement_order,
+      created_at: sponsor.created_at,
+    });
+  });
+
+  sortOrderedMcExtras(beforeIntermissionItems).forEach((extraItem) => {
+    items.push(
+      extraItem.kind === "segment"
+        ? {
+            kind: "segment",
+            id: `before-intermission-segment-${extraItem.segment.id}`,
+            segment: extraItem.segment,
+          }
+        : {
+            kind: "sponsor",
+            id: `before-intermission-${extraItem.sponsor.id}`,
+            sponsor: extraItem.sponsor,
+          },
+    );
+  });
+  if (afterIntermission.length > 0 || afterIntermissionItems.length > 0) {
     items.push({
       kind: "marker",
       id: "placement-marker-after-intermission",
@@ -578,10 +759,35 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
     });
   }
 
+  afterIntermission.forEach((sponsor) => {
+    afterIntermissionItems.push({
+      kind: "sponsor",
+      sponsor,
+      placement_order: sponsor.placement_order,
+      created_at: sponsor.created_at,
+    });
+  });
+
+  sortOrderedMcExtras(afterIntermissionItems).forEach((extraItem) => {
+    items.push(
+      extraItem.kind === "segment"
+        ? {
+            kind: "segment",
+            id: `after-intermission-segment-${extraItem.segment.id}`,
+            segment: extraItem.segment,
+          }
+        : {
+            kind: "sponsor",
+            id: `after-intermission-${extraItem.sponsor.id}`,
+            sponsor: extraItem.sponsor,
+          },
+    );
+  });
+
   appendSongsWithSponsors(set2Songs);
   appendSongsWithSponsors(encoreSongs);
 
-  if (closing.length > 0) {
+  if (closing.length > 0 || closingItems.length > 0) {
     items.push({
       kind: "marker",
       id: "placement-marker-closing",
@@ -596,7 +802,32 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
     });
   }
 
-  if (flexible.length > 0) {
+  closing.forEach((sponsor) => {
+    closingItems.push({
+      kind: "sponsor",
+      sponsor,
+      placement_order: sponsor.placement_order,
+      created_at: sponsor.created_at,
+    });
+  });
+
+  sortOrderedMcExtras(closingItems).forEach((extraItem) => {
+    items.push(
+      extraItem.kind === "segment"
+        ? {
+            kind: "segment",
+            id: `closing-segment-${extraItem.segment.id}`,
+            segment: extraItem.segment,
+          }
+        : {
+            kind: "sponsor",
+            id: `closing-${extraItem.sponsor.id}`,
+            sponsor: extraItem.sponsor,
+          },
+    );
+  });
+
+  if (flexible.length > 0 || flexibleItems.length > 0) {
     items.push({
       kind: "marker",
       id: "placement-marker-flexible",
@@ -610,6 +841,31 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
       });
     });
   }
+
+  flexible.forEach((sponsor) => {
+    flexibleItems.push({
+      kind: "sponsor",
+      sponsor,
+      placement_order: sponsor.placement_order,
+      created_at: sponsor.created_at,
+    });
+  });
+
+  sortOrderedMcExtras(flexibleItems).forEach((extraItem) => {
+    items.push(
+      extraItem.kind === "segment"
+        ? {
+            kind: "segment",
+            id: `flexible-segment-${extraItem.segment.id}`,
+            segment: extraItem.segment,
+          }
+        : {
+            kind: "sponsor",
+            id: `flexible-${extraItem.sponsor.id}`,
+            sponsor: extraItem.sponsor,
+          },
+    );
+  });
 
   return items;
 }
@@ -745,11 +1001,21 @@ function findBlockIndexByAnchorSongId(
 export function buildMcRunSheetData(
   runSections: McRunSection[],
   sponsors: ShowSponsor[],
+  specialSegments: McSpecialSegment[],
 ): McRunSheetData {
   const orderedSponsors = sortSponsors(sponsors);
+  const orderedSpecialSegments = [...specialSegments].sort((segmentA, segmentB) => {
+    if (segmentA.placement_order !== segmentB.placement_order) {
+      return segmentA.placement_order - segmentB.placement_order;
+    }
+
+    return segmentA.created_at.localeCompare(segmentB.created_at);
+  });
   const allBlocks = runSections.flatMap((section) => section.blocks);
   const beforeByAnchorSongId: Record<string, ShowSponsor[]> = {};
   const afterByAnchorSongId: Record<string, ShowSponsor[]> = {};
+  const segmentsBeforeByAnchorSongId: Record<string, McSpecialSegment[]> = {};
+  const segmentsAfterByAnchorSongId: Record<string, McSpecialSegment[]> = {};
   const beforeIntermission: ShowSponsor[] = [];
   const afterIntermission: ShowSponsor[] = [];
   const closing: ShowSponsor[] = [];
@@ -765,6 +1031,18 @@ export function buildMcRunSheetData(
     }
 
     lookup[anchorSongId].push(sponsor);
+  }
+
+  function appendSegment(
+    lookup: Record<string, McSpecialSegment[]>,
+    anchorSongId: string,
+    segment: McSpecialSegment,
+  ) {
+    if (!lookup[anchorSongId]) {
+      lookup[anchorSongId] = [];
+    }
+
+    lookup[anchorSongId].push(segment);
   }
 
   orderedSponsors.forEach((sponsor) => {
@@ -820,6 +1098,34 @@ export function buildMcRunSheetData(
     flexible.push(sponsor);
   });
 
+  orderedSpecialSegments.forEach((segment) => {
+    const placementType = normalizeSponsorPlacementType(segment.placement_type);
+
+    if (placementType === "before_performer") {
+      const targetIndex =
+        findBlockIndexByAnchorSongId(allBlocks, segment.anchor_song_id) ?? 0;
+
+      if (targetIndex === null || !allBlocks[targetIndex]) {
+        return;
+      }
+
+      appendSegment(segmentsBeforeByAnchorSongId, allBlocks[targetIndex].anchorSongId, segment);
+      return;
+    }
+
+    if (placementType === "after_performer") {
+      const targetIndex =
+        findBlockIndexByAnchorSongId(allBlocks, segment.anchor_song_id) ??
+        Math.max(allBlocks.length - 1, 0);
+
+      if (targetIndex === null || !allBlocks[targetIndex]) {
+        return;
+      }
+
+      appendSegment(segmentsAfterByAnchorSongId, allBlocks[targetIndex].anchorSongId, segment);
+    }
+  });
+
   return {
     sectionItems: runSections.map((section) => {
       const items: McRunSheetItem[] = [];
@@ -827,9 +1133,19 @@ export function buildMcRunSheetData(
       section.blocks.forEach((block) => {
         const beforeSponsors = beforeByAnchorSongId[block.anchorSongId] ?? [];
         const afterSponsors = afterByAnchorSongId[block.anchorSongId] ?? [];
+        const beforeSegments = segmentsBeforeByAnchorSongId[block.anchorSongId] ?? [];
+        const afterSegments = segmentsAfterByAnchorSongId[block.anchorSongId] ?? [];
         const blockIndex = allBlocks.findIndex(
           (candidateBlock) => candidateBlock.anchorSongId === block.anchorSongId,
         );
+
+        beforeSegments.forEach((segment) => {
+          items.push({
+            kind: "segment",
+            id: `before-segment-${block.anchorSongId}-${segment.id}`,
+            segment,
+          });
+        });
 
         beforeSponsors.forEach((sponsor) => {
           items.push({
@@ -844,6 +1160,14 @@ export function buildMcRunSheetData(
           id: block.anchorSongId,
           block,
           upNext: blockIndex >= 0 ? allBlocks[blockIndex + 1] ?? null : null,
+        });
+
+        afterSegments.forEach((segment) => {
+          items.push({
+            kind: "segment",
+            id: `after-segment-${block.anchorSongId}-${segment.id}`,
+            segment,
+          });
         });
 
         afterSponsors.forEach((sponsor) => {
@@ -923,6 +1247,26 @@ export function SponsorReadCard({ sponsor }: { sponsor: ShowSponsor }) {
         {sponsor.custom_note?.trim() ? (
           <p className="text-sm text-stone-600">MC note: {sponsor.custom_note.trim()}</p>
         ) : null}
+      </div>
+    </article>
+  );
+}
+
+export function SpecialSegmentCard({ segment }: { segment: McSpecialSegment }) {
+  return (
+    <article className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 sm:p-5">
+      <div className="grid gap-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-900">
+          Special Segment
+        </p>
+        <h4 className="text-lg font-semibold text-stone-900">{segment.title}</h4>
+        {segment.notes?.trim() ? (
+          <p className="whitespace-pre-wrap text-sm leading-7 text-stone-700">
+            {segment.notes.trim()}
+          </p>
+        ) : (
+          <p className="text-sm text-stone-500">No MC notes added yet.</p>
+        )}
       </div>
     </article>
   );
@@ -1041,6 +1385,7 @@ export function McPage({
   initialGuestProfiles,
   initialSponsors,
   initialBlockNotes,
+  initialSpecialSegments,
 }: McPageProps) {
   const [show] = useState<ShowRecord | null>(initialShow);
   const [setlist] = useState<SetlistSong[]>(() =>
@@ -1048,6 +1393,7 @@ export function McPage({
   );
   const [guestProfiles] = useState<GuestProfile[]>(initialGuestProfiles);
   const [blockNotes] = useState<McBlockNote[]>(initialBlockNotes);
+  const [specialSegments] = useState<McSpecialSegment[]>(initialSpecialSegments);
   const [showLogo, setShowLogo] = useState(true);
 
   const sponsors = useMemo(() => sortSponsors(initialSponsors), [initialSponsors]);
@@ -1061,10 +1407,13 @@ export function McPage({
     [blockNotes, runSections],
   );
   const runSheetData = useMemo(
-    () => buildMcRunSheetData(runSections, sponsors),
-    [runSections, sponsors],
+    () => buildMcRunSheetData(runSections, sponsors, specialSegments),
+    [runSections, specialSegments, sponsors],
   );
-  const mcFlowItems = useMemo(() => buildMcFlowItems(setlist, sponsors), [setlist, sponsors]);
+  const mcFlowItems = useMemo(
+    () => buildMcFlowItems(setlist, sponsors, specialSegments),
+    [setlist, specialSegments, sponsors],
+  );
   const mcBlockLookup = useMemo(
     () =>
       runSections.reduce<Record<string, McPerformanceBlock>>((lookup, section) => {
@@ -1324,6 +1673,32 @@ export function McPage({
           );
         }
 
+        if (item.kind === "segment") {
+          return printMode ? (
+            <div
+              key={item.id}
+              className="border-t border-stone-400 pt-3 first:border-t-0 first:pt-0"
+            >
+              <article className="mc-print-flow-card mc-print-flow-card-compact">
+                <p className="mc-print-flow-type">Special Segment</p>
+                <h3>{item.segment.title}</h3>
+                {item.segment.notes?.trim() ? (
+                  <p className="mc-print-flow-note whitespace-pre-wrap">
+                    {item.segment.notes.trim()}
+                  </p>
+                ) : null}
+              </article>
+            </div>
+          ) : (
+            <div
+              key={item.id}
+              className="border-t border-stone-200 pt-4 first:border-t-0 first:pt-0"
+            >
+              <SpecialSegmentCard segment={item.segment} />
+            </div>
+          );
+        }
+
         songNumber += 1;
         return (
           <div
@@ -1347,28 +1722,42 @@ export function McPage({
   }
 
   if (process.env.NODE_ENV !== "production") {
-    const debugFlow = mcFlowItems.map((item) =>
-      item.kind === "song"
-        ? {
-            kind: "song",
-            id: item.song.id,
-            section: item.song.section,
-            title: item.song.title,
-            performer: item.song.artist,
-          }
-        : item.kind === "sponsor"
-          ? {
-              kind: "sponsor",
-              sponsorId: item.sponsor.id,
-              sponsor: item.sponsor.sponsor?.name ?? "Assigned sponsor",
-              placementType: item.sponsor.placement_type,
-              anchorSongId: item.sponsor.mc_anchor_song_id ?? null,
-            }
-          : {
-              kind: "marker",
-              marker: item.marker,
-            },
-    );
+    const debugFlow = mcFlowItems.map((item) => {
+      if (item.kind === "song") {
+        return {
+          kind: "song",
+          id: item.song.id,
+          section: item.song.section,
+          title: item.song.title,
+          performer: item.song.artist,
+        };
+      }
+
+      if (item.kind === "segment") {
+        return {
+          kind: "segment",
+          segmentId: item.segment.id,
+          title: item.segment.title,
+          placementType: item.segment.placement_type,
+          anchorSongId: item.segment.anchor_song_id ?? null,
+        };
+      }
+
+      if (item.kind === "sponsor") {
+        return {
+          kind: "sponsor",
+          sponsorId: item.sponsor.id,
+          sponsor: item.sponsor.sponsor?.name ?? "Assigned sponsor",
+          placementType: item.sponsor.placement_type,
+          anchorSongId: item.sponsor.mc_anchor_song_id ?? null,
+        };
+      }
+
+      return {
+        kind: "marker",
+        marker: item.marker,
+      };
+    });
 
     console.log("MC Builder ordered flow", debugFlow);
     console.log("MC Readonly ordered flow", debugFlow);

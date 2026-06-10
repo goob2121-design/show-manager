@@ -374,6 +374,17 @@ export type McBlockNote = {
   created_at: string;
 };
 
+export type McSpecialSegment = {
+  id: string;
+  show_id: string;
+  title: string;
+  notes: string | null;
+  placement_type: string | null;
+  anchor_song_id: string | null;
+  placement_order: number;
+  created_at: string;
+};
+
 export type SongFormState = {
   title: string;
   key: string;

@@ -41,6 +41,7 @@ import type {
   GuestProfile,
   GuestProfileFormState,
   McBlockNote,
+  McSpecialSegment,
   PayoutFormState,
   PotentialSponsor,
   PotentialSponsorStatus,
@@ -479,6 +480,11 @@ type McFlowRenderableItem =
       performer: string;
     }
   | {
+      kind: "segment";
+      id: string;
+      segment: McSpecialSegment;
+    }
+  | {
       kind: "sponsor";
       id: string;
       sponsor: ShowSponsor;
@@ -494,6 +500,11 @@ type McSponsorPlacementRenderableItem =
       kind: "song";
       id: string;
       song: SetlistSong;
+    }
+  | {
+      kind: "segment";
+      id: string;
+      segment: McSpecialSegment;
     }
   | {
       kind: "sponsor";
@@ -533,6 +544,21 @@ type PotentialSponsorFormState = {
   email: string;
   status: PotentialSponsorStatus;
   notes: string;
+};
+
+type McSpecialSegmentFormState = {
+  title: string;
+  notes: string;
+  placementType: string;
+  anchorSongId: string;
+};
+
+type McSponsorReadFormState = {
+  showSponsorId: string;
+  scriptText: string;
+  customNote: string;
+  placementType: string;
+  anchorSongId: string;
 };
 
 const initialSponsorLibraryFormState: SponsorLibraryFormState = {
@@ -583,6 +609,21 @@ const initialPotentialSponsorFormState: PotentialSponsorFormState = {
   email: "",
   status: "Not Contacted",
   notes: "",
+};
+
+const initialMcSpecialSegmentFormState: McSpecialSegmentFormState = {
+  title: "",
+  notes: "",
+  placementType: "after_performer",
+  anchorSongId: "",
+};
+
+const initialMcSponsorReadFormState: McSponsorReadFormState = {
+  showSponsorId: "",
+  scriptText: "",
+  customNote: "",
+  placementType: "after_performer",
+  anchorSongId: "",
 };
 
 const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
@@ -838,18 +879,40 @@ function findMatchingSetlistSongIndex(
   return fallbackIndex;
 }
 
-function buildAdminMcSponsorPlacementItems(setlist: SetlistSong[], sponsors: ShowSponsor[]) {
+function buildAdminMcSponsorPlacementItems(
+  setlist: SetlistSong[],
+  sponsors: ShowSponsor[],
+  specialSegments: McSpecialSegment[],
+) {
   const orderedSongs = sortSetlistSongs(setlist);
   const orderedSponsors = sortShowSponsorsByPlacement(sponsors);
-  const beforeBySongId: Record<string, ShowSponsor[]> = {};
-  const afterBySongId: Record<string, ShowSponsor[]> = {};
+  type OrderedMcBuilderItem =
+    | { kind: "sponsor"; sponsor: ShowSponsor; placement_order: number; created_at: string }
+    | { kind: "segment"; segment: McSpecialSegment; placement_order: number; created_at: string };
+  const beforeSegmentsBySongId: Record<string, OrderedMcBuilderItem[]> = {};
+  const afterSegmentsBySongId: Record<string, OrderedMcBuilderItem[]> = {};
+  const beforeBySongId: Record<string, OrderedMcBuilderItem[]> = {};
+  const afterBySongId: Record<string, OrderedMcBuilderItem[]> = {};
   const beforeIntermission: ShowSponsor[] = [];
   const afterIntermission: ShowSponsor[] = [];
   const closing: ShowSponsor[] = [];
   const flexible: ShowSponsor[] = [];
+  const beforeIntermissionSegments: OrderedMcBuilderItem[] = [];
+  const afterIntermissionSegments: OrderedMcBuilderItem[] = [];
+  const closingSegments: OrderedMcBuilderItem[] = [];
+  const flexibleSegments: OrderedMcBuilderItem[] = [];
+
+  const sortMixedItems = (items: OrderedMcBuilderItem[]) =>
+    [...items].sort((itemA, itemB) => {
+      if (itemA.placement_order !== itemB.placement_order) {
+        return itemA.placement_order - itemB.placement_order;
+      }
+
+      return itemA.created_at.localeCompare(itemB.created_at);
+    });
 
   function appendSponsor(
-    lookup: Record<string, ShowSponsor[]>,
+    lookup: Record<string, OrderedMcBuilderItem[]>,
     songId: string,
     sponsor: ShowSponsor,
   ) {
@@ -857,7 +920,29 @@ function buildAdminMcSponsorPlacementItems(setlist: SetlistSong[], sponsors: Sho
       lookup[songId] = [];
     }
 
-    lookup[songId].push(sponsor);
+    lookup[songId].push({
+      kind: "sponsor",
+      sponsor,
+      placement_order: sponsor.placement_order,
+      created_at: sponsor.created_at,
+    });
+  }
+
+  function appendSegment(
+    lookup: Record<string, OrderedMcBuilderItem[]>,
+    songId: string,
+    segment: McSpecialSegment,
+  ) {
+    if (!lookup[songId]) {
+      lookup[songId] = [];
+    }
+
+    lookup[songId].push({
+      kind: "segment",
+      segment,
+      placement_order: segment.placement_order,
+      created_at: segment.created_at,
+    });
   }
 
   orderedSponsors.forEach((sponsor) => {
@@ -913,101 +998,267 @@ function buildAdminMcSponsorPlacementItems(setlist: SetlistSong[], sponsors: Sho
     flexible.push(sponsor);
   });
 
+  [...specialSegments]
+    .sort((segmentA, segmentB) => {
+      if (segmentA.placement_order !== segmentB.placement_order) {
+        return segmentA.placement_order - segmentB.placement_order;
+      }
+
+      return segmentA.created_at.localeCompare(segmentB.created_at);
+    })
+    .forEach((segment) => {
+      const placementType = segment.placement_type;
+
+      if (placementType === "before_intermission") {
+        beforeIntermissionSegments.push({
+          kind: "segment",
+          segment,
+          placement_order: segment.placement_order,
+          created_at: segment.created_at,
+        });
+        return;
+      }
+
+      if (placementType === "after_intermission") {
+        afterIntermissionSegments.push({
+          kind: "segment",
+          segment,
+          placement_order: segment.placement_order,
+          created_at: segment.created_at,
+        });
+        return;
+      }
+
+      if (placementType === "closing") {
+        closingSegments.push({
+          kind: "segment",
+          segment,
+          placement_order: segment.placement_order,
+          created_at: segment.created_at,
+        });
+        return;
+      }
+
+      if (placementType === "before_performer") {
+        const targetIndex =
+          findSetlistSongIndexByAnchorSongId(orderedSongs, segment.anchor_song_id) ?? 0;
+
+        if (targetIndex === null || !orderedSongs[targetIndex]) {
+          flexibleSegments.push({
+            kind: "segment",
+            segment,
+            placement_order: segment.placement_order,
+            created_at: segment.created_at,
+          });
+          return;
+        }
+
+        appendSegment(beforeSegmentsBySongId, orderedSongs[targetIndex].id, segment);
+        return;
+      }
+
+      if (placementType === "after_performer") {
+        const targetIndex =
+          findSetlistSongIndexByAnchorSongId(orderedSongs, segment.anchor_song_id) ??
+          Math.max(orderedSongs.length - 1, 0);
+
+        if (targetIndex === null || !orderedSongs[targetIndex]) {
+          flexibleSegments.push({
+            kind: "segment",
+            segment,
+            placement_order: segment.placement_order,
+            created_at: segment.created_at,
+          });
+          return;
+        }
+
+        appendSegment(afterSegmentsBySongId, orderedSongs[targetIndex].id, segment);
+        return;
+      }
+
+      flexibleSegments.push({
+        kind: "segment",
+        segment,
+        placement_order: segment.placement_order,
+        created_at: segment.created_at,
+      });
+    });
+
   const items: McSponsorPlacementRenderableItem[] = [];
   const set1Songs = orderedSongs.filter((song) => song.section === "set1");
   const set2Songs = orderedSongs.filter((song) => song.section === "set2");
   const encoreSongs = orderedSongs.filter((song) => song.section === "encore");
 
-  function appendSongsWithSponsors(songs: SetlistSong[]) {
-    songs.forEach((song) => {
-      (beforeBySongId[song.id] ?? []).forEach((sponsor) => {
+    function appendSongsWithSponsors(songs: SetlistSong[]) {
+      songs.forEach((song) => {
+        sortMixedItems(beforeBySongId[song.id] ?? []).forEach((entry) => {
+          items.push(
+            entry.kind === "segment"
+              ? {
+                  kind: "segment",
+                  id: `before-song-segment-${song.id}-${entry.segment.id}`,
+                  segment: entry.segment,
+                }
+              : {
+                  kind: "sponsor",
+                  id: `before-song-${song.id}-${entry.sponsor.id}`,
+                  sponsor: entry.sponsor,
+                },
+          );
+        });
+
         items.push({
-          kind: "sponsor",
-          id: `before-song-${song.id}-${sponsor.id}`,
-          sponsor,
+          kind: "song",
+          id: song.id,
+          song,
+        });
+
+        sortMixedItems(afterBySongId[song.id] ?? []).forEach((entry) => {
+          items.push(
+            entry.kind === "segment"
+              ? {
+                  kind: "segment",
+                  id: `after-song-segment-${song.id}-${entry.segment.id}`,
+                  segment: entry.segment,
+                }
+              : {
+                  kind: "sponsor",
+                  id: `after-song-${song.id}-${entry.sponsor.id}`,
+                  sponsor: entry.sponsor,
+                },
+          );
         });
       });
+    }
 
+    appendSongsWithSponsors(set1Songs);
+
+    if (beforeIntermission.length > 0 || beforeIntermissionSegments.length > 0) {
       items.push({
-        kind: "song",
-        id: song.id,
-        song,
+        kind: "marker",
+        id: "placement-marker-before-intermission",
+        marker: "before-intermission",
       });
-
-      (afterBySongId[song.id] ?? []).forEach((sponsor) => {
-        items.push({
+      beforeIntermission.forEach((sponsor) => {
+        beforeIntermissionSegments.push({
           kind: "sponsor",
-          id: `after-song-${song.id}-${sponsor.id}`,
           sponsor,
+          placement_order: sponsor.placement_order,
+          created_at: sponsor.created_at,
         });
       });
-    });
-  }
-
-  appendSongsWithSponsors(set1Songs);
-
-  if (beforeIntermission.length > 0) {
-    items.push({
-      kind: "marker",
-      id: "placement-marker-before-intermission",
-      marker: "before-intermission",
-    });
-    beforeIntermission.forEach((sponsor) => {
-      items.push({
-        kind: "sponsor",
-        id: `before-intermission-${sponsor.id}`,
-        sponsor,
+      sortMixedItems(beforeIntermissionSegments).forEach((entry) => {
+        items.push(
+          entry.kind === "segment"
+            ? {
+                kind: "segment",
+                id: `before-intermission-segment-${entry.segment.id}`,
+                segment: entry.segment,
+              }
+            : {
+                kind: "sponsor",
+                id: `before-intermission-${entry.sponsor.id}`,
+                sponsor: entry.sponsor,
+              },
+        );
       });
-    });
-  }
+    }
 
-  if (afterIntermission.length > 0) {
-    items.push({
-      kind: "marker",
-      id: "placement-marker-after-intermission",
-      marker: "after-intermission",
-    });
-    afterIntermission.forEach((sponsor) => {
+    if (afterIntermission.length > 0 || afterIntermissionSegments.length > 0) {
       items.push({
-        kind: "sponsor",
-        id: `after-intermission-${sponsor.id}`,
-        sponsor,
+        kind: "marker",
+        id: "placement-marker-after-intermission",
+        marker: "after-intermission",
       });
-    });
-  }
+      afterIntermission.forEach((sponsor) => {
+        afterIntermissionSegments.push({
+          kind: "sponsor",
+          sponsor,
+          placement_order: sponsor.placement_order,
+          created_at: sponsor.created_at,
+        });
+      });
+      sortMixedItems(afterIntermissionSegments).forEach((entry) => {
+        items.push(
+          entry.kind === "segment"
+            ? {
+                kind: "segment",
+                id: `after-intermission-segment-${entry.segment.id}`,
+                segment: entry.segment,
+              }
+            : {
+                kind: "sponsor",
+                id: `after-intermission-${entry.sponsor.id}`,
+                sponsor: entry.sponsor,
+              },
+        );
+      });
+    }
 
-  appendSongsWithSponsors(set2Songs);
-  appendSongsWithSponsors(encoreSongs);
+    appendSongsWithSponsors(set2Songs);
+    appendSongsWithSponsors(encoreSongs);
 
-  if (closing.length > 0) {
-    items.push({
-      kind: "marker",
-      id: "placement-marker-closing",
-      marker: "closing",
-    });
-    closing.forEach((sponsor) => {
+    if (closing.length > 0 || closingSegments.length > 0) {
       items.push({
-        kind: "sponsor",
-        id: `closing-${sponsor.id}`,
-        sponsor,
+        kind: "marker",
+        id: "placement-marker-closing",
+        marker: "closing",
       });
-    });
-  }
+      closing.forEach((sponsor) => {
+        closingSegments.push({
+          kind: "sponsor",
+          sponsor,
+          placement_order: sponsor.placement_order,
+          created_at: sponsor.created_at,
+        });
+      });
+      sortMixedItems(closingSegments).forEach((entry) => {
+        items.push(
+          entry.kind === "segment"
+            ? {
+                kind: "segment",
+                id: `closing-segment-${entry.segment.id}`,
+                segment: entry.segment,
+              }
+            : {
+                kind: "sponsor",
+                id: `closing-${entry.sponsor.id}`,
+                sponsor: entry.sponsor,
+              },
+        );
+      });
+    }
 
-  if (flexible.length > 0) {
-    items.push({
-      kind: "marker",
-      id: "placement-marker-flexible",
-      marker: "flexible",
-    });
-    flexible.forEach((sponsor) => {
+    if (flexible.length > 0 || flexibleSegments.length > 0) {
       items.push({
-        kind: "sponsor",
-        id: `flexible-${sponsor.id}`,
-        sponsor,
+        kind: "marker",
+        id: "placement-marker-flexible",
+        marker: "flexible",
       });
-    });
-  }
+      flexible.forEach((sponsor) => {
+        flexibleSegments.push({
+          kind: "sponsor",
+          sponsor,
+          placement_order: sponsor.placement_order,
+          created_at: sponsor.created_at,
+        });
+      });
+      sortMixedItems(flexibleSegments).forEach((entry) => {
+        items.push(
+          entry.kind === "segment"
+            ? {
+                kind: "segment",
+                id: `flexible-segment-${entry.segment.id}`,
+                segment: entry.segment,
+              }
+            : {
+                kind: "sponsor",
+                id: `flexible-${entry.sponsor.id}`,
+                sponsor: entry.sponsor,
+              },
+        );
+      });
+    }
 
   return items;
 }
@@ -1056,10 +1307,26 @@ function getMcSponsorPlacementFromSongNeighbor(
     };
   }
 
+  if (neighbor.kind === "segment") {
+    return {
+      placement_type: neighbor.segment.placement_type,
+      mc_anchor_song_id: neighbor.segment.anchor_song_id ?? null,
+      linked_performer: null,
+    };
+  }
+
+  if (neighbor.kind === "sponsor") {
+    return {
+      placement_type: neighbor.sponsor.placement_type,
+      mc_anchor_song_id: neighbor.sponsor.mc_anchor_song_id ?? null,
+      linked_performer: neighbor.sponsor.linked_performer ?? null,
+    };
+  }
+
   return {
-    placement_type: neighbor.sponsor.placement_type,
-    mc_anchor_song_id: neighbor.sponsor.mc_anchor_song_id ?? null,
-    linked_performer: neighbor.sponsor.linked_performer ?? null,
+    placement_type: null,
+    mc_anchor_song_id: null,
+    linked_performer: null,
   };
 }
 
@@ -1086,19 +1353,19 @@ function resolveMcSponsorPlacementFromSongFlow(
     .slice(sponsorIndex + 1)
     .find((item) => item.kind === "song" || item.kind === "marker");
 
-  if (previousFixedItem?.kind === "song") {
-    return {
-      placement_type: "after_performer",
-      mc_anchor_song_id: previousFixedItem.song.id,
-      linked_performer: getDisplaySingerName(previousFixedItem.song.artist),
-    };
-  }
-
   if (nextFixedItem?.kind === "song") {
     return {
       placement_type: "before_performer",
       mc_anchor_song_id: nextFixedItem.song.id,
       linked_performer: getDisplaySingerName(nextFixedItem.song.artist),
+    };
+  }
+
+  if (previousFixedItem?.kind === "song") {
+    return {
+      placement_type: "after_performer",
+      mc_anchor_song_id: previousFixedItem.song.id,
+      linked_performer: getDisplaySingerName(previousFixedItem.song.artist),
     };
   }
 
@@ -1302,7 +1569,8 @@ type DataSectionKey =
   | "promoLinks"
   | "promoMaterials"
   | "guestProfiles"
-  | "mcBlockNotes";
+  | "mcBlockNotes"
+  | "mcSpecialSegments";
 
 type DataSectionErrors = Partial<Record<DataSectionKey, string>>;
 
@@ -1827,6 +2095,101 @@ function normalizeImportedOrderId(value: string) {
   }
 
   return trimmedValue;
+}
+
+function resolveMcSpecialSegmentPlacementFromSongFlow(
+  items: McSponsorPlacementRenderableItem[],
+  segmentId: string,
+) {
+  const segmentIndex = items.findIndex(
+    (item) => item.kind === "segment" && item.segment.id === segmentId,
+  );
+
+  if (segmentIndex < 0) {
+    return {
+      placement_type: null,
+      anchor_song_id: null,
+    };
+  }
+
+  const previousFixedItem = [...items.slice(0, segmentIndex)]
+    .reverse()
+    .find((item) => item.kind === "song" || item.kind === "marker");
+  const nextFixedItem = items
+    .slice(segmentIndex + 1)
+    .find((item) => item.kind === "song" || item.kind === "marker");
+
+  if (previousFixedItem) {
+    return getMcSpecialSegmentPlacementFromNeighbor(previousFixedItem, "down");
+  }
+
+  if (nextFixedItem) {
+    return getMcSpecialSegmentPlacementFromNeighbor(nextFixedItem, "up");
+  }
+
+  return {
+    placement_type: null,
+    anchor_song_id: null,
+  };
+}
+
+function getMcSpecialSegmentPlacementFromNeighbor(
+  neighbor: McSponsorPlacementRenderableItem,
+  direction: "up" | "down",
+) {
+  if (neighbor.kind === "song") {
+    return {
+      placement_type: direction === "up" ? "before_performer" : "after_performer",
+      anchor_song_id: neighbor.song.id,
+    };
+  }
+
+  if (neighbor.kind === "marker") {
+    if (neighbor.marker === "before-intermission") {
+      return {
+        placement_type: "before_intermission",
+        anchor_song_id: null,
+      };
+    }
+
+    if (neighbor.marker === "after-intermission") {
+      return {
+        placement_type: "after_intermission",
+        anchor_song_id: null,
+      };
+    }
+
+    if (neighbor.marker === "closing") {
+      return {
+        placement_type: "closing",
+        anchor_song_id: null,
+      };
+    }
+
+    return {
+      placement_type: null,
+      anchor_song_id: null,
+    };
+  }
+
+  if (neighbor.kind === "segment") {
+    return {
+      placement_type: neighbor.segment.placement_type ?? null,
+      anchor_song_id: neighbor.segment.anchor_song_id ?? null,
+    };
+  }
+
+  if (neighbor.kind === "sponsor") {
+    return {
+      placement_type: neighbor.sponsor.placement_type ?? null,
+      anchor_song_id: neighbor.sponsor.mc_anchor_song_id ?? null,
+    };
+  }
+
+  return {
+    placement_type: null,
+    anchor_song_id: null,
+  };
 }
 
 function isLikelyImportedOrderId(value: string) {
@@ -5001,6 +5364,15 @@ function buildAdminMcFlowItems(
         return;
       }
 
+      if (item.kind === "segment") {
+        items.push({
+          kind: "segment",
+          id: item.segment.id,
+          segment: item.segment,
+        });
+        return;
+      }
+
       items.push({
         kind: "block",
         id: item.block.anchorSongId,
@@ -5150,10 +5522,18 @@ function getMcSponsorPlacementFromNeighbor(
     };
   }
 
+  if (neighbor.kind === "sponsor") {
+    return {
+      placement_type: neighbor.sponsor.placement_type,
+      mc_anchor_song_id: neighbor.sponsor.mc_anchor_song_id ?? null,
+      linked_performer: neighbor.sponsor.linked_performer ?? null,
+    };
+  }
+
   return {
-    placement_type: neighbor.sponsor.placement_type,
-    mc_anchor_song_id: neighbor.sponsor.mc_anchor_song_id ?? null,
-    linked_performer: neighbor.sponsor.linked_performer ?? null,
+    placement_type: null,
+    mc_anchor_song_id: null,
+    linked_performer: null,
   };
 }
 
@@ -5348,6 +5728,7 @@ export function ShowPage({
   );
   const [guestProfiles, setGuestProfiles] = useState<GuestProfile[]>([]);
   const [mcBlockNotes, setMcBlockNotes] = useState<McBlockNote[]>([]);
+  const [mcSpecialSegments, setMcSpecialSegments] = useState<McSpecialSegment[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
   const [songLibrary, setSongLibrary] = useState<SongLibrarySong[]>([]);
   const [rehearsalEntries, setRehearsalEntries] = useState<RehearsalEntryWithSong[]>([]);
@@ -5524,9 +5905,26 @@ export function ShowPage({
   const [mcScriptFormState, setMcScriptFormState] = useState<ScriptFormState>(
     buildScriptFormState(null),
   );
+  const [mcSpecialSegmentFormState, setMcSpecialSegmentFormState] =
+    useState<McSpecialSegmentFormState>(initialMcSpecialSegmentFormState);
+  const [mcSponsorReadFormState, setMcSponsorReadFormState] =
+    useState<McSponsorReadFormState>(initialMcSponsorReadFormState);
+  const [editingMcSpecialSegmentId, setEditingMcSpecialSegmentId] = useState<string | null>(null);
+  const [editingMcSpecialSegmentFormState, setEditingMcSpecialSegmentFormState] =
+    useState<McSpecialSegmentFormState>(initialMcSpecialSegmentFormState);
+  const [mcSpecialSegmentPlacementDrafts, setMcSpecialSegmentPlacementDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [isMcSpecialSegmentFormOpen, setIsMcSpecialSegmentFormOpen] = useState(false);
+  const [isMcSponsorReadFormOpen, setIsMcSponsorReadFormOpen] = useState(false);
   const [mcBlockNoteDrafts, setMcBlockNoteDrafts] = useState<Record<string, BlockNoteFormState>>(
     {},
   );
+  const [draggedMcPlacementItem, setDraggedMcPlacementItem] = useState<{
+    kind: "sponsor" | "segment";
+    id: string;
+  } | null>(null);
+  const mcSponsorReadFormRef = useRef<HTMLFormElement | null>(null);
   const [isSavingMcScripts, setIsSavingMcScripts] = useState(false);
   const [activeMcBlockActionId, setActiveMcBlockActionId] = useState<string | null>(null);
   const [activePendingActionId, setActivePendingActionId] = useState<string | null>(null);
@@ -7223,6 +7621,7 @@ export function ShowPage({
           promoMaterialRows,
           guestProfileRows,
           mcBlockNoteRows,
+          mcSpecialSegmentRows,
         ] = await Promise.all([
           loadSection(
             "setlist",
@@ -7434,6 +7833,17 @@ export function ShowPage({
               .order("created_at", { ascending: true }),
             [],
           ),
+          loadSection(
+            "mcSpecialSegments",
+            "MC special segments",
+            supabase
+              .from("mc_special_segments")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("placement_order", { ascending: true })
+              .order("created_at", { ascending: true }),
+            [],
+          ),
         ]);
 
         const guestSongStoragePathById = new Map<string, string>();
@@ -7566,6 +7976,7 @@ export function ShowPage({
         setPromoMaterials((promoMaterialRows ?? []) as PromoMaterial[]);
         setGuestProfiles(guestProfileRows ?? []);
         setMcBlockNotes((mcBlockNoteRows ?? []) as McBlockNote[]);
+        setMcSpecialSegments((mcSpecialSegmentRows ?? []) as McSpecialSegment[]);
         setDataSectionErrors(sectionErrors);
       } catch (error) {
         setErrorMessage(getErrorMessage(error));
@@ -7747,16 +8158,16 @@ export function ShowPage({
     [guestProfiles, mcBlockNotes, setlist],
   );
   const mcRunSheetData = useMemo(
-    () => buildMcRunSheetData(mcRunSections, showSponsors),
-    [mcRunSections, showSponsors],
+    () => buildMcRunSheetData(mcRunSections, showSponsors, mcSpecialSegments),
+    [mcRunSections, mcSpecialSegments, showSponsors],
   );
   const adminMcFlowItems = useMemo(
     () => buildAdminMcFlowItems(mcRunSections, mcRunSheetData),
     [mcRunSections, mcRunSheetData],
   );
   const adminMcSponsorPlacementItems = useMemo(
-    () => buildMcFlowItems(setlist, showSponsors),
-    [setlist, showSponsors],
+    () => buildAdminMcSponsorPlacementItems(setlist, showSponsors, mcSpecialSegments),
+    [mcSpecialSegments, setlist, showSponsors],
   );
   const populatedMcSections = useMemo(
     () => mcRunSheetData.sectionItems.filter((section) => section.items.length > 0),
@@ -10328,13 +10739,321 @@ export function ShowPage({
     }
   }
 
-  function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
+function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     const { name, value } = event.target;
 
     setMcScriptFormState((currentState) => ({
       ...currentState,
       [name]: value,
     }));
+  }
+
+  function handleMcSpecialSegmentFormChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    mode: "new" | "edit" = "new",
+  ) {
+    const { name, value } = event.target;
+
+    if (mode === "edit") {
+      setEditingMcSpecialSegmentFormState((currentState) => ({
+        ...currentState,
+        [name]: value,
+      }));
+      return;
+    }
+
+    setMcSpecialSegmentFormState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }));
+  }
+
+  function handleMcSponsorReadFormChange(
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) {
+    const { name, value } = event.target;
+
+    setMcSponsorReadFormState((currentState) => {
+      const nextState = {
+        ...currentState,
+        [name]: value,
+      };
+
+      if (name === "showSponsorId") {
+        const selectedSponsor = showSponsors.find((sponsor) => sponsor.id === value);
+        const scriptText = selectedSponsor ? getSponsorReadText(selectedSponsor) : "";
+        const customNote = selectedSponsor?.custom_note ?? "";
+        return {
+          ...nextState,
+          scriptText,
+          customNote,
+        };
+      }
+
+      return nextState;
+    });
+  }
+
+  function openMcSponsorReadFormForPlacement(
+    placementType: "before_performer" | "after_performer",
+    anchorSongId: string,
+  ) {
+    setIsMcSponsorReadFormOpen(true);
+    setMcSponsorReadFormState((currentState) => ({
+      ...currentState,
+      placementType,
+      anchorSongId,
+    }));
+    window.setTimeout(() => {
+      mcSponsorReadFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
+
+  function buildMcSpecialSegmentPayload(formState: McSpecialSegmentFormState) {
+    return {
+      title: formState.title.trim(),
+      notes: normalizeOptionalField(formState.notes),
+      placement_type: normalizeOptionalField(formState.placementType),
+      anchor_song_id:
+        formState.placementType === "before_performer" || formState.placementType === "after_performer"
+          ? normalizeOptionalField(formState.anchorSongId)
+          : null,
+    };
+  }
+
+  function startEditingMcSpecialSegment(segment: McSpecialSegment) {
+    setEditingMcSpecialSegmentId(segment.id);
+    setEditingMcSpecialSegmentFormState({
+      title: segment.title,
+      notes: segment.notes ?? "",
+      placementType: segment.placement_type ?? "after_performer",
+      anchorSongId: segment.anchor_song_id ?? "",
+    });
+  }
+
+  function cancelEditingMcSpecialSegment() {
+    setEditingMcSpecialSegmentId(null);
+    setEditingMcSpecialSegmentFormState(initialMcSpecialSegmentFormState);
+  }
+
+  async function handleCreateMcSpecialSegment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const payload = buildMcSpecialSegmentPayload(mcSpecialSegmentFormState);
+
+    if (!payload.title) {
+      setMcErrorMessage("Add a title for this special segment.");
+      return;
+    }
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId("mc-special-segment-create");
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("mc_special_segments")
+        .insert({
+          show_id: show.id,
+          placement_order: mcSpecialSegments.length + 1,
+          ...payload,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setMcSpecialSegments((currentSegments) =>
+        [...currentSegments, data as McSpecialSegment].sort((segmentA, segmentB) => {
+          if (segmentA.placement_order !== segmentB.placement_order) {
+            return segmentA.placement_order - segmentB.placement_order;
+          }
+
+          return segmentA.created_at.localeCompare(segmentB.created_at);
+        }),
+      );
+      setMcSpecialSegmentFormState(initialMcSpecialSegmentFormState);
+      setIsMcSpecialSegmentFormOpen(false);
+      setMcStatusMessage("Special segment added to MC flow.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleCreateMcSponsorRead(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const selectedShowSponsor = showSponsors.find(
+      (sponsor) => sponsor.id === mcSponsorReadFormState.showSponsorId,
+    );
+
+    if (!selectedShowSponsor) {
+      setMcErrorMessage("Choose a show sponsor first.");
+      return;
+    }
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-sponsor-read-${selectedShowSponsor.id}`);
+
+    try {
+      const supabase = createClient();
+      const nextPlacementOrder =
+        adminMcSponsorPlacementItems.filter(
+          (item) => item.kind === "sponsor" || item.kind === "segment",
+        ).length + 1;
+      const anchorSongId =
+        mcSponsorReadFormState.placementType === "before_performer" ||
+        mcSponsorReadFormState.placementType === "after_performer"
+          ? normalizeOptionalField(mcSponsorReadFormState.anchorSongId)
+          : null;
+      const linkedPerformer = anchorSongId
+        ? getDisplaySingerName(setlist.find((song) => song.id === anchorSongId)?.artist ?? null)
+        : null;
+
+      if (
+        selectedShowSponsor.sponsor_id &&
+        mcSponsorReadFormState.scriptText.trim() &&
+        mcSponsorReadFormState.scriptText.trim() !== getSponsorReadText(selectedShowSponsor)
+      ) {
+        const { error: sponsorLibraryError } = await supabase
+          .from("sponsor_library")
+          .update({ full_message: mcSponsorReadFormState.scriptText.trim() })
+          .eq("id", selectedShowSponsor.sponsor_id);
+
+        if (sponsorLibraryError) {
+          throw sponsorLibraryError;
+        }
+      }
+
+      const { data, error } = await supabase
+        .from("show_sponsors")
+        .update({
+          placement_order: nextPlacementOrder,
+          placement_type: normalizeOptionalField(mcSponsorReadFormState.placementType),
+          mc_anchor_song_id: anchorSongId,
+          linked_performer: linkedPerformer,
+          custom_note: normalizeOptionalField(mcSponsorReadFormState.customNote),
+        })
+        .eq("id", selectedShowSponsor.id)
+        .eq("show_id", show.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      await loadShowData(false);
+      setMcSponsorReadFormState(initialMcSponsorReadFormState);
+      setIsMcSponsorReadFormOpen(false);
+      setMcStatusMessage("Sponsor read added to MC flow.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleSaveMcSpecialSegment(segmentId: string) {
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const payload = buildMcSpecialSegmentPayload(editingMcSpecialSegmentFormState);
+
+    if (!payload.title) {
+      setMcErrorMessage("Add a title for this special segment.");
+      return;
+    }
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-special-segment-${segmentId}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("mc_special_segments")
+        .update(payload)
+        .eq("id", segmentId)
+        .eq("show_id", show.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setMcSpecialSegments((currentSegments) =>
+        currentSegments.map((segment) =>
+          segment.id === segmentId ? (data as McSpecialSegment) : segment,
+        ),
+      );
+      cancelEditingMcSpecialSegment();
+      setMcStatusMessage("Special segment updated.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleDeleteMcSpecialSegment(segmentId: string) {
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-special-segment-delete-${segmentId}`);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("mc_special_segments")
+        .delete()
+        .eq("id", segmentId)
+        .eq("show_id", show.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setMcSpecialSegments((currentSegments) =>
+        currentSegments
+          .filter((segment) => segment.id !== segmentId)
+          .map((segment, index) => ({
+            ...segment,
+            placement_order: index + 1,
+          })),
+      );
+      if (editingMcSpecialSegmentId === segmentId) {
+        cancelEditingMcSpecialSegment();
+      }
+      setMcStatusMessage("Special segment removed.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorActionId(null);
+    }
   }
 
   async function handleSaveMcScripts(event: FormEvent<HTMLFormElement>) {
@@ -10669,6 +11388,313 @@ export function ShowPage({
 
       setShowSponsors(nextSponsors);
       setMcStatusMessage("Sponsor flow order updated.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+      await loadShowData(false);
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleMoveMcSpecialSegment(segmentId: string, direction: "up" | "down") {
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    const currentIndex = adminMcSponsorPlacementItems.findIndex(
+      (item) => item.kind === "segment" && item.segment.id === segmentId,
+    );
+
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= adminMcSponsorPlacementItems.length) {
+      return;
+    }
+
+    const currentItem = adminMcSponsorPlacementItems[currentIndex];
+    const neighborItem = adminMcSponsorPlacementItems[targetIndex];
+
+    if (!currentItem || currentItem.kind !== "segment" || !neighborItem) {
+      return;
+    }
+
+    const reorderedItems = [...adminMcSponsorPlacementItems];
+    [reorderedItems[currentIndex], reorderedItems[targetIndex]] = [
+      reorderedItems[targetIndex],
+      reorderedItems[currentIndex],
+    ];
+
+    const segmentSequence = reorderedItems.filter(
+      (
+        item,
+      ): item is Extract<McSponsorPlacementRenderableItem, { kind: "segment" }> =>
+        item.kind === "segment",
+    );
+
+    const movedSegmentPlacement = resolveMcSpecialSegmentPlacementFromSongFlow(
+      reorderedItems,
+      segmentId,
+    );
+    const nextSegments = mcSpecialSegments
+      .map((segment) => {
+        const nextOrder = segmentSequence.findIndex((item) => item.segment.id === segment.id);
+
+        if (nextOrder < 0) {
+          return segment;
+        }
+
+        if (segment.id === segmentId) {
+          return {
+            ...segment,
+            placement_order: nextOrder + 1,
+            placement_type: movedSegmentPlacement.placement_type,
+            anchor_song_id: movedSegmentPlacement.anchor_song_id,
+          };
+        }
+
+        return {
+          ...segment,
+          placement_order: nextOrder + 1,
+        };
+      })
+      .sort((segmentA, segmentB) => segmentA.placement_order - segmentB.placement_order);
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-special-segment-move-${segmentId}`);
+
+    try {
+      const supabase = createClient();
+
+      for (const segment of nextSegments) {
+        const { error } = await supabase
+          .from("mc_special_segments")
+          .update({
+            placement_order: segment.placement_order,
+            placement_type: segment.placement_type,
+            anchor_song_id: segment.anchor_song_id,
+          })
+          .eq("id", segment.id)
+          .eq("show_id", show.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      setMcSpecialSegments(nextSegments);
+      setMcStatusMessage("Special segment order updated.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+      await loadShowData(false);
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handleReorderMcPlacementItems(sourceIndex: number, targetIndex: number) {
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    if (sourceIndex === targetIndex) {
+      return;
+    }
+
+    const movedItem = adminMcSponsorPlacementItems[sourceIndex];
+
+    if (!movedItem || (movedItem.kind !== "sponsor" && movedItem.kind !== "segment")) {
+      return;
+    }
+
+    const reorderedItems = [...adminMcSponsorPlacementItems];
+    const [removedItem] = reorderedItems.splice(sourceIndex, 1);
+
+    if (!removedItem) {
+      return;
+    }
+
+    const insertionIndex =
+      sourceIndex < targetIndex ? Math.max(targetIndex - 1, 0) : targetIndex;
+
+    reorderedItems.splice(insertionIndex, 0, removedItem);
+
+    const movableSequence = reorderedItems.filter(
+      (
+        item,
+      ): item is
+        | Extract<McSponsorPlacementRenderableItem, { kind: "sponsor" }>
+        | Extract<McSponsorPlacementRenderableItem, { kind: "segment" }> =>
+        item.kind === "sponsor" || item.kind === "segment",
+    );
+
+    const nextSponsors = showSponsors.map((sponsor) => {
+      const nextOrder = movableSequence.findIndex(
+        (item) => item.kind === "sponsor" && item.sponsor.id === sponsor.id,
+      );
+
+      if (nextOrder < 0) {
+        return sponsor;
+      }
+
+      if (movedItem.kind === "sponsor" && sponsor.id === movedItem.sponsor.id) {
+        const movedSponsorPlacement = resolveMcSponsorPlacementFromSongFlow(
+          reorderedItems,
+          movedItem.sponsor.id,
+        );
+
+        return {
+          ...sponsor,
+          placement_order: nextOrder + 1,
+          placement_type: movedSponsorPlacement.placement_type,
+          mc_anchor_song_id: movedSponsorPlacement.mc_anchor_song_id,
+          linked_performer: movedSponsorPlacement.linked_performer,
+        };
+      }
+
+      return {
+        ...sponsor,
+        placement_order: nextOrder + 1,
+      };
+    });
+
+    const nextSegments = mcSpecialSegments.map((segment) => {
+      const nextOrder = movableSequence.findIndex(
+        (item) => item.kind === "segment" && item.segment.id === segment.id,
+      );
+
+      if (nextOrder < 0) {
+        return segment;
+      }
+
+      if (movedItem.kind === "segment" && segment.id === movedItem.segment.id) {
+        const movedSegmentPlacement = resolveMcSpecialSegmentPlacementFromSongFlow(
+          reorderedItems,
+          movedItem.segment.id,
+        );
+
+        return {
+          ...segment,
+          placement_order: nextOrder + 1,
+          placement_type: movedSegmentPlacement.placement_type,
+          anchor_song_id: movedSegmentPlacement.anchor_song_id,
+        };
+      }
+
+      return {
+        ...segment,
+        placement_order: nextOrder + 1,
+      };
+    });
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-reorder-${movedItem.kind}-${movedItem.id}`);
+
+    try {
+      const supabase = createClient();
+
+      for (const sponsor of nextSponsors) {
+        const { error } = await supabase
+          .from("show_sponsors")
+          .update({
+            placement_order: sponsor.placement_order,
+            placement_type: sponsor.placement_type,
+            mc_anchor_song_id: sponsor.mc_anchor_song_id,
+            linked_performer: sponsor.linked_performer,
+          })
+          .eq("id", sponsor.id)
+          .eq("show_id", show.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      for (const segment of nextSegments) {
+        const { error } = await supabase
+          .from("mc_special_segments")
+          .update({
+            placement_order: segment.placement_order,
+            placement_type: segment.placement_type,
+            anchor_song_id: segment.anchor_song_id,
+          })
+          .eq("id", segment.id)
+          .eq("show_id", show.id);
+
+        if (error) {
+          throw error;
+        }
+      }
+
+      setShowSponsors(nextSponsors);
+      setMcSpecialSegments(nextSegments);
+      setMcStatusMessage("MC running order updated.");
+    } catch (error) {
+      setMcErrorMessage(getErrorMessage(error));
+      await loadShowData(false);
+    } finally {
+      setActiveSponsorActionId(null);
+    }
+  }
+
+  async function handlePlaceMcSpecialSegmentBeforeSong(segmentId: string, songId: string) {
+    if (!show) {
+      setMcErrorMessage("The show is not loaded yet.");
+      return;
+    }
+
+    if (!songId) {
+      setMcErrorMessage("Choose a song to place this special segment before.");
+      return;
+    }
+
+    const targetSong = setlist.find((song) => song.id === songId);
+    const targetSegment = mcSpecialSegments.find((segment) => segment.id === segmentId);
+
+    if (!targetSong || !targetSegment) {
+      setMcErrorMessage("Could not find that song or special segment.");
+      return;
+    }
+
+    setMcErrorMessage(null);
+    setMcStatusMessage(null);
+    setActiveSponsorActionId(`mc-special-segment-place-${segmentId}`);
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("mc_special_segments")
+        .update({
+          placement_type: "before_performer",
+          anchor_song_id: songId,
+        })
+        .eq("id", segmentId)
+        .eq("show_id", show.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setMcSpecialSegments((currentSegments) =>
+        currentSegments.map((segment) =>
+          segment.id === segmentId
+            ? {
+                ...segment,
+                placement_type: "before_performer",
+                anchor_song_id: targetSong.id,
+              }
+            : segment,
+        ),
+      );
+      setMcStatusMessage("Special segment placed before song.");
     } catch (error) {
       setMcErrorMessage(getErrorMessage(error));
       await loadShowData(false);
@@ -14939,10 +15965,448 @@ export function ShowPage({
 
             <section className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-stone-900">Sponsor Reads</h3>
+                <p className="text-sm text-stone-600">
+                  Add sponsor reads directly into the MC running order without routing through before/after song assignment first.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsMcSponsorReadFormOpen((currentValue) => !currentValue)}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  {isMcSponsorReadFormOpen ? "Hide Sponsor Read Form" : "Add Sponsor Read"}
+                </button>
+              </div>
+
+              {isMcSponsorReadFormOpen ? (
+                <form
+                  ref={mcSponsorReadFormRef}
+                  className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+                  onSubmit={handleCreateMcSponsorRead}
+                >
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Show Sponsor
+                      <select
+                        name="showSponsorId"
+                        value={mcSponsorReadFormState.showSponsorId}
+                        onChange={handleMcSponsorReadFormChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Select a show sponsor</option>
+                        {showSponsors.map((sponsor) => (
+                          <option key={sponsor.id} value={sponsor.id}>
+                            {sponsor.sponsor?.name ?? "Assigned sponsor"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Placement
+                      <select
+                        name="placementType"
+                        value={mcSponsorReadFormState.placementType}
+                        onChange={handleMcSponsorReadFormChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        {sponsorPlacementOptions
+                          .filter((option) => option.value)
+                          .map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {mcSponsorReadFormState.placementType === "before_performer" ||
+                  mcSponsorReadFormState.placementType === "after_performer" ? (
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Anchor Song
+                      <select
+                        name="anchorSongId"
+                        value={mcSponsorReadFormState.anchorSongId}
+                        onChange={handleMcSponsorReadFormChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Select a song</option>
+                        {setlist.map((song) => (
+                          <option key={song.id} value={song.id}>
+                            {formatMcBlockSectionLabel(song.section)} - {song.position}. {song.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Sponsor Script
+                    <textarea
+                      name="scriptText"
+                      value={mcSponsorReadFormState.scriptText}
+                      onChange={handleMcSponsorReadFormChange}
+                      className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Sponsor read script"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    MC Note
+                    <textarea
+                      name="customNote"
+                      value={mcSponsorReadFormState.customNote}
+                      onChange={handleMcSponsorReadFormChange}
+                      className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="Optional MC note for this sponsor read"
+                    />
+                  </label>
+
+                  <div className="flex justify-start">
+                    <button
+                      type="submit"
+                      disabled={activeSponsorActionId?.startsWith("mc-sponsor-read-")}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {activeSponsorActionId?.startsWith("mc-sponsor-read-")
+                        ? "Saving Sponsor Read..."
+                        : "Save Sponsor Read"}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+            </section>
+
+            <section className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-stone-900">Special Segments</h3>
+                <p className="text-sm text-stone-600">
+                  Add custom MC-only moments like announcements, recognitions, giveaways, guest intros, or memorial moments.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsMcSpecialSegmentFormOpen((currentValue) => !currentValue)}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  {isMcSpecialSegmentFormOpen ? "Hide Special Segment Form" : "Add Special Segment"}
+                </button>
+              </div>
+
+              {isMcSpecialSegmentFormOpen ? (
+                <form
+                  className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+                  onSubmit={handleCreateMcSpecialSegment}
+                >
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Segment Title
+                      <input
+                        type="text"
+                        name="title"
+                        value={mcSpecialSegmentFormState.title}
+                        onChange={handleMcSpecialSegmentFormChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                        placeholder="Special guest recognition"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Placement
+                      <select
+                        name="placementType"
+                        value={mcSpecialSegmentFormState.placementType}
+                        onChange={handleMcSpecialSegmentFormChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        {sponsorPlacementOptions
+                          .filter((option) => option.value)
+                          .map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {mcSpecialSegmentFormState.placementType === "before_performer" ||
+                  mcSpecialSegmentFormState.placementType === "after_performer" ? (
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Anchor Song
+                      <select
+                        name="anchorSongId"
+                        value={mcSpecialSegmentFormState.anchorSongId}
+                        onChange={handleMcSpecialSegmentFormChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Select a song</option>
+                        {setlist.map((song) => (
+                          <option key={song.id} value={song.id}>
+                            {formatMcBlockSectionLabel(song.section)} - {song.position}. {song.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    MC Notes / Script
+                    <textarea
+                      name="notes"
+                      value={mcSpecialSegmentFormState.notes}
+                      onChange={handleMcSpecialSegmentFormChange}
+                      className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      placeholder="What the MC should say or do during this segment"
+                    />
+                  </label>
+
+                  <div className="flex justify-start">
+                    <button
+                      type="submit"
+                      disabled={activeSponsorActionId === "mc-special-segment-create"}
+                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                    >
+                      {activeSponsorActionId === "mc-special-segment-create"
+                        ? "Adding Special Segment..."
+                        : "Save Special Segment"}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {mcSpecialSegments.length > 0 ? (
+                <div className="grid gap-3">
+                  <div className="flex flex-col gap-1">
+                    <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-stone-600">
+                      Saved Special Segments
+                    </h4>
+                    <p className="text-sm text-stone-500">
+                      Edit placement here so each segment shows up where you want it in the MC running order.
+                    </p>
+                  </div>
+
+                  {mcSpecialSegments
+                    .slice()
+                    .sort((segmentA, segmentB) => {
+                      if (segmentA.placement_order !== segmentB.placement_order) {
+                        return segmentA.placement_order - segmentB.placement_order;
+                      }
+
+                      return segmentA.created_at.localeCompare(segmentB.created_at);
+                    })
+                    .map((segment) => {
+                      const isEditingSegment = editingMcSpecialSegmentId === segment.id;
+                      const isSavingSegment =
+                        activeSponsorActionId === `mc-special-segment-${segment.id}`;
+                      const isDeletingSegment =
+                        activeSponsorActionId === `mc-special-segment-delete-${segment.id}`;
+
+                      return (
+                        <article
+                          key={segment.id}
+                          className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-4"
+                          draggable={!isEditingSegment}
+                          onDragStart={() =>
+                            setDraggedMcPlacementItem({ kind: "segment", id: segment.id })
+                          }
+                          onDragEnd={() => setDraggedMcPlacementItem(null)}
+                        >
+                          <div className="grid gap-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-cyan-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-900">
+                                Special Segment
+                              </span>
+                              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                                {formatSponsorPlacementType(
+                                  isEditingSegment
+                                    ? editingMcSpecialSegmentFormState.placementType
+                                    : segment.placement_type,
+                                )}
+                              </span>
+                            </div>
+
+                            {isEditingSegment ? (
+                              <div className="grid gap-4">
+                                <div className="grid gap-4 lg:grid-cols-2">
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Segment Title
+                                    <input
+                                      type="text"
+                                      name="title"
+                                      value={editingMcSpecialSegmentFormState.title}
+                                      onChange={(event) =>
+                                        handleMcSpecialSegmentFormChange(event, "edit")
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    />
+                                  </label>
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Placement
+                                    <select
+                                      name="placementType"
+                                      value={editingMcSpecialSegmentFormState.placementType}
+                                      onChange={(event) =>
+                                        handleMcSpecialSegmentFormChange(event, "edit")
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    >
+                                      {sponsorPlacementOptions
+                                        .filter((option) => option.value)
+                                        .map((option) => (
+                                          <option key={option.value} value={option.value}>
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  </label>
+                                </div>
+
+                                {editingMcSpecialSegmentFormState.placementType === "before_performer" ||
+                                editingMcSpecialSegmentFormState.placementType === "after_performer" ? (
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Anchor Song
+                                    <select
+                                      name="anchorSongId"
+                                      value={editingMcSpecialSegmentFormState.anchorSongId}
+                                      onChange={(event) =>
+                                        handleMcSpecialSegmentFormChange(event, "edit")
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    >
+                                      <option value="">Select a song</option>
+                                      {setlist.map((song) => (
+                                        <option key={song.id} value={song.id}>
+                                          {formatMcBlockSectionLabel(song.section)} - {song.position}.{" "}
+                                          {song.title}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                ) : null}
+
+                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  MC Notes / Script
+                                  <textarea
+                                    name="notes"
+                                    value={editingMcSpecialSegmentFormState.notes}
+                                    onChange={(event) =>
+                                      handleMcSpecialSegmentFormChange(event, "edit")
+                                    }
+                                    className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                  />
+                                </label>
+
+                                <div className="flex flex-wrap gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveMcSpecialSegment(segment.id)}
+                                    disabled={isSavingSegment}
+                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                  >
+                                    {isSavingSegment ? "Saving..." : "Save Segment"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingMcSpecialSegment}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <h5 className="text-base font-semibold text-stone-900">
+                                  {segment.title}
+                                </h5>
+                                {segment.notes?.trim() ? (
+                                  <p className="whitespace-pre-wrap text-sm text-stone-700">
+                                    {segment.notes.trim()}
+                                  </p>
+                                ) : (
+                                  <p className="text-sm text-stone-500">No MC notes added yet.</p>
+                                )}
+                                {setlist.length > 0 ? (
+                                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                      Place Before Song
+                                      <select
+                                        value={mcSpecialSegmentPlacementDrafts[segment.id] ?? ""}
+                                        onChange={(event) =>
+                                          setMcSpecialSegmentPlacementDrafts((currentDrafts) => ({
+                                            ...currentDrafts,
+                                            [segment.id]: event.target.value,
+                                          }))
+                                        }
+                                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                      >
+                                        <option value="">Select a song</option>
+                                        {setlist.map((song) => (
+                                          <option key={song.id} value={song.id}>
+                                            {formatMcBlockSectionLabel(song.section)} - {song.position}.{" "}
+                                            {song.title}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void handlePlaceMcSpecialSegmentBeforeSong(
+                                          segment.id,
+                                          mcSpecialSegmentPlacementDrafts[segment.id] ?? "",
+                                        )
+                                      }
+                                      disabled={!(mcSpecialSegmentPlacementDrafts[segment.id] ?? "")}
+                                      className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                    >
+                                      Place Before Song
+                                    </button>
+                                  </div>
+                                ) : null}
+                                <div className="flex flex-wrap gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingMcSpecialSegment(segment)}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Edit Placement
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMcSpecialSegment(segment.id)}
+                                    disabled={isDeletingSegment}
+                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                  >
+                                    {isDeletingSegment ? "Removing..." : "Remove"}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                </div>
+              ) : null}
+            </section>
+
+            <section className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
                 <h3 className="text-lg font-semibold text-stone-900">Sponsor Placement in MC Flow</h3>
                 <p className="text-sm text-stone-600">
                   This ordered rundown follows the live setlist so sponsor reads can sit clearly
                   between songs without changing the actual set order.
+                </p>
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                  Drag sponsor reads or special segments onto songs, sections, or other MC items to reorder them.
                 </p>
               </div>
 
@@ -14952,7 +16416,7 @@ export function ShowPage({
                   onClick={() => setActiveAdminTab("sponsors")}
                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                 >
-                  Open Sponsors Tab
+                  Manage Sponsors
                 </button>
               </div>
 
@@ -14969,10 +16433,32 @@ export function ShowPage({
                         <div
                           key={item.id}
                           className="rounded-2xl border border-dashed border-stone-300 bg-stone-100/70 px-4 py-3"
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const sourceIndex = adminMcSponsorPlacementItems.findIndex(
+                              (flowItem) =>
+                                flowItem.kind === draggedMcPlacementItem?.kind &&
+                                ((flowItem.kind === "sponsor" &&
+                                  draggedMcPlacementItem?.kind === "sponsor" &&
+                                  flowItem.sponsor.id === draggedMcPlacementItem.id) ||
+                                  (flowItem.kind === "segment" &&
+                                    draggedMcPlacementItem?.kind === "segment" &&
+                                    flowItem.segment.id === draggedMcPlacementItem.id)),
+                            );
+
+                            if (sourceIndex >= 0) {
+                              void handleReorderMcPlacementItems(sourceIndex, index);
+                            }
+
+                            setDraggedMcPlacementItem(null);
+                          }}
                         >
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600">
                             {getMcFlowMarkerLabel(item.marker)}
                           </p>
+                          <p className="mt-1 text-xs text-stone-500">Drop sponsor reads or special segments here</p>
                         </div>
                       );
                     }
@@ -14990,7 +16476,15 @@ export function ShowPage({
                       const isEditingSponsor = activeSponsorActionId === `show-${item.sponsor.id}`;
 
                       return (
-                        <div key={item.id} className="grid gap-3">
+                        <div
+                          key={item.id}
+                          className="grid gap-3"
+                          draggable
+                          onDragStart={() =>
+                            setDraggedMcPlacementItem({ kind: "sponsor", id: item.sponsor.id })
+                          }
+                          onDragEnd={() => setDraggedMcPlacementItem(null)}
+                        >
                           <div className="flex items-start gap-3">
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-200 text-sm font-semibold text-amber-950">
                               {index + 1}
@@ -15036,6 +16530,211 @@ export function ShowPage({
                       );
                     }
 
+                    if (item.kind === "segment") {
+                      const segmentIndex = adminMcSponsorPlacementItems.findIndex(
+                        (flowItem) =>
+                          flowItem.kind === "segment" && flowItem.segment.id === item.segment.id,
+                      );
+                      const canMoveUp = segmentIndex > 0;
+                      const canMoveDown =
+                        segmentIndex >= 0 &&
+                        segmentIndex < adminMcSponsorPlacementItems.length - 1;
+                      const isMovingSegment =
+                        activeSponsorActionId === `mc-special-segment-move-${item.segment.id}`;
+                      const isSavingSegment =
+                        activeSponsorActionId === `mc-special-segment-${item.segment.id}`;
+                      const isDeletingSegment =
+                        activeSponsorActionId === `mc-special-segment-delete-${item.segment.id}`;
+                      const isEditingSegment = editingMcSpecialSegmentId === item.segment.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="grid gap-3"
+                          draggable
+                          onDragStart={() =>
+                            setDraggedMcPlacementItem({ kind: "segment", id: item.segment.id })
+                          }
+                          onDragEnd={() => setDraggedMcPlacementItem(null)}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const sourceIndex = adminMcSponsorPlacementItems.findIndex(
+                              (flowItem) =>
+                                flowItem.kind === draggedMcPlacementItem?.kind &&
+                                ((flowItem.kind === "sponsor" &&
+                                  draggedMcPlacementItem?.kind === "sponsor" &&
+                                  flowItem.sponsor.id === draggedMcPlacementItem.id) ||
+                                  (flowItem.kind === "segment" &&
+                                    draggedMcPlacementItem?.kind === "segment" &&
+                                    flowItem.segment.id === draggedMcPlacementItem.id)),
+                            );
+
+                            if (sourceIndex >= 0) {
+                              void handleReorderMcPlacementItems(sourceIndex, index);
+                            }
+
+                            setDraggedMcPlacementItem(null);
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-200 text-sm font-semibold text-cyan-950">
+                              {index + 1}
+                            </div>
+                            <div className="min-w-0 flex-1 grid gap-3">
+                              <article className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-4">
+                                <div className="grid gap-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full bg-cyan-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-900">
+                                      Special Segment
+                                    </span>
+                                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
+                                      {formatSponsorPlacementType(item.segment.placement_type)}
+                                    </span>
+                                  </div>
+                                  {isEditingSegment ? (
+                                    <div className="grid gap-4">
+                                      <div className="grid gap-4 lg:grid-cols-2">
+                                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                          Segment Title
+                                          <input
+                                            type="text"
+                                            name="title"
+                                            value={editingMcSpecialSegmentFormState.title}
+                                            onChange={(event) =>
+                                              handleMcSpecialSegmentFormChange(event, "edit")
+                                            }
+                                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                          />
+                                        </label>
+                                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                          Placement
+                                          <select
+                                            name="placementType"
+                                            value={editingMcSpecialSegmentFormState.placementType}
+                                            onChange={(event) =>
+                                              handleMcSpecialSegmentFormChange(event, "edit")
+                                            }
+                                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                          >
+                                            {sponsorPlacementOptions
+                                              .filter((option) => option.value)
+                                              .map((option) => (
+                                                <option key={option.value} value={option.value}>
+                                                  {option.label}
+                                                </option>
+                                              ))}
+                                          </select>
+                                        </label>
+                                      </div>
+                                      {editingMcSpecialSegmentFormState.placementType === "before_performer" ||
+                                      editingMcSpecialSegmentFormState.placementType === "after_performer" ? (
+                                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                          Anchor Song
+                                          <select
+                                            name="anchorSongId"
+                                            value={editingMcSpecialSegmentFormState.anchorSongId}
+                                            onChange={(event) =>
+                                              handleMcSpecialSegmentFormChange(event, "edit")
+                                            }
+                                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                          >
+                                            <option value="">Select a song</option>
+                                            {setlist.map((song) => (
+                                              <option key={song.id} value={song.id}>
+                                                {formatMcBlockSectionLabel(song.section)} - {song.position}. {song.title}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                      ) : null}
+                                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                        MC Notes / Script
+                                        <textarea
+                                          name="notes"
+                                          value={editingMcSpecialSegmentFormState.notes}
+                                          onChange={(event) =>
+                                            handleMcSpecialSegmentFormChange(event, "edit")
+                                          }
+                                          className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                        />
+                                      </label>
+                                      <div className="flex flex-wrap gap-3">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSaveMcSpecialSegment(item.segment.id)}
+                                          disabled={isSavingSegment}
+                                          className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                        >
+                                          {isSavingSegment ? "Saving..." : "Save Segment"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={cancelEditingMcSpecialSegment}
+                                          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <h5 className="text-base font-semibold text-stone-900">
+                                        {item.segment.title}
+                                      </h5>
+                                      {item.segment.notes?.trim() ? (
+                                        <p className="whitespace-pre-wrap text-sm text-stone-700">
+                                          {item.segment.notes.trim()}
+                                        </p>
+                                      ) : (
+                                        <p className="text-sm text-stone-500">No MC notes added yet.</p>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </article>
+                              {!isEditingSegment ? (
+                                <div className="flex flex-wrap gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveMcSpecialSegment(item.segment.id, "up")}
+                                    disabled={!canMoveUp || isMovingSegment}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move Up
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveMcSpecialSegment(item.segment.id, "down")}
+                                    disabled={!canMoveDown || isMovingSegment}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Move Down
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingMcSpecialSegment(item.segment)}
+                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMcSpecialSegment(item.segment.id)}
+                                    disabled={isDeletingSegment}
+                                    className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                  >
+                                    {isDeletingSegment ? "Removing..." : "Remove"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     const priorSong = adminMcSponsorPlacementItems
                       .slice(0, index)
                       .reverse()
@@ -15060,7 +16759,43 @@ export function ShowPage({
                       : false;
 
                     return (
-                      <div key={item.id} className="grid gap-3">
+                        <div
+                          key={item.id}
+                          className="grid gap-3"
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (
+                              draggedMcPlacementItem?.kind === "segment" &&
+                              draggedMcPlacementItem.id
+                            ) {
+                              void handlePlaceMcSpecialSegmentBeforeSong(
+                                draggedMcPlacementItem.id,
+                                item.song.id,
+                              );
+                              setDraggedMcPlacementItem(null);
+                              return;
+                            }
+
+                            const sourceIndex = adminMcSponsorPlacementItems.findIndex(
+                              (flowItem) =>
+                                flowItem.kind === draggedMcPlacementItem?.kind &&
+                                ((flowItem.kind === "sponsor" &&
+                                  draggedMcPlacementItem?.kind === "sponsor" &&
+                                  flowItem.sponsor.id === draggedMcPlacementItem.id) ||
+                                  (flowItem.kind === "segment" &&
+                                    draggedMcPlacementItem?.kind === "segment" &&
+                                    flowItem.segment.id === draggedMcPlacementItem.id)),
+                            );
+
+                            if (sourceIndex >= 0) {
+                              void handleReorderMcPlacementItems(sourceIndex, index);
+                            }
+
+                            setDraggedMcPlacementItem(null);
+                          }}
+                        >
                         {shouldShowSectionHeader ? (
                           <div className="flex flex-col gap-1 pt-2">
                             <h4 className="text-lg font-semibold text-stone-900">
@@ -15072,7 +16807,71 @@ export function ShowPage({
                           </div>
                         ) : null}
 
-                        <article className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                        <div
+                          className={`rounded-xl border border-dashed px-4 py-2 text-xs font-medium uppercase tracking-[0.12em] transition ${
+                            draggedMcPlacementItem?.kind === "segment"
+                              ? "border-cyan-300 bg-cyan-50 text-cyan-900"
+                              : "border-stone-300 bg-stone-50 text-stone-500"
+                          }`}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+
+                            if (
+                              draggedMcPlacementItem?.kind === "segment" &&
+                              draggedMcPlacementItem.id
+                            ) {
+                              void handlePlaceMcSpecialSegmentBeforeSong(
+                                draggedMcPlacementItem.id,
+                                item.song.id,
+                              );
+                            }
+
+                            setDraggedMcPlacementItem(null);
+                          }}
+                        >
+                          {draggedMcPlacementItem?.kind === "segment"
+                            ? "Drop special segment here"
+                            : "Special segment slot before this song"}
+                        </div>
+
+                        <article
+                          className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (
+                              draggedMcPlacementItem?.kind === "segment" &&
+                              draggedMcPlacementItem.id
+                            ) {
+                              void handlePlaceMcSpecialSegmentBeforeSong(
+                                draggedMcPlacementItem.id,
+                                item.song.id,
+                              );
+                              setDraggedMcPlacementItem(null);
+                              return;
+                            }
+
+                            const sourceIndex = adminMcSponsorPlacementItems.findIndex(
+                              (flowItem) =>
+                                flowItem.kind === draggedMcPlacementItem?.kind &&
+                                ((flowItem.kind === "sponsor" &&
+                                  draggedMcPlacementItem?.kind === "sponsor" &&
+                                  flowItem.sponsor.id === draggedMcPlacementItem.id) ||
+                                  (flowItem.kind === "segment" &&
+                                    draggedMcPlacementItem?.kind === "segment" &&
+                                    flowItem.segment.id === draggedMcPlacementItem.id)),
+                            );
+
+                            if (sourceIndex >= 0) {
+                              void handleReorderMcPlacementItems(sourceIndex, index);
+                            }
+
+                            setDraggedMcPlacementItem(null);
+                          }}
+                        >
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="flex min-w-0 items-start gap-3">
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-900">
@@ -15099,35 +16898,25 @@ export function ShowPage({
                               </div>
                             </div>
 
-                            <div className="flex flex-wrap gap-3">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowSponsorAssignmentFormState({
-                                    ...initialShowSponsorAssignmentFormState,
-                                    placementType: "before_performer",
-                                    linkedPerformer: getDisplaySingerName(item.song.artist),
-                                  });
-                                  setActiveAdminTab("sponsors");
-                                }}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                              >
-                                Add Sponsor Read Before
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowSponsorAssignmentFormState({
-                                    ...initialShowSponsorAssignmentFormState,
-                                    placementType: "after_performer",
-                                    linkedPerformer: getDisplaySingerName(item.song.artist),
-                                  });
-                                  setActiveAdminTab("sponsors");
-                                }}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                              >
-                                Add Sponsor Read After
-                              </button>
+                              <div className="flex flex-wrap gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openMcSponsorReadFormForPlacement("before_performer", item.song.id)
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Add Sponsor Read Before
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openMcSponsorReadFormForPlacement("after_performer", item.song.id)
+                                  }
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Add Sponsor Read After
+                                </button>
                             </div>
                           </div>
 

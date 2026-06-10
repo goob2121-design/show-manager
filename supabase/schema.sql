@@ -291,6 +291,17 @@ create table if not exists public.mc_block_notes (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.mc_special_segments (
+  id uuid primary key default gen_random_uuid(),
+  show_id uuid not null references public.shows(id) on delete cascade,
+  title text not null,
+  notes text,
+  placement_type text,
+  anchor_song_id uuid references public.setlist_entries(id) on delete set null,
+  placement_order integer not null default 1,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.show_finance_items (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,
@@ -374,6 +385,9 @@ create index if not exists mc_block_notes_show_id_anchor_idx
 create unique index if not exists mc_block_notes_show_id_anchor_unique
   on public.mc_block_notes(show_id, anchor_song_id);
 
+create index if not exists mc_special_segments_show_id_order_idx
+  on public.mc_special_segments(show_id, placement_order, created_at);
+
 create index if not exists show_finance_items_show_id_created_at_idx
   on public.show_finance_items(show_id, created_at);
 
@@ -395,6 +409,7 @@ alter table public.show_comp_tickets enable row level security;
 alter table public.promo_links enable row level security;
 alter table public.rehearsal_entries enable row level security;
 alter table public.rehearsal_recordings enable row level security;
+alter table public.mc_special_segments enable row level security;
 
 create unique index if not exists guest_profiles_show_id_name_unique
   on public.guest_profiles(show_id, lower(name));
@@ -632,11 +647,41 @@ begin
       and tablename = 'promo_links'
       and policyname = 'Allow public delete promo links'
   ) then
-    create policy "Allow public delete promo links"
-      on public.promo_links
-      for delete
-      to anon, authenticated
-      using (true);
+create policy "Allow public delete promo links"
+on public.promo_links
+for delete
+to anon, authenticated
+using (true);
+
+drop policy if exists "Allow public read mc special segments" on public.mc_special_segments;
+drop policy if exists "Allow public insert mc special segments" on public.mc_special_segments;
+drop policy if exists "Allow public update mc special segments" on public.mc_special_segments;
+drop policy if exists "Allow public delete mc special segments" on public.mc_special_segments;
+
+create policy "Allow public read mc special segments"
+on public.mc_special_segments
+for select
+to anon, authenticated
+using (true);
+
+create policy "Allow public insert mc special segments"
+on public.mc_special_segments
+for insert
+to anon, authenticated
+with check (true);
+
+create policy "Allow public update mc special segments"
+on public.mc_special_segments
+for update
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "Allow public delete mc special segments"
+on public.mc_special_segments
+for delete
+to anon, authenticated
+using (true);
   end if;
 
   if not exists (

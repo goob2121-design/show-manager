@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type {
   GuestProfile,
   McBlockNote,
+  McSpecialSegment,
   SetlistEntry,
   ShowGuestSong,
   SongRecord,
@@ -71,6 +72,7 @@ async function loadMcPageData(slug: string) {
       guestProfiles: [],
       sponsors: [],
       blockNotes: [],
+      specialSegments: [],
     };
   }
 
@@ -80,6 +82,7 @@ async function loadMcPageData(slug: string) {
     { data: sponsorRows, error: sponsorError },
     { data: sponsorLibraryRows, error: sponsorLibraryError },
     { data: blockNoteRows, error: blockNoteError },
+    { data: specialSegmentRows, error: specialSegmentError },
   ] = await Promise.all([
     supabase
       .from("setlist_entries")
@@ -131,6 +134,12 @@ async function loadMcPageData(slug: string) {
       .select("*")
       .eq("show_id", showRecord.id)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("mc_special_segments")
+      .select("*")
+      .eq("show_id", showRecord.id)
+      .order("placement_order", { ascending: true })
+      .order("created_at", { ascending: true }),
   ]);
 
   if (setlistError) {
@@ -153,6 +162,10 @@ async function loadMcPageData(slug: string) {
     throw blockNoteError;
   }
 
+  if (specialSegmentError) {
+    throw specialSegmentError;
+  }
+
   return {
     show: showRecord as ShowRecord,
     setlist: (setlistRows ?? []) as SetlistEntryRow[],
@@ -162,6 +175,7 @@ async function loadMcPageData(slug: string) {
       (sponsorLibraryRows ?? []) as SponsorLibraryEntry[],
     ),
     blockNotes: (blockNoteRows ?? []) as McBlockNote[],
+    specialSegments: (specialSegmentRows ?? []) as McSpecialSegment[],
   };
 }
 
@@ -181,6 +195,7 @@ export default async function McShowPage({
       initialGuestProfiles={data.guestProfiles}
       initialSponsors={data.sponsors}
       initialBlockNotes={data.blockNotes}
+      initialSpecialSegments={data.specialSegments}
     />
   );
 }
