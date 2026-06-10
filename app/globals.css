@@ -563,9 +563,16 @@ html.dark select {
     padding: 0 !important;
   }
 
+  main[data-print-mode] {
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
   .print-copy-header {
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
+    margin: 0 0 1rem;
+    padding: 0 0 0.75rem;
     border-bottom: 2px solid #000000;
   }
 

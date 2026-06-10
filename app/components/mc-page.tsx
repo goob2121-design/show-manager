@@ -1295,9 +1295,9 @@ export function SponsorReadCard({ sponsor }: { sponsor: ShowSponsor }) {
 
 export function SpecialSegmentCard({ segment }: { segment: McSpecialSegment }) {
   return (
-    <article className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 sm:p-5">
-      <div className="grid gap-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-900">
+    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+      <div className="grid gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
           Special Segment
         </p>
         <h4 className="text-lg font-semibold text-stone-900">{segment.title}</h4>
@@ -1624,6 +1624,29 @@ export function McPage({
 
     return groups;
   }, [mcFlowItems]);
+  const packetSpecialSegmentReads = useMemo(() => {
+    const seen = new Set<string>();
+    return mcFlowItems.reduce<Array<McSpecialSegment & { readNumber: number }>>((items, item) => {
+      if (item.kind !== "segment" || seen.has(item.segment.id) || !item.segment.notes?.trim()) {
+        return items;
+      }
+
+      seen.add(item.segment.id);
+      items.push({
+        ...item.segment,
+        readNumber: items.length + 1,
+      });
+      return items;
+    }, []);
+  }, [mcFlowItems]);
+  const specialSegmentReadNumberLookup = useMemo(
+    () =>
+      packetSpecialSegmentReads.reduce<Record<string, number>>((lookup, segment) => {
+        lookup[segment.id] = segment.readNumber;
+        return lookup;
+      }, {}),
+    [packetSpecialSegmentReads],
+  );
   const quickNavTimelineMessages = useMemo(
     () => buildShowTimelineMessages(show?.show_date ?? null),
     [show?.show_date],
@@ -1726,6 +1749,7 @@ export function McPage({
         }
 
         if (item.kind === "segment") {
+          const readNumber = specialSegmentReadNumberLookup[item.segment.id] ?? null;
           return printMode ? (
             <div
               key={item.id}
@@ -1736,11 +1760,11 @@ export function McPage({
                   <span className="mc-print-inline-label">Special Segment</span>
                   <span className="mc-print-inline-separator"> - </span>
                   <span className="mc-print-inline-value">{item.segment.title}</span>
-                  {item.segment.notes?.trim() ? (
+                  {readNumber ? (
                     <>
                       <span className="mc-print-inline-separator"> - </span>
-                      <span className="mc-print-inline-note whitespace-pre-wrap">
-                        {item.segment.notes.trim()}
+                      <span className="mc-print-inline-note">
+                        See Special Segment Read #{readNumber}
                       </span>
                     </>
                   ) : null}
@@ -1752,7 +1776,21 @@ export function McPage({
               key={item.id}
               className="border-t border-stone-200 pt-4 first:border-t-0 first:pt-0"
             >
-              <SpecialSegmentCard segment={item.segment} />
+              <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <div className="grid gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    Special Segment
+                  </p>
+                  <h4 className="text-lg font-semibold text-stone-900">{item.segment.title}</h4>
+                  {readNumber ? (
+                    <p className="text-sm text-stone-700">
+                      See Special Segment Read #{readNumber}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-stone-500">No special segment content added yet.</p>
+                  )}
+                </div>
+              </article>
             </div>
           );
         }
@@ -2239,6 +2277,36 @@ export function McPage({
           </section>
         ) : null}
 
+        {packetSpecialSegmentReads.length > 0 ? (
+          <section className="print-hidden mc-section flex flex-col gap-4 border-t border-stone-200 pt-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Special Segment Reads</h2>
+              <p className="text-sm text-stone-600">
+                Full special segment reads and notes for backup reference during the show.
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              {packetSpecialSegmentReads.map((segment) => (
+                <article
+                  key={`screen-special-segment-${segment.id}`}
+                  className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+                >
+                  <div className="grid gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      Special Segment Read #{segment.readNumber}
+                    </p>
+                    <h3 className="text-lg font-semibold text-stone-900">{segment.title}</h3>
+                    <p className="whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                      {segment.notes?.trim() || "No special segment content added yet."}
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <div className="print-only mc-print-packet">
           <section className="mc-print-page mc-print-page-forced">
             <header className="mc-print-page-header">
@@ -2565,6 +2633,32 @@ export function McPage({
               </div>
             </section>
           )) : null}
+
+          {packetSpecialSegmentReads.length > 0 ? (
+            <section className="mc-print-page mc-print-page-forced">
+              <header className="mc-print-page-header">
+                <p className="mc-print-kicker">Special Segments</p>
+                <h1>Special Segment Reads</h1>
+                <p>{show.name}</p>
+              </header>
+
+              <div className="mc-print-stack">
+                <section className="mc-print-panel">
+                  <div className="mc-print-note-stack">
+                    {packetSpecialSegmentReads.map((segment) => (
+                      <article key={segment.id} className="mc-print-note-card">
+                        <h3>Special Segment Read #{segment.readNumber}</h3>
+                        <p className="mc-print-flow-note">{segment.title}</p>
+                        <p className="mc-print-script whitespace-pre-wrap">
+                          {segment.notes?.trim() || "No special segment content added yet."}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            </section>
+          ) : null}
 
         </div>
 

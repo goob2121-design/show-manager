@@ -16530,6 +16530,15 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                     : segment.placement_type,
                                 )}
                               </span>
+                              {!isEditingSegment ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingMcSpecialSegment(segment)}
+                                  className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-100 transition hover:bg-slate-700"
+                                >
+                                  Edit
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() => toggleCollapsedMcSegment(segment.id)}
@@ -16952,18 +16961,27 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             <div className="min-w-0 flex-1 grid gap-3">
                               <article className="rounded-2xl border border-cyan-700/70 bg-slate-900 px-4 py-4 shadow-[0_0_0_1px_rgba(8,145,178,0.12)]">
                                 <div className="grid gap-3">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
-                                      Special Segment
-                                    </span>
-                                    <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-200">
-                                      {formatSponsorPlacementType(item.segment.placement_type)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleCollapsedMcSegment(item.segment.id)}
-                                      className="ml-auto rounded-xl border border-cyan-700 bg-slate-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-slate-700"
-                                    >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
+                                Special Segment
+                              </span>
+                              <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-200">
+                                {formatSponsorPlacementType(item.segment.placement_type)}
+                              </span>
+                              {!isEditingSegment ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingMcSpecialSegment(item.segment)}
+                                  className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-100 transition hover:bg-slate-700"
+                                >
+                                  Edit
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => toggleCollapsedMcSegment(item.segment.id)}
+                                className="ml-auto rounded-xl border border-cyan-700 bg-slate-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-slate-700"
+                              >
                                       {isSegmentCollapsed ? "Expand" : "Collapse"}
                                     </button>
                                   </div>
