@@ -3,10 +3,12 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
+import { buildMcPlacementSponsors, sortMcSponsorReads } from "@/lib/mc-sponsor-reads";
 import { buildShowTimelineMessages } from "@/lib/show-reminders";
 import type {
   GuestProfile,
   McBlockNote,
+  McSponsorRead,
   McSpecialSegment,
   SetSection,
   SetlistEntry,
@@ -48,6 +50,7 @@ type McPageProps = {
   initialSetlist: SetlistEntryRow[];
   initialGuestProfiles: GuestProfile[];
   initialSponsors: ShowSponsor[];
+  initialSponsorReads: McSponsorRead[];
   initialBlockNotes: McBlockNote[];
   initialSpecialSegments: McSpecialSegment[];
 };
@@ -748,13 +751,6 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
       id: "placement-marker-before-intermission",
       marker: "before-intermission",
     });
-    beforeIntermission.forEach((sponsor) => {
-      items.push({
-        kind: "sponsor",
-        id: `before-intermission-${sponsor.id}`,
-        sponsor,
-      });
-    });
   }
 
   beforeIntermission.forEach((sponsor) => {
@@ -786,13 +782,6 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
       kind: "marker",
       id: "placement-marker-after-intermission",
       marker: "after-intermission",
-    });
-    afterIntermission.forEach((sponsor) => {
-      items.push({
-        kind: "sponsor",
-        id: `after-intermission-${sponsor.id}`,
-        sponsor,
-      });
     });
   }
 
@@ -830,13 +819,6 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
       id: "placement-marker-closing",
       marker: "closing",
     });
-    closing.forEach((sponsor) => {
-      items.push({
-        kind: "sponsor",
-        id: `closing-${sponsor.id}`,
-        sponsor,
-      });
-    });
   }
 
   closing.forEach((sponsor) => {
@@ -869,13 +851,6 @@ export function buildMcFlowItems<TSong extends McFlowSongBase>(
       kind: "marker",
       id: "placement-marker-flexible",
       marker: "flexible",
-    });
-    flexible.forEach((sponsor) => {
-      items.push({
-        kind: "sponsor",
-        id: `flexible-${sponsor.id}`,
-        sponsor,
-      });
     });
   }
 
@@ -1425,6 +1400,7 @@ export function McPage({
   initialSetlist,
   initialGuestProfiles,
   initialSponsors,
+  initialSponsorReads,
   initialBlockNotes,
   initialSpecialSegments,
 }: McPageProps) {
@@ -1438,6 +1414,11 @@ export function McPage({
   const [showLogo, setShowLogo] = useState(true);
 
   const sponsors = useMemo(() => sortSponsors(initialSponsors), [initialSponsors]);
+  const sponsorReads = useMemo(() => sortMcSponsorReads(initialSponsorReads), [initialSponsorReads]);
+  const placementSponsors = useMemo(
+    () => buildMcPlacementSponsors(sponsors, sponsorReads),
+    [sponsorReads, sponsors],
+  );
   const runSections = useMemo(
     () => buildMcRunSections(setlist, guestProfiles, blockNotes),
     [blockNotes, guestProfiles, setlist],
@@ -1448,12 +1429,12 @@ export function McPage({
     [blockNotes, runSections],
   );
   const runSheetData = useMemo(
-    () => buildMcRunSheetData(runSections, sponsors, specialSegments),
-    [runSections, specialSegments, sponsors],
+    () => buildMcRunSheetData(runSections, placementSponsors, specialSegments),
+    [placementSponsors, runSections, specialSegments],
   );
   const mcFlowItems = useMemo(
-    () => buildMcFlowItems(setlist, sponsors, specialSegments),
-    [setlist, specialSegments, sponsors],
+    () => buildMcFlowItems(setlist, placementSponsors, specialSegments),
+    [placementSponsors, setlist, specialSegments],
   );
   const mcBlockLookup = useMemo(
     () =>
@@ -1581,6 +1562,14 @@ export function McPage({
       guestInfoEntries.slice(index * chunkSize, index * chunkSize + chunkSize),
     );
   }, [guestInfoEntries]);
+  const setlistSectionBySongId = useMemo(
+    () =>
+      setlist.reduce<Record<string, SetSection>>((lookup, song) => {
+        lookup[song.id] = song.section;
+        return lookup;
+      }, {}),
+    [setlist],
+  );
   const mcFlowGroups = useMemo(() => {
     const groups: Record<
       "set1" | "intermission" | "set2" | "encore" | "closing",
@@ -1596,6 +1585,42 @@ export function McPage({
     let activeGroup: keyof typeof groups = "set1";
 
     mcFlowItems.forEach((item) => {
+      if (
+        item.kind === "sponsor" &&
+        item.sponsor.placement_type === "before_performer" &&
+        item.sponsor.mc_anchor_song_id
+      ) {
+        const anchoredSection = setlistSectionBySongId[item.sponsor.mc_anchor_song_id];
+
+        if (anchoredSection === "set2") {
+          groups.set2.push(item);
+          return;
+        }
+
+        if (anchoredSection === "encore") {
+          groups.encore.push(item);
+          return;
+        }
+      }
+
+      if (
+        item.kind === "segment" &&
+        item.segment.placement_type === "before_performer" &&
+        item.segment.anchor_song_id
+      ) {
+        const anchoredSection = setlistSectionBySongId[item.segment.anchor_song_id];
+
+        if (anchoredSection === "set2") {
+          groups.set2.push(item);
+          return;
+        }
+
+        if (anchoredSection === "encore") {
+          groups.encore.push(item);
+          return;
+        }
+      }
+
       if (item.kind === "marker") {
         if (item.marker === "before-intermission" || item.marker === "after-intermission") {
           activeGroup = "intermission";
@@ -1623,7 +1648,7 @@ export function McPage({
     });
 
     return groups;
-  }, [mcFlowItems]);
+  }, [mcFlowItems, setlistSectionBySongId]);
   const packetSpecialSegmentReads = useMemo(() => {
     const seen = new Set<string>();
     return mcFlowItems.reduce<Array<McSpecialSegment & { readNumber: number }>>((items, item) => {

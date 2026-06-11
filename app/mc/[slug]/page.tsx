@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { McPage } from "@/app/components/mc-page";
+import { sortMcSponsorReads } from "@/lib/mc-sponsor-reads";
 import { getShowNameBySlug } from "@/lib/route-metadata";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type {
   GuestProfile,
   McBlockNote,
+  McSponsorRead,
   McSpecialSegment,
   SetlistEntry,
   ShowGuestSong,
@@ -71,6 +73,7 @@ async function loadMcPageData(slug: string) {
       setlist: [],
       guestProfiles: [],
       sponsors: [],
+      sponsorReads: [],
       blockNotes: [],
       specialSegments: [],
     };
@@ -81,6 +84,7 @@ async function loadMcPageData(slug: string) {
     { data: guestProfileRows, error: guestProfileError },
     { data: sponsorRows, error: sponsorError },
     { data: sponsorLibraryRows, error: sponsorLibraryError },
+    { data: sponsorReadRows, error: sponsorReadError },
     { data: blockNoteRows, error: blockNoteError },
     { data: specialSegmentRows, error: specialSegmentError },
   ] = await Promise.all([
@@ -132,6 +136,12 @@ async function loadMcPageData(slug: string) {
       .select("*")
       .order("name", { ascending: true }),
     supabase
+      .from("mc_sponsor_reads")
+      .select("*")
+      .eq("show_id", showRecord.id)
+      .order("placement_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase
       .from("mc_block_notes")
       .select("*")
       .eq("show_id", showRecord.id)
@@ -160,6 +170,10 @@ async function loadMcPageData(slug: string) {
     throw sponsorLibraryError;
   }
 
+  if (sponsorReadError) {
+    throw sponsorReadError;
+  }
+
   if (blockNoteError) {
     throw blockNoteError;
   }
@@ -176,6 +190,7 @@ async function loadMcPageData(slug: string) {
       (sponsorRows ?? []) as ShowSponsor[],
       (sponsorLibraryRows ?? []) as SponsorLibraryEntry[],
     ),
+    sponsorReads: sortMcSponsorReads((sponsorReadRows ?? []) as McSponsorRead[]),
     blockNotes: (blockNoteRows ?? []) as McBlockNote[],
     specialSegments: (specialSegmentRows ?? []) as McSpecialSegment[],
   };
@@ -196,6 +211,7 @@ export default async function McShowPage({
       initialSetlist={data.setlist}
       initialGuestProfiles={data.guestProfiles}
       initialSponsors={data.sponsors}
+      initialSponsorReads={data.sponsorReads}
       initialBlockNotes={data.blockNotes}
       initialSpecialSegments={data.specialSegments}
     />

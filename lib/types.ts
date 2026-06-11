@@ -183,6 +183,7 @@ export type ShowSponsor = {
   id: string;
   show_id: string;
   sponsor_id: string | null;
+  show_sponsor_assignment_id?: string | null;
   placement_order: number;
   placement_type: string | null;
   mc_anchor_song_id: string | null;
@@ -196,6 +197,18 @@ export type ShowSponsor = {
   comp_tickets_checked_in: number;
   created_at: string;
   sponsor?: SponsorLibraryEntry | null;
+};
+
+export type McSponsorRead = {
+  id: string;
+  show_id: string;
+  show_sponsor_id: string;
+  placement_order: number;
+  placement_type: string | null;
+  anchor_song_id: string | null;
+  linked_performer: string | null;
+  custom_note: string | null;
+  created_at: string;
 };
 
 export type PromoMaterial = {

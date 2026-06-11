@@ -32,6 +32,7 @@ import {
   buildShowTimelineMessages,
   getDaysUntilDate,
 } from "@/lib/show-reminders";
+import { buildMcPlacementSponsors, sortMcSponsorReads } from "@/lib/mc-sponsor-reads";
 import { createClient } from "@/lib/supabase/client";
 import type {
   CompTicketFormState,
@@ -41,6 +42,7 @@ import type {
   GuestProfile,
   GuestProfileFormState,
   McBlockNote,
+  McSponsorRead,
   McSpecialSegment,
   PayoutFormState,
   PotentialSponsor,
@@ -1594,6 +1596,7 @@ type DataSectionKey =
   | "promoMaterials"
   | "guestProfiles"
   | "mcBlockNotes"
+  | "mcBuilder"
   | "mcSpecialSegments";
 
 type DataSectionErrors = Partial<Record<DataSectionKey, string>>;
@@ -5371,6 +5374,24 @@ function getSponsorReadText(sponsor: ShowSponsor) {
   return "Sponsor read not available.";
 }
 
+function updateSponsorReadTextInAssignments(
+  sponsors: ShowSponsor[],
+  sponsorId: string,
+  scriptText: string,
+) {
+  return sponsors.map((sponsor) =>
+    sponsor.sponsor_id === sponsorId && sponsor.sponsor
+      ? {
+          ...sponsor,
+          sponsor: {
+            ...sponsor.sponsor,
+            full_message: scriptText,
+          },
+        }
+      : sponsor,
+  );
+}
+
 function buildAdminMcFlowItems(
   runSections: ReturnType<typeof buildMcRunSections>,
   runSheetData: ReturnType<typeof buildMcRunSheetData>,
@@ -5752,6 +5773,7 @@ export function ShowPage({
   );
   const [guestProfiles, setGuestProfiles] = useState<GuestProfile[]>([]);
   const [mcBlockNotes, setMcBlockNotes] = useState<McBlockNote[]>([]);
+  const [mcSponsorReads, setMcSponsorReads] = useState<McSponsorRead[]>([]);
   const [mcSpecialSegments, setMcSpecialSegments] = useState<McSpecialSegment[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
   const [songLibrary, setSongLibrary] = useState<SongLibrarySong[]>([]);
@@ -7604,6 +7626,7 @@ export function ShowPage({
           setPromoMaterials([]);
           setGuestProfiles([]);
           setMcBlockNotes([]);
+          setMcSponsorReads([]);
           setErrorMessage("Show not found");
           return;
         }
@@ -7651,6 +7674,7 @@ export function ShowPage({
           promoMaterialRows,
           guestProfileRows,
           mcBlockNoteRows,
+          mcSponsorReadRows,
           mcSpecialSegmentRows,
         ] = await Promise.all([
           loadSection(
@@ -7864,6 +7888,17 @@ export function ShowPage({
             [],
           ),
           loadSection(
+            "mcBuilder",
+            "MC sponsor reads",
+            supabase
+              .from("mc_sponsor_reads")
+              .select("*")
+              .eq("show_id", showRecord.id)
+              .order("placement_order", { ascending: true })
+              .order("created_at", { ascending: true }),
+            [],
+          ),
+          loadSection(
             "mcSpecialSegments",
             "MC special segments",
             supabase
@@ -8006,6 +8041,7 @@ export function ShowPage({
         setPromoMaterials((promoMaterialRows ?? []) as PromoMaterial[]);
         setGuestProfiles(guestProfileRows ?? []);
         setMcBlockNotes((mcBlockNoteRows ?? []) as McBlockNote[]);
+        setMcSponsorReads(sortMcSponsorReads((mcSponsorReadRows ?? []) as McSponsorRead[]));
         setMcSpecialSegments((mcSpecialSegmentRows ?? []) as McSpecialSegment[]);
         setDataSectionErrors(sectionErrors);
       } catch (error) {
@@ -8187,17 +8223,21 @@ export function ShowPage({
     () => buildMcRunSections(setlist, guestProfiles, mcBlockNotes),
     [guestProfiles, mcBlockNotes, setlist],
   );
+  const mcPlacementSponsors = useMemo(
+    () => buildMcPlacementSponsors(showSponsors, mcSponsorReads),
+    [mcSponsorReads, showSponsors],
+  );
   const mcRunSheetData = useMemo(
-    () => buildMcRunSheetData(mcRunSections, showSponsors, mcSpecialSegments),
-    [mcRunSections, mcSpecialSegments, showSponsors],
+    () => buildMcRunSheetData(mcRunSections, mcPlacementSponsors, mcSpecialSegments),
+    [mcPlacementSponsors, mcRunSections, mcSpecialSegments],
   );
   const adminMcFlowItems = useMemo(
     () => buildAdminMcFlowItems(mcRunSections, mcRunSheetData),
     [mcRunSections, mcRunSheetData],
   );
   const adminMcSponsorPlacementItems = useMemo(
-    () => buildAdminMcSponsorPlacementItems(setlist, showSponsors, mcSpecialSegments),
-    [mcSpecialSegments, setlist, showSponsors],
+    () => buildAdminMcSponsorPlacementItems(setlist, mcPlacementSponsors, mcSpecialSegments),
+    [mcPlacementSponsors, mcSpecialSegments, setlist],
   );
   const populatedMcSections = useMemo(
     () => mcRunSheetData.sectionItems.filter((section) => section.items.length > 0),
@@ -10843,7 +10883,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }, 0);
   }
 
-  async function handleRemoveSponsorReadFromMcBuilder(sponsorId: string) {
+  async function handleRemoveSponsorReadFromMcBuilder(sponsorReadId: string) {
     if (!show) {
       setMcErrorMessage("The show is not loaded yet.");
       return;
@@ -10851,32 +10891,22 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     setMcErrorMessage(null);
     setMcStatusMessage(null);
-    setActiveSponsorActionId(`mc-remove-${sponsorId}`);
+    setActiveSponsorActionId(`mc-remove-${sponsorReadId}`);
 
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("show_sponsors")
-        .update({
-          placement_type: null,
-          mc_anchor_song_id: null,
-          linked_performer: null,
-        })
-        .eq("id", sponsorId)
-        .eq("show_id", show.id)
-        .select("id, show_id, sponsor_id, placement_order, placement_type, mc_anchor_song_id, linked_performer, custom_note, sponsor_type, default_contribution, estimated_value, recognition_notes, comp_ticket_allowance, comp_tickets_checked_in, created_at")
-        .single();
+      const { error } = await supabase
+        .from("mc_sponsor_reads")
+        .delete()
+        .eq("id", sponsorReadId)
+        .eq("show_id", show.id);
 
       if (error) {
         throw error;
       }
 
-      setShowSponsors((currentSponsors) =>
-        currentSponsors.map((sponsor) =>
-          sponsor.id === sponsorId
-            ? attachSponsorToShowAssignment(data as ShowSponsor, sponsorLibrary)
-            : sponsor,
-        ),
+      setMcSponsorReads((currentReads) =>
+        sortMcSponsorReads(currentReads.filter((read) => read.id !== sponsorReadId)),
       );
       setMcStatusMessage("Sponsor read removed from MC Builder.");
     } catch (error) {
@@ -10952,9 +10982,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
   function getMcInsertPlacementOrder(targetIndex: number | null) {
     if (targetIndex === null || targetIndex < 0) {
-      return adminMcSponsorPlacementItems.filter(
-        (item) => item.kind === "sponsor" || item.kind === "segment",
-      ).length + 1;
+      const existingOrders = [
+        ...mcSponsorReads.map((read) => read.placement_order),
+        ...mcSpecialSegments.map((segment) => segment.placement_order),
+      ];
+
+      return existingOrders.length > 0 ? Math.max(...existingOrders) + 1 : 1;
     }
 
     return (
@@ -11013,18 +11046,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     try {
       const supabase = createClient();
       const insertOrder = getMcInsertPlacementOrder(pendingMcSpecialSegmentInsertIndex);
-      const shiftedSponsors = showSponsors
-        .filter((sponsor) => isSponsorPlacedInMcBuilder(sponsor) && sponsor.placement_order >= insertOrder)
-        .map((sponsor) => ({ ...sponsor, placement_order: sponsor.placement_order + 1 }));
+      const shiftedSponsorReads = mcSponsorReads
+        .filter((read) => read.placement_order >= insertOrder)
+        .map((read) => ({ ...read, placement_order: read.placement_order + 1 }));
       const shiftedSegments = mcSpecialSegments
         .filter((segment) => segment.placement_order >= insertOrder)
         .map((segment) => ({ ...segment, placement_order: segment.placement_order + 1 }));
 
-      for (const sponsor of shiftedSponsors) {
+      for (const sponsorRead of shiftedSponsorReads) {
         const { error } = await supabase
-          .from("show_sponsors")
-          .update({ placement_order: sponsor.placement_order })
-          .eq("id", sponsor.id)
+          .from("mc_sponsor_reads")
+          .update({ placement_order: sponsorRead.placement_order })
+          .eq("id", sponsorRead.id)
           .eq("show_id", show.id);
 
         if (error) {
@@ -11058,11 +11091,13 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         throw error;
       }
 
-      setShowSponsors((currentSponsors) =>
-        currentSponsors.map((sponsor) => {
-          const shiftedSponsor = shiftedSponsors.find((candidate) => candidate.id === sponsor.id);
-          return shiftedSponsor ?? sponsor;
-        }),
+      setMcSponsorReads((currentReads) =>
+        sortMcSponsorReads(
+          currentReads.map((read) => {
+            const shiftedRead = shiftedSponsorReads.find((candidate) => candidate.id === read.id);
+            return shiftedRead ?? read;
+          }),
+        ),
       );
       setMcSpecialSegments((currentSegments) =>
         [
@@ -11129,33 +11164,47 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         mcSponsorReadFormState.scriptText.trim() &&
         mcSponsorReadFormState.scriptText.trim() !== getSponsorReadText(selectedShowSponsor)
       ) {
+        const sponsorLibraryId = selectedShowSponsor.sponsor_id;
         const { error: sponsorLibraryError } = await supabase
           .from("sponsor_library")
           .update({ full_message: mcSponsorReadFormState.scriptText.trim() })
-          .eq("id", selectedShowSponsor.sponsor_id);
+          .eq("id", sponsorLibraryId);
 
         if (sponsorLibraryError) {
           throw sponsorLibraryError;
         }
+
+        setSponsorLibrary((currentLibrary) =>
+          currentLibrary.map((sponsor) =>
+            sponsor.id === sponsorLibraryId
+              ? {
+                  ...sponsor,
+                  full_message: mcSponsorReadFormState.scriptText.trim(),
+                }
+              : sponsor,
+          ),
+        );
+        setShowSponsors((currentSponsors) =>
+          updateSponsorReadTextInAssignments(
+            currentSponsors,
+            sponsorLibraryId,
+            mcSponsorReadFormState.scriptText.trim(),
+          ),
+        );
       }
 
-      const shiftedSponsors = showSponsors
-        .filter(
-          (sponsor) =>
-            sponsor.id !== selectedShowSponsor.id &&
-            isSponsorPlacedInMcBuilder(sponsor) &&
-            sponsor.placement_order >= nextPlacementOrder,
-        )
-        .map((sponsor) => ({ ...sponsor, placement_order: sponsor.placement_order + 1 }));
+      const shiftedSponsorReads = mcSponsorReads
+        .filter((read) => read.placement_order >= nextPlacementOrder)
+        .map((read) => ({ ...read, placement_order: read.placement_order + 1 }));
       const shiftedSegments = mcSpecialSegments
         .filter((segment) => segment.placement_order >= nextPlacementOrder)
         .map((segment) => ({ ...segment, placement_order: segment.placement_order + 1 }));
 
-      for (const sponsor of shiftedSponsors) {
+      for (const sponsorRead of shiftedSponsorReads) {
         const { error } = await supabase
-          .from("show_sponsors")
-          .update({ placement_order: sponsor.placement_order })
-          .eq("id", sponsor.id)
+          .from("mc_sponsor_reads")
+          .update({ placement_order: sponsorRead.placement_order })
+          .eq("id", sponsorRead.id)
           .eq("show_id", show.id);
 
         if (error) {
@@ -11176,16 +11225,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       }
 
       const { data, error } = await supabase
-        .from("show_sponsors")
-        .update({
+        .from("mc_sponsor_reads")
+        .insert({
+          show_id: show.id,
+          show_sponsor_id: selectedShowSponsor.id,
           placement_order: nextPlacementOrder,
           placement_type: normalizeOptionalField(mcSponsorReadFormState.placementType),
-          mc_anchor_song_id: anchorSongId,
+          anchor_song_id: anchorSongId,
           linked_performer: linkedPerformer,
           custom_note: normalizeOptionalField(mcSponsorReadFormState.customNote),
         })
-        .eq("id", selectedShowSponsor.id)
-        .eq("show_id", show.id)
         .select("*")
         .single();
 
@@ -11193,15 +11242,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         throw error;
       }
 
-      setShowSponsors((currentSponsors) =>
-        currentSponsors.map((sponsor) => {
-          if (sponsor.id === selectedShowSponsor.id) {
-            return attachSponsorToShowAssignment(data as ShowSponsor, sponsorLibrary);
-          }
-
-          const shiftedSponsor = shiftedSponsors.find((candidate) => candidate.id === sponsor.id);
-          return shiftedSponsor ?? sponsor;
-        }),
+      setMcSponsorReads((currentReads) =>
+        sortMcSponsorReads([
+          ...currentReads.map((read) => {
+            const shiftedRead = shiftedSponsorReads.find((candidate) => candidate.id === read.id);
+            return shiftedRead ?? read;
+          }),
+          data as McSponsorRead,
+        ]),
       );
       setMcSpecialSegments((currentSegments) =>
         currentSegments.map((segment) => {
@@ -11586,13 +11634,13 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
   }
 
-  async function handleMoveMcSponsorBySong(sponsorId: string, direction: "up" | "down") {
+  async function handleMoveMcSponsorBySong(sponsorReadId: string, direction: "up" | "down") {
     if (!show) {
       setMcErrorMessage("The show is not loaded yet.");
       return;
     }
 
-    const sponsorToMove = showSponsors.find((sponsor) => sponsor.id === sponsorId);
+    const sponsorToMove = mcPlacementSponsors.find((sponsor) => sponsor.id === sponsorReadId);
     const firstSet2SongId = setlist.find((song) => song.section === "set2")?.id ?? null;
 
     if (
@@ -11611,34 +11659,34 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
       setMcErrorMessage(null);
       setMcStatusMessage(null);
-      setActiveSponsorActionId(`mc-${sponsorId}`);
+      setActiveSponsorActionId(`mc-${sponsorReadId}`);
 
       try {
         const supabase = createClient();
         const { error } = await supabase
-          .from("show_sponsors")
+          .from("mc_sponsor_reads")
           .update({
             placement_type: nextPlacementType,
-            mc_anchor_song_id: nextAnchorSongId,
+            anchor_song_id: nextAnchorSongId,
             linked_performer: null,
           })
-          .eq("id", sponsorId)
+          .eq("id", sponsorReadId)
           .eq("show_id", show.id);
 
         if (error) {
           throw error;
         }
 
-        setShowSponsors((currentSponsors) =>
-          currentSponsors.map((sponsor) =>
-            sponsor.id === sponsorId
+        setMcSponsorReads((currentReads) =>
+          currentReads.map((read) =>
+            read.id === sponsorReadId
               ? {
-                  ...sponsor,
+                  ...read,
                   placement_type: nextPlacementType,
-                  mc_anchor_song_id: nextAnchorSongId,
+                  anchor_song_id: nextAnchorSongId,
                   linked_performer: null,
                 }
-              : sponsor,
+              : read,
           ),
         );
         setMcStatusMessage("Sponsor flow order updated.");
@@ -11653,7 +11701,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
 
     const currentIndex = adminMcSponsorPlacementItems.findIndex(
-      (item) => item.kind === "sponsor" && item.sponsor.id === sponsorId,
+      (item) => item.kind === "sponsor" && item.sponsor.id === sponsorReadId,
     );
 
     if (currentIndex < 0) {
@@ -11679,59 +11727,60 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       reorderedItems[currentIndex],
     ];
 
-    const sponsorSequence = reorderedItems.filter(
+    const movableSequence = reorderedItems.filter(
       (
         item,
-      ): item is Extract<McSponsorPlacementRenderableItem, { kind: "sponsor" }> =>
-        item.kind === "sponsor",
+      ): item is
+        | Extract<McSponsorPlacementRenderableItem, { kind: "sponsor" }>
+        | Extract<McSponsorPlacementRenderableItem, { kind: "segment" }> =>
+        item.kind === "sponsor" || item.kind === "segment",
     );
 
-    const movedSponsorPlacement = resolveMcSponsorPlacementFromSongFlow(
-      reorderedItems,
-      sponsorId,
-    );
-    const nextSponsors = showSponsors
-      .map((sponsor) => {
-        const nextOrder = sponsorSequence.findIndex((item) => item.sponsor.id === sponsor.id);
+    const movedSponsorPlacement = resolveMcSponsorPlacementFromSongFlow(reorderedItems, sponsorReadId);
+    const nextSponsorReads = mcSponsorReads
+      .map((read) => {
+        const nextOrder = movableSequence.findIndex(
+          (item) => item.kind === "sponsor" && item.sponsor.id === read.id,
+        );
 
         if (nextOrder < 0) {
-          return sponsor;
+          return read;
         }
 
-        if (sponsor.id === sponsorId) {
+        if (read.id === sponsorReadId) {
           return {
-            ...sponsor,
+            ...read,
             placement_order: nextOrder + 1,
             placement_type: movedSponsorPlacement.placement_type,
-            mc_anchor_song_id: movedSponsorPlacement.mc_anchor_song_id,
+            anchor_song_id: movedSponsorPlacement.mc_anchor_song_id,
             linked_performer: movedSponsorPlacement.linked_performer,
           };
         }
 
         return {
-          ...sponsor,
+          ...read,
           placement_order: nextOrder + 1,
         };
       })
-      .sort((sponsorA, sponsorB) => sponsorA.placement_order - sponsorB.placement_order);
+      .sort((readA, readB) => readA.placement_order - readB.placement_order);
 
     setMcErrorMessage(null);
     setMcStatusMessage(null);
-    setActiveSponsorActionId(`mc-${sponsorId}`);
+    setActiveSponsorActionId(`mc-${sponsorReadId}`);
 
     try {
       const supabase = createClient();
 
-      for (const sponsor of nextSponsors) {
+      for (const sponsorRead of nextSponsorReads) {
         const { error } = await supabase
-          .from("show_sponsors")
+          .from("mc_sponsor_reads")
           .update({
-            placement_order: sponsor.placement_order,
-            placement_type: sponsor.placement_type,
-            mc_anchor_song_id: sponsor.mc_anchor_song_id,
-            linked_performer: sponsor.linked_performer,
+            placement_order: sponsorRead.placement_order,
+            placement_type: sponsorRead.placement_type,
+            anchor_song_id: sponsorRead.anchor_song_id,
+            linked_performer: sponsorRead.linked_performer,
           })
-          .eq("id", sponsor.id)
+          .eq("id", sponsorRead.id)
           .eq("show_id", show.id);
 
         if (error) {
@@ -11739,7 +11788,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         }
       }
 
-      setShowSponsors(nextSponsors);
+      setMcSponsorReads(sortMcSponsorReads(nextSponsorReads));
       setMcStatusMessage("Sponsor flow order updated.");
     } catch (error) {
       setMcErrorMessage(getErrorMessage(error));
@@ -11887,32 +11936,32 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         item.kind === "sponsor" || item.kind === "segment",
     );
 
-    const nextSponsors = showSponsors.map((sponsor) => {
+    const nextSponsorReads = mcSponsorReads.map((read) => {
       const nextOrder = movableSequence.findIndex(
-        (item) => item.kind === "sponsor" && item.sponsor.id === sponsor.id,
+        (item) => item.kind === "sponsor" && item.sponsor.id === read.id,
       );
 
       if (nextOrder < 0) {
-        return sponsor;
+        return read;
       }
 
-      if (movedItem.kind === "sponsor" && sponsor.id === movedItem.sponsor.id) {
+      if (movedItem.kind === "sponsor" && read.id === movedItem.sponsor.id) {
         const movedSponsorPlacement = resolveMcSponsorPlacementFromSongFlow(
           reorderedItems,
           movedItem.sponsor.id,
         );
 
         return {
-          ...sponsor,
+          ...read,
           placement_order: nextOrder + 1,
           placement_type: movedSponsorPlacement.placement_type,
-          mc_anchor_song_id: movedSponsorPlacement.mc_anchor_song_id,
+          anchor_song_id: movedSponsorPlacement.mc_anchor_song_id,
           linked_performer: movedSponsorPlacement.linked_performer,
         };
       }
 
       return {
-        ...sponsor,
+        ...read,
         placement_order: nextOrder + 1,
       };
     });
@@ -11953,16 +12002,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     try {
       const supabase = createClient();
 
-      for (const sponsor of nextSponsors) {
+      for (const sponsorRead of nextSponsorReads) {
         const { error } = await supabase
-          .from("show_sponsors")
+          .from("mc_sponsor_reads")
           .update({
-            placement_order: sponsor.placement_order,
-            placement_type: sponsor.placement_type,
-            mc_anchor_song_id: sponsor.mc_anchor_song_id,
-            linked_performer: sponsor.linked_performer,
+            placement_order: sponsorRead.placement_order,
+            placement_type: sponsorRead.placement_type,
+            anchor_song_id: sponsorRead.anchor_song_id,
+            linked_performer: sponsorRead.linked_performer,
           })
-          .eq("id", sponsor.id)
+          .eq("id", sponsorRead.id)
           .eq("show_id", show.id);
 
         if (error) {
@@ -11986,7 +12035,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         }
       }
 
-      setShowSponsors(nextSponsors);
+      setMcSponsorReads(sortMcSponsorReads(nextSponsorReads));
       setMcSpecialSegments(nextSegments);
       setMcStatusMessage("MC running order updated.");
     } catch (error) {
@@ -12056,7 +12105,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
   }
 
-  async function handlePlaceSponsorBeforeSong(sponsorId: string, songId: string) {
+  async function handlePlaceSponsorBeforeSong(sponsorReadId: string, songId: string) {
     if (!show) {
       setMcErrorMessage("The show is not loaded yet.");
       return;
@@ -12069,34 +12118,34 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     setMcErrorMessage(null);
     setMcStatusMessage(null);
-    setActiveSponsorActionId(`mc-place-before-song-${sponsorId}`);
+    setActiveSponsorActionId(`mc-place-before-song-${sponsorReadId}`);
 
     try {
       const supabase = createClient();
       const { error } = await supabase
-        .from("show_sponsors")
+        .from("mc_sponsor_reads")
         .update({
           placement_type: "before_performer",
-          mc_anchor_song_id: songId,
+          anchor_song_id: songId,
           linked_performer: null,
         })
-        .eq("id", sponsorId)
+        .eq("id", sponsorReadId)
         .eq("show_id", show.id);
 
       if (error) {
         throw error;
       }
 
-        setShowSponsors((currentSponsors) =>
-          currentSponsors.map((sponsor) =>
-            sponsor.id === sponsorId
+        setMcSponsorReads((currentReads) =>
+          currentReads.map((read) =>
+            read.id === sponsorReadId
               ? {
-                  ...sponsor,
+                  ...read,
                   placement_type: "before_performer",
-                  mc_anchor_song_id: songId,
+                  anchor_song_id: songId,
                   linked_performer: null,
                 }
-              : sponsor,
+              : read,
           ),
         );
         setMcStatusMessage("Sponsor read placed before Set 2.");
@@ -12974,11 +13023,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       setMcBlockNotes((currentNotes) =>
         currentNotes.filter((note) => !setlistEntryIdsToRemove.includes(note.anchor_song_id)),
       );
-      setShowSponsors((currentSponsors) =>
-        currentSponsors.map((sponsor) =>
-          sponsor.mc_anchor_song_id && setlistEntryIdsToRemove.includes(sponsor.mc_anchor_song_id)
-            ? { ...sponsor, mc_anchor_song_id: null }
-            : sponsor,
+      setMcSponsorReads((currentReads) =>
+        currentReads.map((read) =>
+          read.anchor_song_id && setlistEntryIdsToRemove.includes(read.anchor_song_id)
+            ? { ...read, anchor_song_id: null }
+            : read,
         ),
       );
     } catch (error) {
@@ -14517,12 +14566,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       setMcBlockNotes((currentNotes) =>
         currentNotes.filter((note) => !currentShowSetlistEntryIdsToRemove.includes(note.anchor_song_id)),
       );
-      setShowSponsors((currentSponsors) =>
-        currentSponsors.map((sponsor) =>
-          sponsor.mc_anchor_song_id &&
-          currentShowSetlistEntryIdsToRemove.includes(sponsor.mc_anchor_song_id)
-            ? { ...sponsor, mc_anchor_song_id: null }
-            : sponsor,
+      setMcSponsorReads((currentReads) =>
+        currentReads.map((read) =>
+          read.anchor_song_id &&
+          currentShowSetlistEntryIdsToRemove.includes(read.anchor_song_id)
+            ? { ...read, anchor_song_id: null }
+            : read,
         ),
       );
     } catch (error) {
@@ -14585,11 +14634,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       setMcBlockNotes((currentNotes) =>
         currentNotes.filter((note) => !setlistEntryIdsToRemove.includes(note.anchor_song_id)),
       );
-      setShowSponsors((currentSponsors) =>
-        currentSponsors.map((sponsor) =>
-          sponsor.mc_anchor_song_id && setlistEntryIdsToRemove.includes(sponsor.mc_anchor_song_id)
-            ? { ...sponsor, mc_anchor_song_id: null }
-            : sponsor,
+      setMcSponsorReads((currentReads) =>
+        currentReads.map((read) =>
+          read.anchor_song_id && setlistEntryIdsToRemove.includes(read.anchor_song_id)
+            ? { ...read, anchor_song_id: null }
+            : read,
         ),
       );
     } catch (error) {
@@ -17015,7 +17064,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => startEditingShowSponsor(item.sponsor.id)}
+                                  onClick={() =>
+                                    startEditingShowSponsor(
+                                      item.sponsor.show_sponsor_assignment_id ?? item.sponsor.id,
+                                    )
+                                  }
                                   className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                                 >
                                   Edit
@@ -17312,7 +17365,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     const set2HeaderSponsors =
                       isFirstSet2Song
                         ? sortShowSponsorsByPlacement(
-                            showSponsors.filter(
+                            mcPlacementSponsors.filter(
                               (sponsor) =>
                                 sponsor.placement_type === "before_performer" &&
                                 sponsor.mc_anchor_song_id === item.song.id,
@@ -17465,7 +17518,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                             </button>
                                             <button
                                               type="button"
-                                              onClick={() => startEditingShowSponsor(sponsor.id)}
+                                              onClick={() =>
+                                                startEditingShowSponsor(
+                                                  sponsor.show_sponsor_assignment_id ?? sponsor.id,
+                                                )
+                                              }
                                               className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                                             >
                                               Edit
@@ -17795,11 +17852,45 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
                   <div className="grid gap-4">
                     {mcRunSheetData.beforeIntermission.map((sponsor) => (
-                      <SponsorReadCard key={`admin-before-intermission-${sponsor.id}`} sponsor={sponsor} />
+                      <div
+                        key={`admin-before-intermission-${sponsor.id}`}
+                        className="grid gap-3"
+                      >
+                        <SponsorReadCard sponsor={sponsor} />
+                        <div className="flex justify-start">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSponsorReadFromMcBuilder(sponsor.id)}
+                            disabled={activeSponsorActionId === `mc-remove-${sponsor.id}`}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {activeSponsorActionId === `mc-remove-${sponsor.id}`
+                              ? "Removing..."
+                              : "Remove from Intermission Preview"}
+                          </button>
+                        </div>
+                      </div>
                     ))}
 
                     {mcRunSheetData.afterIntermission.map((sponsor) => (
-                      <SponsorReadCard key={`admin-after-intermission-${sponsor.id}`} sponsor={sponsor} />
+                      <div
+                        key={`admin-after-intermission-${sponsor.id}`}
+                        className="grid gap-3"
+                      >
+                        <SponsorReadCard sponsor={sponsor} />
+                        <div className="flex justify-start">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSponsorReadFromMcBuilder(sponsor.id)}
+                            disabled={activeSponsorActionId === `mc-remove-${sponsor.id}`}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {activeSponsorActionId === `mc-remove-${sponsor.id}`
+                              ? "Removing..."
+                              : "Remove from Intermission Preview"}
+                          </button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </section>
