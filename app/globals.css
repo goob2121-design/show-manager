@@ -673,16 +673,16 @@ html.dark select {
   }
 
   .print-mode-stage .print-song-item {
-    margin-bottom: 2rem;
-    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.45rem;
   }
 
   .print-mode-stage .print-song-number,
   .print-mode-stage .print-song-title,
   .print-mode-stage .print-song-key {
-    font-size: 1.7rem;
+    font-size: 1.5rem;
     font-weight: 800;
-    line-height: 1.2;
+    line-height: 1.15;
   }
 
   .print-mode-stage .print-song-headline {
@@ -690,15 +690,43 @@ html.dark select {
   }
 
   .print-mode-stage .print-song-support {
-    margin-top: 0.55rem;
+    margin-top: 0.25rem;
     padding-left: 0.25rem;
   }
 
   .print-mode-stage .print-song-artist {
     margin: 0;
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: 500;
-    line-height: 1.35;
+    line-height: 1.2;
+  }
+
+  .print-mode-stage .print-set-section {
+    margin-bottom: 0;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-mode-stage .print-set-section + .print-set-section {
+    break-before: page;
+    page-break-before: always;
+    margin-top: 0;
+    padding-top: 0;
+  }
+
+  .print-mode-stage .print-set-section-title {
+    margin: 0 0 0.5rem;
+    padding-bottom: 0.2rem;
+    font-size: 1.05rem;
+  }
+
+  .print-mode-stage .print-set-section-list {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-mode-stage .print-song-main {
+    gap: 0.7rem;
   }
 
   .print-mode-band .print-song-item {

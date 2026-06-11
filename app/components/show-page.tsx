@@ -4056,6 +4056,31 @@ function normalizeRehearsalPrintNotes(notes: string | null | undefined) {
     .trim();
 }
 
+function normalizeBandCopyPrintNotes(notes: string | null | undefined) {
+  const trimmedNotes = notes?.trim();
+
+  if (!trimmedNotes) {
+    return null;
+  }
+
+  const withoutUrls = trimmedNotes
+    .replace(/\r\n/g, "\n")
+    .replace(urlPattern, " ")
+    .replace(/\s*\n\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return withoutUrls || null;
+}
+
+function normalizeLooseSongTitle(value: string | null | undefined) {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ");
+}
+
 function normalizeLyricsBlockForRepeatCheck(block: string) {
   return block
     .split("\n")
@@ -6415,6 +6440,37 @@ export function ShowPage({
     () =>
       rehearsalEntries.reduce<Record<string, RehearsalEntryWithSong>>((lookup, entry) => {
         lookup[entry.id] = entry;
+        return lookup;
+      }, {}),
+    [rehearsalEntries],
+  );
+  const rehearsalNotesBySongId = useMemo(
+    () =>
+      rehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+        if (!entry.song_id) {
+          return lookup;
+        }
+
+        const normalizedNotes = normalizeBandCopyPrintNotes(entry.notes);
+
+        if (normalizedNotes) {
+          lookup[entry.song_id] = normalizedNotes;
+        }
+
+        return lookup;
+      }, {}),
+    [rehearsalEntries],
+  );
+  const rehearsalNotesByTitle = useMemo(
+    () =>
+      rehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+        const normalizedNotes = normalizeBandCopyPrintNotes(entry.notes);
+        const normalizedTitle = normalizeLooseSongTitle(entry.title);
+
+        if (normalizedNotes && normalizedTitle && !lookup[normalizedTitle]) {
+          lookup[normalizedTitle] = normalizedNotes;
+        }
+
         return lookup;
       }, {}),
     [rehearsalEntries],
@@ -22693,7 +22749,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         {shouldShowSetlistSection ? (
         <section className="flex flex-col gap-4">
           <div className="print-hidden flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">Setlist</h2>
+            <h2 className="text-2xl font-bold uppercase tracking-[0.08em] text-stone-950 sm:text-3xl">
+              {show.show_date
+                ? `Setlist for ${formatShowDateWithOrdinal(show.show_date)} Show`
+                : "Setlist for This Show"}
+            </h2>
             <p className="text-sm text-stone-600">Live setlist loaded from Supabase.</p>
           </div>
 
@@ -22986,29 +23046,39 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   <section key={`print-${section.key}`} className="print-set-section">
                     <h2 className="print-set-section-title">{section.title}</h2>
                     <ol className="print-set-section-list">
-                      {section.songs.map((song, index) => (
-                        <li key={`print-${song.id}`} className="print-song-item">
-                          <div className="print-song-main">
-                            <span className="print-song-number">{index + 1}.</span>
-                            <div className="print-song-body">
-                              <div className="print-song-headline">
-                                <span className="print-song-title">{song.title}</span>
-                                {song.song_key ? (
-                                  <span className="print-song-key">{song.song_key}</span>
+                      {section.songs.map((song, index) => {
+                        const bandCopyNotes =
+                          printMode === "band"
+                            ? (song.song_id ? rehearsalNotesBySongId[song.song_id] ?? null : null) ??
+                              rehearsalNotesByTitle[normalizeLooseSongTitle(song.title)] ??
+                              null
+                            : null;
+
+                        return (
+                          <li key={`print-${song.id}`} className="print-song-item">
+                            <div className="print-song-main">
+                              <span className="print-song-number">{index + 1}.</span>
+                              <div className="print-song-body">
+                                <div className="print-song-headline">
+                                  <span className="print-song-title">{song.title}</span>
+                                  {song.song_key ? (
+                                    <span className="print-song-key">{song.song_key}</span>
+                                  ) : null}
+                                </div>
+
+                                {printMode !== "stage" || getDisplaySingerName(song.artist) ? (
+                                  <div className="print-song-support">
+                                    <p className="print-song-artist">
+                                      {getDisplaySingerName(song.artist)}
+                                      {bandCopyNotes ? ` | ${bandCopyNotes}` : ""}
+                                    </p>
+                                  </div>
                                 ) : null}
                               </div>
-
-                              {printMode !== "stage" || getDisplaySingerName(song.artist) ? (
-                                <div className="print-song-support">
-                                  <p className="print-song-artist">
-                                    {getDisplaySingerName(song.artist)}
-                                  </p>
-                                </div>
-                              ) : null}
                             </div>
-                          </div>
-                        </li>
-                      ))}
+                          </li>
+                        );
+                      })}
                     </ol>
                   </section>
                 ))}
