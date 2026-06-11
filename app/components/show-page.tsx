@@ -563,6 +563,13 @@ type McSponsorReadFormState = {
   anchorSongId: string;
 };
 
+type McBuilderCollapseState = {
+  collapsedSongIds: string[];
+  collapsedSponsorIds: string[];
+  collapsedSegmentIds: string[];
+  expandedBlockNoteIds: string[];
+};
+
 const initialSponsorLibraryFormState: SponsorLibraryFormState = {
   name: "",
   shortMessage: "",
@@ -628,8 +635,19 @@ const initialMcSponsorReadFormState: McSponsorReadFormState = {
   anchorSongId: "",
 };
 
+const initialMcBuilderCollapseState: McBuilderCollapseState = {
+  collapsedSongIds: [],
+  collapsedSponsorIds: [],
+  collapsedSegmentIds: [],
+  expandedBlockNoteIds: [],
+};
+
 function isSponsorPlacedInMcBuilder(sponsor: ShowSponsor) {
   return Boolean(sponsor.placement_type?.trim());
+}
+
+function getMcBuilderCollapseStorageKey(showId: string) {
+  return `stageflow-mc-builder-collapse-state-${showId}`;
 }
 
 const initialShowSponsorAssignmentFormState: ShowSponsorAssignmentFormState = {
@@ -8251,6 +8269,31 @@ export function ShowPage({
         return lookup;
       }, {});
   }, [mcRunSections]);
+  const mcBuilderValidSongIds = useMemo(
+    () =>
+      adminMcSponsorPlacementItems.flatMap((item) =>
+        item.kind === "song" ? [item.song.id] : [],
+      ),
+    [adminMcSponsorPlacementItems],
+  );
+  const mcBuilderValidSponsorIds = useMemo(
+    () =>
+      adminMcSponsorPlacementItems.flatMap((item) =>
+        item.kind === "sponsor" ? [item.sponsor.id] : [],
+      ),
+    [adminMcSponsorPlacementItems],
+  );
+  const mcBuilderValidSegmentIds = useMemo(
+    () =>
+      adminMcSponsorPlacementItems.flatMap((item) =>
+        item.kind === "segment" ? [item.segment.id] : [],
+      ),
+    [adminMcSponsorPlacementItems],
+  );
+  const mcBuilderValidBlockNoteIds = useMemo(
+    () => mcRunSections.flatMap((section) => section.blocks.map((block) => block.anchorSongId)),
+    [mcRunSections],
+  );
   const showReminderSummary = useMemo(
     () => buildShowReminderSummary(show?.show_date ?? null),
     [show?.show_date],
@@ -8284,6 +8327,97 @@ export function ShowPage({
   useEffect(() => {
     setMcBlockNoteDrafts(buildBlockNoteDrafts(mcRunSections, mcBlockNotes));
   }, [mcBlockNotes, mcRunSections]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !show?.id) {
+      return;
+    }
+
+    try {
+      const storedValue = window.localStorage.getItem(getMcBuilderCollapseStorageKey(show.id));
+
+      if (!storedValue) {
+        setCollapsedMcSongIds([]);
+        setCollapsedMcSponsorIds([]);
+        setCollapsedMcSegmentIds([]);
+        setExpandedMcBlockNoteIds([]);
+        return;
+      }
+
+      const parsedState = JSON.parse(storedValue) as Partial<McBuilderCollapseState>;
+
+      setCollapsedMcSongIds(
+        Array.isArray(parsedState.collapsedSongIds) ? parsedState.collapsedSongIds : [],
+      );
+      setCollapsedMcSponsorIds(
+        Array.isArray(parsedState.collapsedSponsorIds) ? parsedState.collapsedSponsorIds : [],
+      );
+      setCollapsedMcSegmentIds(
+        Array.isArray(parsedState.collapsedSegmentIds) ? parsedState.collapsedSegmentIds : [],
+      );
+      setExpandedMcBlockNoteIds(
+        Array.isArray(parsedState.expandedBlockNoteIds) ? parsedState.expandedBlockNoteIds : [],
+      );
+    } catch {
+      setCollapsedMcSongIds([]);
+      setCollapsedMcSponsorIds([]);
+      setCollapsedMcSegmentIds([]);
+      setExpandedMcBlockNoteIds([]);
+    }
+  }, [show?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !show?.id) {
+      return;
+    }
+
+    const nextSongIds = collapsedMcSongIds.filter((id) => mcBuilderValidSongIds.includes(id));
+    const nextSponsorIds = collapsedMcSponsorIds.filter((id) => mcBuilderValidSponsorIds.includes(id));
+    const nextSegmentIds = collapsedMcSegmentIds.filter((id) => mcBuilderValidSegmentIds.includes(id));
+    const nextBlockNoteIds = expandedMcBlockNoteIds.filter((id) => mcBuilderValidBlockNoteIds.includes(id));
+
+    if (nextSongIds.length !== collapsedMcSongIds.length) {
+      setCollapsedMcSongIds(nextSongIds);
+      return;
+    }
+
+    if (nextSponsorIds.length !== collapsedMcSponsorIds.length) {
+      setCollapsedMcSponsorIds(nextSponsorIds);
+      return;
+    }
+
+    if (nextSegmentIds.length !== collapsedMcSegmentIds.length) {
+      setCollapsedMcSegmentIds(nextSegmentIds);
+      return;
+    }
+
+    if (nextBlockNoteIds.length !== expandedMcBlockNoteIds.length) {
+      setExpandedMcBlockNoteIds(nextBlockNoteIds);
+      return;
+    }
+
+    const collapseState: McBuilderCollapseState = {
+      collapsedSongIds: nextSongIds,
+      collapsedSponsorIds: nextSponsorIds,
+      collapsedSegmentIds: nextSegmentIds,
+      expandedBlockNoteIds: nextBlockNoteIds,
+    };
+
+    window.localStorage.setItem(
+      getMcBuilderCollapseStorageKey(show.id),
+      JSON.stringify(collapseState),
+    );
+  }, [
+    collapsedMcSegmentIds,
+    collapsedMcSongIds,
+    collapsedMcSponsorIds,
+    expandedMcBlockNoteIds,
+    mcBuilderValidBlockNoteIds,
+    mcBuilderValidSegmentIds,
+    mcBuilderValidSongIds,
+    mcBuilderValidSponsorIds,
+    show?.id,
+  ]);
 
   function handleChange(
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
@@ -10978,6 +11112,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         ? currentIds.filter((currentId) => currentId !== segmentId)
         : [...currentIds, segmentId],
     );
+  }
+
+  function handleCollapseAllMcBuilderItems() {
+    setCollapsedMcSongIds(mcBuilderValidSongIds);
+    setCollapsedMcSponsorIds(mcBuilderValidSponsorIds);
+    setCollapsedMcSegmentIds(mcBuilderValidSegmentIds);
+    setExpandedMcBlockNoteIds([]);
+  }
+
+  function handleExpandAllMcBuilderItems() {
+    setCollapsedMcSongIds([]);
+    setCollapsedMcSponsorIds([]);
+    setCollapsedMcSegmentIds([]);
+    setExpandedMcBlockNoteIds(mcBuilderValidBlockNoteIds);
   }
 
   function getMcInsertPlacementOrder(targetIndex: number | null) {
@@ -16351,6 +16499,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   performer notes, then open the MC packet to review the final announcer view.
                 </p>
                 <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCollapseAllMcBuilderItems}
+                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    Collapse All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExpandAllMcBuilderItems}
+                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    Expand All
+                  </button>
                   <Link
                     href={`/mc/${showSlug}`}
                     className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
@@ -17495,49 +17657,87 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                         activeSponsorActionId === `mc-${sponsor.id}`;
                                       const isRemovingSponsorRead =
                                         activeSponsorActionId === `mc-remove-${sponsor.id}`;
+                                      const isSponsorCollapsed = collapsedMcSponsorIds.includes(sponsor.id);
 
                                       return (
                                         <div key={`set2-header-sponsor-${sponsor.id}`} className="grid gap-3">
-                                          <SponsorReadCard sponsor={sponsor} />
-                                          <div className="flex flex-wrap gap-3">
-                                            <button
-                                              type="button"
-                                              onClick={() => handleMoveMcSponsorBySong(sponsor.id, "up")}
-                                              disabled={isMovingSponsor}
-                                              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                            >
-                                              Move Up
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleMoveMcSponsorBySong(sponsor.id, "down")}
-                                              disabled={isMovingSponsor}
-                                              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                            >
-                                              Move Down
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                startEditingShowSponsor(
-                                                  sponsor.show_sponsor_assignment_id ?? sponsor.id,
-                                                )
-                                              }
-                                              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                            >
-                                              Edit
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleRemoveSponsorReadFromMcBuilder(sponsor.id)}
-                                              disabled={isRemovingSponsorRead}
-                                              className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
-                                            >
-                                              {isRemovingSponsorRead
-                                                ? "Removing..."
-                                                : "Remove from MC Builder"}
-                                            </button>
-                                          </div>
+                                          <article className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4">
+                                            <div className="grid gap-3">
+                                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
+                                                    Sponsor Read
+                                                  </p>
+                                                  <h5 className="truncate text-base font-semibold text-stone-900">
+                                                    {sponsor.sponsor?.name ?? "Assigned sponsor"}
+                                                  </h5>
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => toggleCollapsedMcSponsor(sponsor.id)}
+                                                  className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 transition hover:bg-amber-100"
+                                                >
+                                                  {isSponsorCollapsed ? "Expand" : "Collapse"}
+                                                </button>
+                                              </div>
+
+                                              {isSponsorCollapsed ? (
+                                                <div className="grid gap-1">
+                                                  <p className="text-sm text-stone-700">
+                                                    {sponsor.sponsor?.name ?? "Assigned sponsor"}
+                                                  </p>
+                                                  {sponsor.placement_type ? (
+                                                    <p className="text-xs font-medium uppercase tracking-[0.12em] text-amber-900/90">
+                                                      {formatSponsorPlacementType(sponsor.placement_type)}
+                                                    </p>
+                                                  ) : null}
+                                                </div>
+                                              ) : (
+                                                <SponsorReadCard sponsor={sponsor} />
+                                              )}
+                                            </div>
+                                          </article>
+                                          {!isSponsorCollapsed ? (
+                                            <div className="flex flex-wrap gap-3">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleMoveMcSponsorBySong(sponsor.id, "up")}
+                                                disabled={isMovingSponsor}
+                                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                Move Up
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleMoveMcSponsorBySong(sponsor.id, "down")}
+                                                disabled={isMovingSponsor}
+                                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                Move Down
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  startEditingShowSponsor(
+                                                    sponsor.show_sponsor_assignment_id ?? sponsor.id,
+                                                  )
+                                                }
+                                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                              >
+                                                Edit
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRemoveSponsorReadFromMcBuilder(sponsor.id)}
+                                                disabled={isRemovingSponsorRead}
+                                                className="rounded-xl bg-stone-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-500"
+                                              >
+                                                {isRemovingSponsorRead
+                                                  ? "Removing..."
+                                                  : "Remove from MC Builder"}
+                                              </button>
+                                            </div>
+                                          ) : null}
                                         </div>
                                       );
                                     })}
