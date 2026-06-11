@@ -13211,7 +13211,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
 
     try {
-      await navigator.clipboard.writeText(buildBandSetlistMessage(show.slug));
+      const bandPath = `/band/${encodeURIComponent(show.slug)}`;
+      const bandUrl =
+        typeof window === "undefined" ? bandPath : `${window.location.origin}${bandPath}`;
+      await navigator.clipboard.writeText(bandUrl);
       setActionError(null);
       setCopiedBandSetlistLink(true);
 
