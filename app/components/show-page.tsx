@@ -387,6 +387,7 @@ const COMP_TICKET_VALUE = 10;
 const SONG_AUDIO_BUCKET = "promo-materials";
 const REHEARSAL_RECORDINGS_BUCKET = "rehearsal-recordings";
 const MAX_SONG_MP3_BYTES = 30 * 1024 * 1024;
+const MAX_SONG_CHART_BYTES = 30 * 1024 * 1024;
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/;
 const urlPattern = /(https?:\/\/[^\s]+)/g;
 const urlOnlyPattern = /^https?:\/\/[^\s]+$/;
@@ -3679,9 +3680,48 @@ function validateSongMp3File(file: File | null) {
   return null;
 }
 
+function validateSongChartFile(file: File | null) {
+  if (!file) {
+    return null;
+  }
+
+  const lowerName = file.name.toLowerCase();
+  const isSupportedChartFile =
+    file.type === "application/pdf" ||
+    file.type === "application/msword" ||
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    file.type.startsWith("image/") ||
+    lowerName.endsWith(".pdf") ||
+    lowerName.endsWith(".doc") ||
+    lowerName.endsWith(".docx") ||
+    lowerName.endsWith(".png") ||
+    lowerName.endsWith(".jpg") ||
+    lowerName.endsWith(".jpeg") ||
+    lowerName.endsWith(".webp");
+
+  if (!isSupportedChartFile) {
+    return "Charts must be PDF, DOC, DOCX, PNG, JPG, JPEG, or WEBP files.";
+  }
+
+  if (file.size > MAX_SONG_CHART_BYTES) {
+    return "Chart files must be 30 MB or smaller.";
+  }
+
+  return null;
+}
+
 function buildSongMp3StoragePath(showSlug: string, songId: string) {
   const safeShowSlug = sanitizeFileName(showSlug || "show");
   return `song-audio/shows/${safeShowSlug}/songs/${songId}.mp3`;
+}
+
+function buildSongChartStoragePath(showSlug: string, songId: string, originalFileName: string) {
+  const safeShowSlug = sanitizeFileName(showSlug || "show");
+  const safeFileName = sanitizeFileName(originalFileName || "chart.pdf");
+  const extensionMatch = safeFileName.match(/(\.[a-z0-9]+)$/i);
+  const extension = extensionMatch?.[1] ?? ".pdf";
+  return `song-charts/shows/${safeShowSlug}/songs/${songId}${extension}`;
 }
 
 function buildRehearsalRecordingStoragePath(
@@ -5147,6 +5187,41 @@ async function uploadSongMp3File({
   return filePath;
 }
 
+async function uploadSongChartFile({
+  file,
+  showSlug,
+  songId,
+}: {
+  file: File;
+  showSlug: string;
+  songId: string;
+}) {
+  const validationError = validateSongChartFile(file);
+
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const supabase = createClient();
+  const filePath = buildSongChartStoragePath(showSlug, songId, file.name);
+  const { error: uploadError } = await supabase.storage
+    .from(SONG_AUDIO_BUCKET)
+    .upload(filePath, file, {
+      upsert: true,
+      contentType: file.type || undefined,
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from(SONG_AUDIO_BUCKET)
+    .getPublicUrl(filePath);
+
+  return publicUrlData.publicUrl || null;
+}
+
 async function uploadRehearsalRecordingFile({
   file,
   showSlug,
@@ -5801,6 +5876,8 @@ export function ShowPage({
   const [formState, setFormState] = useState<SongFormState>(initialFormState);
   const [songMp3File, setSongMp3File] = useState<File | null>(null);
   const [songMp3InputKey, setSongMp3InputKey] = useState(0);
+  const [songChartFile, setSongChartFile] = useState<File | null>(null);
+  const [songChartInputKey, setSongChartInputKey] = useState(0);
   const [showDetailsFormState, setShowDetailsFormState] = useState<ShowDetailsFormState>(
     initialShowDetailsFormState,
   );
@@ -5918,6 +5995,8 @@ export function ShowPage({
   const [editingLibrarySongId, setEditingLibrarySongId] = useState<string | null>(null);
   const [librarySongMp3File, setLibrarySongMp3File] = useState<File | null>(null);
   const [librarySongMp3InputKey, setLibrarySongMp3InputKey] = useState(0);
+  const [librarySongChartFile, setLibrarySongChartFile] = useState<File | null>(null);
+  const [librarySongChartInputKey, setLibrarySongChartInputKey] = useState(0);
   const [openLibraryLyricsSongId, setOpenLibraryLyricsSongId] = useState<string | null>(null);
   const [isBandSongFormOpen, setIsBandSongFormOpen] = useState(false);
   const [isAdminSongFormOpen, setIsAdminSongFormOpen] = useState(false);
@@ -6435,6 +6514,48 @@ export function ShowPage({
         return lookup;
       }, {}),
     [rehearsalRecordings],
+  );
+  const rehearsalRecordingUrlBySongId = useMemo(
+    () =>
+      rehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+        if (!entry.song_id || lookup[entry.song_id]) {
+          return lookup;
+        }
+
+        const recordingUrl =
+          (rehearsalRecordingsByEntryId[entry.id] ?? [])
+            .map((recording) => getRehearsalRecordingUrl(recording))
+            .find((url): url is string => Boolean(url)) ?? null;
+
+        if (recordingUrl) {
+          lookup[entry.song_id] = recordingUrl;
+        }
+
+        return lookup;
+      }, {}),
+    [rehearsalEntries, rehearsalRecordingsByEntryId],
+  );
+  const rehearsalRecordingUrlByTitle = useMemo(
+    () =>
+      rehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+        const normalizedTitle = normalizeLooseSongTitle(entry.title);
+
+        if (!normalizedTitle || lookup[normalizedTitle]) {
+          return lookup;
+        }
+
+        const recordingUrl =
+          (rehearsalRecordingsByEntryId[entry.id] ?? [])
+            .map((recording) => getRehearsalRecordingUrl(recording))
+            .find((url): url is string => Boolean(url)) ?? null;
+
+        if (recordingUrl) {
+          lookup[normalizedTitle] = recordingUrl;
+        }
+
+        return lookup;
+      }, {}),
+    [rehearsalEntries, rehearsalRecordingsByEntryId],
   );
   const rehearsalEntriesById = useMemo(
     () =>
@@ -8490,9 +8611,18 @@ export function ShowPage({
     setSongMp3File(event.target.files?.[0] ?? null);
   }
 
+  function handleSongChartChange(event: ChangeEvent<HTMLInputElement>) {
+    setSongChartFile(event.target.files?.[0] ?? null);
+  }
+
   function resetSongMp3Input() {
     setSongMp3File(null);
     setSongMp3InputKey((currentKey) => currentKey + 1);
+  }
+
+  function resetSongChartInput() {
+    setSongChartFile(null);
+    setSongChartInputKey((currentKey) => currentKey + 1);
   }
 
   function handleShowDetailsChange(
@@ -10570,6 +10700,13 @@ export function ShowPage({
       return;
     }
 
+    const chartFileValidationError = validateSongChartFile(songChartFile);
+
+    if (chartFileValidationError) {
+      setActionError(chartFileValidationError);
+      return;
+    }
+
     const chartUrlValidationMessage = getChartUrlValidationMessage(formState.chartUrl);
 
     if (chartUrlValidationMessage) {
@@ -10710,6 +10847,31 @@ export function ShowPage({
             }
           }
 
+          if (songChartFile) {
+            const uploadedChartUrl = await uploadSongChartFile({
+              file: songChartFile,
+              showSlug: show.slug,
+              songId: savedLibrarySong.id,
+            });
+
+            if (uploadedChartUrl) {
+              const { data: updatedSong, error: chartUpdateError } = await supabase
+                .from("songs")
+                .update({
+                  chart_url: uploadedChartUrl,
+                })
+                .eq("id", savedLibrarySong.id)
+                .select("*")
+                .single();
+
+              if (chartUpdateError) {
+                throw chartUpdateError;
+              }
+
+              savedLibrarySong = updatedSong as SongLibrarySong;
+            }
+          }
+
           setSongLibrary((currentSongs) =>
             [...currentSongs, normalizeSongLibrarySong(savedLibrarySong)].sort((songA, songB) =>
               songA.title.localeCompare(songB.title),
@@ -10743,6 +10905,7 @@ export function ShowPage({
           });
         } else if (
           songMp3File ||
+          songChartFile ||
           normalizedChartUrl !== normalizeChartUrl(existingLibrarySong.chart_url)
         ) {
           let updatedLibrarySong = existingLibrarySong;
@@ -10784,6 +10947,31 @@ export function ShowPage({
             }
           }
 
+          if (songChartFile) {
+            const uploadedChartUrl = await uploadSongChartFile({
+              file: songChartFile,
+              showSlug: show.slug,
+              songId: existingLibrarySong.id,
+            });
+
+            if (uploadedChartUrl) {
+              const { data, error } = await supabase
+                .from("songs")
+                .update({
+                  chart_url: uploadedChartUrl,
+                })
+                .eq("id", existingLibrarySong.id)
+                .select("*")
+                .single();
+
+              if (error) {
+                throw error;
+              }
+
+              updatedLibrarySong = data as SongLibrarySong;
+            }
+          }
+
           setSongLibrary((currentSongs) =>
             currentSongs
               .map((song) =>
@@ -10799,6 +10987,7 @@ export function ShowPage({
 
       setFormState(initialFormState);
       resetSongMp3Input();
+      resetSongChartInput();
       if (normalizedSubmittedByRole === "admin") {
         setIsAdminSongFormOpen(false);
       }
@@ -12729,9 +12918,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     setLibrarySongMp3File(event.target.files?.[0] ?? null);
   }
 
+  function handleLibrarySongChartChange(event: ChangeEvent<HTMLInputElement>) {
+    setLibrarySongChartFile(event.target.files?.[0] ?? null);
+  }
+
   function resetLibrarySongMp3Input() {
     setLibrarySongMp3File(null);
     setLibrarySongMp3InputKey((currentKey) => currentKey + 1);
+  }
+
+  function resetLibrarySongChartInput() {
+    setLibrarySongChartFile(null);
+    setLibrarySongChartInputKey((currentKey) => currentKey + 1);
   }
 
   function handleStartEditingLibrarySong(songId: string) {
@@ -12743,12 +12941,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     setEditingLibrarySongId(songId);
     resetLibrarySongMp3Input();
+    resetLibrarySongChartInput();
     setLibrarySongEditFormState(buildSongEditFormState(songToEdit));
   }
 
   function handleCancelLibrarySongEdit() {
     setEditingLibrarySongId(null);
     resetLibrarySongMp3Input();
+    resetLibrarySongChartInput();
     setLibrarySongEditFormState({
       title: "",
       key: "",
@@ -12821,6 +13021,13 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       return;
     }
 
+    const chartFileValidationError = validateSongChartFile(librarySongChartFile);
+
+    if (chartFileValidationError) {
+      setActionError(chartFileValidationError);
+      return;
+    }
+
     const chartUrlValidationMessage = getChartUrlValidationMessage(librarySongEditFormState.chartUrl);
 
     if (chartUrlValidationMessage) {
@@ -12877,6 +13084,31 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         } catch (error) {
           await deletePromoMaterialFile(uploadedMp3Path);
           throw error;
+        }
+      }
+
+      if (librarySongChartFile) {
+        const uploadedChartUrl = await uploadSongChartFile({
+          file: librarySongChartFile,
+          showSlug: show?.slug ?? showSlug,
+          songId,
+        });
+
+        if (uploadedChartUrl) {
+          const { data, error } = await supabase
+            .from("songs")
+            .update({
+              chart_url: uploadedChartUrl,
+            })
+            .eq("id", songId)
+            .select("*")
+            .single();
+
+          if (error) {
+            throw error;
+          }
+
+          savedLibrarySong = data as SongLibrarySong;
         }
       }
 
@@ -22849,6 +23081,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           songLibrary,
                           pendingSongs,
                         );
+                        const setlistSongRehearsalMp3Url =
+                          (song.song_id ? rehearsalRecordingUrlBySongId[song.song_id] ?? null : null) ??
+                          rehearsalRecordingUrlByTitle[normalizeLooseSongTitle(song.title)] ??
+                          null;
                         const displaySetlistSungBy = song.sung_by ?? librarySong?.sung_by ?? null;
 
                         return (
@@ -22916,6 +23152,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                         mp3Path={setlistSongMp3Path}
                                       />
                                     </div>
+                                  ) : null}
+                                  {setlistSongRehearsalMp3Url ? (
+                                    <a
+                                      href={setlistSongRehearsalMp3Url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex h-9 items-center rounded-lg border border-sky-300 bg-sky-50 px-3 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+                                    >
+                                      Rehearsal MP3
+                                    </a>
                                   ) : null}
                                   {canEditSetlistSong() ? (
                                     <button
@@ -24345,6 +24591,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Upload Chart
+                  <input
+                    key={songChartInputKey}
+                    type="file"
+                    accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
+                    onChange={handleSongChartChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                  />
+                  <span className="text-xs font-normal text-stone-500">
+                    Optional. PDF, DOC, DOCX, PNG, JPG, JPEG, or WEBP, up to 30 MB. Uploaded charts override the link above.
+                  </span>
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                   Optional MP3
                   <input
                     key={songMp3InputKey}
@@ -24676,6 +24936,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                       placeholder="https://..."
                     />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Upload Chart
+                    <input
+                      key={songChartInputKey}
+                      type="file"
+                      accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
+                      onChange={handleSongChartChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                    />
+                    <span className="text-xs font-normal text-stone-500">
+                      Optional. PDF, DOC, DOCX, PNG, JPG, JPEG, or WEBP, up to 30 MB. Uploaded charts override the link above.
+                    </span>
                   </label>
 
                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
@@ -25349,6 +25623,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                             placeholder="https://..."
                           />
+                        </label>
+
+                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                          Upload Chart
+                          <input
+                            key={librarySongChartInputKey}
+                            type="file"
+                            accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
+                            onChange={handleLibrarySongChartChange}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                          />
+                          <span className="text-xs font-normal text-stone-500">
+                            Optional. Upload a chart file to use instead of the link above.
+                          </span>
                         </label>
 
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
