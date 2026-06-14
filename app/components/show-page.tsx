@@ -3667,14 +3667,19 @@ function validateSongMp3File(file: File | null) {
   }
 
   const lowerName = file.name.toLowerCase();
-  const isMp3File = file.type === "audio/mpeg" || lowerName.endsWith(".mp3");
+  const isSupportedAudioFile =
+    file.type === "audio/mpeg" ||
+    file.type === "audio/mp4" ||
+    file.type === "audio/x-m4a" ||
+    lowerName.endsWith(".mp3") ||
+    lowerName.endsWith(".m4a");
 
-  if (!isMp3File) {
-    return "Only MP3 files are supported.";
+  if (!isSupportedAudioFile) {
+    return "Only MP3 and M4A files are supported.";
   }
 
   if (file.size > MAX_SONG_MP3_BYTES) {
-    return "MP3 files must be 30 MB or smaller.";
+    return "Audio files must be 30 MB or smaller.";
   }
 
   return null;
@@ -3711,9 +3716,12 @@ function validateSongChartFile(file: File | null) {
   return null;
 }
 
-function buildSongMp3StoragePath(showSlug: string, songId: string) {
+function buildSongMp3StoragePath(showSlug: string, songId: string, originalFileName: string) {
   const safeShowSlug = sanitizeFileName(showSlug || "show");
-  return `song-audio/shows/${safeShowSlug}/songs/${songId}.mp3`;
+  const safeFileName = sanitizeFileName(originalFileName || "audio.mp3");
+  const extensionMatch = safeFileName.match(/(\.[a-z0-9]+)$/i);
+  const extension = extensionMatch?.[1] ?? ".mp3";
+  return `song-audio/shows/${safeShowSlug}/songs/${songId}${extension}`;
 }
 
 function buildSongChartStoragePath(showSlug: string, songId: string, originalFileName: string) {
@@ -5172,12 +5180,14 @@ async function uploadSongMp3File({
   }
 
   const supabase = createClient();
-  const filePath = buildSongMp3StoragePath(showSlug, songId);
+  const filePath = buildSongMp3StoragePath(showSlug, songId, file.name);
   const { error: uploadError } = await supabase.storage
     .from(SONG_AUDIO_BUCKET)
     .upload(filePath, file, {
       upsert: false,
-      contentType: file.type,
+      contentType:
+        file.type ||
+        (file.name.toLowerCase().endsWith(".m4a") ? "audio/mp4" : "audio/mpeg"),
     });
 
   if (uploadError) {
@@ -5231,7 +5241,25 @@ async function uploadRehearsalRecordingFile({
   showSlug: string;
   rehearsalEntryId: string;
 }) {
-  const validationError = validateSongMp3File(file);
+  const validationError = (() => {
+    const lowerName = file.name.toLowerCase();
+    const isSupportedAudioFile =
+      file.type === "audio/mpeg" ||
+      file.type === "audio/mp4" ||
+      file.type === "audio/x-m4a" ||
+      lowerName.endsWith(".mp3") ||
+      lowerName.endsWith(".m4a");
+
+    if (!isSupportedAudioFile) {
+      return "Only MP3 and M4A files are supported.";
+    }
+
+    if (file.size > MAX_SONG_MP3_BYTES) {
+      return "Audio files must be 30 MB or smaller.";
+    }
+
+    return null;
+  })();
 
   if (validationError) {
     throw new Error(validationError);
@@ -5243,7 +5271,7 @@ async function uploadRehearsalRecordingFile({
     .from(REHEARSAL_RECORDINGS_BUCKET)
     .upload(filePath, file, {
       upsert: false,
-      contentType: file.type || "audio/mpeg",
+      contentType: file.type || (file.name.toLowerCase().endsWith(".m4a") ? "audio/mp4" : "audio/mpeg"),
     });
 
   if (uploadError) {
@@ -14222,7 +14250,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
 
     if (!file) {
-      setRehearsalErrorMessage("Choose an MP3 recording first.");
+      setRehearsalErrorMessage("Choose an MP3 or M4A recording first.");
       return;
     }
 
@@ -16578,14 +16606,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
                               {canEditBandRehearsal ? (
                                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                  MP3 Recording
+                                  Rehearsal Recording
                                   <input
                                     key={rehearsalRecordingInputKeys[entry.id] ?? 0}
                                     type="file"
-                                    accept="audio/mpeg,.mp3"
+                                    accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
                                     onChange={(event) => handleRehearsalRecordingFileChange(entry.id, event)}
                                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                                   />
+                                  <span className="text-xs font-normal text-stone-500">
+                                    MP3 or M4A, up to 30 MB.
+                                  </span>
                                 </label>
                               ) : null}
 
@@ -24395,16 +24426,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           </label>
 
                           <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Optional MP3
+                            Optional Audio
                             <input
                               key={poolSongMp3InputKey}
                               type="file"
-                              accept="audio/mpeg,.mp3"
+                              accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
                               onChange={handlePoolSongMp3Change}
                               className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                             />
                             <span className="text-xs font-normal text-stone-500">
-                              Optional. Upload a new MP3 attachment.
+                              Optional. Upload a new MP3 or M4A attachment.
                             </span>
                           </label>
 
@@ -24605,16 +24636,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Optional MP3
+                  Optional Audio
                   <input
                     key={songMp3InputKey}
                     type="file"
-                    accept="audio/mpeg,.mp3"
+                    accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
                     onChange={handleSongMp3Change}
                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                   />
                   <span className="text-xs font-normal text-stone-500">
-                    Optional. MP3 only, up to 30 MB.
+                    Optional. MP3 or M4A, up to 30 MB.
                   </span>
                 </label>
 
@@ -24953,16 +24984,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   </label>
 
                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Optional MP3
+                    Optional Audio
                     <input
                       key={songMp3InputKey}
                       type="file"
-                      accept="audio/mpeg,.mp3"
+                      accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
                       onChange={handleSongMp3Change}
                       className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                     />
                     <span className="text-xs font-normal text-stone-500">
-                      Optional. MP3 only, up to 30 MB.
+                      Optional. MP3 or M4A, up to 30 MB.
                     </span>
                   </label>
 
@@ -25136,16 +25167,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   </details>
 
                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Optional MP3
+                    Optional Audio
                     <input
                       key={songMp3InputKey}
                       type="file"
-                      accept="audio/mpeg,.mp3"
+                      accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
                       onChange={handleSongMp3Change}
                       className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                     />
                     <span className="text-xs font-normal text-stone-500">
-                      Optional. MP3 only, up to 30 MB.
+                      Optional. MP3 or M4A, up to 30 MB.
                     </span>
                   </label>
 
@@ -25300,16 +25331,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           </label>
 
                           <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Optional MP3
+                            Optional Audio
                             <input
                               key={poolSongMp3InputKey}
                               type="file"
-                              accept="audio/mpeg,.mp3"
+                              accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
                               onChange={handlePoolSongMp3Change}
                               className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                             />
                             <span className="text-xs font-normal text-stone-500">
-                              Optional. Upload a new MP3 attachment.
+                              Optional. Upload a new MP3 or M4A attachment.
                             </span>
                           </label>
 
@@ -25640,16 +25671,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         </label>
 
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Optional MP3
+                          Optional Audio
                           <input
                             key={librarySongMp3InputKey}
                             type="file"
-                            accept="audio/mpeg,.mp3"
+                            accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
                             onChange={handleLibrarySongMp3Change}
                             className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                           />
                           <span className="text-xs font-normal text-stone-500">
-                            Optional. Upload a new MP3 attachment.
+                            Optional. Upload a new MP3 or M4A attachment.
                           </span>
                         </label>
 
