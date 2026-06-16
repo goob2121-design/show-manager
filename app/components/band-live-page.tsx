@@ -322,6 +322,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(false);
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+  const followBandLeaderRef = useRef(followBandLeader);
+  const songsLengthRef = useRef(songs.length);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -341,6 +343,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
     window.localStorage.setItem(FOLLOW_MODE_STORAGE_KEY, followBandLeader ? "true" : "false");
   }, [followBandLeader]);
+
+  useEffect(() => {
+    followBandLeaderRef.current = followBandLeader;
+  }, [followBandLeader]);
+
+  useEffect(() => {
+    songsLengthRef.current = songs.length;
+  }, [songs.length]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -556,18 +566,23 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
           new: LiveShowState | null;
           old: LiveShowState | null;
         }) => {
+          console.log("Live state realtime payload:", payload);
           const nextState =
             payload.eventType === "DELETE"
               ? null
               : ((payload.new as LiveShowState | null) ?? (payload.old as LiveShowState | null) ?? null);
 
           setSharedState(nextState);
-          if (nextState && followBandLeader) {
-            setManualIndex(clampIndex(nextState.current_song_index, songs.length));
+          console.log("Live state current_song_index:", nextState?.current_song_index ?? null);
+          console.log("Follow Band Leader when payload arrived:", followBandLeaderRef.current);
+
+          if (nextState && followBandLeaderRef.current) {
+            setManualIndex(clampIndex(nextState.current_song_index, songsLengthRef.current));
           }
         },
       )
       .subscribe((status: string) => {
+        console.log("Live state realtime status:", status);
         if (status === "SUBSCRIBED") {
           setConnectionState("connected");
           return;
@@ -593,7 +608,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       window.removeEventListener("offline", handleOnlineState);
       void supabase.removeChannel(channel);
     };
-  }, [followBandLeader, show?.id, songs.length]);
+  }, [show?.id]);
 
   const sharedIndex = clampIndex(sharedState?.current_song_index ?? 0, songs.length);
   const currentIndex = clampIndex(followBandLeader ? sharedIndex : manualIndex, songs.length);
