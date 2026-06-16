@@ -875,24 +875,26 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 </div>
               </div>
 
-              <div className="mt-auto grid gap-3 pt-5 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setManualIndex((current) => clampIndex(current - 1, songs.length))}
-                  disabled={followBandLeader || currentIndex <= 0}
-                  className="min-h-14 rounded-[1.5rem] border border-white/10 bg-white/5 px-5 text-base font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 sm:text-lg"
-                >
-                  Previous Song
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setManualIndex((current) => clampIndex(current + 1, songs.length))}
-                  disabled={followBandLeader || currentIndex >= songs.length - 1}
-                  className="min-h-14 rounded-[1.5rem] border border-white/10 bg-emerald-500/15 px-5 text-base font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40 sm:text-lg"
-                >
-                  Next Song
-                </button>
-              </div>
+              {!followBandLeader ? (
+                <div className="mt-auto grid gap-3 pt-5 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setManualIndex((current) => clampIndex(current - 1, songs.length))}
+                    disabled={currentIndex <= 0}
+                    className="min-h-14 rounded-[1.5rem] border border-white/10 bg-white/5 px-5 text-base font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 sm:text-lg"
+                  >
+                    Previous Song
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualIndex((current) => clampIndex(current + 1, songs.length))}
+                    disabled={currentIndex >= songs.length - 1}
+                    className="min-h-14 rounded-[1.5rem] border border-white/10 bg-emerald-500/15 px-5 text-base font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40 sm:text-lg"
+                  >
+                    Next Song
+                  </button>
+                </div>
+              ) : null}
             </article>
 
             <aside className="flex flex-col gap-3">
