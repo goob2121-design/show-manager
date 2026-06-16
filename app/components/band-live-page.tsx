@@ -205,6 +205,42 @@ function clampIndex(index: number, length: number) {
   return Math.max(0, Math.min(length - 1, index));
 }
 
+async function ensureLiveShowStateRow(showId: string) {
+  const supabase = createClient();
+  const payload = {
+    show_id: showId,
+    current_song_index: 0,
+    updated_at: new Date().toISOString(),
+    updated_by: "band-live-mode-init",
+  };
+
+  const { data, error } = await supabase
+    .from("live_show_state")
+    .upsert(payload, { onConflict: "show_id", ignoreDuplicates: true })
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (data) {
+    return data as LiveShowState;
+  }
+
+  const { data: existingRow, error: existingRowError } = await supabase
+    .from("live_show_state")
+    .select("*")
+    .eq("show_id", showId)
+    .maybeSingle();
+
+  if (existingRowError) {
+    throw existingRowError;
+  }
+
+  return (existingRow as LiveShowState | null) ?? null;
+}
+
 function normalizeLiveSong(
   row: LiveSetlistSongRow,
   songNumberLookup: Map<string, number>,
@@ -346,7 +382,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
           { data: setlistRows, error: setlistError },
           { data: rehearsalEntries, error: rehearsalEntriesError },
           { data: rehearsalRecordings, error: rehearsalRecordingsError },
-          { data: liveStateRow, error: liveStateError },
+          liveStateRow,
         ] = await Promise.all([
           supabase
             .from("setlist_entries")
@@ -404,7 +440,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             .select("*")
             .eq("show_id", showRecord.id)
             .order("created_at", { ascending: false }),
-          supabase.from("live_show_state").select("*").eq("show_id", showRecord.id).maybeSingle(),
+          ensureLiveShowStateRow(showRecord.id),
         ]);
 
         if (setlistError) {
@@ -417,10 +453,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
         if (rehearsalRecordingsError) {
           throw rehearsalRecordingsError;
-        }
-
-        if (liveStateError) {
-          throw liveStateError;
         }
 
         const normalizedSetlistRows = sortSetlistRows((setlistRows ?? []) as LiveSetlistSongRow[]);
@@ -482,10 +514,9 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         setShow(showRecord as ShowRecord);
         setSongs(normalizedSongs);
         setSharedState(nextSharedState);
-        setManualIndex((currentIndex) => clampIndex(currentIndex, normalizedSongs.length));
-        if (nextSharedState) {
-          setManualIndex(clampIndex(nextSharedState.current_song_index, normalizedSongs.length));
-        }
+        setManualIndex(
+          clampIndex(nextSharedState?.current_song_index ?? 0, normalizedSongs.length),
+        );
       } catch (error) {
         if (!isCancelled) {
           setErrorMessage(getErrorMessage(error));
@@ -681,6 +712,9 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 className={`inline-flex min-h-9 items-center rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
               >
                 {connectionLabel.label}
+              </span>
+              <span className="inline-flex min-h-9 items-center rounded-full border border-white/10 bg-white/5 px-3 text-[11px] font-semibold tracking-[0.18em] text-slate-100">
+                {followBandLeader ? "FOLLOWING" : "BROWSING MANUALLY"}
               </span>
               <label className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
                 <input

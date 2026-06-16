@@ -41,3 +41,17 @@ on public.live_show_state
 for delete
 to anon, authenticated
 using (true);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'live_show_state'
+  ) then
+    alter publication supabase_realtime add table public.live_show_state;
+  end if;
+end
+$$;
