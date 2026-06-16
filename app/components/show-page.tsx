@@ -1559,7 +1559,7 @@ function buildSongEditFormState(song: {
   chart_url?: string | null;
 }): SongEditFormState {
   return {
-    title: song.title,
+    title: sanitizeSongTitle(song.title),
     key: song.key ?? "",
     sungBy: song.sung_by ?? "",
     tempo: song.tempo ?? "",
@@ -1880,8 +1880,8 @@ function normalizeRehearsalEntry(item: RehearsalEntryRow): RehearsalEntryWithSon
   const librarySong = Array.isArray(item.library_song)
     ? item.library_song[0] ?? null
     : item.library_song ?? null;
-  const customTitle = item.custom_title?.trim() ?? "";
-  const libraryTitle = librarySong?.title?.trim() ?? "";
+  const customTitle = sanitizeSongTitle(item.custom_title);
+  const libraryTitle = sanitizeSongTitle(librarySong?.title);
   const isLibraryLinked = Boolean(item.song_id && libraryTitle);
 
   return {
@@ -3380,8 +3380,22 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
       ? song.guest_song[0]
       : song.guest_song
     : null;
-  const resolvedTitle = song.custom_title?.trim() || librarySong?.title || guestSong?.title || song.title || "";
-  const resolvedKey = librarySong?.key ?? guestSong?.key ?? song.key ?? null;
+  const rawCustomTitle = song.custom_title?.trim() ?? "";
+  const rawLibraryTitle = librarySong?.title?.trim() ?? "";
+  const rawGuestTitle = guestSong?.title?.trim() ?? "";
+  const rawSongTitle = song.title?.trim() ?? "";
+  const sanitizedCustomTitle = sanitizeSongTitle(rawCustomTitle);
+  const sanitizedLibraryTitle = sanitizeSongTitle(rawLibraryTitle);
+  const sanitizedGuestTitle = sanitizeSongTitle(rawGuestTitle);
+  const sanitizedSongTitle = sanitizeSongTitle(rawSongTitle);
+  const existingSongKey = "song_key" in song ? song.song_key ?? null : null;
+  const resolvedTitle =
+    sanitizedCustomTitle ||
+    sanitizedLibraryTitle ||
+    sanitizedGuestTitle ||
+    sanitizedSongTitle ||
+    "";
+  const resolvedKey = librarySong?.key ?? guestSong?.key ?? guestSong?.song_key ?? song.key ?? existingSongKey ?? null;
   const resolvedTempo = librarySong?.tempo ?? guestSong?.tempo ?? song.tempo ?? null;
   const resolvedSongType = librarySong?.song_type ?? guestSong?.song_type ?? song.song_type ?? null;
   const resolvedNotes = librarySong?.notes ?? guestSong?.notes ?? song.notes ?? null;
@@ -3397,6 +3411,37 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     resolvedLeadVocal?.trim() ||
     ("performer_name" in song ? song.performer_name : null) ||
     null;
+
+  if (
+    typeof window !== "undefined" &&
+    [
+      rawCustomTitle,
+      rawLibraryTitle,
+      rawGuestTitle,
+      rawSongTitle,
+      resolvedTitle,
+    ].some((value) => value.toLowerCase().includes("harlan alive"))
+  ) {
+    console.log("Harlan setlist title debug", {
+      setlistEntryId: song.id,
+      sourceType: song.source_type,
+      songId: song.song_id ?? null,
+      guestSongId: song.guest_song_id ?? null,
+      rawCustomTitle,
+      rawLibraryTitle,
+      rawGuestTitle,
+      rawSongTitle,
+      sanitizedCustomTitle,
+      sanitizedLibraryTitle,
+      sanitizedGuestTitle,
+      sanitizedSongTitle,
+      resolvedTitle,
+      resolvedKey,
+      fullSong: song,
+      librarySong,
+      guestSong,
+    });
+  }
 
   return {
     ...song,
@@ -4129,6 +4174,64 @@ function normalizeLooseSongTitle(value: string | null | undefined) {
     .replace(/\s+/g, " ");
 }
 
+function normalizeLooseSongKey(value: string | null | undefined) {
+  const trimmedValue = value?.trim();
+  return trimmedValue || null;
+}
+
+function sanitizeSongTitle(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  const lowerValue = trimmedValue.toLowerCase();
+  const hasEmbeddedSongMeta =
+    lowerValue.includes("capo") ||
+    lowerValue.includes("play in") ||
+    /\b[A-G](?:#|b)?\s*(?:major|minor|maj|min)\b/i.test(trimmedValue);
+
+  if (!hasEmbeddedSongMeta || !trimmedValue.includes("(") || !trimmedValue.endsWith(")")) {
+    return trimmedValue;
+  }
+
+  const metadataStartIndex = trimmedValue.indexOf(" (");
+  const fallbackStartIndex = trimmedValue.indexOf("(");
+  const cutoffIndex = metadataStartIndex >= 0 ? metadataStartIndex : fallbackStartIndex;
+
+  if (cutoffIndex <= 0) {
+    return trimmedValue;
+  }
+
+  return trimmedValue.slice(0, cutoffIndex).trim();
+}
+
+function cleanPrintSongTitle(title: string | null | undefined) {
+  const sanitizedTitle = sanitizeSongTitle(title);
+
+  return sanitizedTitle
+    .replace(/\s+\([^)]*(Capo|Play in|Fret|Minor|Major)[^)]*\)\s*$/i, "")
+    .trim();
+}
+
+function getPrintKey(key: string | null | undefined) {
+  const trimmedKey = key?.trim() ?? "";
+
+  if (!trimmedKey) {
+    return null;
+  }
+
+  const parenthesisIndex = trimmedKey.indexOf("(");
+
+  if (parenthesisIndex === -1) {
+    return trimmedKey;
+  }
+
+  const compactKey = trimmedKey.slice(0, parenthesisIndex).trim();
+  return compactKey || trimmedKey;
+}
+
 function normalizeLyricsBlockForRepeatCheck(block: string) {
   return block
     .split("\n")
@@ -4581,6 +4684,7 @@ function normalizePendingSubmission(
 
   return {
     ...submission,
+    title: sanitizeSongTitle(submission.title),
     key: submission.key ?? null,
     tempo: normalizeSongTempo(submission.tempo),
     song_type: normalizeSongType(submission.song_type),
@@ -4616,6 +4720,7 @@ function normalizeSongLibrarySong(
 
   return {
     ...song,
+    title: sanitizeSongTitle(song.title),
     key: song.key ?? null,
     tempo: normalizeSongTempo(song.tempo),
     song_type: normalizeSongType(song.song_type),
@@ -6593,6 +6698,59 @@ export function ShowPage({
       }, {}),
     [rehearsalEntries],
   );
+  const pendingSongsById = useMemo(
+    () =>
+      pendingSongs.reduce<Record<string, PendingSubmission>>((lookup, song) => {
+        lookup[song.id] = song;
+        return lookup;
+      }, {}),
+    [pendingSongs],
+  );
+  const pendingSongKeyByTitle = useMemo(
+    () =>
+      pendingSongs.reduce<Record<string, string>>((lookup, song) => {
+        const normalizedTitle = normalizeLooseSongTitle(song.title);
+        const songKey = normalizeLooseSongKey(song.song_key ?? song.key ?? null);
+
+        if (normalizedTitle && songKey && !lookup[normalizedTitle]) {
+          lookup[normalizedTitle] = songKey;
+        }
+
+        return lookup;
+      }, {}),
+    [pendingSongs],
+  );
+  const rehearsalSongKeyBySongId = useMemo(
+    () =>
+      rehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+        if (!entry.song_id) {
+          return lookup;
+        }
+
+        const songKey = normalizeLooseSongKey(entry.song_key);
+
+        if (songKey) {
+          lookup[entry.song_id] = songKey;
+        }
+
+        return lookup;
+      }, {}),
+    [rehearsalEntries],
+  );
+  const rehearsalSongKeyByTitle = useMemo(
+    () =>
+      rehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
+        const normalizedTitle = normalizeLooseSongTitle(entry.title);
+        const songKey = normalizeLooseSongKey(entry.song_key);
+
+        if (normalizedTitle && songKey && !lookup[normalizedTitle]) {
+          lookup[normalizedTitle] = songKey;
+        }
+
+        return lookup;
+      }, {}),
+    [rehearsalEntries],
+  );
   const rehearsalNotesBySongId = useMemo(
     () =>
       rehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
@@ -6709,6 +6867,49 @@ export function ShowPage({
     }
 
     return false;
+  }
+
+  function getPrintSetlistSongKey(song: SetlistSong) {
+    const directKey = normalizeLooseSongKey(song.song_key ?? song.key ?? null);
+
+    if (directKey) {
+      return directKey;
+    }
+
+    if (song.guest_song_id) {
+      const pendingSong = pendingSongsById[song.guest_song_id];
+      const guestSongKey = normalizeLooseSongKey(
+        pendingSong?.song_key ?? pendingSong?.key ?? null,
+      );
+
+      if (guestSongKey) {
+        return guestSongKey;
+      }
+    }
+
+    const normalizedTitle = normalizeLooseSongTitle(song.title);
+
+    if (normalizedTitle) {
+      const pendingTitleKey = normalizeLooseSongKey(pendingSongKeyByTitle[normalizedTitle] ?? null);
+
+      if (pendingTitleKey) {
+        return pendingTitleKey;
+      }
+    }
+
+    if (song.song_id) {
+      const rehearsalSongKey = normalizeLooseSongKey(rehearsalSongKeyBySongId[song.song_id] ?? null);
+
+      if (rehearsalSongKey) {
+        return rehearsalSongKey;
+      }
+    }
+
+    if (normalizedTitle) {
+      return normalizeLooseSongKey(rehearsalSongKeyByTitle[normalizedTitle] ?? null);
+    }
+
+    return null;
   }
 
   function canEditLibrarySong(song: SongLibrarySong) {
@@ -12621,6 +12822,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             sung_by,
             tempo,
             song_type,
+            notes,
+            lyrics,
             submitted_by_name,
             created_at
           )
@@ -16189,8 +16392,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           <option value="">Select a song...</option>
                           {songLibrary.map((song) => (
                             <option key={song.id} value={song.id}>
-                              {song.title}
-                              {song.song_key ? ` (${song.song_key})` : ""}
+                              {sanitizeSongTitle(song.title)}
                               {song.artist ? ` - ${song.artist}` : ""}
                             </option>
                           ))}
@@ -16220,7 +16422,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           <option value="">Select a guest song...</option>
                           {pendingSongs.map((song) => (
                             <option key={song.id} value={song.id}>
-                              {song.title}
+                              {sanitizeSongTitle(song.title)}
                               {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
                             </option>
                           ))}
@@ -16291,9 +16493,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     recordings
                       .map((recording) => getRehearsalRecordingUrl(recording))
                       .find((url): url is string => Boolean(url)) ?? null;
-                  const displayRehearsalTitle = entry.is_library_linked
-                    ? entry.title
-                    : (rehearsalTitleDrafts[entry.id] ?? entry.title).trim() || entry.title;
+                  const displayRehearsalTitle = sanitizeSongTitle(
+                    entry.is_library_linked
+                      ? entry.title
+                      : (rehearsalTitleDrafts[entry.id] ?? entry.title).trim() || entry.title,
+                  );
                   const linkedRehearsalLibrarySong = entry.song_id ? songLibraryById[entry.song_id] ?? null : null;
                   const displayRehearsalSungBy =
                     entry.sung_by ?? linkedRehearsalLibrarySong?.sung_by ?? null;
@@ -16424,7 +16628,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   Manual Song Title
                                   <input
                                     type="text"
-                                    value={rehearsalTitleDrafts[entry.id] ?? entry.title}
+                                    value={sanitizeSongTitle(rehearsalTitleDrafts[entry.id] ?? entry.title)}
                                     onChange={(event) =>
                                       setRehearsalTitleDrafts((currentDrafts) => ({
                                         ...currentDrafts,
@@ -23130,8 +23334,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-start gap-2">
                                 <p className="text-base font-medium text-stone-900 sm:text-lg">
-                                  {song.title}
-                                  {song.song_key ? ` (${song.song_key})` : ""}
+                                  {sanitizeSongTitle(song.title)}
                                 </p>
                                 {isGuestSetlistSong ? (
                                   <span className="rounded-full border border-cyan-500/80 bg-cyan-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-950 dark:border-cyan-600/80 dark:bg-cyan-900/85 dark:text-cyan-100">
@@ -23324,6 +23527,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     <h2 className="print-set-section-title">{section.title}</h2>
                     <ol className="print-set-section-list">
                       {section.songs.map((song, index) => {
+                        const printSongTitle = cleanPrintSongTitle(song.title || "");
+                        const printSongKey = getPrintKey(getPrintSetlistSongKey(song));
                         const bandCopyNotes =
                           printMode === "band"
                             ? (song.song_id ? rehearsalNotesBySongId[song.song_id] ?? null : null) ??
@@ -23331,17 +23536,30 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               null
                             : null;
 
+                        if (
+                          typeof window !== "undefined" &&
+                          (song.title || "").includes("You'll Never Leave Harlan Alive")
+                        ) {
+                          console.log("Print title debug", {
+                            printMode,
+                            setlistEntryId: song.id,
+                            rawTitle: song.title,
+                            cleanedTitle: printSongTitle,
+                            key: printSongKey,
+                          });
+                        }
+
                         return (
                           <li key={`print-${song.id}`} className="print-song-item">
                             <div className="print-song-main">
                               <span className="print-song-number">{index + 1}.</span>
                               <div className="print-song-body">
-                                <div className="print-song-headline">
-                                  <span className="print-song-title">{song.title}</span>
-                                  {song.song_key ? (
-                                    <span className="print-song-key">{song.song_key}</span>
-                                  ) : null}
-                                </div>
+                              <div className="print-song-headline">
+                                <span className="print-song-title">{printSongTitle}</span>
+                                {printSongKey ? (
+                                  <span className="print-song-key">{printSongKey}</span>
+                                ) : null}
+                              </div>
 
                                 {printMode !== "stage" || getDisplaySingerName(song.artist) ? (
                                   <div className="print-song-support">

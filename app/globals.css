@@ -655,9 +655,9 @@ html.dark select {
   }
 
   .print-song-headline {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: baseline;
-    justify-content: space-between;
     gap: 1rem;
   }
 
@@ -666,6 +666,16 @@ html.dark select {
   .print-song-artist,
   .print-song-notes {
     color: #000000;
+  }
+
+  .print-song-title {
+    min-width: 0;
+  }
+
+  .print-song-key {
+    justify-self: end;
+    text-align: right;
+    white-space: nowrap;
   }
 
   .print-song-support {

@@ -141,6 +141,32 @@ const setSectionTitles: Record<SetSection, string> = {
 const defaultSingerName = "CMMS Band";
 const MP3_PATH_MARKER_PATTERN = /\[\[MP3_PATH:([^\]]+)\]\]/g;
 
+function sanitizeSongTitle(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  const metadataStartIndex = trimmedValue.indexOf(" (");
+
+  if (metadataStartIndex === -1 || !trimmedValue.endsWith(")")) {
+    return trimmedValue;
+  }
+
+  const metadataText = trimmedValue.slice(metadataStartIndex + 2, -1);
+  const looksLikeEmbeddedSongMeta =
+    /capo/i.test(metadataText) ||
+    /play in/i.test(metadataText) ||
+    /\b[A-G](?:#|b)?\s*(?:major|minor|maj|min)?\b/i.test(metadataText);
+
+  if (!looksLikeEmbeddedSongMeta) {
+    return trimmedValue;
+  }
+
+  return trimmedValue.slice(0, metadataStartIndex).trim();
+}
+
 function normalizeSetSection(value: string | null | undefined): SetSection {
   if (value === "set2" || value === "encore") {
     return value;
@@ -199,7 +225,11 @@ function normalizeSetlistSong(song: SetlistEntryRow | SetlistSong): SetlistSong 
     ...song,
     section: normalizeSetSection(song.section),
     set_section: normalizeSetSection(song.section),
-    title: song.custom_title?.trim() || librarySong?.title || guestSong?.title || song.title,
+    title:
+      sanitizeSongTitle(song.custom_title) ||
+      sanitizeSongTitle(librarySong?.title) ||
+      sanitizeSongTitle(guestSong?.title) ||
+      sanitizeSongTitle(song.title),
     key: resolvedKey,
     sung_by: resolvedLeadVocal,
     performer_name: resolvedPerformer,
@@ -1319,7 +1349,6 @@ export function PerformerBlockCard({
             <div key={song.id} className="rounded-xl border border-stone-200 bg-white px-3 py-3">
               <p className="text-sm font-semibold text-stone-900">
                 {index + 1}. {song.title}
-                {song.song_key ? ` (${song.song_key})` : ""}
               </p>
               {song.notes?.trim() ? (
                 <p className="mt-2 whitespace-pre-wrap text-sm text-stone-600">
@@ -1699,7 +1728,6 @@ export function McPage({
         <div className={printMode ? "grid gap-2" : "grid gap-3"}>
           <h3 className={printMode ? "mc-print-song-line" : "text-lg font-semibold text-stone-900"}>
             {song.title} - {getMcSongPerformerLabel(song)}
-            {song.song_key ? ` (${song.song_key})` : ""}
           </h3>
 
           {blockDraft?.introNote.trim() ? (
