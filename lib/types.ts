@@ -104,6 +104,7 @@ export type SetlistEntry = {
   song_id: string | null;
   guest_song_id: string | null;
   custom_title: string | null;
+  performance_flow: string | null;
   created_at: string;
   title: string;
   key: string | null;
@@ -311,6 +312,15 @@ export type RehearsalRecording = {
   file_path: string;
   file_url: string | null;
   created_at: string;
+};
+
+export type LiveShowState = {
+  id: string;
+  show_id: string;
+  current_song_index: number;
+  current_set_number: number;
+  updated_at: string;
+  updated_by: string | null;
 };
 
 export type PromoMaterialFormState = {

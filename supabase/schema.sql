@@ -93,6 +93,9 @@ create table if not exists public.setlist_entries (
   )
 );
 
+alter table public.setlist_entries
+  add column if not exists performance_flow text;
+
 create table if not exists public.guest_profiles (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,
@@ -242,6 +245,18 @@ create index if not exists rehearsal_recordings_show_id_created_at_idx
 
 create index if not exists rehearsal_recordings_entry_id_created_at_idx
   on public.rehearsal_recordings(rehearsal_entry_id, created_at);
+
+create table if not exists public.live_show_state (
+  id uuid primary key default gen_random_uuid(),
+  show_id uuid not null references public.shows(id) on delete cascade,
+  current_song_index integer not null default 0,
+  current_set_number integer not null default 1,
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
+
+create unique index if not exists live_show_state_show_id_unique
+  on public.live_show_state(show_id);
 
 alter table public.show_sponsors
   add column if not exists sponsor_id uuid references public.sponsor_library(id) on delete cascade,
@@ -427,6 +442,7 @@ alter table public.show_comp_tickets enable row level security;
 alter table public.promo_links enable row level security;
 alter table public.rehearsal_entries enable row level security;
 alter table public.rehearsal_recordings enable row level security;
+alter table public.live_show_state enable row level security;
 alter table public.mc_special_segments enable row level security;
 alter table public.mc_sponsor_reads enable row level security;
 
@@ -842,6 +858,63 @@ using (true);
   ) then
     create policy "Allow public delete rehearsal recordings"
       on public.rehearsal_recordings
+      for delete
+      to anon, authenticated
+      using (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'live_show_state'
+      and policyname = 'Allow public read live show state'
+  ) then
+    create policy "Allow public read live show state"
+      on public.live_show_state
+      for select
+      to anon, authenticated
+      using (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'live_show_state'
+      and policyname = 'Allow public insert live show state'
+  ) then
+    create policy "Allow public insert live show state"
+      on public.live_show_state
+      for insert
+      to anon, authenticated
+      with check (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'live_show_state'
+      and policyname = 'Allow public update live show state'
+  ) then
+    create policy "Allow public update live show state"
+      on public.live_show_state
+      for update
+      to anon, authenticated
+      using (true)
+      with check (true);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'live_show_state'
+      and policyname = 'Allow public delete live show state'
+  ) then
+    create policy "Allow public delete live show state"
+      on public.live_show_state
       for delete
       to anon, authenticated
       using (true);

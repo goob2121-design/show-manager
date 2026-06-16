@@ -473,6 +473,7 @@ type SongEditFormState = {
 
 type SetlistSongEditFormState = {
   customTitle: string;
+  performanceFlow: string;
 };
 
 type McFlowRenderableItem =
@@ -1573,6 +1574,7 @@ function buildSongEditFormState(song: {
 function buildSetlistSongEditFormState(song: SetlistSong): SetlistSongEditFormState {
   return {
     customTitle: song.custom_title ?? "",
+    performanceFlow: song.performance_flow ?? "",
   };
 }
 
@@ -1585,6 +1587,7 @@ type SetlistEntryQueryRow = {
   song_id: string | null;
   guest_song_id: string | null;
   custom_title: string | null;
+  performance_flow?: string | null;
   created_at: string;
   title?: string;
   key?: string | null;
@@ -3448,6 +3451,7 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     section: normalizeSetSection(song.section),
     source_type: song.source_type === "guest" ? "guest" : "library",
     title: resolvedTitle,
+    performance_flow: "performance_flow" in song ? song.performance_flow ?? null : null,
     key: resolvedKey,
     sung_by: resolvedLeadVocal,
     tempo: normalizeSongTempo(resolvedTempo),
@@ -6152,6 +6156,7 @@ export function ShowPage({
   });
   const [setlistSongEditFormState, setSetlistSongEditFormState] = useState<SetlistSongEditFormState>({
     customTitle: "",
+    performanceFlow: "",
   });
   const [librarySongEditFormState, setLibrarySongEditFormState] = useState<SongEditFormState>({
     title: "",
@@ -6252,6 +6257,7 @@ export function ShowPage({
   const [copiedSongLinkId, setCopiedSongLinkId] = useState<string | null>(null);
   const [copiedGuestProfileLinkId, setCopiedGuestProfileLinkId] = useState<string | null>(null);
   const [copiedBandSetlistLink, setCopiedBandSetlistLink] = useState(false);
+  const [copiedLiveModeLink, setCopiedLiveModeLink] = useState(false);
   const [copiedGuestSongsLink, setCopiedGuestSongsLink] = useState(false);
   const [copiedGuestReminderEmailId, setCopiedGuestReminderEmailId] = useState<string | null>(null);
   const [copiedGuestShortTextId, setCopiedGuestShortTextId] = useState<string | null>(null);
@@ -8115,6 +8121,7 @@ export function ShowPage({
                 song_id,
                 guest_song_id,
                 custom_title,
+                performance_flow,
                 created_at,
                 library_song:song_id (
                   id,
@@ -13745,6 +13752,28 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
   }
 
+  async function handleCopyLiveModeLink() {
+    if (!show?.slug) {
+      setActionError("Live Mode link is not available until this show has a valid slug.");
+      return;
+    }
+
+    try {
+      const liveModePath = `/band/${encodeURIComponent(show.slug)}/live`;
+      const liveModeUrl =
+        typeof window === "undefined" ? liveModePath : `${window.location.origin}${liveModePath}`;
+      await navigator.clipboard.writeText(liveModeUrl);
+      setActionError(null);
+      setCopiedLiveModeLink(true);
+
+      window.setTimeout(() => {
+        setCopiedLiveModeLink(false);
+      }, 1800);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    }
+  }
+
   async function handleCopyGuestSongsLink() {
     if (!show?.slug) {
       setActionError("Guest songs link is not available until this show has a valid slug.");
@@ -15349,6 +15378,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
 
     const customTitle = normalizeOptionalField(setlistSongEditFormState.customTitle);
+    const performanceFlow = normalizeOptionalField(setlistSongEditFormState.performanceFlow);
 
     setActionError(null);
     setActiveSetlistActionId(songToUpdate.id);
@@ -15359,6 +15389,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         .from("setlist_entries")
         .update({
           custom_title: customTitle,
+          performance_flow: performanceFlow,
         })
         .eq("id", songToUpdate.id);
 
@@ -15372,6 +15403,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             ? {
                 ...song,
                 custom_title: customTitle,
+                performance_flow: performanceFlow,
                 title: customTitle ?? (
                   song.source_type === "guest"
                     ? pendingSongs.find((guestSong) => guestSong.id === song.guest_song_id)?.title ??
@@ -15396,6 +15428,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     setEditingSetlistSongId(null);
     setSetlistSongEditFormState({
       customTitle: "",
+      performanceFlow: "",
     });
   }
 
@@ -16358,6 +16391,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 >
                   {copiedRehearsalLink ? "Rehearsal link copied!" : "Copy Rehearsal Link"}
                 </button>
+                {show?.slug ? (
+                  <Link
+                    href={`/band/${encodeURIComponent(show.slug)}/live`}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 sm:w-auto"
+                  >
+                    Live Mode
+                  </Link>
+                ) : null}
               </div>
             </div>
 
@@ -23250,6 +23291,23 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </button>
               </>
             ) : null}
+            {isBandView && show?.slug ? (
+              <>
+                <Link
+                  href={`/band/${encodeURIComponent(show.slug)}/live`}
+                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                >
+                  Live Mode
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleCopyLiveModeLink}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  {copiedLiveModeLink ? "Live Mode link copied!" : "Copy Live Mode Link"}
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={() => handlePrint("stage")}
@@ -23480,6 +23538,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                     onChange={handleSetlistSongEditChange}
                                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                                     placeholder="Leave blank to use the source song title"
+                                  />
+                                </label>
+
+                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Performance Flow / Break Order
+                                  <textarea
+                                    name="performanceFlow"
+                                    value={setlistSongEditFormState.performanceFlow}
+                                    onChange={handleSetlistSongEditChange}
+                                    rows={7}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder={`Intro - Fiddle\nVerse 1 - Lead vocal\nBanjo break\nVerse 2\nMandolin break\nTag ending`}
                                   />
                                 </label>
 
