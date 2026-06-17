@@ -963,7 +963,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   </div>
                   <h2
                     className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-black leading-[1.02] tracking-tight text-white"
-                    style={{ fontSize: "clamp(1.35rem, 3.2vw, 3.3rem)" }}
+                    style={{ fontSize: "clamp(1.5rem, 3.2vw, 3.3rem)" }}
                   >
                     {currentSong.title}
                   </h2>
@@ -1023,7 +1023,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 </div>
               ) : null}
 
-              <div className={`mt-4 grid gap-3 ${currentSong.performanceFlow?.trim() ? "" : "xl:grid-cols-2"}`}>
+              <div className="mt-4 grid gap-3">
                 {currentSong.performanceFlow?.trim() ? null : (
                   <div className="rounded-[1.5rem] border border-white/10 bg-white/5 px-4 py-3">
                     <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Performance Notes</h3>
@@ -1032,12 +1032,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     </p>
                   </div>
                 )}
-                <div className="rounded-[1.5rem] border border-white/10 bg-white/5 px-4 py-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Rehearsal Notes</h3>
-                  <p className="mt-2 whitespace-pre-wrap text-lg leading-8 text-slate-100 sm:text-xl sm:leading-9">
-                    {currentSong.rehearsalNotes?.trim() || "No rehearsal notes for this song."}
-                  </p>
-                </div>
               </div>
 
               {!followBandLeader ? (
