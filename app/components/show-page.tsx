@@ -5461,6 +5461,10 @@ function getSponsorInitials(name: string) {
     .join("");
 }
 
+function normalizeSongSearchText(value: string | null | undefined) {
+  return value?.toLowerCase().trim() ?? "";
+}
+
 function SponsorLogoThumbnail({
   logoUrl,
   sponsorName,
@@ -6039,6 +6043,8 @@ export function ShowPage({
   const [selectedRehearsalSongId, setSelectedRehearsalSongId] = useState("");
   const [selectedRehearsalGuestSongId, setSelectedRehearsalGuestSongId] = useState("");
   const [manualRehearsalTitle, setManualRehearsalTitle] = useState("");
+  const [songLibrarySearchQuery, setSongLibrarySearchQuery] = useState("");
+  const [rehearsalLibrarySearchQuery, setRehearsalLibrarySearchQuery] = useState("");
   const [rehearsalTitleDrafts, setRehearsalTitleDrafts] = useState<Record<string, string>>({});
   const [rehearsalKeyDrafts, setRehearsalKeyDrafts] = useState<Record<string, string>>({});
   const [rehearsalSungByDrafts, setRehearsalSungByDrafts] = useState<Record<string, string>>({});
@@ -6259,6 +6265,7 @@ export function ShowPage({
   const [copiedBandSetlistLink, setCopiedBandSetlistLink] = useState(false);
   const [copiedLiveModeLink, setCopiedLiveModeLink] = useState(false);
   const [copiedGuestSongsLink, setCopiedGuestSongsLink] = useState(false);
+  const [liveModeLinkFallbackUrl, setLiveModeLinkFallbackUrl] = useState<string | null>(null);
   const [copiedGuestReminderEmailId, setCopiedGuestReminderEmailId] = useState<string | null>(null);
   const [copiedGuestShortTextId, setCopiedGuestShortTextId] = useState<string | null>(null);
   const [selectedCompTicketIds, setSelectedCompTicketIds] = useState<string[]>([]);
@@ -6627,10 +6634,40 @@ export function ShowPage({
     : !isBandView || activeBandTab === "setlist";
   const setlistSections = getRenderableSetlistSections(setlist);
   const visibleGuestSongs = viewMode === "guest" ? [] : pendingSongs;
+  const normalizedSongLibrarySearchQuery = normalizeSongSearchText(songLibrarySearchQuery);
+  const normalizedRehearsalLibrarySearchQuery = normalizeSongSearchText(rehearsalLibrarySearchQuery);
   const filteredSongLibrary = songLibrary.filter((song) => {
     const matchesTempo = !libraryTempoFilter || song.tempo === libraryTempoFilter;
     const matchesSongType = !librarySongTypeFilter || song.song_type === librarySongTypeFilter;
-    return matchesTempo && matchesSongType;
+    const matchesSearch =
+      !normalizedSongLibrarySearchQuery ||
+      [
+        song.title,
+        song.song_key,
+        song.sung_by,
+        song.song_type,
+        song.notes,
+        song.lyrics,
+      ]
+        .map((value) => normalizeSongSearchText(value))
+        .some((value) => value.includes(normalizedSongLibrarySearchQuery));
+    return matchesTempo && matchesSongType && matchesSearch;
+  });
+  const filteredRehearsalLibrarySongs = songLibrary.filter((song) => {
+    if (!normalizedRehearsalLibrarySearchQuery) {
+      return true;
+    }
+
+    return [
+      song.title,
+      song.song_key,
+      song.sung_by,
+      song.song_type,
+      song.notes,
+      song.lyrics,
+    ]
+      .map((value) => normalizeSongSearchText(value))
+      .some((value) => value.includes(normalizedRehearsalLibrarySearchQuery));
   });
   const songLibraryById = useMemo(
     () =>
@@ -13758,19 +13795,28 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       return;
     }
 
+    const liveModePath = `/band/${encodeURIComponent(show.slug)}/live`;
+    const liveModeUrl =
+      typeof window === "undefined" ? liveModePath : `${window.location.origin}${liveModePath}`;
+
     try {
-      const liveModePath = `/band/${encodeURIComponent(show.slug)}/live`;
-      const liveModeUrl =
-        typeof window === "undefined" ? liveModePath : `${window.location.origin}${liveModePath}`;
+      if (!navigator.clipboard?.writeText) {
+        setLiveModeLinkFallbackUrl(liveModeUrl);
+        setActionError("Clipboard copy is unavailable. Copy the Live Mode link manually.");
+        return;
+      }
+
       await navigator.clipboard.writeText(liveModeUrl);
       setActionError(null);
+      setLiveModeLinkFallbackUrl(null);
       setCopiedLiveModeLink(true);
 
       window.setTimeout(() => {
         setCopiedLiveModeLink(false);
       }, 1800);
     } catch (error) {
-      setActionError(getErrorMessage(error));
+      setLiveModeLinkFallbackUrl(liveModeUrl);
+      setActionError(`Clipboard copy failed. Copy the Live Mode link manually. ${getErrorMessage(error)}`);
     }
   }
 
@@ -16424,6 +16470,28 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   <div className="rounded-2xl border border-stone-200 bg-white p-4">
                     <div className="flex flex-col gap-3">
                       <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Search Songs
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={rehearsalLibrarySearchQuery}
+                            onChange={(event) => setRehearsalLibrarySearchQuery(event.target.value)}
+                            className="min-h-11 flex-1 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                            placeholder="Search songs..."
+                          />
+                          {rehearsalLibrarySearchQuery ? (
+                            <button
+                              type="button"
+                              onClick={() => setRehearsalLibrarySearchQuery("")}
+                              className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                            >
+                              Clear
+                            </button>
+                          ) : null}
+                        </div>
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                         Add Song from Library
                         <select
                           value={selectedRehearsalSongId}
@@ -16431,7 +16499,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                         >
                           <option value="">Select a song...</option>
-                          {songLibrary.map((song) => (
+                          {filteredRehearsalLibrarySongs.map((song) => (
                             <option key={song.id} value={song.id}>
                               {sanitizeSongTitle(song.title)}
                               {song.artist ? ` - ${song.artist}` : ""}
@@ -16439,6 +16507,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           ))}
                         </select>
                       </label>
+
+                      {filteredRehearsalLibrarySongs.length === 0 ? (
+                        <p className="text-sm text-stone-500">No songs found.</p>
+                      ) : null}
 
                       <button
                         type="button"
@@ -23338,6 +23410,21 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             </button>
           </div>
 
+          {isBandView && liveModeLinkFallbackUrl ? (
+            <div className="print-hidden mt-3 flex flex-col gap-2 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+              <p className="text-sm font-medium text-stone-700">
+                Clipboard copy is unavailable. Copy the Live Mode link manually:
+              </p>
+              <input
+                type="text"
+                readOnly
+                value={liveModeLinkFallbackUrl}
+                onFocus={(event) => event.target.select()}
+                className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900"
+              />
+            </div>
+          ) : null}
+
           <SectionLoadWarning message={dataSectionErrors.setlist} />
 
           {setlist.length === 0 ? (
@@ -25786,7 +25873,29 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             </div>
             <SectionLoadWarning message={dataSectionErrors.songLibrary} />
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:col-span-2 lg:col-span-1">
+                Search Songs
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={songLibrarySearchQuery}
+                    onChange={(event) => setSongLibrarySearchQuery(event.target.value)}
+                    className="min-h-11 flex-1 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    placeholder="Search songs..."
+                  />
+                  {songLibrarySearchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => setSongLibrarySearchQuery("")}
+                      className="min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
               <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                 Filter by Tempo
                 <select
@@ -25819,7 +25928,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
                 {songLibrary.length === 0
                   ? "No reusable songs saved yet. Band and admin submissions will build the library over time."
-                  : "No library songs match the current filters."}
+                  : songLibrarySearchQuery.trim()
+                    ? "No songs found."
+                    : "No library songs match the current filters."}
               </div>
             ) : (
               <div className="flex flex-col gap-3">

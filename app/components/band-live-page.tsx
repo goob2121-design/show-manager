@@ -574,7 +574,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
           setSharedState(nextState);
           console.log("Live state current_song_index:", nextState?.current_song_index ?? null);
-          console.log("Follow Band Leader when payload arrived:", followBandLeaderRef.current);
+          console.log("Follow Leader when payload arrived:", followBandLeaderRef.current);
 
           if (nextState && followBandLeaderRef.current) {
             setManualIndex(clampIndex(nextState.current_song_index, songsLengthRef.current));
@@ -707,10 +707,63 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     }
   }, [connectionState]);
 
+  const followStatusLabel = followBandLeader ? "FOLLOWING" : "MANUAL";
+  const showLeaderControls = isLeaderUnlocked && !followBandLeader;
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,_#020617_0%,_#0f172a_38%,_#020617_100%)] text-slate-100">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 px-3 py-3 sm:px-4 lg:px-6">
-        <header className="rounded-[1.75rem] border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_24px_72px_-48px_rgba(15,23,42,0.95)] backdrop-blur">
+      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-3 px-3 py-2 sm:px-4 sm:py-3 lg:gap-4 lg:px-6">
+        <header className="sticky top-0 z-20 -mx-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-slate-950/90 px-3 py-2 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur lg:hidden">
+          <div className="inline-flex min-w-full items-center gap-2 whitespace-nowrap">
+            <label className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
+              <input
+                type="checkbox"
+                checked={followBandLeader}
+                onChange={(event) => {
+                  const nextValue = event.target.checked;
+                  setFollowBandLeader(nextValue);
+                  if (nextValue) {
+                    setManualIndex(sharedIndex);
+                  }
+                }}
+                className="h-4 w-4 rounded border-white/20 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
+              />
+              Follow Leader
+            </label>
+            <Link
+              href={`/band/${encodeURIComponent(showSlug)}`}
+              className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+            >
+              Back to Band Portal
+            </Link>
+            <button
+              type="button"
+              onClick={toggleWakeLock}
+              className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+            >
+              {wakeLockEnabled ? "Keep Awake On" : "Keep Awake"}
+            </button>
+            <span
+              className={`inline-flex min-h-11 items-center rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
+            >
+              {connectionLabel.label}
+            </span>
+            <span className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-[11px] font-semibold tracking-[0.18em] text-slate-100">
+              {followStatusLabel}
+            </span>
+            {!followBandLeader ? (
+              <button
+                type="button"
+                onClick={() => setManualIndex(sharedIndex)}
+                className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+              >
+                Jump to Leader Song
+              </button>
+            ) : null}
+          </div>
+        </header>
+
+        <header className="hidden rounded-[1.75rem] border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_24px_72px_-48px_rgba(15,23,42,0.95)] backdrop-blur lg:block">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col gap-1">
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-300/80">StageFlow Live Performance Mode</p>
@@ -729,7 +782,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 {connectionLabel.label}
               </span>
               <span className="inline-flex min-h-9 items-center rounded-full border border-white/10 bg-white/5 px-3 text-[11px] font-semibold tracking-[0.18em] text-slate-100">
-                {followBandLeader ? "FOLLOWING" : "BROWSING MANUALLY"}
+                {followStatusLabel}
               </span>
               <label className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
                 <input
@@ -744,7 +797,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   }}
                   className="h-4 w-4 rounded border-white/20 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
                 />
-                Follow Band Leader
+                Follow Leader
               </label>
               <Link
                 href={`/band/${encodeURIComponent(showSlug)}`}
@@ -898,38 +951,32 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             </article>
 
             <aside className="flex flex-col gap-3">
+              {showLeaderControls ? (
               <section className="rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-3.5">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Live Control</h3>
+                <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Leader Controls</h3>
                 <div className="mt-3 flex flex-col gap-2.5">
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200">
                     Shared position: {songs[sharedIndex] ? `${songs[sharedIndex].sectionLabel} • Song ${songs[sharedIndex].songNumber}` : "Not set yet"}
                   </div>
-                  {isLeaderUnlocked ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void updateSharedSongIndex(sharedIndex - 1)}
-                        disabled={songs.length === 0 || sharedIndex <= 0}
-                        className="min-h-12 rounded-[1.25rem] border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Back Everyone
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void updateSharedSongIndex(sharedIndex + 1)}
-                        disabled={songs.length === 0 || sharedIndex >= songs.length - 1}
-                        className="min-h-12 rounded-[1.25rem] border border-emerald-400/20 bg-emerald-500/15 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Advance Everyone
-                      </button>
-                    </>
-                  ) : (
-                    <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                      Follow mode is available to everyone. Leader controls appear when band admin access is unlocked for this show.
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => void updateSharedSongIndex(sharedIndex - 1)}
+                    disabled={songs.length === 0 || sharedIndex <= 0}
+                    className="min-h-12 rounded-[1.25rem] border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Back Everyone
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void updateSharedSongIndex(sharedIndex + 1)}
+                    disabled={songs.length === 0 || sharedIndex >= songs.length - 1}
+                    className="min-h-12 rounded-[1.25rem] border border-emerald-400/20 bg-emerald-500/15 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Advance Everyone
+                  </button>
                 </div>
               </section>
+              ) : null}
 
               <section className="rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-3.5">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">On Deck</h3>
