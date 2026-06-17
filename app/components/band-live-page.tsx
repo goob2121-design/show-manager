@@ -978,15 +978,15 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               </div>
 
               <div className="grid gap-3 pt-4 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5">
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-center lg:text-left">
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Lead Vocal</p>
                   <p className="mt-1.5 text-base font-semibold text-white sm:text-lg">
                     {currentSong.leadVocal?.trim() || currentSong.performerName?.trim() || "CMMS Band"}
                   </p>
                 </div>
-                <div className={`rounded-2xl border px-3 py-2.5 lg:hidden ${clockState.className}`}>
+                <div className={`rounded-2xl border px-3 py-2.5 text-center lg:hidden ${clockState.className}`}>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-300">{clockState.label}</p>
-                  <p className={`mt-1.5 text-xl font-black sm:text-2xl ${clockState.accentClassName}`}>
+                  <p className={`mt-1 text-[1.56rem] font-black leading-none sm:text-2xl ${clockState.accentClassName}`}>
                     {formattedCurrentTime}
                   </p>
                 </div>
