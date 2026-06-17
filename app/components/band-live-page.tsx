@@ -107,6 +107,20 @@ type LiveSong = {
 
 type ConnectionState = "connecting" | "connected" | "offline";
 
+const LIVE_SHOW_TIMING = {
+  showStart: { hour: 19, minute: 0 },
+  intermissionWindow: {
+    start: { hour: 19, minute: 45 },
+    end: { hour: 20, minute: 0 },
+    label: "INTERMISSION WINDOW",
+  },
+  showEndWindow: {
+    start: { hour: 20, minute: 45 },
+    end: { hour: 21, minute: 0 },
+    label: "SHOW END WINDOW",
+  },
+} as const;
+
 function UtilityIcon({
   children,
 }: {
@@ -378,6 +392,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(false);
+  const [showStartConfirmOpen, setShowStartConfirmOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
   const followBandLeaderRef = useRef(followBandLeader);
   const songsLengthRef = useRef(songs.length);
@@ -408,6 +424,16 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   useEffect(() => {
     songsLengthRef.current = songs.length;
   }, [songs.length]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -764,6 +790,16 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     }
   }, [connectionState]);
 
+  const clockState = useMemo(() => getClockWindowState(currentTime), [currentTime]);
+  const formattedCurrentTime = useMemo(
+    () =>
+      new Intl.DateTimeFormat("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(currentTime),
+    [currentTime],
+  );
+
   const followStatusLabel = followBandLeader ? "FOLLOWING" : "MANUAL";
   const showLeaderControls = isLeaderUnlocked && !followBandLeader;
 
@@ -829,7 +865,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 flex-1 text-center lg:text-left">
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-300/80">StageFlow Live Performance Mode</p>
-              <h1 className="mx-auto max-w-[20ch] text-xl font-black leading-tight tracking-tight text-white sm:text-2xl lg:mx-0 lg:max-w-none lg:text-3xl text-balance">
+              <h1 className="mx-auto max-w-[22ch] text-lg font-black leading-tight tracking-tight text-white sm:text-xl lg:mx-0 lg:max-w-none lg:text-2xl text-balance">
                 {show?.name?.trim() || "Band Live Mode"}
               </h1>
               <p className="text-xs text-slate-300 sm:text-sm">
@@ -915,8 +951,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         ) : (
           <section className="grid flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] xl:grid-cols-[minmax(0,1fr)_20rem]">
             <article className="flex min-h-[60vh] flex-col rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-4 shadow-[0_35px_90px_-52px_rgba(15,23,42,0.95)] backdrop-blur sm:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-4">
-                <div className="flex flex-col gap-1.5">
+              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">
                       {currentSong.sectionLabel}
@@ -925,14 +961,17 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                       Song {currentSong.songNumber}
                     </span>
                   </div>
-                  <h2 className="max-w-5xl text-3xl font-black leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl xl:text-6xl">
+                  <h2
+                    className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-black leading-[1.02] tracking-tight text-white"
+                    style={{ fontSize: "clamp(1.35rem, 3.2vw, 3.3rem)" }}
+                  >
                     {currentSong.title}
                   </h2>
                 </div>
 
-                <div className="min-w-[7.25rem] rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-right">
+                <div className="shrink-0 self-start rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-right min-w-[8.75rem] sm:min-w-[9.75rem]">
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Key</p>
-                  <p className="mt-1 text-xl font-black text-emerald-200 sm:text-2xl lg:text-3xl">
+                  <p className="mt-1 text-3xl font-black text-emerald-200 sm:text-4xl lg:text-5xl">
                     {currentSong.key?.trim() || "—"}
                   </p>
                 </div>
@@ -943,6 +982,12 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Lead Vocal</p>
                   <p className="mt-1.5 text-base font-semibold text-white sm:text-lg">
                     {currentSong.leadVocal?.trim() || currentSong.performerName?.trim() || "CMMS Band"}
+                  </p>
+                </div>
+                <div className={`rounded-2xl border px-3 py-2.5 lg:hidden ${clockState.className}`}>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-300">{clockState.label}</p>
+                  <p className={`mt-1.5 text-xl font-black sm:text-2xl ${clockState.accentClassName}`}>
+                    {formattedCurrentTime}
                   </p>
                 </div>
                 {currentSong.lyrics?.trim() ? (
@@ -972,7 +1017,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-200">
                     Performance Flow / Break Order
                   </h3>
-                  <pre className="mt-3 whitespace-pre-wrap font-sans text-lg leading-8 text-white sm:text-xl lg:text-2xl">
+                  <pre className="mt-3 whitespace-pre-wrap font-sans text-2xl leading-10 text-white sm:text-3xl sm:leading-[3rem] lg:text-4xl lg:leading-[3.75rem]">
                     {currentSong.performanceFlow}
                   </pre>
                 </div>
@@ -989,7 +1034,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 )}
                 <div className="rounded-[1.5rem] border border-white/10 bg-white/5 px-4 py-3">
                   <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Rehearsal Notes</h3>
-                  <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-slate-100 sm:text-lg">
+                  <p className="mt-2 whitespace-pre-wrap text-lg leading-8 text-slate-100 sm:text-xl sm:leading-9">
                     {currentSong.rehearsalNotes?.trim() || "No rehearsal notes for this song."}
                   </p>
                 </div>
@@ -1018,6 +1063,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             </article>
 
             <aside className="flex flex-col gap-3">
+              <section className={`hidden rounded-[1.75rem] border p-3.5 lg:block ${clockState.className}`}>
+                <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">{clockState.label}</h3>
+                <p className={`mt-2 text-3xl font-black tracking-tight xl:text-4xl ${clockState.accentClassName}`}>
+                  {formattedCurrentTime}
+                </p>
+              </section>
+
               {showLeaderControls ? (
               <section className="rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-3.5">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Leader Controls</h3>
@@ -1025,6 +1077,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200">
                     Shared position: {songs[sharedIndex] ? `${songs[sharedIndex].sectionLabel} • Song ${songs[sharedIndex].songNumber}` : "Not set yet"}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowStartConfirmOpen(true)}
+                    disabled={songs.length === 0}
+                    className="min-h-12 rounded-[1.25rem] border border-sky-400/20 bg-sky-500/15 px-4 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Start Show
+                  </button>
                   <button
                     type="button"
                     onClick={() => void updateSharedSongIndex(sharedIndex - 1)}
@@ -1092,6 +1152,71 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
           </div>
         </div>
       ) : null}
+
+      {showStartConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/88 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-slate-950 p-5 shadow-[0_32px_80px_-48px_rgba(15,23,42,0.98)]">
+            <h3 className="text-lg font-bold text-white">Start Show</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-300">
+              Return everyone to the first song in the show?
+            </p>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowStartConfirmOpen(false)}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStartConfirmOpen(false);
+                  void updateSharedSongIndex(0);
+                }}
+                className="rounded-xl border border-sky-400/20 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/20"
+              >
+                Start Show
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
+}
+
+function getMinutesSinceMidnight(date: Date) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function getClockWindowState(date: Date) {
+  const currentMinutes = getMinutesSinceMidnight(date);
+  const toMinutes = (value: { hour: number; minute: number }) => value.hour * 60 + value.minute;
+  const intermissionStart = toMinutes(LIVE_SHOW_TIMING.intermissionWindow.start);
+  const intermissionEnd = toMinutes(LIVE_SHOW_TIMING.intermissionWindow.end);
+  const showEndStart = toMinutes(LIVE_SHOW_TIMING.showEndWindow.start);
+  const showEndEnd = toMinutes(LIVE_SHOW_TIMING.showEndWindow.end);
+
+  if (currentMinutes >= intermissionStart && currentMinutes <= intermissionEnd) {
+    return {
+      label: LIVE_SHOW_TIMING.intermissionWindow.label,
+      className: "border-rose-400/30 bg-rose-500/12 text-rose-100",
+      accentClassName: "text-rose-200",
+    };
+  }
+
+  if (currentMinutes >= showEndStart && currentMinutes <= showEndEnd) {
+    return {
+      label: LIVE_SHOW_TIMING.showEndWindow.label,
+      className: "border-rose-400/30 bg-rose-500/12 text-rose-100",
+      accentClassName: "text-rose-200",
+    };
+  }
+
+  return {
+    label: "Current Time",
+    className: "border-white/10 bg-white/5 text-slate-100",
+    accentClassName: "text-emerald-200",
+  };
 }
