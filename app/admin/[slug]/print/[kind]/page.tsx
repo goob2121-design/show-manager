@@ -6,7 +6,7 @@ import { PrintButton } from "@/app/components/print-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { GuestProfile, ShowCompTicket, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
-type PrintKind = "itinerary" | "sponsors" | "guests" | "door-guest-list";
+type PrintKind = "itinerary" | "sponsors" | "guests" | "door-guest-list" | "reserved-seat-cards";
 
 type SponsorRow = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -32,7 +32,13 @@ type PrintPageProps = {
 };
 
 function normalizePrintKind(kind: string): PrintKind | null {
-  if (kind === "itinerary" || kind === "sponsors" || kind === "guests" || kind === "door-guest-list") {
+  if (
+    kind === "itinerary" ||
+    kind === "sponsors" ||
+    kind === "guests" ||
+    kind === "door-guest-list" ||
+    kind === "reserved-seat-cards"
+  ) {
     return kind;
   }
 
@@ -77,6 +83,8 @@ function getPrintTitle(kind: PrintKind) {
       return "Guest Info Sheets";
     case "door-guest-list":
       return "Door Guest List";
+    case "reserved-seat-cards":
+      return "Reserved Seat Cards";
     default:
       return "Itinerary";
   }
@@ -115,6 +123,35 @@ function sortDoorGuestList(items: DoorGuestListRow[]) {
 
     return (left.guest_name ?? "").localeCompare(right.guest_name ?? "");
   });
+}
+
+function sortReservedSeatCards(items: DoorGuestListRow[]) {
+  return [...items].sort((left, right) => (left.guest_name ?? "").localeCompare(right.guest_name ?? "", "en-US"));
+}
+
+function isReservedSeatEntry(ticket: DoorGuestListRow) {
+  const ticketType = normalizeGuestListTicketType(ticket.ticket_type);
+
+  if (ticketType === "paid_online") {
+    return true;
+  }
+
+  const markerText = [ticket.notes, ticket.order_id, ticket.import_key]
+    .map((value) => value?.trim().toLowerCase() ?? "")
+    .filter(Boolean)
+    .join(" ");
+
+  return /\b(reserved|reserve|advance|preorder|pre-order)\b/i.test(markerText);
+}
+
+function chunkItems<T>(items: T[], chunkSize: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+
+  return chunks;
 }
 
 function getSingleRelation<T>(value: T | T[] | null | undefined) {
@@ -214,6 +251,7 @@ function PrintShell({
 }) {
   const title = getPrintTitle(kind);
   const isDoorGuestList = kind === "door-guest-list";
+  const isReservedSeatCards = kind === "reserved-seat-cards";
 
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-8 text-stone-900 sm:px-6 print:bg-white print:px-0 print:py-0">
@@ -228,8 +266,8 @@ function PrintShell({
           <PrintButton />
         </div>
 
-        <header className="mb-6 border-b border-stone-300 pb-5">
-          {isDoorGuestList ? (
+        <header className={`mb-6 border-b border-stone-300 pb-5 ${isReservedSeatCards ? "print:hidden" : ""}`}>
+          {isDoorGuestList || isReservedSeatCards ? (
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <img
@@ -247,7 +285,7 @@ function PrintShell({
                 </div>
               </div>
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-700 print:text-[11px]">
-                Door Guest List
+                {isReservedSeatCards ? "Reserved Seat Cards" : "Door Guest List"}
               </p>
             </div>
           ) : (
@@ -557,6 +595,75 @@ function DoorGuestListPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
   );
 }
 
+function ReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
+  const reservedEntries = sortReservedSeatCards(tickets.filter((ticket) => isReservedSeatEntry(ticket)));
+  const seatCards = reservedEntries.flatMap((ticket) => {
+    const seatCount = Math.max(1, ticket.ticket_count);
+
+    return Array.from({ length: seatCount }, (_, index) => ({
+      id: `${ticket.id}-seat-${index + 1}`,
+      purchaserName: ticket.guest_name?.trim() || "Reserved Guest",
+      seatNumber: index + 1,
+      totalSeats: seatCount,
+    }));
+  });
+
+  if (seatCards.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-sm text-stone-500">
+        No reserved seat card entries are available for this show yet.
+      </div>
+    );
+  }
+
+  const pages = chunkItems(seatCards, 8);
+
+  return (
+    <div className="grid gap-6">
+      {pages.map((pageEntries, pageIndex) => (
+        <section
+          key={`reserved-seat-page-${pageIndex}`}
+          className="grid grid-cols-2 gap-4 print:h-[9.15in] print:[grid-template-rows:repeat(4,minmax(0,1fr))] print:gap-3"
+          style={{
+            breakAfter: pageIndex < pages.length - 1 ? "page" : "auto",
+            pageBreakAfter: pageIndex < pages.length - 1 ? "always" : "auto",
+          }}
+        >
+          {pageEntries.map((card) => (
+            <article
+              key={card.id}
+              className="flex min-h-[2.2in] flex-col items-center justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+              style={{
+                breakInside: "avoid",
+                pageBreakInside: "avoid",
+              }}
+            >
+              <img
+                src="/cmms-logo.png"
+                alt="Cumberland Mountain Music Show logo"
+                className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+              />
+              <div className="flex flex-1 flex-col items-center justify-center py-2">
+                <h2 className="text-xl font-black uppercase tracking-[0.06em] text-stone-950 print:text-[18px]">
+                  {card.purchaserName}
+                </h2>
+                {card.totalSeats > 1 ? (
+                  <p className="mt-3 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
+                    Seat {card.seatNumber} of {card.totalSeats}
+                  </p>
+                ) : null}
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
+                Reserved Seating
+              </p>
+            </article>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 async function loadShow(slug: string) {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.from("shows").select("*").eq("slug", slug).maybeSingle();
@@ -706,7 +813,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         }, {})
       : {};
   const doorGuestList =
-    printKind === "door-guest-list"
+    printKind === "door-guest-list" || printKind === "reserved-seat-cards"
       ? await safeLoad("door guest list", () => loadDoorGuestList(show.id), [])
       : [];
 
@@ -721,6 +828,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
           <GuestInfoPrintView guests={guests} guestSongsByProfileId={guestSongsByProfileId} />
         ) : null}
         {printKind === "door-guest-list" ? <DoorGuestListPrintView tickets={doorGuestList} /> : null}
+        {printKind === "reserved-seat-cards" ? <ReservedSeatCardsPrintView tickets={doorGuestList} /> : null}
       </PrintShell>
     </AdminGate>
   );

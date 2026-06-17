@@ -19171,18 +19171,26 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   Track paid online tickets, complimentary tickets, expected attendance, and check-in management for this show.
                 </p>
               </div>
-              <Link
-                href={`/admin/${showSlug}/door`}
-                className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 sm:w-auto"
-              >
-                Open Door Mode
-              </Link>
-              <Link
-                href={`/admin/${showSlug}/print/door-guest-list`}
-                className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-              >
-                Print Door Guest List
-              </Link>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                <Link
+                  href={`/admin/${showSlug}/door`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 sm:w-auto"
+                >
+                  Open Door Mode
+                </Link>
+                <Link
+                  href={`/admin/${showSlug}/print/door-guest-list`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                >
+                  Print Door Guest List
+                </Link>
+                <Link
+                  href={`/admin/${showSlug}/print/reserved-seat-cards`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                >
+                  Print Reserved Seat Cards
+                </Link>
+              </div>
             </div>
 
             <SectionLoadWarning message={dataSectionErrors.compTickets} />
