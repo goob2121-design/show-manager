@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { createClient } from "@/lib/supabase/client";
 import type { LiveShowState, RehearsalEntry, RehearsalRecording, SetSection, ShowRecord, SongTempo, SongType } from "@/lib/types";
@@ -105,6 +106,62 @@ type LiveSong = {
 };
 
 type ConnectionState = "connecting" | "connected" | "offline";
+
+function UtilityIcon({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-current">{children}</span>;
+}
+
+function WifiIcon() {
+  return (
+    <UtilityIcon>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+        <path d="M3 7.5a11 11 0 0 1 14 0" strokeLinecap="round" />
+        <path d="M5.8 10.4a7 7 0 0 1 8.4 0" strokeLinecap="round" />
+        <path d="M8.6 13.3a3 3 0 0 1 2.8 0" strokeLinecap="round" />
+        <circle cx="10" cy="16" r="1.1" fill="currentColor" stroke="none" />
+      </svg>
+    </UtilityIcon>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <UtilityIcon>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4">
+        <circle cx="7" cy="7" r="2.2" />
+        <circle cx="13.2" cy="7.8" r="1.8" />
+        <path d="M3.8 14.8c.6-2 2.3-3.1 4.5-3.1s3.9 1.1 4.5 3.1" strokeLinecap="round" />
+        <path d="M12.1 12.2c1.5.1 2.7.9 3.3 2.4" strokeLinecap="round" />
+      </svg>
+    </UtilityIcon>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <UtilityIcon>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4">
+        <path d="M2.3 10s2.7-4.8 7.7-4.8 7.7 4.8 7.7 4.8-2.7 4.8-7.7 4.8S2.3 10 2.3 10Z" />
+        <circle cx="10" cy="10" r="2.1" />
+      </svg>
+    </UtilityIcon>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <UtilityIcon>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4">
+        <path d="M3.2 8.7 10 3.5l6.8 5.2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M5.2 7.9v8.1h9.6V7.9" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </UtilityIcon>
+  );
+}
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -716,6 +773,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         <header className="sticky top-0 z-20 -mx-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-slate-950/90 px-3 py-2 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur lg:hidden">
           <div className="inline-flex min-w-full items-center gap-2 whitespace-nowrap">
             <label className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
+              <UsersIcon />
               <input
                 type="checkbox"
                 checked={followBandLeader}
@@ -732,23 +790,27 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             </label>
             <Link
               href={`/band/${encodeURIComponent(showSlug)}`}
-              className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
             >
-              Back to Band Portal
+              <HomeIcon />
+              Back
             </Link>
             <button
               type="button"
               onClick={toggleWakeLock}
-              className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
             >
+              <EyeIcon />
               {wakeLockEnabled ? "Keep Awake On" : "Keep Awake"}
             </button>
             <span
-              className={`inline-flex min-h-11 items-center rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
+              className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
             >
+              <WifiIcon />
               {connectionLabel.label}
             </span>
-            <span className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-[11px] font-semibold tracking-[0.18em] text-slate-100">
+            <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-[11px] font-semibold tracking-[0.18em] text-slate-100">
+              <UsersIcon />
               {followStatusLabel}
             </span>
             {!followBandLeader ? (
@@ -764,10 +826,10 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         </header>
 
         <header className="hidden rounded-[1.75rem] border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_24px_72px_-48px_rgba(15,23,42,0.95)] backdrop-blur lg:block">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1 text-center lg:text-left">
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-300/80">StageFlow Live Performance Mode</p>
-              <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl lg:text-3xl">
+              <h1 className="mx-auto max-w-[20ch] text-xl font-black leading-tight tracking-tight text-white sm:text-2xl lg:mx-0 lg:max-w-none lg:text-3xl text-balance">
                 {show?.name?.trim() || "Band Live Mode"}
               </h1>
               <p className="text-xs text-slate-300 sm:text-sm">
@@ -775,16 +837,19 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto">
               <span
-                className={`inline-flex min-h-9 items-center rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
+                className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
               >
+                <WifiIcon />
                 {connectionLabel.label}
               </span>
-              <span className="inline-flex min-h-9 items-center rounded-full border border-white/10 bg-white/5 px-3 text-[11px] font-semibold tracking-[0.18em] text-slate-100">
+              <span className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-[11px] font-semibold tracking-[0.18em] text-slate-100">
+                <UsersIcon />
                 {followStatusLabel}
               </span>
               <label className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
+                <UsersIcon />
                 <input
                   type="checkbox"
                   checked={followBandLeader}
@@ -801,15 +866,17 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               </label>
               <Link
                 href={`/band/${encodeURIComponent(showSlug)}`}
-                className="inline-flex min-h-9 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10 sm:text-sm"
+                className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10 sm:text-sm"
               >
-                Back to Band Portal
+                <HomeIcon />
+                Back
               </Link>
               <button
                 type="button"
                 onClick={toggleWakeLock}
-                className="inline-flex min-h-9 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10 sm:text-sm"
+                className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10 sm:text-sm"
               >
+                <EyeIcon />
                 {wakeLockEnabled ? "Keep Awake On" : "Keep Awake"}
               </button>
               {!followBandLeader ? (
@@ -911,7 +978,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 </div>
               ) : null}
 
-              <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              <div className={`mt-4 grid gap-3 ${currentSong.performanceFlow?.trim() ? "" : "xl:grid-cols-2"}`}>
                 {currentSong.performanceFlow?.trim() ? null : (
                   <div className="rounded-[1.5rem] border border-white/10 bg-white/5 px-4 py-3">
                     <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Performance Notes</h3>
