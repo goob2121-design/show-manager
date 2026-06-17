@@ -963,13 +963,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   </div>
                   <h2
                     className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-black leading-[1.02] tracking-tight text-white"
-                    style={{ fontSize: "clamp(1.5rem, 3.2vw, 3.3rem)" }}
+                    style={{ fontSize: "clamp(1.72rem, 3.2vw, 3.3rem)" }}
                   >
                     {currentSong.title}
                   </h2>
                 </div>
 
-                <div className="shrink-0 self-start rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-right min-w-[8.75rem] sm:min-w-[9.75rem]">
+                <div className="shrink-0 self-start rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-right min-w-[7.75rem] sm:min-w-[9.75rem]">
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Key</p>
                   <p className="mt-1 text-3xl font-black text-emerald-200 sm:text-4xl lg:text-5xl">
                     {currentSong.key?.trim() || "—"}
