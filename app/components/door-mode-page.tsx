@@ -948,6 +948,12 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
+              <Link
+                href={`/admin/${show.slug}/print/door-guest-list`}
+                className="inline-flex items-center justify-center rounded-xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
+              >
+                Print Door Guest List
+              </Link>
               <button
                 type="button"
                 onClick={() => setIsSponsorCompPanelOpen(true)}

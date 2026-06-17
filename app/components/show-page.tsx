@@ -19177,6 +19177,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               >
                 Open Door Mode
               </Link>
+              <Link
+                href={`/admin/${showSlug}/print/door-guest-list`}
+                className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+              >
+                Print Door Guest List
+              </Link>
             </div>
 
             <SectionLoadWarning message={dataSectionErrors.compTickets} />

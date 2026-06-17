@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { PrintButton } from "@/app/components/print-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { GuestProfile, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
+import type { GuestProfile, ShowCompTicket, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
-type PrintKind = "itinerary" | "sponsors" | "guests";
+type PrintKind = "itinerary" | "sponsors" | "guests" | "door-guest-list";
 
 type SponsorRow = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -25,12 +25,14 @@ type GuestSongRow = {
   submitted_by_name: string | null;
 };
 
+type DoorGuestListRow = ShowCompTicket;
+
 type PrintPageProps = {
   params: Promise<{ slug: string; kind: string }>;
 };
 
 function normalizePrintKind(kind: string): PrintKind | null {
-  if (kind === "itinerary" || kind === "sponsors" || kind === "guests") {
+  if (kind === "itinerary" || kind === "sponsors" || kind === "guests" || kind === "door-guest-list") {
     return kind;
   }
 
@@ -73,9 +75,46 @@ function getPrintTitle(kind: PrintKind) {
       return "Sponsor Rundown";
     case "guests":
       return "Guest Info Sheets";
+    case "door-guest-list":
+      return "Door Guest List";
     default:
       return "Itinerary";
   }
+}
+
+function normalizeGuestListTicketType(value: string | null | undefined) {
+  return value === "paid_online" || value === "door_paid" || value === "manual" || value === "complimentary"
+    ? value
+    : "complimentary";
+}
+
+function formatDoorGuestListType(value: string | null | undefined) {
+  switch (normalizeGuestListTicketType(value)) {
+    case "paid_online":
+      return "Online preorder";
+    case "manual":
+      return "Guest list";
+    default:
+      return "Comp";
+  }
+}
+
+function getDoorGuestLastName(value: string | null | undefined) {
+  const parts = value?.trim().split(/\s+/).filter(Boolean) ?? [];
+  return parts.length > 1 ? parts[parts.length - 1]!.toLowerCase() : (parts[0] ?? "").toLowerCase();
+}
+
+function sortDoorGuestList(items: DoorGuestListRow[]) {
+  return [...items].sort((left, right) => {
+    const leftLastName = getDoorGuestLastName(left.guest_name);
+    const rightLastName = getDoorGuestLastName(right.guest_name);
+
+    if (leftLastName !== rightLastName) {
+      return leftLastName.localeCompare(rightLastName);
+    }
+
+    return (left.guest_name ?? "").localeCompare(right.guest_name ?? "");
+  });
 }
 
 function getSingleRelation<T>(value: T | T[] | null | undefined) {
@@ -174,6 +213,7 @@ function PrintShell({
   children: ReactNode;
 }) {
   const title = getPrintTitle(kind);
+  const isDoorGuestList = kind === "door-guest-list";
 
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-8 text-stone-900 sm:px-6 print:bg-white print:px-0 print:py-0">
@@ -189,6 +229,29 @@ function PrintShell({
         </div>
 
         <header className="mb-6 border-b border-stone-300 pb-5">
+          {isDoorGuestList ? (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4">
+                <img
+                  src="/cmms-logo.png"
+                  alt="Cumberland Mountain Music Show logo"
+                  className="h-auto max-h-[72px] w-auto max-w-[180px] object-contain print:max-h-[60px] print:max-w-[150px]"
+                />
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-tight text-stone-950 print:text-2xl">
+                    Cumberland Mountain Music Show
+                  </h1>
+                  <p className="mt-1 text-sm text-stone-600 print:text-xs">
+                    {formatShowDate(show.show_date)}
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-700 print:text-[11px]">
+                Door Guest List
+              </p>
+            </div>
+          ) : (
+            <>
           <p className="text-[10px] font-medium text-stone-500 print:text-[9px]">
             StageFlow — by Pinnacle Recording Studio
           </p>
@@ -202,6 +265,8 @@ function PrintShell({
             {formatShowDate(show.show_date)}
             {show.venue ? ` - ${show.venue}` : ""}
           </p>
+            </>
+          )}
         </header>
 
         {children}
@@ -407,6 +472,91 @@ function GuestInfoPrintView({
   );
 }
 
+function DoorGuestListPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
+  if (tickets.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-sm text-stone-500">
+        No door guest list entries are available for this show yet.
+      </div>
+    );
+  }
+
+  const onlinePreorders = sortDoorGuestList(
+    tickets.filter((ticket) => normalizeGuestListTicketType(ticket.ticket_type) === "paid_online"),
+  );
+  const guestAndCompEntries = sortDoorGuestList(
+    tickets.filter((ticket) => normalizeGuestListTicketType(ticket.ticket_type) !== "paid_online"),
+  );
+  const renderGroup = (title: string, rows: DoorGuestListRow[]) => {
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return (
+      <section className="break-inside-avoid">
+        <div className="mb-3 flex items-end justify-between gap-3 border-b border-stone-300 pb-2">
+          <h2 className="text-lg font-semibold text-stone-950 print:text-base">{title}</h2>
+          <p className="text-sm font-medium text-stone-600 print:text-xs">
+            {rows.reduce((sum, row) => sum + row.ticket_count, 0)} total
+          </p>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-stone-200 print:rounded-none print:border-stone-300">
+          <table className="w-full border-collapse text-left">
+            <thead className="print:table-header-group">
+              <tr className="border-b border-stone-200 bg-stone-50 print:bg-white">
+                <th className="w-14 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  In
+                </th>
+                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  Name
+                </th>
+                <th className="w-20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  Qty
+                </th>
+                <th className="w-36 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  Type
+                </th>
+                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  Notes
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((ticket) => {
+                return (
+                  <tr key={ticket.id} className="break-inside-avoid border-b border-stone-200 last:border-b-0">
+                    <td className="px-3 py-3 align-top text-xl leading-none text-stone-500 print:py-2.5">□</td>
+                    <td className="px-3 py-3 align-top text-base font-semibold text-stone-950 print:py-2.5 print:text-[13px]">
+                      {ticket.guest_name?.trim() || "Guest"}
+                    </td>
+                    <td className="px-3 py-3 align-top text-sm text-stone-800 print:py-2.5 print:text-[12px]">
+                      {ticket.ticket_count}
+                    </td>
+                    <td className="px-3 py-3 align-top text-sm text-stone-800 print:py-2.5 print:text-[12px]">
+                      {formatDoorGuestListType(ticket.ticket_type)}
+                    </td>
+                    <td className="px-3 py-3 align-top text-sm text-stone-700 print:py-2.5 print:text-[12px]">
+                      {ticket.notes?.trim() || ""}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  };
+
+  return (
+    <div className="grid gap-5">
+      {renderGroup("Online Preorders", onlinePreorders)}
+      {renderGroup("Guest List / Comps", guestAndCompEntries)}
+    </div>
+  );
+}
+
 async function loadShow(slug: string) {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.from("shows").select("*").eq("slug", slug).maybeSingle();
@@ -493,6 +643,24 @@ async function loadGuestSongs(showId: string) {
   return (data ?? []) as GuestSongRow[];
 }
 
+async function loadDoorGuestList(showId: string) {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("show_comp_tickets")
+    .select("*")
+    .eq("show_id", showId)
+    .neq("ticket_type", "door_paid")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return ((data ?? []) as DoorGuestListRow[]).filter(
+    (ticket) => normalizeGuestListTicketType(ticket.ticket_type) !== "door_paid",
+  );
+}
+
 export default async function AdminPrintPage({ params }: PrintPageProps) {
   const { slug, kind } = await params;
   const printKind = normalizePrintKind(kind);
@@ -537,6 +705,10 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
           return lookup;
         }, {})
       : {};
+  const doorGuestList =
+    printKind === "door-guest-list"
+      ? await safeLoad("door guest list", () => loadDoorGuestList(show.id), [])
+      : [];
 
   return (
     <AdminGate slug={slug} resourceLabel={`print pages for ${show.name}`} continueLabel="Continue to Print View">
@@ -548,6 +720,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         {printKind === "guests" ? (
           <GuestInfoPrintView guests={guests} guestSongsByProfileId={guestSongsByProfileId} />
         ) : null}
+        {printKind === "door-guest-list" ? <DoorGuestListPrintView tickets={doorGuestList} /> : null}
       </PrintShell>
     </AdminGate>
   );
