@@ -381,7 +381,7 @@ const payoutCategoryOptions = [
 const payoutPaymentMethodOptions = ["Cash", "Check", "Venmo", "Other"] as const;
 
 const defaultSingerName = "CMMS Band";
-const stageflowPortalVersion = "StageFlow v1.1.15";
+const stageflowPortalVersion = "StageFlow 3.0";
 const PAID_ONLINE_TICKET_PRICE = 8;
 const COMP_TICKET_VALUE = 10;
 const SONG_AUDIO_BUCKET = "promo-materials";
