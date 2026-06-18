@@ -6,7 +6,13 @@ import { PrintButton } from "@/app/components/print-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { GuestProfile, ShowCompTicket, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
-type PrintKind = "itinerary" | "sponsors" | "guests" | "door-guest-list" | "reserved-seat-cards";
+type PrintKind =
+  | "itinerary"
+  | "sponsors"
+  | "guests"
+  | "door-guest-list"
+  | "reserved-seat-cards"
+  | "comp-tickets";
 
 type SponsorRow = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -37,7 +43,8 @@ function normalizePrintKind(kind: string): PrintKind | null {
     kind === "sponsors" ||
     kind === "guests" ||
     kind === "door-guest-list" ||
-    kind === "reserved-seat-cards"
+    kind === "reserved-seat-cards" ||
+    kind === "comp-tickets"
   ) {
     return kind;
   }
@@ -85,6 +92,8 @@ function getPrintTitle(kind: PrintKind) {
       return "Door Guest List";
     case "reserved-seat-cards":
       return "Reserved Seat Cards";
+    case "comp-tickets":
+      return "Complimentary Tickets";
     default:
       return "Itinerary";
   }
@@ -252,6 +261,7 @@ function PrintShell({
   const title = getPrintTitle(kind);
   const isDoorGuestList = kind === "door-guest-list";
   const isReservedSeatCards = kind === "reserved-seat-cards";
+  const isCompTickets = kind === "comp-tickets";
 
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-8 text-stone-900 sm:px-6 print:bg-white print:px-0 print:py-0">
@@ -267,7 +277,7 @@ function PrintShell({
         </div>
 
         <header className={`mb-6 border-b border-stone-300 pb-5 ${isReservedSeatCards ? "print:hidden" : ""}`}>
-          {isDoorGuestList || isReservedSeatCards ? (
+          {isDoorGuestList || isReservedSeatCards || isCompTickets ? (
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <img
@@ -285,7 +295,11 @@ function PrintShell({
                 </div>
               </div>
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-700 print:text-[11px]">
-                {isReservedSeatCards ? "Reserved Seat Cards" : "Door Guest List"}
+                {isReservedSeatCards
+                  ? "Reserved Seat Cards"
+                  : isCompTickets
+                    ? "Complimentary Tickets"
+                    : "Door Guest List"}
               </p>
             </div>
           ) : (
@@ -664,6 +678,63 @@ function ReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow[] }
   );
 }
 
+function CompTicketsPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
+  const compTickets = sortDoorGuestList(
+    tickets.filter((ticket) => normalizeGuestListTicketType(ticket.ticket_type) === "complimentary"),
+  );
+
+  if (compTickets.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-sm text-stone-500">
+        No complimentary ticket entries are available for this show yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-5">
+      <section className="break-inside-avoid">
+        <div className="overflow-hidden rounded-xl border border-stone-200 print:rounded-none print:border-stone-300">
+          <table className="w-full border-collapse text-left">
+            <thead className="print:table-header-group">
+              <tr className="border-b border-stone-200 bg-stone-50 print:bg-white">
+                <th className="w-14 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  In
+                </th>
+                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  Name
+                </th>
+                <th className="w-20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  Qty
+                </th>
+                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 print:text-[10px]">
+                  Notes
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {compTickets.map((ticket) => (
+                <tr key={ticket.id} className="break-inside-avoid border-b border-stone-200 last:border-b-0">
+                  <td className="px-3 py-3 align-top text-xl leading-none text-stone-500 print:py-2.5">□</td>
+                  <td className="px-3 py-3 align-top text-base font-semibold text-stone-950 print:py-2.5 print:text-[13px]">
+                    {ticket.guest_name?.trim() || "Guest"}
+                  </td>
+                  <td className="px-3 py-3 align-top text-sm text-stone-800 print:py-2.5 print:text-[12px]">
+                    {ticket.ticket_count}
+                  </td>
+                  <td className="px-3 py-3 align-top text-sm text-stone-700 print:py-2.5 print:text-[12px]">
+                    {ticket.notes?.trim() || ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 async function loadShow(slug: string) {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.from("shows").select("*").eq("slug", slug).maybeSingle();
@@ -813,7 +884,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         }, {})
       : {};
   const doorGuestList =
-    printKind === "door-guest-list" || printKind === "reserved-seat-cards"
+    printKind === "door-guest-list" || printKind === "reserved-seat-cards" || printKind === "comp-tickets"
       ? await safeLoad("door guest list", () => loadDoorGuestList(show.id), [])
       : [];
 
@@ -829,6 +900,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         ) : null}
         {printKind === "door-guest-list" ? <DoorGuestListPrintView tickets={doorGuestList} /> : null}
         {printKind === "reserved-seat-cards" ? <ReservedSeatCardsPrintView tickets={doorGuestList} /> : null}
+        {printKind === "comp-tickets" ? <CompTicketsPrintView tickets={doorGuestList} /> : null}
       </PrintShell>
     </AdminGate>
   );
