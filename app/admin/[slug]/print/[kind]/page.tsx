@@ -12,7 +12,8 @@ type PrintKind =
   | "guests"
   | "door-guest-list"
   | "reserved-seat-cards"
-  | "comp-tickets";
+  | "comp-tickets"
+  | "comp-reserved-seat-cards";
 
 type SponsorRow = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -44,7 +45,8 @@ function normalizePrintKind(kind: string): PrintKind | null {
     kind === "guests" ||
     kind === "door-guest-list" ||
     kind === "reserved-seat-cards" ||
-    kind === "comp-tickets"
+    kind === "comp-tickets" ||
+    kind === "comp-reserved-seat-cards"
   ) {
     return kind;
   }
@@ -94,6 +96,8 @@ function getPrintTitle(kind: PrintKind) {
       return "Reserved Seat Cards";
     case "comp-tickets":
       return "Complimentary Tickets";
+    case "comp-reserved-seat-cards":
+      return "Comp Reserved Seat Cards";
     default:
       return "Itinerary";
   }
@@ -262,6 +266,7 @@ function PrintShell({
   const isDoorGuestList = kind === "door-guest-list";
   const isReservedSeatCards = kind === "reserved-seat-cards";
   const isCompTickets = kind === "comp-tickets";
+  const isCompReservedSeatCards = kind === "comp-reserved-seat-cards";
 
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-8 text-stone-900 sm:px-6 print:bg-white print:px-0 print:py-0">
@@ -276,8 +281,8 @@ function PrintShell({
           <PrintButton />
         </div>
 
-        <header className={`mb-6 border-b border-stone-300 pb-5 ${isReservedSeatCards ? "print:hidden" : ""}`}>
-          {isDoorGuestList || isReservedSeatCards || isCompTickets ? (
+        <header className={`mb-6 border-b border-stone-300 pb-5 ${isReservedSeatCards || isCompReservedSeatCards ? "print:hidden" : ""}`}>
+          {isDoorGuestList || isReservedSeatCards || isCompTickets || isCompReservedSeatCards ? (
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <img
@@ -297,6 +302,8 @@ function PrintShell({
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-700 print:text-[11px]">
                 {isReservedSeatCards
                   ? "Reserved Seat Cards"
+                  : isCompReservedSeatCards
+                    ? "Comp Reserved Seat Cards"
                   : isCompTickets
                     ? "Complimentary Tickets"
                     : "Door Guest List"}
@@ -678,6 +685,77 @@ function ReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow[] }
   );
 }
 
+function CompReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
+  const compReservedEntries = sortReservedSeatCards(
+    tickets.filter((ticket) => normalizeGuestListTicketType(ticket.ticket_type) === "complimentary"),
+  );
+  const seatCards = compReservedEntries.flatMap((ticket) => {
+    const seatCount = Math.max(1, ticket.ticket_count);
+
+    return Array.from({ length: seatCount }, (_, index) => ({
+      id: `${ticket.id}-comp-seat-${index + 1}`,
+      purchaserName: ticket.guest_name?.trim() || "Reserved Guest",
+      seatNumber: index + 1,
+      totalSeats: seatCount,
+    }));
+  });
+
+  if (seatCards.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-sm text-stone-500">
+        No complimentary reserved seat card entries are available for this show yet.
+      </div>
+    );
+  }
+
+  const pages = chunkItems(seatCards, 8);
+
+  return (
+    <div className="grid gap-6">
+      {pages.map((pageEntries, pageIndex) => (
+        <section
+          key={`comp-reserved-seat-page-${pageIndex}`}
+          className="grid grid-cols-2 gap-4 print:h-[9.15in] print:[grid-template-rows:repeat(4,minmax(0,1fr))] print:gap-3"
+          style={{
+            breakAfter: pageIndex < pages.length - 1 ? "page" : "auto",
+            pageBreakAfter: pageIndex < pages.length - 1 ? "always" : "auto",
+          }}
+        >
+          {pageEntries.map((card) => (
+            <article
+              key={card.id}
+              className="flex min-h-[2.2in] flex-col items-center justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+              style={{
+                breakInside: "avoid",
+                pageBreakInside: "avoid",
+              }}
+            >
+              <img
+                src="/cmms-logo.png"
+                alt="Cumberland Mountain Music Show logo"
+                className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+              />
+              <div className="flex flex-1 flex-col items-center justify-center py-2">
+                <h2 className="text-xl font-black uppercase tracking-[0.06em] text-stone-950 print:text-[18px]">
+                  {card.purchaserName}
+                </h2>
+                {card.totalSeats > 1 ? (
+                  <p className="mt-3 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
+                    Seat {card.seatNumber} of {card.totalSeats}
+                  </p>
+                ) : null}
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
+                Reserved Seating
+              </p>
+            </article>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function CompTicketsPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
   const compTickets = sortDoorGuestList(
     tickets.filter((ticket) => normalizeGuestListTicketType(ticket.ticket_type) === "complimentary"),
@@ -884,7 +962,10 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         }, {})
       : {};
   const doorGuestList =
-    printKind === "door-guest-list" || printKind === "reserved-seat-cards" || printKind === "comp-tickets"
+    printKind === "door-guest-list" ||
+    printKind === "reserved-seat-cards" ||
+    printKind === "comp-tickets" ||
+    printKind === "comp-reserved-seat-cards"
       ? await safeLoad("door guest list", () => loadDoorGuestList(show.id), [])
       : [];
 
@@ -900,6 +981,9 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         ) : null}
         {printKind === "door-guest-list" ? <DoorGuestListPrintView tickets={doorGuestList} /> : null}
         {printKind === "reserved-seat-cards" ? <ReservedSeatCardsPrintView tickets={doorGuestList} /> : null}
+        {printKind === "comp-reserved-seat-cards" ? (
+          <CompReservedSeatCardsPrintView tickets={doorGuestList} />
+        ) : null}
         {printKind === "comp-tickets" ? <CompTicketsPrintView tickets={doorGuestList} /> : null}
       </PrintShell>
     </AdminGate>

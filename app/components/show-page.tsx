@@ -19188,7 +19188,13 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   href={`/admin/${showSlug}/print/reserved-seat-cards`}
                   className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
                 >
-                  Print Reserved Seat Cards
+                  Print Reserved Seat Cards (Paid Online)
+                </Link>
+                <Link
+                  href={`/admin/${showSlug}/print/comp-reserved-seat-cards`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                >
+                  Print Comp Reserved Seat Cards
                 </Link>
                 <Link
                   href={`/admin/${showSlug}/print/comp-tickets`}
