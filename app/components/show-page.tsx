@@ -19196,12 +19196,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 >
                   Print Comp Reserved Seat Cards
                 </Link>
-                <Link
-                  href={`/admin/${showSlug}/print/comp-tickets`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                >
-                  Print Comp Tickets
-                </Link>
               </div>
             </div>
 
