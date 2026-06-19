@@ -555,6 +555,7 @@ type McSpecialSegmentFormState = {
   notes: string;
   placementType: string;
   anchorSongId: string;
+  anchorSponsorReadId: string;
 };
 
 type McSponsorReadFormState = {
@@ -627,6 +628,7 @@ const initialMcSpecialSegmentFormState: McSpecialSegmentFormState = {
   notes: "",
   placementType: "after_performer",
   anchorSongId: "",
+  anchorSponsorReadId: "",
 };
 
 const initialMcSponsorReadFormState: McSponsorReadFormState = {
@@ -689,6 +691,7 @@ const sponsorPlacementOptions = [
   { value: "", label: "Flexible / not set" },
   { value: "before_performer", label: "Before Performer Block" },
   { value: "after_performer", label: "After Performer Block" },
+  { value: "after_sponsor_read", label: "After Sponsor Read" },
   { value: "before_intermission", label: "Before Intermission" },
   { value: "after_intermission", label: "After Intermission" },
   { value: "closing", label: "Closing Section" },
@@ -917,6 +920,7 @@ function buildAdminMcSponsorPlacementItems(
     | { kind: "segment"; segment: McSpecialSegment; placement_order: number; created_at: string };
   const beforeSegmentsBySongId: Record<string, OrderedMcBuilderItem[]> = {};
   const afterSegmentsBySongId: Record<string, OrderedMcBuilderItem[]> = {};
+  const afterSegmentsBySponsorId: Record<string, OrderedMcBuilderItem[]> = {};
   const beforeBySongId: Record<string, OrderedMcBuilderItem[]> = {};
   const afterBySongId: Record<string, OrderedMcBuilderItem[]> = {};
   const beforeIntermission: ShowSponsor[] = [];
@@ -964,6 +968,19 @@ function buildAdminMcSponsorPlacementItems(
     }
 
     lookup[songId].push({
+      kind: "segment",
+      segment,
+      placement_order: segment.placement_order,
+      created_at: segment.created_at,
+    });
+  }
+
+  function appendSegmentAfterSponsorRead(sponsorReadId: string, segment: McSpecialSegment) {
+    if (!afterSegmentsBySponsorId[sponsorReadId]) {
+      afterSegmentsBySponsorId[sponsorReadId] = [];
+    }
+
+    afterSegmentsBySponsorId[sponsorReadId].push({
       kind: "segment",
       segment,
       placement_order: segment.placement_order,
@@ -1110,6 +1127,11 @@ function buildAdminMcSponsorPlacementItems(
         return;
       }
 
+      if (placementType === "after_sponsor_read" && segment.anchor_sponsor_read_id) {
+        appendSegmentAfterSponsorRead(segment.anchor_sponsor_read_id, segment);
+        return;
+      }
+
       flexibleSegments.push({
         kind: "segment",
         segment,
@@ -1123,6 +1145,20 @@ function buildAdminMcSponsorPlacementItems(
   const set2Songs = orderedSongs.filter((song) => song.section === "set2");
   const encoreSongs = orderedSongs.filter((song) => song.section === "encore");
 
+    function appendAttachedSegmentsForSponsor(sponsorReadId: string) {
+      sortMixedItems(afterSegmentsBySponsorId[sponsorReadId] ?? []).forEach((entry) => {
+        if (entry.kind !== "segment") {
+          return;
+        }
+
+        items.push({
+          kind: "segment",
+          id: `after-sponsor-segment-${sponsorReadId}-${entry.segment.id}`,
+          segment: entry.segment,
+        });
+      });
+    }
+
     function appendSongsWithSponsors(songs: SetlistSong[]) {
       songs.forEach((song) => {
         const beforeItems = sortMixedItems([
@@ -1130,19 +1166,21 @@ function buildAdminMcSponsorPlacementItems(
           ...(beforeSegmentsBySongId[song.id] ?? []),
         ]);
         beforeItems.forEach((entry) => {
-          items.push(
-            entry.kind === "segment"
-              ? {
-                  kind: "segment",
-                  id: `before-song-segment-${song.id}-${entry.segment.id}`,
-                  segment: entry.segment,
-                }
-              : {
-                  kind: "sponsor",
-                  id: `before-song-${song.id}-${entry.sponsor.id}`,
-                  sponsor: entry.sponsor,
-                },
-          );
+          if (entry.kind === "segment") {
+            items.push({
+              kind: "segment",
+              id: `before-song-segment-${song.id}-${entry.segment.id}`,
+              segment: entry.segment,
+            });
+            return;
+          }
+
+          items.push({
+            kind: "sponsor",
+            id: `before-song-${song.id}-${entry.sponsor.id}`,
+            sponsor: entry.sponsor,
+          });
+          appendAttachedSegmentsForSponsor(entry.sponsor.id);
         });
 
         items.push({
@@ -1156,19 +1194,21 @@ function buildAdminMcSponsorPlacementItems(
           ...(afterSegmentsBySongId[song.id] ?? []),
         ]);
         afterItems.forEach((entry) => {
-          items.push(
-            entry.kind === "segment"
-              ? {
-                  kind: "segment",
-                  id: `after-song-segment-${song.id}-${entry.segment.id}`,
-                  segment: entry.segment,
-                }
-              : {
-                  kind: "sponsor",
-                  id: `after-song-${song.id}-${entry.sponsor.id}`,
-                  sponsor: entry.sponsor,
-                },
-          );
+          if (entry.kind === "segment") {
+            items.push({
+              kind: "segment",
+              id: `after-song-segment-${song.id}-${entry.segment.id}`,
+              segment: entry.segment,
+            });
+            return;
+          }
+
+          items.push({
+            kind: "sponsor",
+            id: `after-song-${song.id}-${entry.sponsor.id}`,
+            sponsor: entry.sponsor,
+          });
+          appendAttachedSegmentsForSponsor(entry.sponsor.id);
         });
       });
     }
@@ -1189,21 +1229,23 @@ function buildAdminMcSponsorPlacementItems(
           created_at: sponsor.created_at,
         });
       });
-      sortMixedItems(beforeIntermissionSegments).forEach((entry) => {
-        items.push(
-          entry.kind === "segment"
-            ? {
-                kind: "segment",
-                id: `before-intermission-segment-${entry.segment.id}`,
-                segment: entry.segment,
-              }
-            : {
-                kind: "sponsor",
-                id: `before-intermission-${entry.sponsor.id}`,
-                sponsor: entry.sponsor,
-              },
-        );
+  sortMixedItems(beforeIntermissionSegments).forEach((entry) => {
+    if (entry.kind === "segment") {
+      items.push({
+        kind: "segment",
+        id: `before-intermission-segment-${entry.segment.id}`,
+        segment: entry.segment,
       });
+      return;
+    }
+
+    items.push({
+      kind: "sponsor",
+      id: `before-intermission-${entry.sponsor.id}`,
+      sponsor: entry.sponsor,
+    });
+    appendAttachedSegmentsForSponsor(entry.sponsor.id);
+  });
     }
 
     if (set2Songs.length > 0 || afterIntermission.length > 0 || afterIntermissionSegments.length > 0) {
@@ -1220,21 +1262,23 @@ function buildAdminMcSponsorPlacementItems(
           created_at: sponsor.created_at,
         });
       });
-      sortMixedItems(afterIntermissionSegments).forEach((entry) => {
-        items.push(
-          entry.kind === "segment"
-            ? {
-                kind: "segment",
-                id: `after-intermission-segment-${entry.segment.id}`,
-                segment: entry.segment,
-              }
-            : {
-                kind: "sponsor",
-                id: `after-intermission-${entry.sponsor.id}`,
-                sponsor: entry.sponsor,
-              },
-        );
+  sortMixedItems(afterIntermissionSegments).forEach((entry) => {
+    if (entry.kind === "segment") {
+      items.push({
+        kind: "segment",
+        id: `after-intermission-segment-${entry.segment.id}`,
+        segment: entry.segment,
       });
+      return;
+    }
+
+    items.push({
+      kind: "sponsor",
+      id: `after-intermission-${entry.sponsor.id}`,
+      sponsor: entry.sponsor,
+    });
+    appendAttachedSegmentsForSponsor(entry.sponsor.id);
+  });
     }
 
     appendSongsWithSponsors(set2Songs);
@@ -1254,21 +1298,23 @@ function buildAdminMcSponsorPlacementItems(
           created_at: sponsor.created_at,
         });
       });
-      sortMixedItems(closingSegments).forEach((entry) => {
-        items.push(
-          entry.kind === "segment"
-            ? {
-                kind: "segment",
-                id: `closing-segment-${entry.segment.id}`,
-                segment: entry.segment,
-              }
-            : {
-                kind: "sponsor",
-                id: `closing-${entry.sponsor.id}`,
-                sponsor: entry.sponsor,
-              },
-        );
+  sortMixedItems(closingSegments).forEach((entry) => {
+    if (entry.kind === "segment") {
+      items.push({
+        kind: "segment",
+        id: `closing-segment-${entry.segment.id}`,
+        segment: entry.segment,
       });
+      return;
+    }
+
+    items.push({
+      kind: "sponsor",
+      id: `closing-${entry.sponsor.id}`,
+      sponsor: entry.sponsor,
+    });
+    appendAttachedSegmentsForSponsor(entry.sponsor.id);
+  });
     }
 
     if (flexible.length > 0 || flexibleSegments.length > 0) {
@@ -1285,21 +1331,23 @@ function buildAdminMcSponsorPlacementItems(
           created_at: sponsor.created_at,
         });
       });
-      sortMixedItems(flexibleSegments).forEach((entry) => {
-        items.push(
-          entry.kind === "segment"
-            ? {
-                kind: "segment",
-                id: `flexible-segment-${entry.segment.id}`,
-                segment: entry.segment,
-              }
-            : {
-                kind: "sponsor",
-                id: `flexible-${entry.sponsor.id}`,
-                sponsor: entry.sponsor,
-              },
-        );
+  sortMixedItems(flexibleSegments).forEach((entry) => {
+    if (entry.kind === "segment") {
+      items.push({
+        kind: "segment",
+        id: `flexible-segment-${entry.segment.id}`,
+        segment: entry.segment,
       });
+      return;
+    }
+
+    items.push({
+      kind: "sponsor",
+      id: `flexible-${entry.sponsor.id}`,
+      sponsor: entry.sponsor,
+    });
+    appendAttachedSegmentsForSponsor(entry.sponsor.id);
+  });
     }
 
   return items;
@@ -2158,6 +2206,29 @@ function resolveMcSpecialSegmentPlacementFromSongFlow(
     return {
       placement_type: null,
       anchor_song_id: null,
+      anchor_sponsor_read_id: null,
+    };
+  }
+
+  const immediatePreviousItem = items[segmentIndex - 1];
+
+  if (immediatePreviousItem?.kind === "sponsor") {
+    return {
+      placement_type: "after_sponsor_read",
+      anchor_song_id: null,
+      anchor_sponsor_read_id: immediatePreviousItem.sponsor.id,
+    };
+  }
+
+  if (
+    immediatePreviousItem?.kind === "segment" &&
+    immediatePreviousItem.segment.placement_type === "after_sponsor_read" &&
+    immediatePreviousItem.segment.anchor_sponsor_read_id
+  ) {
+    return {
+      placement_type: "after_sponsor_read",
+      anchor_song_id: null,
+      anchor_sponsor_read_id: immediatePreviousItem.segment.anchor_sponsor_read_id,
     };
   }
 
@@ -2179,7 +2250,32 @@ function resolveMcSpecialSegmentPlacementFromSongFlow(
   return {
     placement_type: null,
     anchor_song_id: null,
+    anchor_sponsor_read_id: null,
   };
+}
+
+function getMcSponsorReadDisplayName(sponsor: ShowSponsor) {
+  return sponsor.sponsor?.name?.trim() || "Assigned sponsor";
+}
+
+function getMcSpecialSegmentPlacementDetails(
+  segment: McSpecialSegment,
+  placementSponsors: ShowSponsor[],
+) {
+  if (
+    segment.placement_type === "after_sponsor_read" &&
+    segment.anchor_sponsor_read_id
+  ) {
+    const anchorSponsor = placementSponsors.find(
+      (sponsor) => sponsor.id === segment.anchor_sponsor_read_id,
+    );
+
+    if (anchorSponsor) {
+      return `After ${getMcSponsorReadDisplayName(anchorSponsor)} sponsor read`;
+    }
+  }
+
+  return null;
 }
 
 function getMcSpecialSegmentPlacementFromNeighbor(
@@ -2190,6 +2286,7 @@ function getMcSpecialSegmentPlacementFromNeighbor(
     return {
       placement_type: direction === "up" ? "before_performer" : "after_performer",
       anchor_song_id: neighbor.song.id,
+      anchor_sponsor_read_id: null,
     };
   }
 
@@ -2198,6 +2295,7 @@ function getMcSpecialSegmentPlacementFromNeighbor(
       return {
         placement_type: "before_intermission",
         anchor_song_id: null,
+        anchor_sponsor_read_id: null,
       };
     }
 
@@ -2205,6 +2303,7 @@ function getMcSpecialSegmentPlacementFromNeighbor(
       return {
         placement_type: "after_intermission",
         anchor_song_id: null,
+        anchor_sponsor_read_id: null,
       };
     }
 
@@ -2212,12 +2311,14 @@ function getMcSpecialSegmentPlacementFromNeighbor(
       return {
         placement_type: "closing",
         anchor_song_id: null,
+        anchor_sponsor_read_id: null,
       };
     }
 
     return {
       placement_type: null,
       anchor_song_id: null,
+      anchor_sponsor_read_id: null,
     };
   }
 
@@ -2225,19 +2326,22 @@ function getMcSpecialSegmentPlacementFromNeighbor(
     return {
       placement_type: neighbor.segment.placement_type ?? null,
       anchor_song_id: neighbor.segment.anchor_song_id ?? null,
+      anchor_sponsor_read_id: neighbor.segment.anchor_sponsor_read_id ?? null,
     };
   }
 
   if (neighbor.kind === "sponsor") {
     return {
-      placement_type: neighbor.sponsor.placement_type ?? null,
-      anchor_song_id: neighbor.sponsor.mc_anchor_song_id ?? null,
+      placement_type: direction === "down" ? "after_sponsor_read" : neighbor.sponsor.placement_type ?? null,
+      anchor_song_id: direction === "down" ? null : neighbor.sponsor.mc_anchor_song_id ?? null,
+      anchor_sponsor_read_id: direction === "down" ? neighbor.sponsor.id : null,
     };
   }
 
   return {
     placement_type: null,
     anchor_song_id: null,
+    anchor_sponsor_read_id: null,
   };
 }
 
@@ -11475,19 +11579,32 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     mode: "new" | "edit" = "new",
   ) {
     const { name, value } = event.target;
-
-    if (mode === "edit") {
-      setEditingMcSpecialSegmentFormState((currentState) => ({
+    const applyChange = (currentState: McSpecialSegmentFormState) => {
+      const nextState = {
         ...currentState,
         [name]: value,
-      }));
+      };
+
+      if (name === "placementType") {
+        if (value === "after_sponsor_read") {
+          nextState.anchorSongId = "";
+        } else if (value === "before_performer" || value === "after_performer") {
+          nextState.anchorSponsorReadId = "";
+        } else {
+          nextState.anchorSongId = "";
+          nextState.anchorSponsorReadId = "";
+        }
+      }
+
+      return nextState;
+    };
+
+    if (mode === "edit") {
+      setEditingMcSpecialSegmentFormState(applyChange);
       return;
     }
 
-    setMcSpecialSegmentFormState((currentState) => ({
-      ...currentState,
-      [name]: value,
-    }));
+    setMcSpecialSegmentFormState(applyChange);
   }
 
   function handleMcSponsorReadFormChange(
@@ -11602,6 +11719,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         placementType === "before_performer" || placementType === "after_performer"
           ? anchorSongId ?? ""
           : "",
+      anchorSponsorReadId: "",
     });
     window.setTimeout(() => {
       mcSpecialSegmentFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -11672,6 +11790,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         formState.placementType === "before_performer" || formState.placementType === "after_performer"
           ? normalizeOptionalField(formState.anchorSongId)
           : null,
+      anchor_sponsor_read_id:
+        formState.placementType === "after_sponsor_read"
+          ? normalizeOptionalField(formState.anchorSponsorReadId)
+          : null,
     };
   }
 
@@ -11682,6 +11804,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       notes: segment.notes ?? "",
       placementType: segment.placement_type ?? "after_performer",
       anchorSongId: segment.anchor_song_id ?? "",
+      anchorSponsorReadId: segment.anchor_sponsor_read_id ?? "",
     });
   }
 
@@ -11702,6 +11825,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     if (!payload.title) {
       setMcErrorMessage("Add a title for this special segment.");
+      return;
+    }
+
+    if (
+      mcSpecialSegmentFormState.placementType === "after_sponsor_read" &&
+      !payload.anchor_sponsor_read_id
+    ) {
+      setMcErrorMessage("Choose which sponsor read this segment should follow.");
       return;
     }
 
@@ -11947,6 +12078,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       return;
     }
 
+    if (
+      editingMcSpecialSegmentFormState.placementType === "after_sponsor_read" &&
+      !payload.anchor_sponsor_read_id
+    ) {
+      setMcErrorMessage("Choose which sponsor read this segment should follow.");
+      return;
+    }
+
     setMcErrorMessage(null);
     setMcStatusMessage(null);
     setActiveSponsorActionId(`mc-special-segment-${segmentId}`);
@@ -12037,6 +12176,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         .update({
           placement_type: null,
           anchor_song_id: null,
+          anchor_sponsor_read_id: null,
         })
         .eq("id", segmentId)
         .eq("show_id", show.id)
@@ -12522,6 +12662,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             placement_order: nextOrder + 1,
             placement_type: movedSegmentPlacement.placement_type,
             anchor_song_id: movedSegmentPlacement.anchor_song_id,
+            anchor_sponsor_read_id: movedSegmentPlacement.anchor_sponsor_read_id,
           };
         }
 
@@ -12546,6 +12687,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             placement_order: segment.placement_order,
             placement_type: segment.placement_type,
             anchor_song_id: segment.anchor_song_id,
+            anchor_sponsor_read_id: segment.anchor_sponsor_read_id,
           })
           .eq("id", segment.id)
           .eq("show_id", show.id);
@@ -12641,19 +12783,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         return segment;
       }
 
-      if (movedItem.kind === "segment" && segment.id === movedItem.segment.id) {
+        if (movedItem.kind === "segment" && segment.id === movedItem.segment.id) {
         const movedSegmentPlacement = resolveMcSpecialSegmentPlacementFromSongFlow(
           reorderedItems,
           movedItem.segment.id,
         );
 
-        return {
-          ...segment,
-          placement_order: nextOrder + 1,
-          placement_type: movedSegmentPlacement.placement_type,
-          anchor_song_id: movedSegmentPlacement.anchor_song_id,
-        };
-      }
+          return {
+            ...segment,
+            placement_order: nextOrder + 1,
+            placement_type: movedSegmentPlacement.placement_type,
+            anchor_song_id: movedSegmentPlacement.anchor_song_id,
+            anchor_sponsor_read_id: movedSegmentPlacement.anchor_sponsor_read_id,
+          };
+        }
 
       return {
         ...segment,
@@ -12692,6 +12835,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             placement_order: segment.placement_order,
             placement_type: segment.placement_type,
             anchor_song_id: segment.anchor_song_id,
+            anchor_sponsor_read_id: segment.anchor_sponsor_read_id,
           })
           .eq("id", segment.id)
           .eq("show_id", show.id);
@@ -12743,6 +12887,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         .update({
           placement_type: "before_performer",
           anchor_song_id: songId,
+          anchor_sponsor_read_id: null,
         })
         .eq("id", segmentId)
         .eq("show_id", show.id);
@@ -12754,11 +12899,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       setMcSpecialSegments((currentSegments) =>
         currentSegments.map((segment) =>
           segment.id === segmentId
-            ? {
-                ...segment,
-                placement_type: "before_performer",
-                anchor_song_id: targetSong.id,
-              }
+              ? {
+                  ...segment,
+                  placement_type: "before_performer",
+                  anchor_song_id: targetSong.id,
+                  anchor_sponsor_read_id: null,
+                }
             : segment,
         ),
       );
@@ -17416,6 +17562,23 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         ))}
                       </select>
                     </label>
+                  ) : mcSpecialSegmentFormState.placementType === "after_sponsor_read" ? (
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Sponsor Read
+                      <select
+                        name="anchorSponsorReadId"
+                        value={mcSpecialSegmentFormState.anchorSponsorReadId}
+                        onChange={handleMcSpecialSegmentFormChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      >
+                        <option value="">Select a sponsor read</option>
+                        {mcPlacementSponsors.map((sponsor) => (
+                          <option key={sponsor.id} value={sponsor.id}>
+                            After {getMcSponsorReadDisplayName(sponsor)} sponsor read
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   ) : null}
 
                   <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
@@ -17571,6 +17734,25 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                       ))}
                                     </select>
                                   </label>
+                                ) : editingMcSpecialSegmentFormState.placementType === "after_sponsor_read" ? (
+                                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                    Sponsor Read
+                                    <select
+                                      name="anchorSponsorReadId"
+                                      value={editingMcSpecialSegmentFormState.anchorSponsorReadId}
+                                      onChange={(event) =>
+                                        handleMcSpecialSegmentFormChange(event, "edit")
+                                      }
+                                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    >
+                                      <option value="">Select a sponsor read</option>
+                                      {mcPlacementSponsors.map((sponsor) => (
+                                        <option key={sponsor.id} value={sponsor.id}>
+                                          After {getMcSponsorReadDisplayName(sponsor)} sponsor read
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
                                 ) : null}
 
                                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
@@ -17612,10 +17794,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   <p className="text-xs font-medium uppercase tracking-[0.12em] text-cyan-200/90">
                                     {formatSponsorPlacementType(segment.placement_type)}
                                   </p>
+                                ) : null}
+                                {getMcSpecialSegmentPlacementDetails(segment, mcPlacementSponsors) ? (
+                                  <p className="text-xs text-slate-300">
+                                    {getMcSpecialSegmentPlacementDetails(segment, mcPlacementSponsors)}
+                                  </p>
                                 ) : (
+                                  !segment.placement_type ? (
                                   <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">
                                     Not currently in MC flow
                                   </p>
+                                  ) : null
                                 )}
                               </div>
                             ) : (
@@ -17623,6 +17812,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 <h5 className="text-base font-semibold text-white">
                                   {segment.title}
                                 </h5>
+                                {getMcSpecialSegmentPlacementDetails(segment, mcPlacementSponsors) ? (
+                                  <p className="text-sm text-cyan-100/90">
+                                    {getMcSpecialSegmentPlacementDetails(segment, mcPlacementSponsors)}
+                                  </p>
+                                ) : null}
                                 {segment.notes?.trim() ? (
                                   <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">
                                     {segment.notes.trim()}
@@ -18025,6 +18219,26 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                           </select>
                                         </label>
                                       ) : null}
+                                      {editingMcSpecialSegmentFormState.placementType === "after_sponsor_read" ? (
+                                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                          Sponsor Read
+                                          <select
+                                            name="anchorSponsorReadId"
+                                            value={editingMcSpecialSegmentFormState.anchorSponsorReadId}
+                                            onChange={(event) =>
+                                              handleMcSpecialSegmentFormChange(event, "edit")
+                                            }
+                                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                          >
+                                            <option value="">Select a sponsor read</option>
+                                            {mcPlacementSponsors.map((sponsor) => (
+                                              <option key={sponsor.id} value={sponsor.id}>
+                                                After {getMcSponsorReadDisplayName(sponsor)} sponsor read
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
+                                      ) : null}
                                       <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                                         MC Notes / Script
                                         <textarea
@@ -18064,12 +18278,34 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                           {formatSponsorPlacementType(item.segment.placement_type)}
                                         </p>
                                       ) : null}
+                                      {getMcSpecialSegmentPlacementDetails(
+                                        item.segment,
+                                        mcPlacementSponsors,
+                                      ) ? (
+                                        <p className="text-xs text-slate-300">
+                                          {getMcSpecialSegmentPlacementDetails(
+                                            item.segment,
+                                            mcPlacementSponsors,
+                                          )}
+                                        </p>
+                                      ) : null}
                                     </div>
                                   ) : (
                                     <>
                                       <h5 className="text-base font-semibold text-white">
                                         {item.segment.title}
                                       </h5>
+                                      {getMcSpecialSegmentPlacementDetails(
+                                        item.segment,
+                                        mcPlacementSponsors,
+                                      ) ? (
+                                        <p className="text-sm text-cyan-100/90">
+                                          {getMcSpecialSegmentPlacementDetails(
+                                            item.segment,
+                                            mcPlacementSponsors,
+                                          )}
+                                        </p>
+                                      ) : null}
                                       {item.segment.notes?.trim() ? (
                                         <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">
                                           {item.segment.notes.trim()}

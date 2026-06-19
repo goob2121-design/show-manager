@@ -404,6 +404,7 @@ export type McSpecialSegment = {
   notes: string | null;
   placement_type: string | null;
   anchor_song_id: string | null;
+  anchor_sponsor_read_id: string | null;
   placement_order: number;
   created_at: string;
 };
