@@ -8,7 +8,6 @@ import { createClient } from "@/lib/supabase/client";
 import type { LiveShowState, RehearsalEntry, RehearsalRecording, SetSection, ShowRecord, SongTempo, SongType } from "@/lib/types";
 
 const FOLLOW_MODE_STORAGE_KEY = "stageflow-band-live-follow-mode";
-const LIVE_FOOTSWITCH_ENABLED_STORAGE_KEY = "stageflow_live_footswitch_enabled";
 const LIVE_LYRICS_FONT_SIZE_STORAGE_KEY = "stageflow_live_lyrics_font_size";
 const LIVE_SONG_INTRO_FONT_SIZE_STORAGE_KEY = "stageflow_live_song_intro_font_size";
 const LIVE_LYRICS_READING_MODE_STORAGE_KEY = "stageflow_live_lyrics_reading_mode";
@@ -117,11 +116,6 @@ type LiveSong = {
 };
 
 type ConnectionState = "connecting" | "connected" | "offline";
-type FootSwitchLogEntry = {
-  key: string;
-  code: string;
-  timestamp: string;
-};
 
 const LIVE_SHOW_TIMING = {
   showStart: { hour: 19, minute: 0 },
@@ -221,40 +215,6 @@ function isLyricSectionMarker(line: string) {
   }
 
   return /^(verse|chorus|bridge|tag)(\s+[\w().:-]+)?$/i.test(trimmedLine);
-}
-
-function formatFootSwitchTimestamp(date: Date) {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(date);
-}
-
-function getFootSwitchInput(event: KeyboardEvent): FootSwitchLogEntry {
-  const normalizedKey =
-    event.key === " "
-      ? event.shiftKey
-        ? "Shift+Space"
-        : "Space"
-      : event.key || "Unknown";
-
-  return {
-    key: normalizedKey,
-    code: event.code || "Unknown",
-    timestamp: formatFootSwitchTimestamp(new Date()),
-  };
-}
-
-function isSupportedFootSwitchKey(input: FootSwitchLogEntry) {
-  return (
-    input.key === "PageDown" ||
-    input.key === "ArrowDown" ||
-    input.key === "Space" ||
-    input.key === "PageUp" ||
-    input.key === "ArrowUp" ||
-    input.key === "Shift+Space"
-  );
 }
 
 function sanitizeFileName(value: string) {
@@ -466,10 +426,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [songIntroFontSize, setSongIntroFontSize] = useState(LIVE_SONG_INTRO_FONT_SIZE_DEFAULT);
   const [lyricsReadingMode, setLyricsReadingMode] = useState(false);
   const [songIntroReadingMode, setSongIntroReadingMode] = useState(false);
-  const [footSwitchEnabled, setFootSwitchEnabled] = useState(false);
-  const [footSwitchTestOpen, setFootSwitchTestOpen] = useState(false);
-  const [footSwitchLastInput, setFootSwitchLastInput] = useState<FootSwitchLogEntry | null>(null);
-  const [footSwitchLog, setFootSwitchLog] = useState<FootSwitchLogEntry[]>([]);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(false);
   const [showStartConfirmOpen, setShowStartConfirmOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => new Date());
@@ -479,10 +435,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const modalScrollLockRef = useRef(0);
   const lyricsOverlayRef = useRef<HTMLDivElement | null>(null);
   const songIntroOverlayRef = useRef<HTMLDivElement | null>(null);
-  const footSwitchTestOverlayRef = useRef<HTMLDivElement | null>(null);
   const lyricsScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const songIntroScrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const footSwitchTestModalRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -494,10 +448,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       setFollowBandLeader(false);
     }
 
-    const savedFootSwitchEnabled = window.localStorage.getItem(LIVE_FOOTSWITCH_ENABLED_STORAGE_KEY);
-    if (savedFootSwitchEnabled === "true") {
-      setFootSwitchEnabled(true);
-    }
   }, []);
 
   useEffect(() => {
@@ -507,14 +457,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
     window.localStorage.setItem(FOLLOW_MODE_STORAGE_KEY, followBandLeader ? "true" : "false");
   }, [followBandLeader]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(LIVE_FOOTSWITCH_ENABLED_STORAGE_KEY, footSwitchEnabled ? "true" : "false");
-  }, [footSwitchEnabled]);
 
   useEffect(() => {
     followBandLeaderRef.current = followBandLeader;
@@ -971,21 +913,11 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   }, [lyricsOpen, songIntroOpen]);
 
   useEffect(() => {
-    if (!footSwitchTestOpen) {
-      return;
-    }
-
-    window.setTimeout(() => {
-      footSwitchTestOverlayRef.current?.focus();
-    }, 0);
-  }, [footSwitchTestOpen]);
-
-  useEffect(() => {
     if (typeof document === "undefined") {
       return;
     }
 
-    const shouldLockScroll = lyricsOpen || songIntroOpen || footSwitchTestOpen;
+    const shouldLockScroll = lyricsOpen || songIntroOpen;
     if (!shouldLockScroll) {
       return;
     }
@@ -1021,103 +953,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       document.documentElement.style.position = previousHtmlPosition;
       window.scrollTo(0, modalScrollLockRef.current);
     };
-  }, [lyricsOpen, songIntroOpen, footSwitchTestOpen]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (footSwitchTestOpen || !footSwitchEnabled || (!lyricsOpen && !songIntroOpen)) {
-      return;
-    }
-
-    const handleModalScrollHotkeys = (event: KeyboardEvent) => {
-      const activeScrollContainer = lyricsOpen
-        ? lyricsOverlayRef.current
-        : songIntroOpen
-          ? songIntroOverlayRef.current
-          : null;
-
-      if (!activeScrollContainer) {
-        return;
-      }
-
-      const input = getFootSwitchInput(event);
-      if (!isSupportedFootSwitchKey(input)) {
-        return;
-      }
-
-      const pageStep = Math.max(activeScrollContainer.clientHeight * 0.92, 220);
-      const lineStep = Math.max(activeScrollContainer.clientHeight * 0.78, 180);
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (input.key === "PageDown" || input.key === "ArrowDown" || input.key === "Space") {
-        activeScrollContainer.scrollBy({
-          top: input.key === "PageDown" ? pageStep : lineStep,
-          behavior: "smooth",
-        });
-        return;
-      }
-
-      if (input.key === "PageUp" || input.key === "ArrowUp" || input.key === "Shift+Space") {
-        activeScrollContainer.scrollBy({
-          top: input.key === "PageUp" ? -pageStep : -lineStep,
-          behavior: "smooth",
-        });
-      }
-    };
-
-    document.addEventListener("keydown", handleModalScrollHotkeys, true);
-
-    return () => {
-      document.removeEventListener("keydown", handleModalScrollHotkeys, true);
-    };
-  }, [footSwitchEnabled, footSwitchTestOpen, lyricsOpen, songIntroOpen]);
-
-  useEffect(() => {
-    if (typeof document === "undefined" || !footSwitchTestOpen) {
-      return;
-    }
-
-    const handleFootSwitchTestKeydown = (event: KeyboardEvent) => {
-      const input = getFootSwitchInput(event);
-      setFootSwitchLastInput(input);
-      setFootSwitchLog((currentLog) => [input, ...currentLog].slice(0, 20));
-      event.stopPropagation();
-      event.preventDefault();
-
-      const activeScrollContainer = footSwitchTestOverlayRef.current;
-      if (!activeScrollContainer || !isSupportedFootSwitchKey(input)) {
-        return;
-      }
-
-      const pageStep = Math.max(activeScrollContainer.clientHeight * 0.92, 220);
-      const lineStep = Math.max(activeScrollContainer.clientHeight * 0.78, 180);
-
-      activeScrollContainer.scrollBy({
-        top:
-          input.key === "PageDown"
-            ? pageStep
-            : input.key === "PageUp"
-              ? -pageStep
-              : input.key === "ArrowDown" || input.key === "Space"
-                ? lineStep
-                : input.key === "ArrowUp" || input.key === "Shift+Space"
-                  ? -lineStep
-                  : 0,
-        behavior: "smooth",
-      });
-    };
-
-    document.addEventListener("keydown", handleFootSwitchTestKeydown, true);
-
-    return () => {
-      document.removeEventListener("keydown", handleFootSwitchTestKeydown, true);
-    };
-  }, [footSwitchTestOpen]);
+  }, [lyricsOpen, songIntroOpen]);
 
   const connectionLabel = useMemo(() => {
     switch (connectionState) {
@@ -1151,7 +987,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
   const followStatusLabel = followBandLeader ? "FOLLOWING" : "MANUAL";
   const showLeaderControls = isLeaderUnlocked && !followBandLeader;
-  const showFootSwitchTools = isLeaderUnlocked;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,_#020617_0%,_#0f172a_38%,_#020617_100%)] text-slate-100">
@@ -1189,15 +1024,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               <EyeIcon />
               {wakeLockEnabled ? "Keep Awake On" : "Keep Awake"}
             </button>
-            <label className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
-              <input
-                type="checkbox"
-                checked={footSwitchEnabled}
-                onChange={(event) => setFootSwitchEnabled(event.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
-              />
-              Enable Foot Switch
-            </label>
             <span
               className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
             >
@@ -1208,20 +1034,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               <UsersIcon />
               {followStatusLabel}
             </span>
-            {footSwitchEnabled ? (
-              <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/12 px-3 text-[11px] font-semibold tracking-[0.18em] text-emerald-100">
-                Foot Switch Enabled
-              </span>
-            ) : null}
-            {isLeaderUnlocked ? (
-              <button
-                type="button"
-                onClick={() => setFootSwitchTestOpen(true)}
-                className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
-              >
-                Foot Switch Test
-              </button>
-            ) : null}
             {!followBandLeader ? (
               <button
                 type="button"
@@ -1482,42 +1294,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               </section>
               ) : null}
 
-              {showFootSwitchTools ? (
-              <section className="rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-3.5">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Live Tools</h3>
-                <div className="mt-3 flex flex-col gap-2.5">
-                  <label className="inline-flex min-h-12 items-center gap-3 rounded-[1.25rem] border border-white/10 bg-white/5 px-4 text-sm font-semibold text-slate-100 transition hover:bg-white/10">
-                    <input
-                      type="checkbox"
-                      checked={footSwitchEnabled}
-                      onChange={(event) => setFootSwitchEnabled(event.target.checked)}
-                      className="h-4 w-4 rounded border-white/20 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
-                    />
-                    <span className="flex-1">Enable Foot Switch</span>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.18em] ${
-                      footSwitchEnabled
-                        ? "border border-emerald-400/30 bg-emerald-500/12 text-emerald-100"
-                        : "border border-white/10 bg-white/5 text-slate-300"
-                    }`}>
-                      {footSwitchEnabled ? "ON" : "OFF"}
-                    </span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setFootSwitchTestOpen(true)}
-                    className="min-h-12 rounded-[1.25rem] border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white transition hover:bg-white/10"
-                  >
-                    Foot Switch Test
-                  </button>
-                  {footSwitchEnabled ? (
-                    <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/12 px-3 py-2.5 text-sm font-medium text-emerald-100">
-                      Foot Switch Enabled
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-              ) : null}
-
               <section className="rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-3.5">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">On Deck</h3>
                 <div className="mt-3 flex flex-col gap-2.5">
@@ -1752,6 +1528,22 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 >
                   A+
                 </button>
+                {currentSong.lyrics?.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSongIntroOpen(false);
+                      setLyricsOpen(true);
+                    }}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      songIntroReadingMode
+                        ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                        : "border border-sky-400/20 bg-sky-500/15 text-sky-100 hover:bg-sky-500/20"
+                    }`}
+                  >
+                    Open Lyrics
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setSongIntroOpen(false)}
@@ -1784,91 +1576,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               >
                 {currentSong.songIntroNotes}
               </pre>
-            </div>
-          </div>
-          </div>
-        </div>
-      ) : null}
-
-      {footSwitchTestOpen && isLeaderUnlocked ? (
-        <div
-          ref={footSwitchTestOverlayRef}
-          tabIndex={-1}
-          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 px-4 py-6 backdrop-blur outline-none"
-          style={{ height: "100dvh", WebkitOverflowScrolling: "touch" }}
-        >
-          <div className="flex min-h-full items-start justify-center">
-          <div
-            ref={footSwitchTestModalRef}
-            tabIndex={-1}
-            className="flex w-full max-w-2xl flex-col rounded-[2rem] border border-white/10 bg-slate-950 p-5 text-slate-100 shadow-[0_40px_100px_-55px_rgba(15,23,42,0.95)] outline-none"
-          >
-            <div className="border-b border-white/10 pb-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300/80">Foot Switch Test</p>
-              <h3 className="mt-2 text-2xl font-bold text-white">Foot Switch Test</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                Press any foot switch button or page turner pedal.
-              </p>
-            </div>
-
-            <div className="mt-4 rounded-[1.5rem] border border-white/10 bg-slate-900 px-4 py-4">
-              <p className="text-sm font-semibold text-slate-300">
-                {footSwitchLastInput ? "Input detected." : "Waiting for input..."}
-              </p>
-              <div className="mt-3 space-y-2 text-sm text-slate-200">
-                <p>
-                  <span className="font-semibold text-white">Last Key Detected:</span>{" "}
-                  {footSwitchLastInput?.key ?? "Waiting for input..."}
-                </p>
-                <p>
-                  <span className="font-semibold text-white">Key Code:</span>{" "}
-                  {footSwitchLastInput?.code ?? "—"}
-                </p>
-                <p>
-                  <span className="font-semibold text-white">Timestamp:</span>{" "}
-                  {footSwitchLastInput?.timestamp ?? "—"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 flex min-h-0 flex-1 flex-col rounded-[1.5rem] border border-white/10 bg-slate-900 px-4 py-4">
-              <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">Detected Inputs</h4>
-              <div
-                className="mt-3 pr-1"
-              >
-                {footSwitchLog.length > 0 ? (
-                  <ol className="space-y-2 text-sm text-slate-100">
-                    {footSwitchLog.map((entry, index) => (
-                      <li key={`foot-switch-log-${entry.timestamp}-${entry.code}-${index}`} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                        <span className="font-semibold text-white">{index + 1}. {entry.key}</span>
-                        <span className="ml-2 text-slate-400">({entry.code} • {entry.timestamp})</span>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="text-sm text-slate-400">No inputs detected yet.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setFootSwitchLog([]);
-                  setFootSwitchLastInput(null);
-                }}
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
-              >
-                Clear Log
-              </button>
-              <button
-                type="button"
-                onClick={() => setFootSwitchTestOpen(false)}
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
-              >
-                Close
-              </button>
             </div>
           </div>
           </div>
