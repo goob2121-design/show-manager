@@ -12,7 +12,8 @@ type PrintKind =
   | "guests"
   | "door-guest-list"
   | "reserved-seat-cards"
-  | "comp-reserved-seat-cards";
+  | "comp-reserved-seat-cards"
+  | "blank-seat-cards";
 
 type SponsorRow = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -44,7 +45,8 @@ function normalizePrintKind(kind: string): PrintKind | null {
     kind === "guests" ||
     kind === "door-guest-list" ||
     kind === "reserved-seat-cards" ||
-    kind === "comp-reserved-seat-cards"
+    kind === "comp-reserved-seat-cards" ||
+    kind === "blank-seat-cards"
   ) {
     return kind;
   }
@@ -94,6 +96,8 @@ function getPrintTitle(kind: PrintKind) {
       return "Reserved Seat Cards";
     case "comp-reserved-seat-cards":
       return "Comp Reserved Seat Cards";
+    case "blank-seat-cards":
+      return "Blank Seat Cards";
     default:
       return "Itinerary";
   }
@@ -262,6 +266,7 @@ function PrintShell({
   const isDoorGuestList = kind === "door-guest-list";
   const isReservedSeatCards = kind === "reserved-seat-cards";
   const isCompReservedSeatCards = kind === "comp-reserved-seat-cards";
+  const isBlankSeatCards = kind === "blank-seat-cards";
 
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-8 text-stone-900 sm:px-6 print:bg-white print:px-0 print:py-0">
@@ -276,8 +281,8 @@ function PrintShell({
           <PrintButton />
         </div>
 
-        <header className={`mb-6 border-b border-stone-300 pb-5 ${isReservedSeatCards || isCompReservedSeatCards ? "print:hidden" : ""}`}>
-          {isDoorGuestList || isReservedSeatCards || isCompReservedSeatCards ? (
+        <header className={`mb-6 border-b border-stone-300 pb-5 ${isReservedSeatCards || isCompReservedSeatCards || isBlankSeatCards ? "print:hidden" : ""}`}>
+          {isDoorGuestList || isReservedSeatCards || isCompReservedSeatCards || isBlankSeatCards ? (
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <img
@@ -294,13 +299,15 @@ function PrintShell({
                   </p>
                 </div>
               </div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-700 print:text-[11px]">
-                {isReservedSeatCards
-                  ? "Reserved Seat Cards"
-                  : isCompReservedSeatCards
-                    ? "Comp Reserved Seat Cards"
-                    : "Door Guest List"}
-              </p>
+                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-stone-700 print:text-[11px]">
+                  {isReservedSeatCards
+                    ? "Reserved Seat Cards"
+                    : isCompReservedSeatCards
+                      ? "Comp Reserved Seat Cards"
+                      : isBlankSeatCards
+                        ? "Blank Seat Cards"
+                        : "Door Guest List"}
+                </p>
             </div>
           ) : (
             <>
@@ -749,6 +756,46 @@ function CompReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow
   );
 }
 
+function BlankSeatCardsPrintView() {
+  const seatCards = Array.from({ length: 8 }, (_, index) => ({
+    id: `blank-seat-card-${index + 1}`,
+  }));
+
+  return (
+    <div className="grid gap-6">
+      <section className="grid grid-cols-2 gap-4 print:h-[9.15in] print:[grid-template-rows:repeat(4,minmax(0,1fr))] print:gap-3">
+        {seatCards.map((card) => (
+          <article
+            key={card.id}
+            className="flex min-h-[2.2in] flex-col items-center justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+            style={{
+              breakInside: "avoid",
+              pageBreakInside: "avoid",
+            }}
+          >
+            <img
+              src="/cmms-logo.png"
+              alt="Cumberland Mountain Music Show logo"
+              className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+            />
+            <div className="flex w-full flex-1 flex-col items-center justify-center py-2">
+              <div className="w-full max-w-[14rem] text-left text-sm font-medium text-stone-800 print:text-[12px]">
+                Name: __________________
+              </div>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
+                Reserved Seating
+              </p>
+              <p className="mt-3 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
+                Seat: _____ of _____
+              </p>
+            </div>
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
 async function loadShow(slug: string) {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.from("shows").select("*").eq("slug", slug).maybeSingle();
@@ -919,6 +966,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         {printKind === "comp-reserved-seat-cards" ? (
           <CompReservedSeatCardsPrintView tickets={doorGuestList} />
         ) : null}
+        {printKind === "blank-seat-cards" ? <BlankSeatCardsPrintView /> : null}
       </PrintShell>
     </AdminGate>
   );

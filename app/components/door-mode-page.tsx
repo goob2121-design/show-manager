@@ -960,6 +960,12 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               >
                 Print Reserved Seat Cards
               </Link>
+              <Link
+                href={`/admin/${show.slug}/print/blank-seat-cards`}
+                className="inline-flex items-center justify-center rounded-xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
+              >
+                Print Blank Seat Cards
+              </Link>
               <button
                 type="button"
                 onClick={() => setIsSponsorCompPanelOpen(true)}
