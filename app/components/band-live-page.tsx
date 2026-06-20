@@ -476,6 +476,10 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
   const followBandLeaderRef = useRef(followBandLeader);
   const songsLengthRef = useRef(songs.length);
+  const modalScrollLockRef = useRef(0);
+  const lyricsOverlayRef = useRef<HTMLDivElement | null>(null);
+  const songIntroOverlayRef = useRef<HTMLDivElement | null>(null);
+  const footSwitchTestOverlayRef = useRef<HTMLDivElement | null>(null);
   const lyricsScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const songIntroScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const footSwitchTestModalRef = useRef<HTMLDivElement | null>(null);
@@ -952,9 +956,9 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
   useEffect(() => {
     const activeScrollContainer = lyricsOpen
-      ? lyricsScrollContainerRef.current
+      ? lyricsOverlayRef.current
       : songIntroOpen
-        ? songIntroScrollContainerRef.current
+        ? songIntroOverlayRef.current
         : null;
 
     if (!activeScrollContainer) {
@@ -972,7 +976,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     }
 
     window.setTimeout(() => {
-      footSwitchTestModalRef.current?.focus();
+      footSwitchTestOverlayRef.current?.focus();
     }, 0);
   }, [footSwitchTestOpen]);
 
@@ -986,21 +990,36 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       return;
     }
 
+    const scrollY = window.scrollY;
+    modalScrollLockRef.current = scrollY;
     const previousBodyOverflow = document.body.style.overflow;
     const previousBodyOverscrollBehavior = document.body.style.overscrollBehavior;
+    const previousBodyPosition = document.body.style.position;
+    const previousBodyTop = document.body.style.top;
+    const previousBodyWidth = document.body.style.width;
     const previousHtmlOverflow = document.documentElement.style.overflow;
     const previousHtmlOverscrollBehavior = document.documentElement.style.overscrollBehavior;
+    const previousHtmlPosition = document.documentElement.style.position;
 
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
     document.body.style.overflow = "hidden";
     document.body.style.overscrollBehavior = "contain";
+    document.documentElement.style.position = "fixed";
     document.documentElement.style.overflow = "hidden";
     document.documentElement.style.overscrollBehavior = "contain";
 
     return () => {
       document.body.style.overflow = previousBodyOverflow;
       document.body.style.overscrollBehavior = previousBodyOverscrollBehavior;
+      document.body.style.position = previousBodyPosition;
+      document.body.style.top = previousBodyTop;
+      document.body.style.width = previousBodyWidth;
       document.documentElement.style.overflow = previousHtmlOverflow;
       document.documentElement.style.overscrollBehavior = previousHtmlOverscrollBehavior;
+      document.documentElement.style.position = previousHtmlPosition;
+      window.scrollTo(0, modalScrollLockRef.current);
     };
   }, [lyricsOpen, songIntroOpen, footSwitchTestOpen]);
 
@@ -1015,9 +1034,9 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
     const handleModalScrollHotkeys = (event: KeyboardEvent) => {
       const activeScrollContainer = lyricsOpen
-        ? lyricsScrollContainerRef.current
+        ? lyricsOverlayRef.current
         : songIntroOpen
-          ? songIntroScrollContainerRef.current
+          ? songIntroOverlayRef.current
           : null;
 
       if (!activeScrollContainer) {
@@ -1069,6 +1088,28 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       setFootSwitchLog((currentLog) => [input, ...currentLog].slice(0, 20));
       event.stopPropagation();
       event.preventDefault();
+
+      const activeScrollContainer = footSwitchTestOverlayRef.current;
+      if (!activeScrollContainer || !isSupportedFootSwitchKey(input)) {
+        return;
+      }
+
+      const pageStep = Math.max(activeScrollContainer.clientHeight * 0.92, 220);
+      const lineStep = Math.max(activeScrollContainer.clientHeight * 0.78, 180);
+
+      activeScrollContainer.scrollBy({
+        top:
+          input.key === "PageDown"
+            ? pageStep
+            : input.key === "PageUp"
+              ? -pageStep
+              : input.key === "ArrowDown" || input.key === "Space"
+                ? lineStep
+                : input.key === "ArrowUp" || input.key === "Shift+Space"
+                  ? -lineStep
+                  : 0,
+        behavior: "smooth",
+      });
     };
 
     document.addEventListener("keydown", handleFootSwitchTestKeydown, true);
@@ -1501,7 +1542,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       </div>
 
       {lyricsOpen && currentSong?.lyrics?.trim() ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4 py-6 backdrop-blur">
+        <div
+          ref={lyricsOverlayRef}
+          tabIndex={-1}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 px-4 py-6 backdrop-blur outline-none"
+          style={{ height: "100dvh", WebkitOverflowScrolling: "touch" }}
+        >
+          <div className="flex min-h-full items-start justify-center">
           <div
             className={`flex max-h-[90vh] w-full max-w-4xl flex-col rounded-[2rem] p-5 shadow-[0_40px_100px_-55px_rgba(15,23,42,0.95)] ${
               lyricsReadingMode
@@ -1589,16 +1636,11 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             </div>
             <div
               ref={lyricsScrollContainerRef}
-              tabIndex={-1}
-              className={`mt-4 overflow-y-auto rounded-[1.5rem] border px-4 py-4 pr-3 ${
+              className={`mt-4 rounded-[1.5rem] border px-4 py-4 pr-3 ${
                 lyricsReadingMode
                   ? "border-stone-300 bg-white [color-scheme:light]"
                   : "border-white/10 bg-slate-900"
               }`}
-              style={{
-                maxHeight: "min(68vh, 42rem)",
-                WebkitOverflowScrolling: "touch",
-              }}
             >
               <div
                 className={`font-sans ${
@@ -1630,11 +1672,18 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               </div>
             </div>
           </div>
+          </div>
         </div>
       ) : null}
 
       {songIntroOpen && isLeaderUnlocked && currentSong?.songIntroNotes ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4 py-6 backdrop-blur">
+        <div
+          ref={songIntroOverlayRef}
+          tabIndex={-1}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 px-4 py-6 backdrop-blur outline-none"
+          style={{ height: "100dvh", WebkitOverflowScrolling: "touch" }}
+        >
+          <div className="flex min-h-full items-start justify-center">
           <div
             className={`flex max-h-[90vh] w-full max-w-4xl flex-col rounded-[2rem] p-5 shadow-[0_40px_100px_-55px_rgba(15,23,42,0.95)] ${
               songIntroReadingMode
@@ -1718,16 +1767,11 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             </div>
             <div
               ref={songIntroScrollContainerRef}
-              tabIndex={-1}
-              className={`mt-4 overflow-y-auto rounded-[1.5rem] border px-4 py-4 pr-3 ${
+              className={`mt-4 rounded-[1.5rem] border px-4 py-4 pr-3 ${
                 songIntroReadingMode
                   ? "border-stone-300 bg-white [color-scheme:light]"
                   : "border-white/10 bg-slate-900"
               }`}
-              style={{
-                maxHeight: "min(68vh, 42rem)",
-                WebkitOverflowScrolling: "touch",
-              }}
             >
               <pre
                 className={`whitespace-pre-wrap font-sans ${
@@ -1742,15 +1786,22 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               </pre>
             </div>
           </div>
+          </div>
         </div>
       ) : null}
 
       {footSwitchTestOpen && isLeaderUnlocked ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4 py-6 backdrop-blur">
+        <div
+          ref={footSwitchTestOverlayRef}
+          tabIndex={-1}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 px-4 py-6 backdrop-blur outline-none"
+          style={{ height: "100dvh", WebkitOverflowScrolling: "touch" }}
+        >
+          <div className="flex min-h-full items-start justify-center">
           <div
             ref={footSwitchTestModalRef}
             tabIndex={-1}
-            className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-[2rem] border border-white/10 bg-slate-950 p-5 text-slate-100 shadow-[0_40px_100px_-55px_rgba(15,23,42,0.95)] outline-none"
+            className="flex w-full max-w-2xl flex-col rounded-[2rem] border border-white/10 bg-slate-950 p-5 text-slate-100 shadow-[0_40px_100px_-55px_rgba(15,23,42,0.95)] outline-none"
           >
             <div className="border-b border-white/10 pb-4">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300/80">Foot Switch Test</p>
@@ -1783,11 +1834,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             <div className="mt-4 flex min-h-0 flex-1 flex-col rounded-[1.5rem] border border-white/10 bg-slate-900 px-4 py-4">
               <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">Detected Inputs</h4>
               <div
-                className="mt-3 overflow-y-auto pr-1"
-                style={{
-                  maxHeight: "min(48vh, 24rem)",
-                  WebkitOverflowScrolling: "touch",
-                }}
+                className="mt-3 pr-1"
               >
                 {footSwitchLog.length > 0 ? (
                   <ol className="space-y-2 text-sm text-slate-100">
@@ -1823,6 +1870,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 Close
               </button>
             </div>
+          </div>
           </div>
         </div>
       ) : null}
