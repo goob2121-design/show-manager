@@ -474,6 +474,7 @@ type SongEditFormState = {
 type SetlistSongEditFormState = {
   customTitle: string;
   performanceFlow: string;
+  songIntroNotes: string;
 };
 
 type McFlowRenderableItem =
@@ -1623,6 +1624,7 @@ function buildSetlistSongEditFormState(song: SetlistSong): SetlistSongEditFormSt
   return {
     customTitle: song.custom_title ?? "",
     performanceFlow: song.performance_flow ?? "",
+    songIntroNotes: song.song_intro_notes ?? "",
   };
 }
 
@@ -1636,6 +1638,7 @@ type SetlistEntryQueryRow = {
   guest_song_id: string | null;
   custom_title: string | null;
   performance_flow?: string | null;
+  song_intro_notes?: string | null;
   created_at: string;
   title?: string;
   key?: string | null;
@@ -3556,6 +3559,7 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     source_type: song.source_type === "guest" ? "guest" : "library",
     title: resolvedTitle,
     performance_flow: "performance_flow" in song ? song.performance_flow ?? null : null,
+    song_intro_notes: "song_intro_notes" in song ? song.song_intro_notes ?? null : null,
     key: resolvedKey,
     sung_by: resolvedLeadVocal,
     tempo: normalizeSongTempo(resolvedTempo),
@@ -6267,6 +6271,7 @@ export function ShowPage({
   const [setlistSongEditFormState, setSetlistSongEditFormState] = useState<SetlistSongEditFormState>({
     customTitle: "",
     performanceFlow: "",
+    songIntroNotes: "",
   });
   const [librarySongEditFormState, setLibrarySongEditFormState] = useState<SongEditFormState>({
     title: "",
@@ -8263,6 +8268,7 @@ export function ShowPage({
                 guest_song_id,
                 custom_title,
                 performance_flow,
+                song_intro_notes,
                 created_at,
                 library_song:song_id (
                   id,
@@ -15571,6 +15577,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     const customTitle = normalizeOptionalField(setlistSongEditFormState.customTitle);
     const performanceFlow = normalizeOptionalField(setlistSongEditFormState.performanceFlow);
+    const songIntroNotes = normalizeOptionalField(setlistSongEditFormState.songIntroNotes);
 
     setActionError(null);
     setActiveSetlistActionId(songToUpdate.id);
@@ -15582,6 +15589,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         .update({
           custom_title: customTitle,
           performance_flow: performanceFlow,
+          song_intro_notes: songIntroNotes,
         })
         .eq("id", songToUpdate.id);
 
@@ -15596,6 +15604,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 ...song,
                 custom_title: customTitle,
                 performance_flow: performanceFlow,
+                song_intro_notes: songIntroNotes,
                 title: customTitle ?? (
                   song.source_type === "guest"
                     ? pendingSongs.find((guestSong) => guestSong.id === song.guest_song_id)?.title ??
@@ -15621,6 +15630,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     setSetlistSongEditFormState({
       customTitle: "",
       performanceFlow: "",
+      songIntroNotes: "",
     });
   }
 
@@ -23899,6 +23909,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                     rows={7}
                                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
                                     placeholder={`Intro - Fiddle\nVerse 1 - Lead vocal\nBanjo break\nVerse 2\nMandolin break\nTag ending`}
+                                  />
+                                </label>
+
+                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
+                                  Song Intro Notes
+                                  <textarea
+                                    name="songIntroNotes"
+                                    value={setlistSongEditFormState.songIntroNotes}
+                                    onChange={handleSetlistSongEditChange}
+                                    rows={5}
+                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                    placeholder={`This next song was written by...\nHere's one we've always loved...\nFeature song for Kelly Caldwell...`}
                                   />
                                 </label>
 

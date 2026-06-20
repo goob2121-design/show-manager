@@ -105,6 +105,7 @@ export type SetlistEntry = {
   guest_song_id: string | null;
   custom_title: string | null;
   performance_flow: string | null;
+  song_intro_notes: string | null;
   created_at: string;
   title: string;
   key: string | null;

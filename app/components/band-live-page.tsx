@@ -19,6 +19,7 @@ type LiveSetlistSongRow = {
   guest_song_id: string | null;
   custom_title: string | null;
   performance_flow?: string | null;
+  song_intro_notes?: string | null;
   created_at: string;
   library_song?:
     | {
@@ -99,6 +100,7 @@ type LiveSong = {
   leadVocal: string | null;
   performerName: string | null;
   performanceFlow: string | null;
+  songIntroNotes: string | null;
   performanceNotes: string | null;
   rehearsalNotes: string | null;
   lyrics: string | null;
@@ -331,6 +333,7 @@ function normalizeLiveSong(
   const leadVocal = librarySong?.sung_by ?? guestSong?.sung_by ?? null;
   const performerName = guestSong?.submitted_by_name?.trim() || leadVocal?.trim() || null;
   const performanceFlow = row.performance_flow?.trim() || null;
+  const songIntroNotes = row.song_intro_notes?.trim() || null;
   const performanceNotes = stripMp3MarkerFromNotes(librarySong?.notes ?? guestSong?.notes ?? null);
   const rehearsalEntry =
     (row.song_id ? rehearsalBySongId.get(row.song_id) : null) ??
@@ -349,6 +352,7 @@ function normalizeLiveSong(
     leadVocal,
     performerName,
     performanceFlow,
+    songIntroNotes,
     performanceNotes,
     rehearsalNotes,
     lyrics: librarySong?.lyrics ?? guestSong?.lyrics ?? null,
@@ -391,6 +395,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  const [songIntroOpen, setSongIntroOpen] = useState(false);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(false);
   const [showStartConfirmOpen, setShowStartConfirmOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => new Date());
@@ -489,6 +494,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               guest_song_id,
               custom_title,
               performance_flow,
+              song_intro_notes,
               created_at,
               library_song:song_id (
                 id,
@@ -1010,6 +1016,16 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     <span className="mt-1.5 text-base font-semibold text-white sm:text-lg">Open Chart</span>
                   </button>
                 ) : null}
+                {isLeaderUnlocked && currentSong.songIntroNotes ? (
+                  <button
+                    type="button"
+                    onClick={() => setSongIntroOpen(true)}
+                    className="flex min-h-[4.5rem] flex-col items-start justify-center rounded-2xl border border-amber-400/25 bg-amber-500/10 px-3 py-2.5 text-left transition hover:bg-amber-500/15"
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Song Intro</span>
+                    <span className="mt-1.5 text-base font-semibold text-white sm:text-lg">Open Intro</span>
+                  </button>
+                ) : null}
               </div>
 
               {currentSong.performanceFlow?.trim() ? (
@@ -1142,6 +1158,40 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               <pre className="whitespace-pre-wrap font-sans text-lg leading-8 text-slate-100">
                 {currentSong.lyrics}
               </pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {songIntroOpen && isLeaderUnlocked && currentSong?.songIntroNotes ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4 py-6 backdrop-blur">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-[2rem] border border-white/10 bg-slate-950 p-5 shadow-[0_40px_100px_-55px_rgba(15,23,42,0.95)]">
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300/80">Song Intro</p>
+                <h3 className="mt-2 text-2xl font-bold text-white">{currentSong.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSongIntroOpen(false)}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 overflow-y-auto pr-1">
+              <pre className="whitespace-pre-wrap font-sans text-lg leading-8 text-slate-100 sm:text-xl sm:leading-9">
+                {currentSong.songIntroNotes}
+              </pre>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSongIntroOpen(false)}
+                className="rounded-xl border border-amber-400/20 bg-amber-500/15 px-5 py-3 text-base font-semibold text-amber-100 transition hover:bg-amber-500/20"
+              >
+                Close Song Intro
+              </button>
             </div>
           </div>
         </div>
