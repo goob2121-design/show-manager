@@ -246,6 +246,17 @@ function getFootSwitchInput(event: KeyboardEvent): FootSwitchLogEntry {
   };
 }
 
+function isSupportedFootSwitchKey(input: FootSwitchLogEntry) {
+  return (
+    input.key === "PageDown" ||
+    input.key === "ArrowDown" ||
+    input.key === "Space" ||
+    input.key === "PageUp" ||
+    input.key === "ArrowUp" ||
+    input.key === "Shift+Space"
+  );
+}
+
 function sanitizeFileName(value: string) {
   const sanitized = value
     .trim()
@@ -966,6 +977,34 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   }, [footSwitchTestOpen]);
 
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const shouldLockScroll = lyricsOpen || songIntroOpen || footSwitchTestOpen;
+    if (!shouldLockScroll) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyOverscrollBehavior = document.body.style.overscrollBehavior;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousHtmlOverscrollBehavior = document.documentElement.style.overscrollBehavior;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "contain";
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "contain";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscrollBehavior;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscrollBehavior;
+    };
+  }, [lyricsOpen, songIntroOpen, footSwitchTestOpen]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -986,12 +1025,17 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       }
 
       const input = getFootSwitchInput(event);
-      const isSpaceDown = event.key === " " || event.code === "Space";
+      if (!isSupportedFootSwitchKey(input)) {
+        return;
+      }
+
       const pageStep = Math.max(activeScrollContainer.clientHeight * 0.92, 220);
       const lineStep = Math.max(activeScrollContainer.clientHeight * 0.78, 180);
 
+      event.preventDefault();
+      event.stopPropagation();
+
       if (input.key === "PageDown" || input.key === "ArrowDown" || input.key === "Space") {
-        event.preventDefault();
         activeScrollContainer.scrollBy({
           top: input.key === "PageDown" ? pageStep : lineStep,
           behavior: "smooth",
@@ -1000,7 +1044,6 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       }
 
       if (input.key === "PageUp" || input.key === "ArrowUp" || input.key === "Shift+Space") {
-        event.preventDefault();
         activeScrollContainer.scrollBy({
           top: input.key === "PageUp" ? -pageStep : -lineStep,
           behavior: "smooth",
@@ -1008,15 +1051,15 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       }
     };
 
-    window.addEventListener("keydown", handleModalScrollHotkeys);
+    document.addEventListener("keydown", handleModalScrollHotkeys, true);
 
     return () => {
-      window.removeEventListener("keydown", handleModalScrollHotkeys);
+      document.removeEventListener("keydown", handleModalScrollHotkeys, true);
     };
   }, [footSwitchEnabled, footSwitchTestOpen, lyricsOpen, songIntroOpen]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !footSwitchTestOpen) {
+    if (typeof document === "undefined" || !footSwitchTestOpen) {
       return;
     }
 
@@ -1024,13 +1067,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       const input = getFootSwitchInput(event);
       setFootSwitchLastInput(input);
       setFootSwitchLog((currentLog) => [input, ...currentLog].slice(0, 20));
+      event.stopPropagation();
       event.preventDefault();
     };
 
-    window.addEventListener("keydown", handleFootSwitchTestKeydown);
+    document.addEventListener("keydown", handleFootSwitchTestKeydown, true);
 
     return () => {
-      window.removeEventListener("keydown", handleFootSwitchTestKeydown);
+      document.removeEventListener("keydown", handleFootSwitchTestKeydown, true);
     };
   }, [footSwitchTestOpen]);
 
@@ -1551,6 +1595,10 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   ? "border-stone-300 bg-white [color-scheme:light]"
                   : "border-white/10 bg-slate-900"
               }`}
+              style={{
+                maxHeight: "min(68vh, 42rem)",
+                WebkitOverflowScrolling: "touch",
+              }}
             >
               <div
                 className={`font-sans ${
@@ -1676,6 +1724,10 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   ? "border-stone-300 bg-white [color-scheme:light]"
                   : "border-white/10 bg-slate-900"
               }`}
+              style={{
+                maxHeight: "min(68vh, 42rem)",
+                WebkitOverflowScrolling: "touch",
+              }}
             >
               <pre
                 className={`whitespace-pre-wrap font-sans ${
@@ -1730,7 +1782,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
             <div className="mt-4 flex min-h-0 flex-1 flex-col rounded-[1.5rem] border border-white/10 bg-slate-900 px-4 py-4">
               <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">Detected Inputs</h4>
-              <div className="mt-3 overflow-y-auto pr-1">
+              <div
+                className="mt-3 overflow-y-auto pr-1"
+                style={{
+                  maxHeight: "min(48vh, 24rem)",
+                  WebkitOverflowScrolling: "touch",
+                }}
+              >
                 {footSwitchLog.length > 0 ? (
                   <ol className="space-y-2 text-sm text-slate-100">
                     {footSwitchLog.map((entry, index) => (
