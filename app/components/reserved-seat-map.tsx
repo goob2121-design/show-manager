@@ -3,7 +3,7 @@
 import { Fragment } from "react";
 import {
   RESERVED_SEATING_ROW_LABELS,
-  RESERVED_SEATING_SECTION_LABELS,
+  RESERVED_SEATING_SECTION_CONFIGS,
   RESERVED_SEATING_SEAT_NUMBERS,
   RESERVED_SEATING_VENUE,
 } from "@/lib/reserved-seating";
@@ -47,6 +47,8 @@ function getSeatButtonClasses(status: ReservedSeatMapSeatState["status"], disabl
   }
 }
 
+const [leftSectionConfig, rightSectionConfig] = RESERVED_SEATING_SECTION_CONFIGS;
+
 export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: ReservedSeatMapProps) {
   return (
     <div className="overflow-hidden rounded-[1.75rem] border border-slate-700 bg-[#09111f] text-slate-100 shadow-[0_18px_48px_rgba(2,6,23,0.45)]">
@@ -74,7 +76,7 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
 
                     <div className="grid grid-cols-10 gap-1 sm:gap-1.5">
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
-                        const seatId = `${RESERVED_SEATING_SECTION_LABELS[0]}-${rowLabel}${seatNumber}`;
+                        const seatId = `${leftSectionConfig.prefix}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
                         return (
                           <button
@@ -103,7 +105,7 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
 
                     <div className="grid grid-cols-10 gap-1 sm:gap-1.5">
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
-                        const seatId = `${RESERVED_SEATING_SECTION_LABELS[1]}-${rowLabel}${seatNumber}`;
+                        const seatId = `${rightSectionConfig.prefix}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
                         return (
                           <button
