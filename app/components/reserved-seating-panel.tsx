@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
+import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import { formatReservedSeatLabel, getReservedSeatDefinition, RESERVED_SEAT_DEFINITIONS, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { createClient } from "@/lib/supabase/client";
 import type { ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
@@ -151,25 +152,30 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
     [linksWithSeats, manualAssignLinkId],
   );
 
-  const seatStates = useMemo(() => {
+  const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
     const assignmentBySeatId = new Map(assignments.map((assignment) => [assignment.seat_id, assignment]));
 
     return Object.fromEntries(
       RESERVED_SEAT_DEFINITIONS.map((seat) => {
         const assignment = assignmentBySeatId.get(seat.seatId);
         const isBlocked = assignment?.assignment_type === "blocked";
+        const status: ReservedSeatMapSeatState["status"] = isBlocked
+          ? "unavailable"
+          : assignment
+            ? "assigned"
+            : "available";
 
         return [
           seat.seatId,
           {
             seatId: seat.seatId,
             label: seat.seatId,
-            status: isBlocked ? "unavailable" : assignment ? "assigned" : "available",
+            status,
             customerName: assignment?.customer_name ?? null,
           },
         ];
       }),
-    );
+    ) as Record<string, ReservedSeatMapSeatState>;
   }, [assignments]);
 
   const unavailableSeats = useMemo(
