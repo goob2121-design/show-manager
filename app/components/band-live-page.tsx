@@ -1034,7 +1034,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               <UsersIcon />
               {followStatusLabel}
             </span>
-            {!followBandLeader ? (
+            {!followBandLeader && !showLeaderControls ? (
               <button
                 type="button"
                 onClick={() => setManualIndex(sharedIndex)}
@@ -1100,7 +1100,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 <EyeIcon />
                 {wakeLockEnabled ? "Keep Awake On" : "Keep Awake"}
               </button>
-              {!followBandLeader ? (
+              {!followBandLeader && !showLeaderControls ? (
                 <button
                   type="button"
                   onClick={() => setManualIndex(sharedIndex)}
@@ -1179,30 +1179,30 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   <button
                     type="button"
                     onClick={() => setLyricsOpen(true)}
-                    className="flex min-h-[4.5rem] flex-col items-start justify-center rounded-2xl border border-sky-400/25 bg-sky-500/10 px-3 py-2.5 text-left transition hover:bg-sky-500/15"
+                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[1.35rem] border border-sky-400/25 bg-sky-500/12 px-4 py-4 text-left transition hover:bg-sky-500/18 sm:min-h-[6.75rem] sm:px-5 sm:py-4.5 lg:min-h-[7rem] lg:px-5 lg:py-5"
                   >
-                    <span className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Lyrics</span>
-                    <span className="mt-1.5 text-base font-semibold text-white sm:text-lg">Open Lyrics</span>
+                    <span className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-200">Lyrics</span>
+                    <span className="mt-2 text-[1.2rem] font-bold text-white sm:text-[1.35rem] lg:text-[1.45rem]">OPEN LYRICS</span>
                   </button>
                 ) : null}
                 {currentSong.chartUrl ? (
                   <button
                     type="button"
                     onClick={() => window.open(currentSong.chartUrl ?? "", "_blank", "noopener,noreferrer")}
-                    className="flex min-h-[4.5rem] flex-col items-start justify-center rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2.5 text-left transition hover:bg-emerald-500/15"
+                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[1.35rem] border border-emerald-400/25 bg-emerald-500/12 px-4 py-4 text-left transition hover:bg-emerald-500/18 sm:min-h-[6.75rem] sm:px-5 sm:py-4.5 lg:min-h-[7rem] lg:px-5 lg:py-5"
                   >
-                    <span className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Chart</span>
-                    <span className="mt-1.5 text-base font-semibold text-white sm:text-lg">Open Chart</span>
+                    <span className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-200">Chart</span>
+                    <span className="mt-2 text-[1.2rem] font-bold text-white sm:text-[1.35rem] lg:text-[1.45rem]">OPEN CHART</span>
                   </button>
                 ) : null}
                 {isLeaderUnlocked && currentSong.songIntroNotes ? (
                   <button
                     type="button"
                     onClick={() => setSongIntroOpen(true)}
-                    className="flex min-h-[4.5rem] flex-col items-start justify-center rounded-2xl border border-amber-400/25 bg-amber-500/10 px-3 py-2.5 text-left transition hover:bg-amber-500/15"
+                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[1.35rem] border border-amber-400/25 bg-amber-500/12 px-4 py-4 text-left transition hover:bg-amber-500/18 sm:min-h-[6.75rem] sm:px-5 sm:py-4.5 lg:min-h-[7rem] lg:px-5 lg:py-5"
                   >
-                    <span className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Song Intro</span>
-                    <span className="mt-1.5 text-base font-semibold text-white sm:text-lg">Open Intro</span>
+                    <span className="text-sm font-semibold uppercase tracking-[0.24em] text-amber-200">Song Intro</span>
+                    <span className="mt-2 text-[1.2rem] font-bold text-white sm:text-[1.35rem] lg:text-[1.45rem]">OPEN INTRO</span>
                   </button>
                 ) : null}
               </div>
@@ -1229,7 +1229,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 )}
               </div>
 
-              {!followBandLeader ? (
+              {!followBandLeader && !showLeaderControls ? (
                 <div className="mt-auto grid gap-3 pt-5 sm:grid-cols-2">
                   <button
                     type="button"
@@ -1262,7 +1262,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               {showLeaderControls ? (
               <section className="rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-3.5">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Leader Controls</h3>
-                <div className="mt-3 flex flex-col gap-2.5">
+                <div className="mt-3 flex flex-col gap-3.5 lg:min-h-[30rem] lg:justify-start">
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200">
                     Shared position: {songs[sharedIndex] ? `${songs[sharedIndex].sectionLabel} • Song ${songs[sharedIndex].songNumber}` : "Not set yet"}
                   </div>
@@ -1270,7 +1270,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     type="button"
                     onClick={() => setShowStartConfirmOpen(true)}
                     disabled={songs.length === 0}
-                    className="min-h-12 rounded-[1.25rem] border border-sky-400/20 bg-sky-500/15 px-4 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="min-h-[6.5rem] rounded-[1.5rem] border border-sky-400/20 bg-sky-500/15 px-5 text-lg font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-40 lg:min-h-[7rem] lg:text-[1.35rem] xl:min-h-[7.5rem]"
                   >
                     Start Show
                   </button>
@@ -1278,7 +1278,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     type="button"
                     onClick={() => void updateSharedSongIndex(sharedIndex - 1)}
                     disabled={songs.length === 0 || sharedIndex <= 0}
-                    className="min-h-12 rounded-[1.25rem] border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="min-h-[6.5rem] rounded-[1.5rem] border border-white/10 bg-white/5 px-5 text-lg font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 lg:min-h-[7rem] lg:text-[1.35rem] xl:min-h-[7.5rem]"
                   >
                     Back Everyone
                   </button>
@@ -1286,9 +1286,12 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     type="button"
                     onClick={() => void updateSharedSongIndex(sharedIndex + 1)}
                     disabled={songs.length === 0 || sharedIndex >= songs.length - 1}
-                    className="min-h-12 rounded-[1.25rem] border border-emerald-400/20 bg-emerald-500/15 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="min-h-[7.75rem] rounded-[1.5rem] border border-emerald-400/20 bg-emerald-500/15 px-5 text-[1.2rem] font-bold text-emerald-100 shadow-[0_24px_48px_-28px_rgba(16,185,129,0.75)] transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40 lg:min-h-[8.75rem] lg:text-[1.5rem] xl:min-h-[9.25rem]"
                   >
-                    Advance Everyone
+                    <span className="block">Advance Everyone</span>
+                    <span className="mt-2 block text-sm font-semibold uppercase tracking-[0.24em] text-emerald-200/90 lg:text-base">
+                      Next Song
+                    </span>
                   </button>
                 </div>
               </section>
@@ -1649,3 +1652,4 @@ function getClockWindowState(date: Date) {
     accentClassName: "text-emerald-200",
   };
 }
+
