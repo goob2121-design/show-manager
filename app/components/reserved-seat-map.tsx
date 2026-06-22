@@ -21,6 +21,8 @@ type ReservedSeatMapProps = {
   onSeatClick?: (seatId: string) => void;
   title?: string;
   helperText?: string;
+  includeSelectedLegend?: boolean;
+  showCustomerSeatDetails?: boolean;
 };
 
 const legendItems = [
@@ -31,13 +33,17 @@ const legendItems = [
 ] as const;
 
 function getSeatButtonClasses(status: ReservedSeatMapSeatState["status"], disabled: boolean) {
+  if (status === "selected") {
+    return disabled
+      ? "cursor-not-allowed border-amber-300/80 bg-amber-400 text-stone-950 opacity-100 shadow-[0_0_18px_rgba(251,191,36,0.25)]"
+      : "border-amber-300/80 bg-amber-400 text-stone-950 shadow-[0_0_18px_rgba(251,191,36,0.25)] hover:bg-amber-300";
+  }
+
   if (disabled) {
     return "cursor-not-allowed border-slate-700 bg-slate-900/60 text-slate-500 opacity-70";
   }
 
   switch (status) {
-    case "selected":
-      return "border-amber-300/80 bg-amber-400 text-stone-950 shadow-[0_0_18px_rgba(251,191,36,0.25)] hover:bg-amber-300";
     case "assigned":
       return "border-rose-400/70 bg-rose-500 text-white shadow-[0_0_16px_rgba(244,63,94,0.18)] hover:bg-rose-400";
     case "unavailable":
@@ -49,7 +55,16 @@ function getSeatButtonClasses(status: ReservedSeatMapSeatState["status"], disabl
 
 const [leftSectionConfig, rightSectionConfig] = RESERVED_SEATING_SECTION_CONFIGS;
 
-export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: ReservedSeatMapProps) {
+export function ReservedSeatMap({
+  seatStates,
+  onSeatClick,
+  title,
+  helperText,
+  includeSelectedLegend = true,
+  showCustomerSeatDetails = true,
+}: ReservedSeatMapProps) {
+  const visibleLegendItems = includeSelectedLegend ? legendItems : legendItems.filter((item) => item.label !== "Your Selected Seats");
+
   return (
     <div className="overflow-hidden rounded-[1.75rem] border border-slate-700 bg-[#09111f] text-slate-100 shadow-[0_18px_48px_rgba(2,6,23,0.45)]">
       <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.16),_transparent_32%),linear-gradient(135deg,_#0b1628,_#08101d_58%,_#040910)] px-4 py-4 sm:px-5">
@@ -78,14 +93,16 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
                         const seatId = `${leftSectionConfig.prefix}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
+                        const titleText = showCustomerSeatDetails && seatState?.customerName ? `${seatState.label} - ${seatState.customerName}` : seatState?.label;
                         return (
                           <button
                             key={seatId}
                             type="button"
                             onClick={() => onSeatClick?.(seatId)}
-                            disabled={!onSeatClick || Boolean(seatState?.disabled)}
-                            title={seatState?.customerName ? `${seatState.label} - ${seatState.customerName}` : seatState?.label}
-                            className={`aspect-square min-h-[1.9rem] rounded-[0.62rem] border px-0 text-[0.72rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${getSeatButtonClasses(
+                            disabled={Boolean(seatState?.disabled)}
+                            title={titleText}
+                            tabIndex={onSeatClick ? undefined : -1}
+                            className={`aspect-square min-h-[1.9rem] rounded-[0.62rem] border px-0 text-[0.72rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${onSeatClick ? "" : "cursor-default"} ${getSeatButtonClasses(
                               seatState?.status ?? "available",
                               Boolean(seatState?.disabled),
                             )}`}
@@ -107,14 +124,16 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
                         const seatId = `${rightSectionConfig.prefix}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
+                        const titleText = showCustomerSeatDetails && seatState?.customerName ? `${seatState.label} - ${seatState.customerName}` : seatState?.label;
                         return (
                           <button
                             key={seatId}
                             type="button"
                             onClick={() => onSeatClick?.(seatId)}
-                            disabled={!onSeatClick || Boolean(seatState?.disabled)}
-                            title={seatState?.customerName ? `${seatState.label} - ${seatState.customerName}` : seatState?.label}
-                            className={`aspect-square min-h-[1.9rem] rounded-[0.62rem] border px-0 text-[0.72rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${getSeatButtonClasses(
+                            disabled={Boolean(seatState?.disabled)}
+                            title={titleText}
+                            tabIndex={onSeatClick ? undefined : -1}
+                            className={`aspect-square min-h-[1.9rem] rounded-[0.62rem] border px-0 text-[0.72rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${onSeatClick ? "" : "cursor-default"} ${getSeatButtonClasses(
                               seatState?.status ?? "available",
                               Boolean(seatState?.disabled),
                             )}`}
@@ -141,8 +160,8 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 rounded-2xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-200 sm:grid-cols-2 xl:grid-cols-4">
-          {legendItems.map((item) => (
+        <div className={`mt-4 grid gap-2 rounded-2xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-200 sm:grid-cols-2 ${visibleLegendItems.length > 3 ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+          {visibleLegendItems.map((item) => (
             <div key={item.label} className="flex items-center gap-2.5 rounded-xl border border-white/6 bg-white/[0.03] px-3 py-2">
               <span className={`h-4 w-4 rounded-md border ${item.classes}`} />
               <span className="font-semibold">{item.label}</span>

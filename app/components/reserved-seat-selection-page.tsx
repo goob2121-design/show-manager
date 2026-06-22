@@ -47,6 +47,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmedSeatIds, setConfirmedSeatIds] = useState<string[]>(submittedSeatIds);
   const [hasSubmitted, setHasSubmitted] = useState(Boolean(seatingLink.submitted_at));
+  const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const isAlreadySubmitted = hasSubmitted;
 
   const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
@@ -85,7 +86,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
     ) as Record<string, ReservedSeatMapSeatState>;
   }, [assignments, isAlreadySubmitted, seatingLink.id, seatingLink.ticket_count, selectedSeatIds]);
 
-  async function handleSubmit() {
+  async function submitReservedSeats() {
     if (isAlreadySubmitted) {
       return;
     }
@@ -102,6 +103,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
 
     setIsSubmitting(true);
     setErrorMessage(null);
+    setShowSubmitConfirmation(false);
 
     try {
       const response = await fetch("/api/reserved-seating/submit", {
@@ -132,12 +134,33 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
     }
   }
 
+  function handleConfirmClick() {
+    if (isAlreadySubmitted) {
+      return;
+    }
+
+    if (selectedSeatIds.length === 0) {
+      setErrorMessage("Select at least one seat before submitting.");
+      return;
+    }
+
+    if (selectedSeatIds.length > seatingLink.ticket_count) {
+      setErrorMessage(`You can only select up to ${seatingLink.ticket_count} seat${seatingLink.ticket_count === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    setErrorMessage(null);
+    setShowSubmitConfirmation(false);
+    setShowSubmitConfirmation(true);
+  }
+
   function handleSeatClick(seatId: string) {
     if (isAlreadySubmitted) {
       return;
     }
 
     setErrorMessage(null);
+    setShowSubmitConfirmation(false);
     setSelectedSeatIds((currentSeatIds) => {
       if (currentSeatIds.includes(seatId)) {
         return currentSeatIds.filter((currentSeatId) => currentSeatId !== seatId);
@@ -244,11 +267,11 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
               {!isAlreadySubmitted ? (
                 <button
                   type="button"
-                  onClick={() => void handleSubmit()}
+                  onClick={handleConfirmClick}
                   disabled={isSubmitting || selectedSeatIds.length === 0}
                   className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900 disabled:text-emerald-300"
                 >
-                  {isSubmitting ? "Saving Seats..." : "Confirm Selected Seats"}
+                  {isSubmitting ? "Saving Seats..." : "Review And Confirm Seats"}
                 </button>
               ) : (
                 <div className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
@@ -258,6 +281,53 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             </aside>
           </div>
         </div>
+        {showSubmitConfirmation ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+            <div className="w-full max-w-lg rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,_#0c1728,_#060d18)] p-5 text-slate-100 shadow-[0_24px_60px_rgba(2,6,23,0.55)] sm:p-6">
+              <div className="flex flex-col gap-3">
+                <span className="inline-flex w-fit rounded-full border border-amber-300/25 bg-amber-400/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-amber-100">
+                  Confirm Reserved Seats
+                </span>
+                <h2 className="text-2xl font-black tracking-tight text-white">Are you sure you want to reserve these seats?</h2>
+                <p className="text-sm text-slate-300">Once confirmed, these seats will be reserved for you.</p>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Customer</p>
+                <p className="mt-2 text-base font-semibold text-white">{seatingLink.customer_name}</p>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Selected Seats</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedSeatIds.map((seatId) => (
+                    <span key={seatId} className="rounded-full border border-amber-300/25 bg-amber-400/15 px-3 py-1 text-sm font-semibold text-amber-100">
+                      {formatReservedSeatLabel(seatId)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSubmitConfirmation(false)}
+                  className="inline-flex items-center justify-center rounded-xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitReservedSeats()}
+                  disabled={isSubmitting}
+                  className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900 disabled:text-emerald-300"
+                >
+                  {isSubmitting ? "Saving Seats..." : "Yes, Reserve These Seats"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );
