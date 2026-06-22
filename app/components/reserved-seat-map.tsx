@@ -1,7 +1,12 @@
 "use client";
 
 import { Fragment } from "react";
-import { RESERVED_SEATING_ROW_LABELS, RESERVED_SEATING_SECTION_LABELS, RESERVED_SEATING_SEAT_NUMBERS } from "@/lib/reserved-seating";
+import {
+  RESERVED_SEATING_ROW_LABELS,
+  RESERVED_SEATING_SECTION_LABELS,
+  RESERVED_SEATING_SEAT_NUMBERS,
+  RESERVED_SEATING_VENUE,
+} from "@/lib/reserved-seating";
 
 export type ReservedSeatMapSeatState = {
   seatId: string;
@@ -21,7 +26,7 @@ type ReservedSeatMapProps = {
 const legendItems = [
   { label: "Available", classes: "border-emerald-400/70 bg-emerald-500 text-white shadow-[0_0_18px_rgba(34,197,94,0.24)]" },
   { label: "Taken / Assigned", classes: "border-rose-400/70 bg-rose-500 text-white shadow-[0_0_18px_rgba(244,63,94,0.22)]" },
-  { label: "Unavailable / Blocked", classes: "border-slate-500/80 bg-slate-500 text-white" },
+  { label: "Unavailable", classes: "border-slate-500/80 bg-slate-500 text-white" },
   { label: "Your Selected Seats", classes: "border-amber-300/80 bg-amber-400 text-stone-950 shadow-[0_0_20px_rgba(251,191,36,0.26)]" },
 ] as const;
 
@@ -50,24 +55,24 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
         {helperText ? <p className="mt-1 text-sm text-slate-300">{helperText}</p> : null}
       </div>
 
-      <div className="p-4 sm:p-5">
+      <div className="p-3 sm:p-4 lg:p-5">
         <div className="overflow-x-auto pb-2">
-          <div className="min-w-[52rem] rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-4 sm:p-5">
+          <div className="mx-auto w-full min-w-[44rem] max-w-[70rem] rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-3 sm:p-4 lg:min-w-0 lg:p-4 xl:p-5">
             <div className="mx-auto max-w-[62rem]">
-              <div className="mx-auto mb-5 flex max-w-[54rem] flex-col items-center gap-2 rounded-[1.6rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-5 py-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)]">
-                <div className="h-2 w-full rounded-full bg-[linear-gradient(90deg,transparent,rgba(251,191,36,0.45),transparent)]" />
-                <p className="text-3xl font-black uppercase tracking-[0.38em] text-white sm:text-4xl">Stage</p>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-100/80">Front Of Room</p>
+              <div className="mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1.5 rounded-[1.35rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-4 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)] sm:mb-4 sm:py-3.5">
+                <div className="h-1.5 w-full rounded-full bg-[linear-gradient(90deg,transparent,rgba(251,191,36,0.45),transparent)]" />
+                <p className="text-2xl font-black uppercase tracking-[0.32em] text-white sm:text-[2rem] lg:text-[2.15rem]">{RESERVED_SEATING_VENUE.stageLabel}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100/80 sm:text-[11px]">{RESERVED_SEATING_VENUE.frontLabel}</p>
               </div>
 
-              <div className="grid grid-cols-[2.2rem_minmax(0,1fr)_5.25rem_minmax(0,1fr)_2.2rem] gap-x-3 gap-y-2.5 sm:grid-cols-[2.8rem_minmax(0,1fr)_6.2rem_minmax(0,1fr)_2.8rem] sm:gap-x-4 sm:gap-y-3">
+              <div className="grid grid-cols-[1.65rem_minmax(0,1fr)_3.15rem_minmax(0,1fr)_1.65rem] gap-x-1.5 gap-y-1 sm:grid-cols-[1.95rem_minmax(0,1fr)_3.65rem_minmax(0,1fr)_1.95rem] sm:gap-x-2 sm:gap-y-1.5 lg:grid-cols-[2.1rem_minmax(0,1fr)_4.25rem_minmax(0,1fr)_2.1rem] xl:grid-cols-[2.3rem_minmax(0,1fr)_4.6rem_minmax(0,1fr)_2.3rem]">
                 {RESERVED_SEATING_ROW_LABELS.map((rowLabel, rowIndex) => (
                   <Fragment key={rowLabel}>
-                    <div key={`left-label-${rowLabel}`} className="flex items-center justify-center text-lg font-black uppercase tracking-[0.2em] text-slate-200 sm:text-xl">
+                    <div className="flex items-center justify-center text-sm font-black uppercase tracking-[0.18em] text-slate-200 sm:text-base xl:text-lg">
                       {rowLabel}
                     </div>
 
-                    <div key={`left-row-${rowLabel}`} className="grid grid-cols-10 gap-1.5 sm:gap-2">
+                    <div className="grid grid-cols-10 gap-1 sm:gap-1.5">
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
                         const seatId = `${RESERVED_SEATING_SECTION_LABELS[0]}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
@@ -77,8 +82,8 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
                             type="button"
                             onClick={() => onSeatClick?.(seatId)}
                             disabled={!onSeatClick || Boolean(seatState?.disabled)}
-                            title={seatState?.customerName ? `${seatState.label} ï¿½ ${seatState.customerName}` : seatState?.label}
-                            className={`min-h-[2.55rem] rounded-[0.8rem] border text-sm font-bold transition sm:min-h-[2.85rem] sm:text-base ${getSeatButtonClasses(
+                            title={seatState?.customerName ? `${seatState.label} - ${seatState.customerName}` : seatState?.label}
+                            className={`aspect-square min-h-[1.9rem] rounded-[0.62rem] border px-0 text-[0.72rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${getSeatButtonClasses(
                               seatState?.status ?? "available",
                               Boolean(seatState?.disabled),
                             )}`}
@@ -89,14 +94,14 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
                       })}
                     </div>
 
-                    <div key={`aisle-${rowLabel}`} className="relative flex items-center justify-center overflow-hidden rounded-[1rem] border border-dashed border-slate-700/80 bg-slate-950/40 px-2 text-center">
-                      <div className="absolute inset-y-1/2 left-2 right-2 h-px -translate-y-1/2 bg-white/12" />
-                      <span className="relative bg-[#0b1220] px-2 text-[10px] font-bold uppercase tracking-[0.28em] text-slate-400 sm:text-xs">
-                        {rowIndex === 0 || rowIndex === 4 || rowIndex === 7 ? "Aisle" : ""}
+                    <div className="relative flex items-center justify-center overflow-hidden rounded-[0.9rem] border border-dashed border-slate-700/80 bg-slate-950/40 px-1 text-center">
+                      <div className="absolute inset-y-1/2 left-1.5 right-1.5 h-px -translate-y-1/2 bg-white/12" />
+                      <span className="relative bg-[#0b1220] px-1 text-[8px] font-bold uppercase tracking-[0.24em] text-slate-400 sm:text-[9px] xl:text-[10px]">
+                        {RESERVED_SEATING_VENUE.aisleLabelRows.includes(rowIndex as 0 | 4 | 7) ? RESERVED_SEATING_VENUE.aisleLabel : ""}
                       </span>
                     </div>
 
-                    <div key={`right-row-${rowLabel}`} className="grid grid-cols-10 gap-1.5 sm:gap-2">
+                    <div className="grid grid-cols-10 gap-1 sm:gap-1.5">
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
                         const seatId = `${RESERVED_SEATING_SECTION_LABELS[1]}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
@@ -106,8 +111,8 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
                             type="button"
                             onClick={() => onSeatClick?.(seatId)}
                             disabled={!onSeatClick || Boolean(seatState?.disabled)}
-                            title={seatState?.customerName ? `${seatState.label} ï¿½ ${seatState.customerName}` : seatState?.label}
-                            className={`min-h-[2.55rem] rounded-[0.8rem] border text-sm font-bold transition sm:min-h-[2.85rem] sm:text-base ${getSeatButtonClasses(
+                            title={seatState?.customerName ? `${seatState.label} - ${seatState.customerName}` : seatState?.label}
+                            className={`aspect-square min-h-[1.9rem] rounded-[0.62rem] border px-0 text-[0.72rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${getSeatButtonClasses(
                               seatState?.status ?? "available",
                               Boolean(seatState?.disabled),
                             )}`}
@@ -118,16 +123,16 @@ export function ReservedSeatMap({ seatStates, onSeatClick, title, helperText }: 
                       })}
                     </div>
 
-                    <div key={`right-label-${rowLabel}`} className="flex items-center justify-center text-lg font-black uppercase tracking-[0.2em] text-slate-200 sm:text-xl">
+                    <div className="flex items-center justify-center text-sm font-black uppercase tracking-[0.18em] text-slate-200 sm:text-base xl:text-lg">
                       {rowLabel}
                     </div>
                   </Fragment>
                 ))}
               </div>
 
-              <div className="mt-4 flex items-center justify-center">
-                <div className="rounded-full border border-white/10 bg-slate-950/50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-                  Back Of Room
+              <div className="mt-3 flex items-center justify-center sm:mt-4">
+                <div className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-400 sm:px-4 sm:text-xs">
+                  {RESERVED_SEATING_VENUE.backLabel}
                 </div>
               </div>
             </div>

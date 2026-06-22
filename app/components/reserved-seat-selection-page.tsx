@@ -3,7 +3,12 @@
 import { useMemo, useState } from "react";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
-import { RESERVED_SEAT_DEFINITIONS, formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
+import {
+  RESERVED_SEAT_DEFINITIONS,
+  RESERVED_SEATING_VENUE,
+  formatReservedSeatLabel,
+  sortReservedSeatIds,
+} from "@/lib/reserved-seating";
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
 type ReservedSeatSelectionPageProps = {
@@ -26,6 +31,7 @@ function formatShowDate(showDate: string | null) {
 }
 
 export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: ReservedSeatSelectionPageProps) {
+  const [venuePhotoSrc, setVenuePhotoSrc] = useState(RESERVED_SEATING_VENUE.venuePhotoPath);
   const linkAssignments = useMemo(
     () => assignments.filter((assignment) => assignment.seating_link_id === seatingLink.id),
     [assignments, seatingLink.id],
@@ -144,29 +150,41 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   }
 
   const seatsToShow = isAlreadySubmitted ? confirmedSeatIds : selectedSeatIds;
+  const showVenueName = show.venue?.trim() || RESERVED_SEATING_VENUE.venueName;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 text-slate-100 sm:px-6 sm:py-8">
-      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6">
         <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#08111f]/95 shadow-[0_24px_60px_rgba(2,6,23,0.45)]">
-          <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.18),_transparent_30%),linear-gradient(135deg,_#0a182a,_#091220_58%,_#040911)] px-6 py-7 text-white sm:px-8">
-            <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-center">
-              <div className="flex items-center justify-center lg:justify-start">
+          <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.18),_transparent_30%),linear-gradient(135deg,_#0a182a,_#091220_58%,_#040911)] px-4 py-5 text-white sm:px-6 lg:px-8 lg:py-6">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+              <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-950/30 shadow-[0_20px_40px_rgba(2,6,23,0.35)]">
                 <img
-                  src={show.show_logo_url?.trim() || "/cmms-logo.png"}
-                  alt={`${show.name} logo`}
-                  className="h-auto max-h-[96px] w-auto max-w-[240px] object-contain"
+                  src={venuePhotoSrc}
+                  alt={RESERVED_SEATING_VENUE.venueName}
+                  className="h-48 w-full object-cover sm:h-56"
+                  onError={() => {
+                    if (venuePhotoSrc !== RESERVED_SEATING_VENUE.venuePhotoFallbackPath) {
+                      setVenuePhotoSrc(RESERVED_SEATING_VENUE.venuePhotoFallbackPath);
+                    }
+                  }}
                 />
               </div>
               <div>
-                <span className="inline-flex rounded-full border border-emerald-300/30 bg-emerald-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-100">
-                  Reserved Seating
-                </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="inline-flex rounded-full border border-emerald-300/30 bg-emerald-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-100">
+                    Reserved Seating
+                  </span>
+                  <span className="inline-flex rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-slate-200">
+                    {formatShowDate(show.show_date)}
+                  </span>
+                </div>
                 <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">{show.name}</h1>
-                <p className="mt-2 text-sm text-slate-200 sm:text-base">
-                  {formatShowDate(show.show_date)}
-                  {show.venue?.trim() ? ` - ${show.venue.trim()}` : ""}
-                </p>
+                <p className="mt-4 text-xl font-semibold text-white sm:text-2xl">{RESERVED_SEATING_VENUE.venueName}</p>
+                <p className="mt-1 text-sm text-slate-200 sm:text-base">{RESERVED_SEATING_VENUE.venueAddress}</p>
+                {showVenueName !== RESERVED_SEATING_VENUE.venueName ? (
+                  <p className="mt-2 text-sm text-slate-300">Show venue record: {showVenueName}</p>
+                ) : null}
                 <p className="mt-4 max-w-3xl text-sm text-slate-200 sm:text-base">
                   Choose up to {seatingLink.ticket_count} seat{seatingLink.ticket_count === 1 ? "" : "s"} for <span className="font-semibold text-white">{seatingLink.customer_name}</span>. Your selected seats will stay highlighted if you return to this private link.
                 </p>
@@ -174,7 +192,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             </div>
           </div>
 
-          <div className="grid gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
+          <div className="grid gap-6 px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
             <ReservedSeatMap
               seatStates={seatStates}
               onSeatClick={handleSeatClick}

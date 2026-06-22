@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
-import { formatReservedSeatLabel, getReservedSeatDefinition, RESERVED_SEAT_DEFINITIONS, sortReservedSeatIds } from "@/lib/reserved-seating";
+import {
+  formatReservedSeatLabel,
+  getReservedSeatDefinition,
+  RESERVED_SEAT_DEFINITIONS,
+  sortReservedSeatIds,
+} from "@/lib/reserved-seating";
 import { createClient } from "@/lib/supabase/client";
 import type { ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -19,6 +24,8 @@ type LinkFormState = {
   customerName: string;
   email: string;
   ticketCount: string;
+  sourceNote: string;
+  isComplimentary: boolean;
 };
 
 type LinkWithSeats = ShowReservedSeatingLink & {
@@ -29,6 +36,8 @@ const initialLinkFormState: LinkFormState = {
   customerName: "",
   email: "",
   ticketCount: "1",
+  sourceNote: "",
+  isComplimentary: false,
 };
 
 function formatShowDate(showDate: string | null) {
@@ -65,10 +74,6 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function getLinkStatus(link: LinkWithSeats) {
-  if (link.selection_mode === "manual" && link.seatIds.length > 0) {
-    return { label: "Manual", classes: "bg-violet-500/15 text-violet-200 border-violet-400/25" };
-  }
-
   if (link.submitted_at) {
     return { label: "Selected", classes: "bg-emerald-500/15 text-emerald-200 border-emerald-400/25" };
   }
@@ -81,7 +86,23 @@ function getLinkStatus(link: LinkWithSeats) {
     return { label: "Sent", classes: "bg-sky-500/15 text-sky-200 border-sky-400/25" };
   }
 
+  if (link.is_complimentary) {
+    return { label: "Comp", classes: "bg-violet-500/15 text-violet-200 border-violet-400/25" };
+  }
+
   return { label: "Not Sent", classes: "bg-amber-500/15 text-amber-200 border-amber-400/25" };
+}
+
+function getResetSelectionMode(link: ShowReservedSeatingLink) {
+  if (link.is_complimentary) {
+    return "comp";
+  }
+
+  if (link.source_ticket_id) {
+    return "imported";
+  }
+
+  return "customer";
 }
 
 export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: ReservedSeatingPanelProps) {
@@ -101,16 +122,8 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
 
     try {
       const [{ data: linkRows, error: linksError }, { data: assignmentRows, error: assignmentsError }] = await Promise.all([
-        supabase
-          .from("show_reserved_seating_links")
-          .select("*")
-          .eq("show_id", showId)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("show_reserved_seat_assignments")
-          .select("*")
-          .eq("show_id", showId)
-          .order("created_at", { ascending: true }),
+        supabase.from("show_reserved_seating_links").select("*").eq("show_id", showId).order("created_at", { ascending: false }),
+        supabase.from("show_reserved_seat_assignments").select("*").eq("show_id", showId).order("created_at", { ascending: true }),
       ]);
 
       if (linksError) {
@@ -179,12 +192,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
   }, [assignments]);
 
   const unavailableSeats = useMemo(
-    () =>
-      sortReservedSeatIds(
-        assignments
-          .filter((assignment) => assignment.assignment_type === "blocked")
-          .map((assignment) => assignment.seat_id),
-      ),
+    () => sortReservedSeatIds(assignments.filter((assignment) => assignment.assignment_type === "blocked").map((assignment) => assignment.seat_id)),
     [assignments],
   );
 
@@ -201,18 +209,21 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
         customer_name: formState.customerName.trim(),
         email: formState.email.trim() || null,
         ticket_count: ticketCount,
-        selection_mode: "customer",
+        selection_mode: formState.isComplimentary ? "comp" : "customer",
+        is_complimentary: formState.isComplimentary,
+        source_note: formState.sourceNote.trim() || null,
       });
 
       if (error) {
         throw error;
       }
 
+      const createdLabel = formState.isComplimentary ? "Comp guest" : "Seat selection link";
       setFormState(initialLinkFormState);
-      setStatusMessage("Seat selection link created.");
+      setStatusMessage(`${createdLabel} created.`);
       await loadReservedSeating();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "Unable to create seat selection link."));
+      setErrorMessage(getErrorMessage(error, formState.isComplimentary ? "Unable to create comp guest." : "Unable to create seat selection link."));
     } finally {
       setActiveActionId(null);
     }
@@ -279,16 +290,18 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
           throw insertError;
         }
 
+        const nextMode = manualAssignLink.is_complimentary ? "comp" : "manual";
         const { error: updateError } = await supabase
           .from("show_reserved_seating_links")
-          .update({ selection_mode: "manual", submitted_at: now, sent_at: manualAssignLink.sent_at ?? now })
+          .update({ selection_mode: nextMode, submitted_at: now, sent_at: manualAssignLink.sent_at ?? now })
           .eq("id", manualAssignLink.id);
 
         if (updateError) {
           throw updateError;
         }
 
-        setStatusMessage(`${formatReservedSeatLabel(seatId)} assigned to ${manualAssignLink.customer_name}.`);
+        const assignedLabel = manualAssignLink.is_complimentary ? "Comp seat" : "Seat";
+        setStatusMessage(`${assignedLabel} ${formatReservedSeatLabel(seatId)} assigned to ${manualAssignLink.customer_name}.`);
         await loadReservedSeating();
         return;
       }
@@ -318,16 +331,12 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
 
         setStatusMessage(`${formatReservedSeatLabel(seatId)} is available again.`);
       } else {
-        const shouldClear = window.confirm(
-          `Clear ${formatReservedSeatLabel(seatId)} from ${assignment.customer_name || "this customer"}?`,
-        );
-
+        const shouldClear = window.confirm(`Clear ${formatReservedSeatLabel(seatId)} from ${assignment.customer_name || "this customer"}?`);
         if (!shouldClear) {
           return;
         }
 
         const { error } = await supabase.from("show_reserved_seat_assignments").delete().eq("id", assignment.id);
-
         if (error) {
           throw error;
         }
@@ -371,9 +380,10 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
         throw deleteError;
       }
 
+      const link = links.find((item) => item.id === linkId);
       const { error: updateError } = await supabase
         .from("show_reserved_seating_links")
-        .update({ submitted_at: null, selection_mode: "customer" })
+        .update({ submitted_at: null, selection_mode: getResetSelectionMode(link as ShowReservedSeatingLink) })
         .eq("id", linkId);
       if (updateError) {
         throw updateError;
@@ -428,7 +438,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
         <div>
           <h3 className="text-xl font-semibold text-white">Reserved Seating</h3>
           <p className="text-sm text-slate-300">
-            Build seat-selection links, block seats, manually assign seats, and print reserved seat cards for {showName} on {formatShowDate(showDate)}.
+            Manage paid online guests and complimentary seat assignments in one place for {showName} on {formatShowDate(showDate)}.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -447,37 +457,56 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
         </div>
       ) : null}
 
-      {statusMessage ? (
-        <div className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-          {statusMessage}
-        </div>
-      ) : null}
+      {statusMessage ? <div className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{statusMessage}</div> : null}
+      {errorMessage ? <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{errorMessage}</div> : null}
 
-      {errorMessage ? (
-        <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-          {errorMessage}
-        </div>
-      ) : null}
-
-      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_25rem]">
         <ReservedSeatMap
           seatStates={seatStates}
           onSeatClick={(seatId) => void handleSeatMapClick(seatId)}
           title="Venue Seat Map"
           helperText={
             manualAssignLink
-              ? "Manual assign mode: click green seats to assign them to the selected customer. Click gray seats to clear a block. Click red seats to clear an assignment."
+              ? "Manual assign mode: click green seats to assign them to the selected guest. Click gray seats to clear a block. Click red seats to clear an assignment."
               : "Click green seats to block them. Click gray seats to clear a block. Click red seats to clear an assigned seat."
           }
         />
 
         <div className="grid gap-4">
           <form onSubmit={(event) => void handleCreateLink(event)} className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
-            <h4 className="text-base font-semibold text-white">Create Seat Selection Link</h4>
-            <p className="mt-1 text-sm text-slate-300">Create a private customer link for reserved seating.</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setFormState((current) => ({ ...current, isComplimentary: false }))}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+                  formState.isComplimentary
+                    ? "border border-white/12 bg-white/[0.04] text-slate-300"
+                    : "border border-emerald-400/25 bg-emerald-500/15 text-emerald-100"
+                }`}
+              >
+                Standard Guest
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormState((current) => ({ ...current, isComplimentary: true }))}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+                  formState.isComplimentary
+                    ? "border border-violet-400/25 bg-violet-500/15 text-violet-100"
+                    : "border border-white/12 bg-white/[0.04] text-slate-300"
+                }`}
+              >
+                Add Comp Guest
+              </button>
+            </div>
+            <h4 className="mt-3 text-base font-semibold text-white">{formState.isComplimentary ? "Add Comp Seats" : "Create Seat Selection Link"}</h4>
+            <p className="mt-1 text-sm text-slate-300">
+              {formState.isComplimentary
+                ? "Create a complimentary guest entry, then either manually assign seats or send a private seat-selection link."
+                : "Create a private customer link for reserved seating."}
+            </p>
             <div className="mt-4 grid gap-4">
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
-                Customer Name
+                Guest Name
                 <input
                   type="text"
                   value={formState.customerName}
@@ -497,7 +526,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
                 />
               </label>
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
-                Ticket Count
+                Number Of Seats
                 <input
                   type="number"
                   min="1"
@@ -509,12 +538,30 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
                   required
                 />
               </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
+                Optional Note / Source
+                <input
+                  type="text"
+                  value={formState.sourceNote}
+                  onChange={(event) => setFormState((current) => ({ ...current, sourceNote: event.target.value }))}
+                  className="rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500"
+                  placeholder={formState.isComplimentary ? "Sponsor Comp, Band Comp, LMU Comp, House Comp..." : "Optional"}
+                />
+              </label>
               <button
                 type="submit"
                 disabled={activeActionId === "create-link"}
-                className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900 disabled:text-emerald-300"
+                className={`rounded-xl px-4 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  formState.isComplimentary ? "bg-violet-600 hover:bg-violet-500" : "bg-emerald-600 hover:bg-emerald-500"
+                }`}
               >
-                {activeActionId === "create-link" ? "Creating Link..." : "Create Seat Selection Link"}
+                {activeActionId === "create-link"
+                  ? formState.isComplimentary
+                    ? "Creating Comp Guest..."
+                    : "Creating Link..."
+                  : formState.isComplimentary
+                    ? "Add Comp Guest"
+                    : "Create Seat Selection Link"}
               </button>
             </div>
           </form>
@@ -539,15 +586,15 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
       <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h4 className="text-base font-semibold text-white">Seat Selection Links</h4>
-            <p className="text-sm text-slate-300">Track imported paid online orders, manual links, sent links, and customers who already selected seats.</p>
+            <h4 className="text-base font-semibold text-white">Reserved Seating Guests</h4>
+            <p className="text-sm text-slate-300">Track paid online guests, comp guests, manual links, sent links, and selected seats in one list.</p>
           </div>
           {isLoading ? <span className="text-sm text-slate-400">Loading...</span> : null}
         </div>
 
         {linksWithSeats.length === 0 && !isLoading ? (
           <div className="mt-4 rounded-2xl border border-dashed border-white/12 bg-slate-950/35 px-4 py-6 text-sm text-slate-400">
-            No reserved seating links have been created for this show yet.
+            No reserved seating guests have been created for this show yet.
           </div>
         ) : (
           <div className="mt-4 grid gap-3">
@@ -560,14 +607,18 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h5 className="text-base font-semibold text-white">{link.customer_name}</h5>
-                        <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${status.classes}`}>
-                          {status.label}
-                        </span>
+                        <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${status.classes}`}>{status.label}</span>
+                        {link.is_complimentary ? (
+                          <span className="rounded-full border border-violet-400/25 bg-violet-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-violet-100">
+                            Comp
+                          </span>
+                        ) : null}
                         <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                           {link.ticket_count} seat{link.ticket_count === 1 ? "" : "s"}
                         </span>
                       </div>
                       {link.email?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.email}</p> : null}
+                      {link.source_note?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.source_note}</p> : null}
                       <p className="mt-2 break-all text-sm text-slate-400">{getCustomerLinkUrl(link.selection_token)}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {link.seatIds.length > 0 ? (

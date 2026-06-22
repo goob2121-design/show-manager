@@ -1,6 +1,21 @@
-export const RESERVED_SEATING_SECTION_LABELS = ["L", "R"] as const;
-export const RESERVED_SEATING_ROW_LABELS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] as const;
-export const RESERVED_SEATING_SEAT_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+export const RESERVED_SEATING_VENUE = {
+  venueName: "Cumberland Gap Convention Center",
+  venueAddress: "601 Colwyn St, Cumberland Gap, TN 37724",
+  venuePhotoPath: "/cumberland-gap-convention-center.jpg",
+  venuePhotoFallbackPath: "/portal_bkg.png",
+  stageLabel: "Stage",
+  frontLabel: "Front Of Room",
+  backLabel: "Back Of Room",
+  aisleLabel: "Aisle",
+  sections: ["L", "R"] as const,
+  rows: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] as const,
+  seatsPerRow: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const,
+  aisleLabelRows: [0, 4, 7] as const,
+} as const;
+
+export const RESERVED_SEATING_SECTION_LABELS = RESERVED_SEATING_VENUE.sections;
+export const RESERVED_SEATING_ROW_LABELS = RESERVED_SEATING_VENUE.rows;
+export const RESERVED_SEATING_SEAT_NUMBERS = RESERVED_SEATING_VENUE.seatsPerRow;
 
 export type ReservedSeatingSection = (typeof RESERVED_SEATING_SECTION_LABELS)[number];
 export type ReservedSeatingRowLabel = (typeof RESERVED_SEATING_ROW_LABELS)[number];

@@ -410,7 +410,7 @@ export type McSpecialSegment = {
   created_at: string;
 };
 
-export type ReservedSeatingLinkMode = "customer" | "manual" | "imported";
+export type ReservedSeatingLinkMode = "customer" | "manual" | "imported" | "comp";
 
 export type ShowReservedSeatingLink = {
   id: string;
@@ -422,6 +422,8 @@ export type ShowReservedSeatingLink = {
   submitted_at: string | null;
   sent_at: string | null;
   selection_mode: ReservedSeatingLinkMode | string;
+  is_complimentary: boolean;
+  source_note: string | null;
   source_ticket_id: string | null;
   source_order_id: string | null;
   source_import_key: string | null;

@@ -365,7 +365,7 @@ function PrintShell({
           ) : (
             <>
           <p className="text-[10px] font-medium text-stone-500 print:text-[9px]">
-            StageFlow — by Pinnacle Recording Studio
+            StageFlow - by Pinnacle Recording Studio
           </p>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 print:text-[10px]">
             {title}
@@ -638,7 +638,7 @@ function DoorGuestListPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
               {rows.map((ticket) => {
                 return (
                   <tr key={ticket.id} className="break-inside-avoid border-b border-stone-200 last:border-b-0">
-                    <td className="px-3 py-3 align-top text-xl leading-none text-stone-500 print:py-2.5">□</td>
+                    <td className="px-3 py-3 align-top text-xl leading-none text-stone-500 print:py-2.5">[ ]</td>
                     <td className="px-3 py-3 align-top text-base font-semibold text-stone-950 print:py-2.5 print:text-[13px]">
                       {ticket.guest_name?.trim() || "Guest"}
                     </td>
@@ -863,11 +863,14 @@ function BlankSeatCardsPrintView() {
 
 function SelectedReservedSeatCardsPrintView({
   assignments,
+  reservedLinks,
   showDate,
 }: {
   assignments: SelectedReservedSeatRow[];
+  reservedLinks: ReservedSeatingLinkRow[];
   showDate: string | null;
 }) {
+  const reservedLinkById = new Map(reservedLinks.map((link) => [link.id, link]));
   const seatCards = [...assignments]
     .filter((assignment) => assignment.assignment_type === "customer")
     .sort((left, right) => {
@@ -899,37 +902,50 @@ function SelectedReservedSeatCardsPrintView({
             pageBreakAfter: pageIndex < pages.length - 1 ? "always" : "auto",
           }}
         >
-          {pageEntries.map((card) => (
-            <article
-              key={card.id}
-              className="flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
-              style={{
-                breakInside: "avoid",
-                pageBreakInside: "avoid",
-              }}
-            >
-              <img
-                src="/cmms-logo.png"
-                alt="Cumberland Mountain Music Show logo"
-                className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
-              />
-              <div className="flex flex-1 flex-col items-center justify-center py-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
-                  Seat Reserved
-                </p>
-                <h2 className="mt-2 text-lg font-black uppercase tracking-[0.06em] text-stone-950 print:text-[17px]">
-                  {card.customer_name?.trim() || "Reserved Guest"}
-                </h2>
-                <p className="mt-3 text-sm font-semibold text-stone-800 print:text-[12px]">{card.seat_id}</p>
-                <p className="mt-1 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
-                  Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
-                </p>
-                <p className="mt-3 text-xs font-medium tracking-[0.14em] text-stone-500 print:text-[10px]">
-                  {formatShowDate(showDate)}
-                </p>
-              </div>
-            </article>
-          ))}
+          {pageEntries.map((card) => {
+            const reservedLink = card.seating_link_id ? reservedLinkById.get(card.seating_link_id) ?? null : null;
+            return (
+              <article
+                key={card.id}
+                className="flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+                style={{
+                  breakInside: "avoid",
+                  pageBreakInside: "avoid",
+                }}
+              >
+                <img
+                  src="/cmms-logo.png"
+                  alt="Cumberland Mountain Music Show logo"
+                  className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+                />
+                <div className="flex flex-1 flex-col items-center justify-center py-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
+                    Seat Reserved
+                  </p>
+                  <h2 className="mt-2 text-lg font-black uppercase tracking-[0.06em] text-stone-950 print:text-[17px]">
+                    {card.customer_name?.trim() || "Reserved Guest"}
+                  </h2>
+                  {reservedLink?.is_complimentary ? (
+                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-stone-600 print:text-[9px]">
+                      Complimentary
+                    </p>
+                  ) : null}
+                  {reservedLink?.source_note?.trim() ? (
+                    <p className="mt-1 text-[10px] font-medium tracking-[0.12em] text-stone-500 print:text-[9px]">
+                      {reservedLink.source_note}
+                    </p>
+                  ) : null}
+                  <p className="mt-3 text-sm font-semibold text-stone-800 print:text-[12px]">{card.seat_id}</p>
+                  <p className="mt-1 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
+                    Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
+                  </p>
+                  <p className="mt-3 text-xs font-medium tracking-[0.14em] text-stone-500 print:text-[10px]">
+                    {formatShowDate(showDate)}
+                  </p>
+                </div>
+              </article>
+            );
+          })}
         </section>
       ))}
     </div>
@@ -1125,7 +1141,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
       ? await safeLoad("selected reserved seat assignments", () => loadReservedSeatAssignments(show.id), [])
       : [];
   const reservedSeatingLinks =
-    printKind === "reserved-seat-cards"
+    printKind === "reserved-seat-cards" || printKind === "selected-seat-cards"
       ? await safeLoad("reserved seating links", () => loadReservedSeatingLinks(show.id), [])
       : [];
 
@@ -1152,9 +1168,14 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         ) : null}
         {printKind === "blank-seat-cards" ? <BlankSeatCardsPrintView /> : null}
         {printKind === "selected-seat-cards" ? (
-          <SelectedReservedSeatCardsPrintView assignments={selectedReservedSeatAssignments} showDate={show.show_date} />
+          <SelectedReservedSeatCardsPrintView
+            assignments={selectedReservedSeatAssignments}
+            reservedLinks={reservedSeatingLinks}
+            showDate={show.show_date}
+          />
         ) : null}
       </PrintShell>
     </AdminGate>
   );
 }
+
