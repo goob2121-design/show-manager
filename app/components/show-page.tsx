@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -752,7 +752,7 @@ function buildProposalCoverageLabel({
   const showDateLabel = formatShowDate(showDate);
 
   if (showName.trim() && showDateLabel && showDateLabel !== "Date TBD") {
-    return `${showName.trim()} â€” ${showDateLabel}`;
+    return `${showName.trim()} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${showDateLabel}`;
   }
 
   return showName.trim() || showDateLabel || "Current Show";
@@ -3154,7 +3154,7 @@ function buildYearToDateFinanceReportHtml({
                           <strong>${escapeHtml(item.label || "Untitled item")}</strong>
                           <span class="${toneClass}">${escapeHtml(formatCurrency(item.amount))}</span>
                         </div>
-                        <p>${escapeHtml(item.showName)}${item.showDate ? ` â€¢ ${escapeHtml(formatShowDate(item.showDate))}` : ""}</p>
+                        <p>${escapeHtml(item.showName)}${item.showDate ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${escapeHtml(formatShowDate(item.showDate))}` : ""}</p>
                         ${item.notes?.trim() ? `<p class="line-item-notes">${escapeHtml(item.notes.trim())}</p>` : ""}
                       </div>
                     </div>
@@ -3176,7 +3176,7 @@ function buildYearToDateFinanceReportHtml({
   <html lang="en">
     <head>
       <meta charset="utf-8" />
-      <title>${escapeHtml(`Year-to-Date Finance Report â€” ${year}`)}</title>
+      <title>${escapeHtml(`Year-to-Date Finance Report ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${year}`)}</title>
       <style>
         :root { color-scheme: light; }
         * { box-sizing: border-box; }
@@ -4016,9 +4016,9 @@ This link is unique to you, and you can use it anytime to revisit the portal, su
 
 Please make sure your song selections and artist information are submitted as soon as possible so we can prepare for the show.
 
-Thanks again â€” weâ€™re looking forward to having you with us!
+Thanks again ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â weÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re looking forward to having you with us!
 
-â€” Bryan Turner
+ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Bryan Turner
 Cumberland Mountain Music Show`;
 }
 
@@ -4028,7 +4028,7 @@ function buildGuestReminderTextMessage(profile: GuestProfile) {
   const guestFirstName = getGuestFirstName(profile.name);
   const greeting = guestFirstName ? `Hey ${guestFirstName},` : "Hey,";
 
-  return `${greeting} hereâ€™s your private Cumberland Mountain Music Show guest portal link: ${guestLink}
+  return `${greeting} hereÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s your private Cumberland Mountain Music Show guest portal link: ${guestLink}
 
 You can use it anytime to submit songs, update artist info, and review show-day details.`;
 }
@@ -4038,7 +4038,7 @@ function buildBandSetlistMessage(showSlug: string) {
   const siteBaseUrl = getSiteBaseUrl();
   const bandLink = siteBaseUrl ? `${siteBaseUrl}${bandPath}` : bandPath;
 
-  return `Hey everyone, hereâ€™s the setlist link for the show:
+  return `Hey everyone, hereÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s the setlist link for the show:
 
 ${bandLink}
 
@@ -4152,7 +4152,7 @@ function buildRehearsalSheetPrintHtml({
     <html lang="en">
       <head>
         <meta charset="utf-8" />
-        <title>${escapeHtml(showName)} â€” Rehearsal Sheet</title>
+        <title>${escapeHtml(showName)} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Rehearsal Sheet</title>
         <style>
           body { font-family: Arial, sans-serif; color: #111827; background: #ffffff; margin: 24px; }
           .header { margin-bottom: 20px; }
@@ -4223,7 +4223,7 @@ function buildRehearsalSheetPrintHtml({
               ]
                 .filter(Boolean)
                 .map((value) => escapeHtml(value ?? ""))
-                .join(" â€¢ ");
+                .join(" ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ");
 
               return `
                 ${sectionHeading && sectionHeading !== previousSectionHeading ? `<p class="section-header${printMode === "all" && sectionHeading === "SET 2" ? " set2-break" : ""}">${sectionHeading}</p>` : ""}
@@ -4231,7 +4231,7 @@ function buildRehearsalSheetPrintHtml({
                   <div class="song-grid">
                     <div class="song-left">
                       <p class="eyebrow">Rehearsal Song ${index + 1}</p>
-                      <h2 class="title">${escapeHtml(entry.songKey ? `${entry.title} â€” Key: ${entry.songKey}` : entry.title)}</h2>
+                      <h2 class="title">${escapeHtml(entry.songKey ? `${entry.title} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Key: ${entry.songKey}` : entry.title)}</h2>
                       ${entry.sungBy ? `<p class="eyebrow">Lead Vocal: ${escapeHtml(entry.sungBy)}</p>` : ""}
                     </div>
                     <div class="song-right">
@@ -4492,7 +4492,7 @@ function buildSetLyricsPrintHtml(showName: string, showDate: string | null, song
   const songSections = songs
     .map((song) => {
       const printableLyrics = buildSetLyricsSongBody(song);
-      const pageHeader = `${showName} â€” ${formattedShowDate} â€” ${getSetLyricsSectionLabel(song.section)} Lyrics`;
+      const pageHeader = `${showName} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${formattedShowDate} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${getSetLyricsSectionLabel(song.section)} Lyrics`;
 
       return `
         <section class="song">
@@ -4602,7 +4602,7 @@ function buildSetLyricsPrintHtml(showName: string, showDate: string | null, song
       </head>
       <body>
         <main class="shell">
-          ${songSections || `<section class="song"><p class="page-header">${escapeHtml(`${showName} â€” ${formattedShowDate} â€” Set Lyrics`)}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
+          ${songSections || `<section class="song"><p class="page-header">${escapeHtml(`${showName} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${formattedShowDate} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Set Lyrics`)}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
         </main>
       </body>
     </html>
@@ -4618,7 +4618,7 @@ function buildStageFlowSetLyricsPrintHtml(
   const songSections = songs
     .map((song) => {
       const printableLyrics = buildSetLyricsSongBody(song);
-      const pageHeader = [showName, formattedShowDate, `${getSetLyricsSectionLabel(song.section)} Lyrics`].join(" â€” ");
+      const pageHeader = [showName, formattedShowDate, `${getSetLyricsSectionLabel(song.section)} Lyrics`].join(" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ");
 
       return `
         <section class="song">
@@ -4737,7 +4737,7 @@ function buildStageFlowSetLyricsPrintHtml(
       </head>
       <body>
         <main class="shell">
-          ${songSections || `<section class="song"><p class="brand-mark">StageFlow &mdash; by Pinnacle Recording Studio</p><p class="page-header">${escapeHtml([showName, formattedShowDate, "Set Lyrics"].join(" â€” "))}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
+          ${songSections || `<section class="song"><p class="brand-mark">StageFlow &mdash; by Pinnacle Recording Studio</p><p class="page-header">${escapeHtml([showName, formattedShowDate, "Set Lyrics"].join(" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "))}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
         </main>
       </body>
     </html>
@@ -5014,11 +5014,11 @@ I wanted to reach out and invite you to be part of the Cumberland Mountain Music
 
 Your support helps us continue bringing live bluegrass, gospel, traditional country, and acoustic music to our community, while also giving your business recognition through show promotions, social media, stage mentions, and sponsor materials.
 
-We currently have sponsorship options available at the Platinum, Gold, and Silver levels, and Iâ€™d be glad to send over more details.
+We currently have sponsorship options available at the Platinum, Gold, and Silver levels, and IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢d be glad to send over more details.
 
 Thank you for considering being part of the show.
 
-â€” Bryan Turner
+ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Bryan Turner
 Cumberland Mountain Music Show`;
 }
 
@@ -5124,7 +5124,7 @@ function buildSponsorDocumentHtml({
     .filter((tier) => tier.title !== sponsorshipLevel)
     .map(
       (tier) =>
-        `<li><strong>${escapeHtml(tier.title)}</strong> â€” ${escapeHtml(tier.amount)}</li>`,
+        `<li><strong>${escapeHtml(tier.title)}</strong> ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${escapeHtml(tier.amount)}</li>`,
     )
     .join("");
 
@@ -6193,6 +6193,7 @@ export function ShowPage({
   const [compTicketStatusMessage, setCompTicketStatusMessage] = useState<string | null>(null);
   const [compTicketErrorMessage, setCompTicketErrorMessage] = useState<string | null>(null);
   const [activeCompTicketActionId, setActiveCompTicketActionId] = useState<string | null>(null);
+  const [copiedPublicSeatAvailabilityLink, setCopiedPublicSeatAvailabilityLink] = useState(false);
   const [isReservedSeatingOpen, setIsReservedSeatingOpen] = useState(false);
   const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
   const [payoutItems, setPayoutItems] = useState<ShowPayoutItem[]>([]);
@@ -6731,7 +6732,7 @@ export function ShowPage({
     show?.name ?? "",
     [formatShowDate(show?.show_date ?? null), show?.show_start_time ?? ""]
       .filter((part) => part.trim())
-      .join(" â€¢ "),
+      .join(" ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ "),
     showDetailsFormState.promoShort,
     showDetailsFormState.ticketLink
       ? `Tickets:\n${showDetailsFormState.ticketLink}`
@@ -13993,6 +13994,37 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
   }
 
+  function buildPublicSeatAvailabilityUrl() {
+    const routePath = "/available-seats";
+    return typeof window === "undefined" ? routePath : `${window.location.origin}${routePath}`;
+  }
+
+  async function handleCopyPublicSeatAvailabilityLink() {
+    const publicSeatAvailabilityUrl = buildPublicSeatAvailabilityUrl();
+
+    try {
+      await navigator.clipboard.writeText(publicSeatAvailabilityUrl);
+      setActionError(null);
+      setCopiedPublicSeatAvailabilityLink(true);
+
+      window.setTimeout(() => {
+        setCopiedPublicSeatAvailabilityLink(false);
+      }, 1800);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    }
+  }
+
+  function handleOpenPublicSeatAvailabilityPage() {
+    const publicSeatAvailabilityUrl = buildPublicSeatAvailabilityUrl();
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.open(publicSeatAvailabilityUrl, "_blank", "noopener,noreferrer");
+  }
+
   async function handleCopyGuestSongsLink() {
     if (!show?.slug) {
       setActionError("Guest songs link is not available until this show has a valid slug.");
@@ -15685,12 +15717,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     [
       DEFAULT_GUEST_WELCOME_MESSAGE_INTRO,
       formattedGuestShowDate
-        ? `Weâ€™re truly honored to have you as part of our ${formattedGuestShowDate} Show! This event is built around great music, great people, and the rich tradition of mountain and acoustic sound, and weâ€™re excited for you to help us bring that to life on stage.`
-        : "Weâ€™re truly honored to have you as part of the show!",
-      "This portal is here to make your experience as smooth as possible. Youâ€™ll find everything you need in one place â€” from submitting your song choices, to reviewing the show itinerary, to sharing any promo materials we may need.",
-      "Our goal is simple: take care of the details so you can focus on what you do best â€” making great music.",
-      "If you need anything at all, donâ€™t hesitate to reach out. Weâ€™re looking forward to working with you and putting on a great show together.",
-      "â€” Bryan Turner & The Cumberland Mountain Music Show Team",
+        ? `WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re truly honored to have you as part of our ${formattedGuestShowDate} Show! This event is built around great music, great people, and the rich tradition of mountain and acoustic sound, and weÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re excited for you to help us bring that to life on stage.`
+        : "WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re truly honored to have you as part of the show!",
+      "This portal is here to make your experience as smooth as possible. YouÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ll find everything you need in one place ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â from submitting your song choices, to reviewing the show itinerary, to sharing any promo materials we may need.",
+      "Our goal is simple: take care of the details so you can focus on what you do best ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â making great music.",
+      "If you need anything at all, donÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢t hesitate to reach out. WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re looking forward to working with you and putting on a great show together.",
+      "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Bryan Turner & The Cumberland Mountain Music Show Team",
     ].join("\n\n");
   const portalGuestProfiles = isPrivateGuestPortal
     ? guestProfiles
@@ -15736,14 +15768,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
   const privateGuestWelcomeInformation = isPrivateGuestPortal
     ? {
         intro: formattedGuestShowDate
-          ? `Weâ€™re excited to have you as part of the Cumberland Mountain Music Show on ${formattedGuestShowDate}!`
-          : "Weâ€™re excited to have you as part of the Cumberland Mountain Music Show!",
+          ? `WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re excited to have you as part of the Cumberland Mountain Music Show on ${formattedGuestShowDate}!`
+          : "WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re excited to have you as part of the Cumberland Mountain Music Show!",
         summary:
-          "This portal contains everything youâ€™ll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes.",
+          "This portal contains everything youÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes.",
         portalSections: [
-          "Songs â€” Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare.",
-          "Artist Info â€” Add your bio, hometown, photo, social media links, and other information for promo materials and introductions.",
-          "Itinerary â€” Contains show-day details including call times, arrival information, show schedule, and other important notes.",
+          "Songs ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare.",
+          "Artist Info ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Add your bio, hometown, photo, social media links, and other information for promo materials and introductions.",
+          "Itinerary ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Contains show-day details including call times, arrival information, show schedule, and other important notes.",
         ],
         showInformation: [
           "Our shows typically consist of approximately 45 minutes of music, followed by a short intermission, and then another 45 minutes to finish the evening.",
@@ -16828,7 +16860,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 entry.song_type ? `Type: ${entry.song_type}` : null,
                               ]
                                 .filter(Boolean)
-                                .join(" â€¢ ")}
+                                .join(" ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ")}
                             </p>
                           </div>
 
@@ -19489,6 +19521,41 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               Online orders are automatically added to Reserved Seating. Print assigned seat cards from Reserved Seating after seats are selected. Use the paid online fallback print option only for orders that still need generic reserved cards.
             </div>
 
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold text-stone-900">Public Seat Availability</h3>
+                  <p className="mt-1 text-sm text-stone-600">
+                    Allow customers to view current seat availability before purchasing tickets.
+                  </p>
+                  <p className="mt-3 break-all rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700">
+                    {typeof window === "undefined"
+                      ? "/available-seats"
+                      : `${window.location.origin}/available-seats`}
+                  </p>
+                  {copiedPublicSeatAvailabilityLink ? (
+                    <p className="mt-2 text-sm font-medium text-emerald-700">Link copied.</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row lg:shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleOpenPublicSeatAvailabilityPage}
+                    className="inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                  >
+                    Open Availability Page
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyPublicSeatAvailabilityLink()}
+                    className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                  >
+                    {copiedPublicSeatAvailabilityLink ? "Copied!" : "Copy Link"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {isReservedSeatingOpen && show ? (
               <ReservedSeatingPanel
                 showId={show.id}
@@ -19845,7 +19912,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             <div className="space-y-1">
                               <p className="text-sm font-semibold text-stone-900">{entry.guestName}</p>
                               <p className="text-sm text-stone-600">
-                                {entry.ticketCount} ticket{entry.ticketCount === 1 ? "" : "s"} Â· {formatCurrency(entry.amountPaid)}
+                                {entry.ticketCount} ticket{entry.ticketCount === 1 ? "" : "s"} Ãƒâ€šÃ‚Â· {formatCurrency(entry.amountPaid)}
                               </p>
                               {entry.email ? (
                                 <p className="text-sm text-stone-600">{entry.email}</p>
@@ -24594,8 +24661,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               {activeGuestConfirmationSaveId === profile.id
                                 ? "Saving..."
                                 : profile.is_confirmed
-                                  ? "âœ… Confirmed"
-                                  : "âšª Unconfirmed"}
+                                  ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Confirmed"
+                                  : "ÃƒÂ¢Ã…Â¡Ã‚Âª Unconfirmed"}
                             </button>
                           </div>
 
@@ -24646,10 +24713,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                                 Promo Materials
                               </p>
-                              <p>{profile.short_bio?.trim() ? "âœ… Bio" : "âŒ Bio"}</p>
-                              <p>{profile.photo_url?.trim() ? "âœ… Photo" : "âŒ Photo"}</p>
-                              <p>{hasSocialLinks ? "âœ… Social Links" : "âŒ Social Links"}</p>
-                              <p>{hasSubmittedSongs ? "âœ… Songs Submitted" : "âŒ Songs Submitted"}</p>
+                              <p>{profile.short_bio?.trim() ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Bio" : "ÃƒÂ¢Ã‚ÂÃ…â€™ Bio"}</p>
+                              <p>{profile.photo_url?.trim() ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Photo" : "ÃƒÂ¢Ã‚ÂÃ…â€™ Photo"}</p>
+                              <p>{hasSocialLinks ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Social Links" : "ÃƒÂ¢Ã‚ÂÃ…â€™ Social Links"}</p>
+                              <p>{hasSubmittedSongs ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Songs Submitted" : "ÃƒÂ¢Ã‚ÂÃ…â€™ Songs Submitted"}</p>
                             </div>
                           </div>
 
@@ -24791,9 +24858,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                       </p>
                                       <p className="text-sm text-stone-600">
                                         {song.artist || song.submitted_by_name || "Guest Submission"}
-                                        {song.song_key ? ` â€¢ Key: ${song.song_key}` : ""}
-                                        {song.tempo ? ` â€¢ Tempo: ${song.tempo}` : ""}
-                                        {song.song_type ? ` â€¢ ${song.song_type}` : ""}
+                                        {song.song_key ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Key: ${song.song_key}` : ""}
+                                        {song.tempo ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Tempo: ${song.tempo}` : ""}
+                                        {song.song_type ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${song.song_type}` : ""}
                                       </p>
                                     </div>
 
@@ -25171,7 +25238,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               </p>
                               <p className="text-sm text-stone-600">
                                 {song.artist || guestSingerName}
-                                {song.song_key ? ` â€¢ Key: ${song.song_key}` : ""}
+                                {song.song_key ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Key: ${song.song_key}` : ""}
                               </p>
                             </div>
                             <button
@@ -25498,7 +25565,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 </p>
                                 <p className="text-sm text-stone-600">
                                   {song.artist || guestSingerName}
-                                  {song.song_key ? ` â€¢ Key: ${song.song_key}` : ""}
+                                  {song.song_key ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Key: ${song.song_key}` : ""}
                                 </p>
                               </div>
                               <button

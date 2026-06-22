@@ -91,7 +91,6 @@ function buildSeatStates(assignments: Pick<ShowReservedSeatAssignment, "seat_id"
           seatId: seat.seatId,
           label: seat.seatId,
           status,
-          disabled: true,
         },
       ];
     }),
