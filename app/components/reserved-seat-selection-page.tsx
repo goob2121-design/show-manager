@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
+import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import { RESERVED_SEAT_DEFINITIONS, formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -40,7 +41,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const [hasSubmitted, setHasSubmitted] = useState(Boolean(seatingLink.submitted_at));
   const isAlreadySubmitted = hasSubmitted;
 
-  const seatStates = useMemo(() => {
+  const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
     const assignmentBySeatId = new Map(assignments.map((assignment) => [assignment.seat_id, assignment]));
     const selectedSeatIdSet = new Set(selectedSeatIds);
 
@@ -54,25 +55,26 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
           isAlreadySubmitted ||
           (Boolean(assignment) && !isOwnedByCurrentLink) ||
           (!isSelected && selectedSeatIds.length >= seatingLink.ticket_count);
+        const status: ReservedSeatMapSeatState["status"] = isSelected
+          ? "selected"
+          : isBlocked
+            ? "unavailable"
+            : assignment
+              ? "assigned"
+              : "available";
 
         return [
           seat.seatId,
           {
             seatId: seat.seatId,
             label: seat.seatId,
-            status: isSelected
-              ? "selected"
-              : isBlocked
-                ? "unavailable"
-                : assignment
-                  ? "assigned"
-                  : "available",
+            status,
             customerName: assignment?.customer_name ?? null,
             disabled,
           },
         ];
       }),
-    );
+    ) as Record<string, ReservedSeatMapSeatState>;
   }, [assignments, isAlreadySubmitted, seatingLink.id, seatingLink.ticket_count, selectedSeatIds]);
 
   async function handleSubmit() {
