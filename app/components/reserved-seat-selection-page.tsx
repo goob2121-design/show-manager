@@ -31,7 +31,9 @@ function formatShowDate(showDate: string | null) {
 }
 
 export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: ReservedSeatSelectionPageProps) {
-  const [venuePhotoSrc, setVenuePhotoSrc] = useState(RESERVED_SEATING_VENUE.venuePhotoPath);
+  const [venuePhotoSrc, setVenuePhotoSrc] = useState<string>(
+    RESERVED_SEATING_VENUE.venuePhotoPath,
+  );
   const linkAssignments = useMemo(
     () => assignments.filter((assignment) => assignment.seating_link_id === seatingLink.id),
     [assignments, seatingLink.id],
