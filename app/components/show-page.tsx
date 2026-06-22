@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -752,7 +752,7 @@ function buildProposalCoverageLabel({
   const showDateLabel = formatShowDate(showDate);
 
   if (showName.trim() && showDateLabel && showDateLabel !== "Date TBD") {
-    return `${showName.trim()} — ${showDateLabel}`;
+    return `${showName.trim()} â€” ${showDateLabel}`;
   }
 
   return showName.trim() || showDateLabel || "Current Show";
@@ -3154,7 +3154,7 @@ function buildYearToDateFinanceReportHtml({
                           <strong>${escapeHtml(item.label || "Untitled item")}</strong>
                           <span class="${toneClass}">${escapeHtml(formatCurrency(item.amount))}</span>
                         </div>
-                        <p>${escapeHtml(item.showName)}${item.showDate ? ` • ${escapeHtml(formatShowDate(item.showDate))}` : ""}</p>
+                        <p>${escapeHtml(item.showName)}${item.showDate ? ` â€¢ ${escapeHtml(formatShowDate(item.showDate))}` : ""}</p>
                         ${item.notes?.trim() ? `<p class="line-item-notes">${escapeHtml(item.notes.trim())}</p>` : ""}
                       </div>
                     </div>
@@ -3176,7 +3176,7 @@ function buildYearToDateFinanceReportHtml({
   <html lang="en">
     <head>
       <meta charset="utf-8" />
-      <title>${escapeHtml(`Year-to-Date Finance Report — ${year}`)}</title>
+      <title>${escapeHtml(`Year-to-Date Finance Report â€” ${year}`)}</title>
       <style>
         :root { color-scheme: light; }
         * { box-sizing: border-box; }
@@ -3730,8 +3730,8 @@ function isGuestSongForProfile(song: PendingSubmission, profileName: string | nu
   );
 }
 
-function normalizeOptionalField(value: string) {
-  const trimmedValue = value.trim();
+function normalizeOptionalField(value: string | null | undefined) {
+  const trimmedValue = typeof value === "string" ? value.trim() : "";
   return trimmedValue ? trimmedValue : null;
 }
 
@@ -4016,9 +4016,9 @@ This link is unique to you, and you can use it anytime to revisit the portal, su
 
 Please make sure your song selections and artist information are submitted as soon as possible so we can prepare for the show.
 
-Thanks again — we’re looking forward to having you with us!
+Thanks again â€” weâ€™re looking forward to having you with us!
 
-— Bryan Turner
+â€” Bryan Turner
 Cumberland Mountain Music Show`;
 }
 
@@ -4028,7 +4028,7 @@ function buildGuestReminderTextMessage(profile: GuestProfile) {
   const guestFirstName = getGuestFirstName(profile.name);
   const greeting = guestFirstName ? `Hey ${guestFirstName},` : "Hey,";
 
-  return `${greeting} here’s your private Cumberland Mountain Music Show guest portal link: ${guestLink}
+  return `${greeting} hereâ€™s your private Cumberland Mountain Music Show guest portal link: ${guestLink}
 
 You can use it anytime to submit songs, update artist info, and review show-day details.`;
 }
@@ -4038,7 +4038,7 @@ function buildBandSetlistMessage(showSlug: string) {
   const siteBaseUrl = getSiteBaseUrl();
   const bandLink = siteBaseUrl ? `${siteBaseUrl}${bandPath}` : bandPath;
 
-  return `Hey everyone, here’s the setlist link for the show:
+  return `Hey everyone, hereâ€™s the setlist link for the show:
 
 ${bandLink}
 
@@ -4152,7 +4152,7 @@ function buildRehearsalSheetPrintHtml({
     <html lang="en">
       <head>
         <meta charset="utf-8" />
-        <title>${escapeHtml(showName)} — Rehearsal Sheet</title>
+        <title>${escapeHtml(showName)} â€” Rehearsal Sheet</title>
         <style>
           body { font-family: Arial, sans-serif; color: #111827; background: #ffffff; margin: 24px; }
           .header { margin-bottom: 20px; }
@@ -4223,7 +4223,7 @@ function buildRehearsalSheetPrintHtml({
               ]
                 .filter(Boolean)
                 .map((value) => escapeHtml(value ?? ""))
-                .join(" • ");
+                .join(" â€¢ ");
 
               return `
                 ${sectionHeading && sectionHeading !== previousSectionHeading ? `<p class="section-header${printMode === "all" && sectionHeading === "SET 2" ? " set2-break" : ""}">${sectionHeading}</p>` : ""}
@@ -4231,7 +4231,7 @@ function buildRehearsalSheetPrintHtml({
                   <div class="song-grid">
                     <div class="song-left">
                       <p class="eyebrow">Rehearsal Song ${index + 1}</p>
-                      <h2 class="title">${escapeHtml(entry.songKey ? `${entry.title} — Key: ${entry.songKey}` : entry.title)}</h2>
+                      <h2 class="title">${escapeHtml(entry.songKey ? `${entry.title} â€” Key: ${entry.songKey}` : entry.title)}</h2>
                       ${entry.sungBy ? `<p class="eyebrow">Lead Vocal: ${escapeHtml(entry.sungBy)}</p>` : ""}
                     </div>
                     <div class="song-right">
@@ -4492,7 +4492,7 @@ function buildSetLyricsPrintHtml(showName: string, showDate: string | null, song
   const songSections = songs
     .map((song) => {
       const printableLyrics = buildSetLyricsSongBody(song);
-      const pageHeader = `${showName} — ${formattedShowDate} — ${getSetLyricsSectionLabel(song.section)} Lyrics`;
+      const pageHeader = `${showName} â€” ${formattedShowDate} â€” ${getSetLyricsSectionLabel(song.section)} Lyrics`;
 
       return `
         <section class="song">
@@ -4602,7 +4602,7 @@ function buildSetLyricsPrintHtml(showName: string, showDate: string | null, song
       </head>
       <body>
         <main class="shell">
-          ${songSections || `<section class="song"><p class="page-header">${escapeHtml(`${showName} — ${formattedShowDate} — Set Lyrics`)}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
+          ${songSections || `<section class="song"><p class="page-header">${escapeHtml(`${showName} â€” ${formattedShowDate} â€” Set Lyrics`)}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
         </main>
       </body>
     </html>
@@ -4618,7 +4618,7 @@ function buildStageFlowSetLyricsPrintHtml(
   const songSections = songs
     .map((song) => {
       const printableLyrics = buildSetLyricsSongBody(song);
-      const pageHeader = [showName, formattedShowDate, `${getSetLyricsSectionLabel(song.section)} Lyrics`].join(" — ");
+      const pageHeader = [showName, formattedShowDate, `${getSetLyricsSectionLabel(song.section)} Lyrics`].join(" â€” ");
 
       return `
         <section class="song">
@@ -4737,7 +4737,7 @@ function buildStageFlowSetLyricsPrintHtml(
       </head>
       <body>
         <main class="shell">
-          ${songSections || `<section class="song"><p class="brand-mark">StageFlow &mdash; by Pinnacle Recording Studio</p><p class="page-header">${escapeHtml([showName, formattedShowDate, "Set Lyrics"].join(" — "))}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
+          ${songSections || `<section class="song"><p class="brand-mark">StageFlow &mdash; by Pinnacle Recording Studio</p><p class="page-header">${escapeHtml([showName, formattedShowDate, "Set Lyrics"].join(" â€” "))}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
         </main>
       </body>
     </html>
@@ -5014,11 +5014,11 @@ I wanted to reach out and invite you to be part of the Cumberland Mountain Music
 
 Your support helps us continue bringing live bluegrass, gospel, traditional country, and acoustic music to our community, while also giving your business recognition through show promotions, social media, stage mentions, and sponsor materials.
 
-We currently have sponsorship options available at the Platinum, Gold, and Silver levels, and I’d be glad to send over more details.
+We currently have sponsorship options available at the Platinum, Gold, and Silver levels, and Iâ€™d be glad to send over more details.
 
 Thank you for considering being part of the show.
 
-— Bryan Turner
+â€” Bryan Turner
 Cumberland Mountain Music Show`;
 }
 
@@ -5124,7 +5124,7 @@ function buildSponsorDocumentHtml({
     .filter((tier) => tier.title !== sponsorshipLevel)
     .map(
       (tier) =>
-        `<li><strong>${escapeHtml(tier.title)}</strong> — ${escapeHtml(tier.amount)}</li>`,
+        `<li><strong>${escapeHtml(tier.title)}</strong> â€” ${escapeHtml(tier.amount)}</li>`,
     )
     .join("");
 
@@ -6731,7 +6731,7 @@ export function ShowPage({
     show?.name ?? "",
     [formatShowDate(show?.show_date ?? null), show?.show_start_time ?? ""]
       .filter((part) => part.trim())
-      .join(" • "),
+      .join(" â€¢ "),
     showDetailsFormState.promoShort,
     showDetailsFormState.ticketLink
       ? `Tickets:\n${showDetailsFormState.ticketLink}`
@@ -15685,12 +15685,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     [
       DEFAULT_GUEST_WELCOME_MESSAGE_INTRO,
       formattedGuestShowDate
-        ? `We’re truly honored to have you as part of our ${formattedGuestShowDate} Show! This event is built around great music, great people, and the rich tradition of mountain and acoustic sound, and we’re excited for you to help us bring that to life on stage.`
-        : "We’re truly honored to have you as part of the show!",
-      "This portal is here to make your experience as smooth as possible. You’ll find everything you need in one place — from submitting your song choices, to reviewing the show itinerary, to sharing any promo materials we may need.",
-      "Our goal is simple: take care of the details so you can focus on what you do best — making great music.",
-      "If you need anything at all, don’t hesitate to reach out. We’re looking forward to working with you and putting on a great show together.",
-      "— Bryan Turner & The Cumberland Mountain Music Show Team",
+        ? `Weâ€™re truly honored to have you as part of our ${formattedGuestShowDate} Show! This event is built around great music, great people, and the rich tradition of mountain and acoustic sound, and weâ€™re excited for you to help us bring that to life on stage.`
+        : "Weâ€™re truly honored to have you as part of the show!",
+      "This portal is here to make your experience as smooth as possible. Youâ€™ll find everything you need in one place â€” from submitting your song choices, to reviewing the show itinerary, to sharing any promo materials we may need.",
+      "Our goal is simple: take care of the details so you can focus on what you do best â€” making great music.",
+      "If you need anything at all, donâ€™t hesitate to reach out. Weâ€™re looking forward to working with you and putting on a great show together.",
+      "â€” Bryan Turner & The Cumberland Mountain Music Show Team",
     ].join("\n\n");
   const portalGuestProfiles = isPrivateGuestPortal
     ? guestProfiles
@@ -15736,14 +15736,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
   const privateGuestWelcomeInformation = isPrivateGuestPortal
     ? {
         intro: formattedGuestShowDate
-          ? `We’re excited to have you as part of the Cumberland Mountain Music Show on ${formattedGuestShowDate}!`
-          : "We’re excited to have you as part of the Cumberland Mountain Music Show!",
+          ? `Weâ€™re excited to have you as part of the Cumberland Mountain Music Show on ${formattedGuestShowDate}!`
+          : "Weâ€™re excited to have you as part of the Cumberland Mountain Music Show!",
         summary:
-          "This portal contains everything you’ll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes.",
+          "This portal contains everything youâ€™ll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes.",
         portalSections: [
-          "Songs — Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare.",
-          "Artist Info — Add your bio, hometown, photo, social media links, and other information for promo materials and introductions.",
-          "Itinerary — Contains show-day details including call times, arrival information, show schedule, and other important notes.",
+          "Songs â€” Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare.",
+          "Artist Info â€” Add your bio, hometown, photo, social media links, and other information for promo materials and introductions.",
+          "Itinerary â€” Contains show-day details including call times, arrival information, show schedule, and other important notes.",
         ],
         showInformation: [
           "Our shows typically consist of approximately 45 minutes of music, followed by a short intermission, and then another 45 minutes to finish the evening.",
@@ -16828,7 +16828,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 entry.song_type ? `Type: ${entry.song_type}` : null,
                               ]
                                 .filter(Boolean)
-                                .join(" • ")}
+                                .join(" â€¢ ")}
                             </p>
                           </div>
 
@@ -19845,7 +19845,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             <div className="space-y-1">
                               <p className="text-sm font-semibold text-stone-900">{entry.guestName}</p>
                               <p className="text-sm text-stone-600">
-                                {entry.ticketCount} ticket{entry.ticketCount === 1 ? "" : "s"} · {formatCurrency(entry.amountPaid)}
+                                {entry.ticketCount} ticket{entry.ticketCount === 1 ? "" : "s"} Â· {formatCurrency(entry.amountPaid)}
                               </p>
                               {entry.email ? (
                                 <p className="text-sm text-stone-600">{entry.email}</p>
@@ -24594,8 +24594,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               {activeGuestConfirmationSaveId === profile.id
                                 ? "Saving..."
                                 : profile.is_confirmed
-                                  ? "✅ Confirmed"
-                                  : "⚪ Unconfirmed"}
+                                  ? "âœ… Confirmed"
+                                  : "âšª Unconfirmed"}
                             </button>
                           </div>
 
@@ -24646,10 +24646,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                                 Promo Materials
                               </p>
-                              <p>{profile.short_bio?.trim() ? "✅ Bio" : "❌ Bio"}</p>
-                              <p>{profile.photo_url?.trim() ? "✅ Photo" : "❌ Photo"}</p>
-                              <p>{hasSocialLinks ? "✅ Social Links" : "❌ Social Links"}</p>
-                              <p>{hasSubmittedSongs ? "✅ Songs Submitted" : "❌ Songs Submitted"}</p>
+                              <p>{profile.short_bio?.trim() ? "âœ… Bio" : "âŒ Bio"}</p>
+                              <p>{profile.photo_url?.trim() ? "âœ… Photo" : "âŒ Photo"}</p>
+                              <p>{hasSocialLinks ? "âœ… Social Links" : "âŒ Social Links"}</p>
+                              <p>{hasSubmittedSongs ? "âœ… Songs Submitted" : "âŒ Songs Submitted"}</p>
                             </div>
                           </div>
 
@@ -24791,9 +24791,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                       </p>
                                       <p className="text-sm text-stone-600">
                                         {song.artist || song.submitted_by_name || "Guest Submission"}
-                                        {song.song_key ? ` • Key: ${song.song_key}` : ""}
-                                        {song.tempo ? ` • Tempo: ${song.tempo}` : ""}
-                                        {song.song_type ? ` • ${song.song_type}` : ""}
+                                        {song.song_key ? ` â€¢ Key: ${song.song_key}` : ""}
+                                        {song.tempo ? ` â€¢ Tempo: ${song.tempo}` : ""}
+                                        {song.song_type ? ` â€¢ ${song.song_type}` : ""}
                                       </p>
                                     </div>
 
@@ -25171,7 +25171,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               </p>
                               <p className="text-sm text-stone-600">
                                 {song.artist || guestSingerName}
-                                {song.song_key ? ` • Key: ${song.song_key}` : ""}
+                                {song.song_key ? ` â€¢ Key: ${song.song_key}` : ""}
                               </p>
                             </div>
                             <button
@@ -25498,7 +25498,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 </p>
                                 <p className="text-sm text-stone-600">
                                   {song.artist || guestSingerName}
-                                  {song.song_key ? ` • Key: ${song.song_key}` : ""}
+                                  {song.song_key ? ` â€¢ Key: ${song.song_key}` : ""}
                                 </p>
                               </div>
                               <button
