@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { PrintButton } from "@/app/components/print-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { GuestProfile, ShowCompTicket, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
+import type { GuestProfile, ShowCompTicket, ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
 type PrintKind =
   | "itinerary"
@@ -13,7 +13,8 @@ type PrintKind =
   | "door-guest-list"
   | "reserved-seat-cards"
   | "comp-reserved-seat-cards"
-  | "blank-seat-cards";
+  | "blank-seat-cards"
+  | "selected-seat-cards";
 
 type SponsorRow = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -33,6 +34,8 @@ type GuestSongRow = {
 };
 
 type DoorGuestListRow = ShowCompTicket;
+type SelectedReservedSeatRow = ShowReservedSeatAssignment;
+type ReservedSeatingLinkRow = ShowReservedSeatingLink;
 
 type PrintPageProps = {
   params: Promise<{ slug: string; kind: string }>;
@@ -46,7 +49,8 @@ function normalizePrintKind(kind: string): PrintKind | null {
     kind === "door-guest-list" ||
     kind === "reserved-seat-cards" ||
     kind === "comp-reserved-seat-cards" ||
-    kind === "blank-seat-cards"
+    kind === "blank-seat-cards" ||
+    kind === "selected-seat-cards"
   ) {
     return kind;
   }
@@ -98,6 +102,8 @@ function getPrintTitle(kind: PrintKind) {
       return "Comp Reserved Seat Cards";
     case "blank-seat-cards":
       return "Blank Seat Cards";
+    case "selected-seat-cards":
+      return "Selected Seat Cards";
     default:
       return "Itinerary";
   }
@@ -155,6 +161,53 @@ function isReservedSeatEntry(ticket: DoorGuestListRow) {
     .join(" ");
 
   return /\b(reserved|reserve|advance|preorder|pre-order)\b/i.test(markerText);
+}
+
+function buildReservedSeatingMatchKey(name: string, email: string | null | undefined) {
+  return [name.trim().toLowerCase(), (email ?? "").trim().toLowerCase()].join("::");
+}
+
+function hasSelectedReservedSeatsForTicket(
+  ticket: DoorGuestListRow,
+  reservedLinks: ReservedSeatingLinkRow[],
+  assignments: SelectedReservedSeatRow[],
+) {
+  const selectedLinkIds = new Set(
+    assignments
+      .filter((assignment) => assignment.assignment_type === "customer")
+      .map((assignment) => assignment.seating_link_id)
+      .filter(Boolean),
+  );
+
+  const sourceOrderId = ticket.order_id?.trim() ?? "";
+  const sourceImportKey = ticket.import_key?.trim() ?? "";
+  const customerKey = buildReservedSeatingMatchKey(ticket.guest_name ?? "", ticket.email);
+
+  const matchedLink = reservedLinks.find((link) => {
+    if (link.source_ticket_id === ticket.id) {
+      return true;
+    }
+
+    if (sourceOrderId && (link.source_order_id?.trim() ?? "") === sourceOrderId) {
+      return true;
+    }
+
+    if (sourceImportKey && (link.source_import_key?.trim() ?? "") === sourceImportKey) {
+      return true;
+    }
+
+    if (link.selection_mode === "imported") {
+      return buildReservedSeatingMatchKey(link.customer_name, link.email) === customerKey;
+    }
+
+    return false;
+  });
+
+  if (!matchedLink) {
+    return false;
+  }
+
+  return selectedLinkIds.has(matchedLink.id) || Boolean(matchedLink.submitted_at);
 }
 
 function chunkItems<T>(items: T[], chunkSize: number) {
@@ -616,8 +669,20 @@ function DoorGuestListPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
   );
 }
 
-function ReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
-  const reservedEntries = sortReservedSeatCards(tickets.filter((ticket) => isReservedSeatEntry(ticket)));
+function ReservedSeatCardsPrintView({
+  tickets,
+  reservedLinks,
+  assignments,
+}: {
+  tickets: DoorGuestListRow[];
+  reservedLinks: ReservedSeatingLinkRow[];
+  assignments: SelectedReservedSeatRow[];
+}) {
+  const reservedEntries = sortReservedSeatCards(
+    tickets.filter(
+      (ticket) => isReservedSeatEntry(ticket) && !hasSelectedReservedSeatsForTicket(ticket, reservedLinks, assignments),
+    ),
+  );
   const seatCards = reservedEntries.flatMap((ticket) => {
     const seatCount = Math.max(1, ticket.ticket_count);
 
@@ -632,7 +697,7 @@ function ReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow[] }
   if (seatCards.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-sm text-stone-500">
-        No reserved seat card entries are available for this show yet.
+        No generic paid online fallback seat cards are needed right now. Assigned online seats should print from Reserved Seating.
       </div>
     );
   }
@@ -796,6 +861,81 @@ function BlankSeatCardsPrintView() {
   );
 }
 
+function SelectedReservedSeatCardsPrintView({
+  assignments,
+  showDate,
+}: {
+  assignments: SelectedReservedSeatRow[];
+  showDate: string | null;
+}) {
+  const seatCards = [...assignments]
+    .filter((assignment) => assignment.assignment_type === "customer")
+    .sort((left, right) => {
+      if ((left.customer_name ?? "") !== (right.customer_name ?? "")) {
+        return (left.customer_name ?? "").localeCompare(right.customer_name ?? "", "en-US");
+      }
+
+      return left.seat_id.localeCompare(right.seat_id, "en-US");
+    });
+
+  if (seatCards.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-sm text-stone-500">
+        No selected reserved seats are available for this show yet.
+      </div>
+    );
+  }
+
+  const pages = chunkItems(seatCards, 8);
+
+  return (
+    <div className="grid gap-6">
+      {pages.map((pageEntries, pageIndex) => (
+        <section
+          key={`selected-seat-page-${pageIndex}`}
+          className="grid grid-cols-2 gap-4 print:h-[9.15in] print:[grid-template-rows:repeat(4,minmax(0,1fr))] print:gap-3"
+          style={{
+            breakAfter: pageIndex < pages.length - 1 ? "page" : "auto",
+            pageBreakAfter: pageIndex < pages.length - 1 ? "always" : "auto",
+          }}
+        >
+          {pageEntries.map((card) => (
+            <article
+              key={card.id}
+              className="flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+              style={{
+                breakInside: "avoid",
+                pageBreakInside: "avoid",
+              }}
+            >
+              <img
+                src="/cmms-logo.png"
+                alt="Cumberland Mountain Music Show logo"
+                className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+              />
+              <div className="flex flex-1 flex-col items-center justify-center py-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
+                  Seat Reserved
+                </p>
+                <h2 className="mt-2 text-lg font-black uppercase tracking-[0.06em] text-stone-950 print:text-[17px]">
+                  {card.customer_name?.trim() || "Reserved Guest"}
+                </h2>
+                <p className="mt-3 text-sm font-semibold text-stone-800 print:text-[12px]">{card.seat_id}</p>
+                <p className="mt-1 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
+                  Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
+                </p>
+                <p className="mt-3 text-xs font-medium tracking-[0.14em] text-stone-500 print:text-[10px]">
+                  {formatShowDate(showDate)}
+                </p>
+              </div>
+            </article>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 async function loadShow(slug: string) {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.from("shows").select("*").eq("slug", slug).maybeSingle();
@@ -900,6 +1040,36 @@ async function loadDoorGuestList(showId: string) {
   );
 }
 
+async function loadReservedSeatingLinks(showId: string) {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("show_reserved_seating_links")
+    .select("*")
+    .eq("show_id", showId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as ReservedSeatingLinkRow[];
+}
+
+async function loadReservedSeatAssignments(showId: string) {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("show_reserved_seat_assignments")
+    .select("*")
+    .eq("show_id", showId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as SelectedReservedSeatRow[];
+}
+
 export default async function AdminPrintPage({ params }: PrintPageProps) {
   const { slug, kind } = await params;
   const printKind = normalizePrintKind(kind);
@@ -950,6 +1120,14 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
     printKind === "comp-reserved-seat-cards"
       ? await safeLoad("door guest list", () => loadDoorGuestList(show.id), [])
       : [];
+  const selectedReservedSeatAssignments =
+    printKind === "selected-seat-cards" || printKind === "reserved-seat-cards"
+      ? await safeLoad("selected reserved seat assignments", () => loadReservedSeatAssignments(show.id), [])
+      : [];
+  const reservedSeatingLinks =
+    printKind === "reserved-seat-cards"
+      ? await safeLoad("reserved seating links", () => loadReservedSeatingLinks(show.id), [])
+      : [];
 
   return (
     <AdminGate slug={slug} resourceLabel={`print pages for ${show.name}`} continueLabel="Continue to Print View">
@@ -962,11 +1140,20 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
           <GuestInfoPrintView guests={guests} guestSongsByProfileId={guestSongsByProfileId} />
         ) : null}
         {printKind === "door-guest-list" ? <DoorGuestListPrintView tickets={doorGuestList} /> : null}
-        {printKind === "reserved-seat-cards" ? <ReservedSeatCardsPrintView tickets={doorGuestList} /> : null}
+        {printKind === "reserved-seat-cards" ? (
+          <ReservedSeatCardsPrintView
+            tickets={doorGuestList}
+            reservedLinks={reservedSeatingLinks}
+            assignments={selectedReservedSeatAssignments}
+          />
+        ) : null}
         {printKind === "comp-reserved-seat-cards" ? (
           <CompReservedSeatCardsPrintView tickets={doorGuestList} />
         ) : null}
         {printKind === "blank-seat-cards" ? <BlankSeatCardsPrintView /> : null}
+        {printKind === "selected-seat-cards" ? (
+          <SelectedReservedSeatCardsPrintView assignments={selectedReservedSeatAssignments} showDate={show.show_date} />
+        ) : null}
       </PrintShell>
     </AdminGate>
   );

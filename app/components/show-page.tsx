@@ -27,6 +27,7 @@ import {
   PromoMaterialsView,
 } from "@/app/components/promo-materials-view";
 import { formatPromoLinkType } from "@/app/components/promo-links-view";
+import { ReservedSeatingPanel } from "@/app/components/reserved-seating-panel";
 import {
   buildShowReminderSummary,
   buildShowTimelineMessages,
@@ -70,6 +71,7 @@ import type {
   ShowRecord,
   ShowChecklistItem,
   ShowCompTicket,
+  ShowReservedSeatingLink,
   SongFormState,
   SongTempo,
   SongType,
@@ -6191,6 +6193,7 @@ export function ShowPage({
   const [compTicketStatusMessage, setCompTicketStatusMessage] = useState<string | null>(null);
   const [compTicketErrorMessage, setCompTicketErrorMessage] = useState<string | null>(null);
   const [activeCompTicketActionId, setActiveCompTicketActionId] = useState<string | null>(null);
+  const [isReservedSeatingOpen, setIsReservedSeatingOpen] = useState(false);
   const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
   const [payoutItems, setPayoutItems] = useState<ShowPayoutItem[]>([]);
   const [payoutFormState, setPayoutFormState] = useState<PayoutFormState>(initialPayoutFormState);
@@ -8039,12 +8042,30 @@ export function ShowPage({
         }
       >).map((item) => normalizeShowCompTicket(item));
 
+      const reservedSeatingSync = await syncReservedSeatingLinksForImportedOrders(
+        supabase,
+        show.id,
+        importedEntries,
+      );
+
       setCompTickets((currentItems) => sortShowCompTickets([...currentItems, ...importedEntries]));
       setCompTicketImportPreview([]);
       setCompTicketImportText("");
-      setCompTicketStatusMessage(
+
+      const importSummaryParts = [
         `Imported ${importedEntries.length} new paid online order entr${importedEntries.length === 1 ? "y" : "ies"}.`,
-      );
+        reservedSeatingSync.createdCount > 0
+          ? `Added ${reservedSeatingSync.createdCount} reserved seating link${reservedSeatingSync.createdCount === 1 ? "" : "s"}.`
+          : null,
+        reservedSeatingSync.updatedCount > 0
+          ? `Updated ${reservedSeatingSync.updatedCount} reserved seating record${reservedSeatingSync.updatedCount === 1 ? "" : "s"}.`
+          : null,
+        reservedSeatingSync.warnings.length > 0
+          ? `Warnings: ${reservedSeatingSync.warnings.join(" ")}`
+          : null,
+      ].filter((value): value is string => Boolean(value));
+
+      setCompTicketStatusMessage(importSummaryParts.join(" "));
     } catch (error) {
       setCompTicketErrorMessage(getErrorMessage(error));
     } finally {
@@ -19434,7 +19455,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   href={`/admin/${showSlug}/print/reserved-seat-cards`}
                   className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
                 >
-                  Print Reserved Seat Cards (Paid Online)
+                  Print Generic Reserved Seat Cards (Paid Online Fallback)
                 </Link>
                 <Link
                   href={`/admin/${showSlug}/print/comp-reserved-seat-cards`}
@@ -19448,10 +19469,35 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 >
                   Print Blank Seat Cards
                 </Link>
+                <button
+                  type="button"
+                  onClick={() => setIsReservedSeatingOpen((currentValue) => !currentValue)}
+                  className={`inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
+                    isReservedSeatingOpen
+                      ? "border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
+                      : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
+                  }`}
+                >
+                  {isReservedSeatingOpen ? "Hide Reserved Seating" : "Reserved Seating"}
+                </button>
               </div>
             </div>
 
             <SectionLoadWarning message={dataSectionErrors.compTickets} />
+
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              Online orders are automatically added to Reserved Seating. Print assigned seat cards from Reserved Seating after seats are selected. Use the paid online fallback print option only for orders that still need generic reserved cards.
+            </div>
+
+            {isReservedSeatingOpen && show ? (
+              <ReservedSeatingPanel
+                showId={show.id}
+                showSlug={show.slug}
+                showName={show.name}
+                showDate={show.show_date}
+              />
+            ) : null}
+
 
             {compTicketStatusMessage ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -26569,3 +26615,137 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
   );
 }
 
+
+function buildReservedSeatingCustomerMatchKey(name: string, email: string | null | undefined) {
+  return [
+    normalizeTicketImportLookupValue(name) || "unknown-buyer",
+    normalizeTicketImportLookupValue(email) || "no-email",
+  ].join("::");
+}
+
+async function syncReservedSeatingLinksForImportedOrders(
+  supabase: ReturnType<typeof createClient>,
+  showId: string,
+  importedTickets: ShowCompTicket[],
+) {
+  const [{ data: existingLinks, error: existingLinksError }, { data: existingAssignments, error: existingAssignmentsError }] = await Promise.all([
+    supabase.from("show_reserved_seating_links").select("*").eq("show_id", showId),
+    supabase
+      .from("show_reserved_seat_assignments")
+      .select("seating_link_id")
+      .eq("show_id", showId)
+      .not("seating_link_id", "is", null),
+  ]);
+
+  if (existingLinksError) {
+    throw existingLinksError;
+  }
+
+  if (existingAssignmentsError) {
+    throw existingAssignmentsError;
+  }
+
+  const links = ((existingLinks ?? []) as ShowReservedSeatingLink[]).map((link) => ({ ...link }));
+  const selectedLinkIds = new Set(
+    ((existingAssignments ?? []) as Array<{ seating_link_id: string | null }>)
+      .map((item) => item.seating_link_id)
+      .filter(Boolean),
+  );
+
+  const createdRows: Array<Record<string, string | number | null>> = [];
+  const updatedRows: Array<{ id: string; updates: Record<string, string | number | null> }> = [];
+  const warnings: string[] = [];
+  let createdCount = 0;
+  let updatedCount = 0;
+
+  for (const ticket of importedTickets) {
+    const sourceOrderId = normalizeOptionalField(ticket.order_id);
+    const sourceImportKey = normalizeOptionalField(ticket.import_key);
+    const customerMatchKey = buildReservedSeatingCustomerMatchKey(ticket.guest_name, ticket.email);
+
+    let matchedLink = links.find((link) => link.source_ticket_id === ticket.id);
+
+    if (!matchedLink && sourceOrderId) {
+      matchedLink = links.find((link) => (link.source_order_id?.trim() ?? "") === sourceOrderId);
+    }
+
+    if (!matchedLink && sourceImportKey) {
+      matchedLink = links.find((link) => (link.source_import_key?.trim() ?? "") === sourceImportKey);
+    }
+
+    if (!matchedLink) {
+      matchedLink = links.find((link) => {
+        if (link.selection_mode !== "imported") {
+          return false;
+        }
+
+        return buildReservedSeatingCustomerMatchKey(link.customer_name, link.email) === customerMatchKey;
+      });
+    }
+
+    const baseUpdates: Record<string, string | number | null> = {
+      customer_name: ticket.guest_name,
+      email: normalizeOptionalField(ticket.email),
+      source_ticket_id: ticket.id,
+      source_order_id: sourceOrderId,
+      source_import_key: sourceImportKey,
+      selection_mode: "imported",
+    };
+
+    if (!matchedLink) {
+      createdRows.push({
+        show_id: showId,
+        customer_name: ticket.guest_name,
+        email: normalizeOptionalField(ticket.email),
+        ticket_count: ticket.ticket_count,
+        selection_mode: "imported",
+        source_ticket_id: ticket.id,
+        source_order_id: sourceOrderId,
+        source_import_key: sourceImportKey,
+      });
+      createdCount += 1;
+      continue;
+    }
+
+    const hasSelectedSeats = selectedLinkIds.has(matchedLink.id) || Boolean(matchedLink.submitted_at);
+    const shouldUpdateTicketCount = !hasSelectedSeats && matchedLink.ticket_count !== ticket.ticket_count;
+
+    if (hasSelectedSeats && matchedLink.ticket_count !== ticket.ticket_count) {
+      warnings.push(
+        ticket.guest_name + ": imported quantity is now " + ticket.ticket_count + ", but reserved seats were already selected. Seat limit was not changed.",
+      );
+    }
+
+    const updates: Record<string, string | number | null> = { ...baseUpdates };
+
+    if (shouldUpdateTicketCount) {
+      updates.ticket_count = ticket.ticket_count;
+    }
+
+    updatedRows.push({ id: matchedLink.id, updates });
+    updatedCount += 1;
+    Object.assign(matchedLink, updates);
+    if (typeof updates.ticket_count === "number") {
+      matchedLink.ticket_count = updates.ticket_count;
+    }
+  }
+
+  if (createdRows.length > 0) {
+    const { error: insertLinksError } = await supabase.from("show_reserved_seating_links").insert(createdRows);
+    if (insertLinksError) {
+      throw insertLinksError;
+    }
+  }
+
+  for (const row of updatedRows) {
+    const { error: updateLinkError } = await supabase
+      .from("show_reserved_seating_links")
+      .update(row.updates)
+      .eq("id", row.id);
+    if (updateLinkError) {
+      throw updateLinkError;
+    }
+  }
+
+  return { createdCount, updatedCount, warnings };
+}

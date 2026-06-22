@@ -410,6 +410,39 @@ export type McSpecialSegment = {
   created_at: string;
 };
 
+export type ReservedSeatingLinkMode = "customer" | "manual" | "imported";
+
+export type ShowReservedSeatingLink = {
+  id: string;
+  show_id: string;
+  customer_name: string;
+  email: string | null;
+  ticket_count: number;
+  selection_token: string;
+  submitted_at: string | null;
+  sent_at: string | null;
+  selection_mode: ReservedSeatingLinkMode | string;
+  source_ticket_id: string | null;
+  source_order_id: string | null;
+  source_import_key: string | null;
+  created_at: string;
+};
+
+export type ShowReservedSeatAssignment = {
+  id: string;
+  show_id: string;
+  seating_link_id: string | null;
+  customer_name: string | null;
+  email: string | null;
+  seat_id: string;
+  section: string;
+  row_label: string;
+  seat_number: number;
+  assignment_type: "customer" | "blocked" | string;
+  notes: string | null;
+  created_at: string;
+};
+
 export type SongFormState = {
   title: string;
   key: string;
