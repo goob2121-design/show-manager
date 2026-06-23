@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { RESERVED_SEAT_DEFINITIONS, formatReservedSeatLabel, getReservedSeatDefinition, sortReservedSeatIds } from "@/lib/reserved-seating";
-import type { ShowReservedSeatingLink } from "@/lib/types";
+import { Resend } from "resend";
+import { RESERVED_SEAT_DEFINITIONS, RESERVED_SEATING_VENUE, formatReservedSeatLabel, getReservedSeatDefinition, sortReservedSeatIds } from "@/lib/reserved-seating";
+import type { ShowRecord, ShowReservedSeatingLink } from "@/lib/types";
 
 export const runtime = "nodejs";
+
+const defaultFromAddress = "onboarding@resend.dev";
 
 type SubmitReservedSeatsRequestBody = {
   token?: unknown;
@@ -26,6 +29,109 @@ function createServiceRoleSupabaseClient() {
       persistSession: false,
     },
   });
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatShowDateTime(showDate: string | null, showStartTime: string | null) {
+  const parts: string[] = [];
+
+  if (showDate) {
+    parts.push(
+      new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(new Date(`${showDate}T00:00:00`)),
+    );
+  }
+
+  if (showStartTime?.trim()) {
+    parts.push(showStartTime.trim());
+  }
+
+  return parts.join(" at ") || "Date TBD";
+}
+
+function getSiteBaseUrl() {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  return configuredSiteUrl ? configuredSiteUrl.replace(/\/+$/, "") : "";
+}
+
+function buildAdminShowUrl(showSlug: string | null) {
+  if (!showSlug) {
+    return null;
+  }
+
+  const adminPath = `/admin/${encodeURIComponent(showSlug)}`;
+  const siteBaseUrl = getSiteBaseUrl();
+  return siteBaseUrl ? `${siteBaseUrl}${adminPath}` : adminPath;
+}
+
+async function sendReservedSeatingAdminNotification(payload: {
+  customerName: string;
+  customerEmail: string | null;
+  seatIds: string[];
+  ticketCount: number;
+  showName: string;
+  showDateTime: string;
+  venueName: string;
+  adminUrl: string | null;
+}) {
+  try {
+    if (!process.env.RESEND_API_KEY) {
+      console.error("Reserved seating admin notification skipped: RESEND_API_KEY is not configured.");
+      return;
+    }
+
+    if (!process.env.NOTIFY_EMAIL) {
+      console.error("Reserved seating admin notification skipped: NOTIFY_EMAIL is not configured.");
+      return;
+    }
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const escapedCustomerName = escapeHtml(payload.customerName);
+    const escapedShowName = escapeHtml(payload.showName);
+    const escapedShowDateTime = escapeHtml(payload.showDateTime);
+    const escapedSeatIds = escapeHtml(payload.seatIds.join(", "));
+    const escapedVenueName = escapeHtml(payload.venueName);
+    const escapedCustomerEmail = payload.customerEmail?.trim() ? escapeHtml(payload.customerEmail.trim()) : null;
+    const escapedAdminUrl = payload.adminUrl ? escapeHtml(payload.adminUrl) : null;
+    const subject = `Reserved seats selected - ${payload.customerName}`;
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;">
+        <p><strong>${escapedCustomerName}</strong> has selected reserved seats for ${escapedShowName}.</p>
+        <p><strong>Selected seats:</strong><br />${escapedSeatIds}</p>
+        <p><strong>Show:</strong><br />${escapedShowDateTime}</p>
+        <p><strong>Customer email:</strong><br />${escapedCustomerEmail ?? "Not provided"}</p>
+        <p><strong>Seat count:</strong><br />${payload.ticketCount}</p>
+        <p><strong>Venue:</strong><br />${escapedVenueName}</p>
+        ${escapedAdminUrl ? `<p><strong>Admin Reserved Seating:</strong><br /><a href="${escapedAdminUrl}">${escapedAdminUrl}</a></p>` : ""}
+      </div>
+    `.trim();
+
+    const { error } = await resend.emails.send({
+      from: process.env.RESEND_FROM || defaultFromAddress,
+      to: process.env.NOTIFY_EMAIL,
+      subject,
+      html,
+    });
+
+    if (error) {
+      console.error("Reserved seating admin notification failed while sending with Resend.", error);
+    }
+  } catch (error) {
+    console.error("Reserved seating admin notification failed unexpectedly.", error);
+  }
 }
 
 export async function POST(request: Request) {
@@ -146,6 +252,29 @@ export async function POST(request: Request) {
     if (updateError) {
       return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
+
+    const { data: showRecord, error: showError } = await supabase
+      .from("shows")
+      .select("slug, name, show_date, show_start_time")
+      .eq("id", typedSeatingLink.show_id)
+      .maybeSingle();
+
+    if (showError) {
+      console.error("Reserved seating notification show lookup failed.", showError);
+    }
+
+    const typedShow = (showRecord ?? null) as Pick<ShowRecord, "slug" | "name" | "show_date" | "show_start_time"> | null;
+
+    await sendReservedSeatingAdminNotification({
+      customerName: typedSeatingLink.customer_name,
+      customerEmail: typedSeatingLink.email,
+      seatIds: uniqueSeatIds,
+      ticketCount: typedSeatingLink.ticket_count,
+      showName: typedShow?.name?.trim() || "Cumberland Mountain Music Show",
+      showDateTime: formatShowDateTime(typedShow?.show_date ?? null, typedShow?.show_start_time ?? null),
+      venueName: RESERVED_SEATING_VENUE.venueName,
+      adminUrl: buildAdminShowUrl(typedShow?.slug ?? null),
+    });
 
     return NextResponse.json({
       success: true,
