@@ -28,6 +28,7 @@ import {
 } from "@/app/components/promo-materials-view";
 import { formatPromoLinkType } from "@/app/components/promo-links-view";
 import { ReservedSeatingPanel } from "@/app/components/reserved-seating-panel";
+import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "@/app/available-seats/path";
 import {
   buildShowReminderSummary,
   buildShowTimelineMessages,
@@ -13995,8 +13996,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
   }
 
   function buildPublicSeatAvailabilityUrl() {
-    const routePath = "/available-seats";
+    const routePath = buildPublicAvailableSeatsPath(show?.slug);
     return typeof window === "undefined" ? routePath : `${window.location.origin}${routePath}`;
+  }
+
+  function buildGenericPublicSeatAvailabilityUrl() {
+    return typeof window === "undefined" ? PUBLIC_AVAILABLE_SEATS_PATH : `${window.location.origin}${PUBLIC_AVAILABLE_SEATS_PATH}`;
   }
 
   async function handleCopyPublicSeatAvailabilityLink() {
@@ -19529,9 +19534,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     Allow customers to view current seat availability before purchasing tickets.
                   </p>
                   <p className="mt-3 break-all rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700">
-                    {typeof window === "undefined"
-                      ? "/available-seats"
-                      : `${window.location.origin}/available-seats`}
+                    {buildPublicSeatAvailabilityUrl()}
+                  </p>
+                  <p className="mt-2 text-xs text-stone-500">
+                    Generic fallback: {buildGenericPublicSeatAvailabilityUrl()}
                   </p>
                   {copiedPublicSeatAvailabilityLink ? (
                     <p className="mt-2 text-sm font-medium text-emerald-700">Link copied.</p>
