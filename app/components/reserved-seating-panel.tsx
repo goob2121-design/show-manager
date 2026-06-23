@@ -8,6 +8,7 @@ import {
   formatReservedSeatLabel,
   getReservedSeatDefinition,
   RESERVED_SEAT_DEFINITIONS,
+  RESERVED_SEATING_VENUE,
   sortReservedSeatIds,
 } from "@/lib/reserved-seating";
 import { createClient } from "@/lib/supabase/client";
@@ -32,6 +33,8 @@ type LinkFormState = {
 type LinkWithSeats = ShowReservedSeatingLink & {
   seatIds: string[];
 };
+
+type CopyFeedbackTarget = "subject" | "body" | "link" | null;
 
 const initialLinkFormState: LinkFormState = {
   customerName: "",
@@ -139,6 +142,37 @@ function getReservedSeatCategoryBadgeClasses(category: ReservedSeatCategory) {
   }
 }
 
+function buildReservedSeatingMessageSubject() {
+  return "Your Reserved Seating Link for Cumberland Mountain Music Show";
+}
+
+function buildReservedSeatingMessageBody(link: LinkWithSeats, absoluteUrl: string, formattedDate: string) {
+  return [
+    `Hi ${link.customer_name},`,
+    "",
+    "Thank you for purchasing tickets to the Cumberland Mountain Music Show!",
+    "",
+    "Reserved seating is available for this show. You can select your seats using your private seat-selection link below:",
+    "",
+    absoluteUrl,
+    "",
+    "Show Information:",
+    "Cumberland Mountain Music Show",
+    formattedDate !== "Date TBD" ? formattedDate : "Date TBD",
+    RESERVED_SEATING_VENUE.venueName,
+    RESERVED_SEATING_VENUE.venueAddress,
+    "",
+    `Please choose up to ${link.ticket_count} seat${link.ticket_count === 1 ? "" : "s"}. Once your seats are confirmed, they will be reserved for you.`,
+    "",
+    "If you prefer not to select your seats, that's perfectly fine too. We'll be happy to reserve seats for you and have them ready when you arrive.",
+    "",
+    "If you have any trouble with the link, just reply to this message and we'll be happy to help.",
+    "",
+    "Thank you,",
+    "Cumberland Mountain Music Show",
+  ].join("\n");
+}
+
 export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: ReservedSeatingPanelProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -148,6 +182,8 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
   const [formState, setFormState] = useState<LinkFormState>(initialLinkFormState);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [manualAssignLinkId, setManualAssignLinkId] = useState<string | null>(null);
+  const [messageLinkId, setMessageLinkId] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<CopyFeedbackTarget>(null);
   const supabase = useMemo(() => createClient(), []);
 
   async function loadReservedSeating() {
@@ -197,6 +233,11 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
   const manualAssignLink = useMemo(
     () => linksWithSeats.find((link) => link.id === manualAssignLinkId) ?? null,
     [linksWithSeats, manualAssignLinkId],
+  );
+
+  const messageLink = useMemo(
+    () => linksWithSeats.find((link) => link.id === messageLinkId) ?? null,
+    [linksWithSeats, messageLinkId],
   );
 
   const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
@@ -275,6 +316,25 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
     const { error } = await supabase.from("show_reserved_seating_links").update({ sent_at: sentAt }).eq("id", linkId);
     if (error) {
       throw error;
+    }
+  }
+
+  async function copyReservedSeatingMessageText(value: string, target: Exclude<CopyFeedbackTarget, null>) {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard copy is unavailable in this browser.");
+      }
+
+      await navigator.clipboard.writeText(value);
+      setCopyFeedback(target);
+      setStatusMessage(null);
+      setErrorMessage(null);
+
+      window.setTimeout(() => {
+        setCopyFeedback((current) => (current === target ? null : current));
+      }, 1800);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to copy the requested text."));
     }
   }
 
@@ -532,6 +592,79 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
       {statusMessage ? <div className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{statusMessage}</div> : null}
       {errorMessage ? <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{errorMessage}</div> : null}
 
+      {messageLink ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-3xl rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,_#0c1728,_#060d18)] p-5 text-slate-100 shadow-[0_24px_60px_rgba(2,6,23,0.55)] sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <span className="inline-flex rounded-full border border-emerald-300/25 bg-emerald-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-100">
+                  Message Generator
+                </span>
+                <h4 className="mt-3 text-2xl font-black tracking-tight text-white">Reserved Seating Message</h4>
+                <p className="mt-2 text-sm text-slate-300">Copy the subject, message body, or private seat link and paste it into Gmail, Square, Messenger, or anywhere else you need.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMessageLinkId(null);
+                  setCopyFeedback(null);
+                }}
+                className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Subject</p>
+                <p className="mt-2 text-sm font-semibold text-white">{buildReservedSeatingMessageSubject()}</p>
+                <button
+                  type="button"
+                  onClick={() => void copyReservedSeatingMessageText(buildReservedSeatingMessageSubject(), "subject")}
+                  className="mt-3 inline-flex rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
+                >
+                  {copyFeedback === "subject" ? "Subject Copied!" : "Copy Subject"}
+                </button>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Seat Selection Link</p>
+                <p className="mt-2 break-all text-sm text-slate-200">{getCustomerLinkUrl(messageLink.selection_token)}</p>
+                <button
+                  type="button"
+                  onClick={() => void copyReservedSeatingMessageText(getCustomerLinkUrl(messageLink.selection_token), "link")}
+                  className="mt-3 inline-flex rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
+                >
+                  {copyFeedback === "link" ? "Link Copied!" : "Copy Seat Link"}
+                </button>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Message Body</p>
+                <textarea
+                  readOnly
+                  value={buildReservedSeatingMessageBody(messageLink, getCustomerLinkUrl(messageLink.selection_token), formatShowDate(showDate))}
+                  className="mt-2 min-h-[18rem] w-full rounded-xl border border-white/12 bg-slate-950/70 px-3 py-3 text-sm leading-6 text-slate-100 outline-none"
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyReservedSeatingMessageText(
+                      buildReservedSeatingMessageBody(messageLink, getCustomerLinkUrl(messageLink.selection_token), formatShowDate(showDate)),
+                      "body",
+                    )}
+                    className="inline-flex rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500"
+                  >
+                    {copyFeedback === "body" ? "Message Copied!" : "Copy Message"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_25rem]">
         <ReservedSeatMap
           seatStates={seatStates}
@@ -741,10 +874,17 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
                       </label>
                       <button
                         type="button"
+                        onClick={() => setMessageLinkId(link.id)}
+                        className="rounded-xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
+                      >
+                        Generate Message
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void handleCopyLink(link)}
                         className="rounded-xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
                       >
-                        Copy Link
+                        Copy Seat Link
                       </button>
                       <button
                         type="button"
