@@ -47,7 +47,10 @@ const adminLegendItems = [
   { label: "Unavailable", classes: "border-slate-500/80 bg-slate-500 text-white" },
 ] as const;
 
-function getSeatButtonClasses(status: ReservedSeatMapSeatState["status"], disabled: boolean) {
+function getSeatButtonClasses(
+  status: ReservedSeatMapSeatState["status"],
+  disabled: boolean,
+): string {
   if (status === "selected") {
     return disabled
       ? "cursor-not-allowed border-amber-300/80 bg-amber-400 text-stone-950 opacity-100 shadow-[0_0_18px_rgba(251,191,36,0.25)]"
