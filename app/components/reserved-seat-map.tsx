@@ -63,7 +63,9 @@ export function ReservedSeatMap({
   includeSelectedLegend = true,
   showCustomerSeatDetails = true,
 }: ReservedSeatMapProps) {
-  const visibleLegendItems = includeSelectedLegend ? legendItems : legendItems.filter((item) => item.label !== "Your Selected Seats");
+  const visibleLegendItems = includeSelectedLegend
+    ? legendItems
+    : legendItems.filter((item) => item.label !== "Your Selected Seats");
 
   return (
     <div className="overflow-hidden rounded-[1.75rem] border border-slate-700 bg-[#09111f] text-slate-100 shadow-[0_18px_48px_rgba(2,6,23,0.45)]">
@@ -73,19 +75,27 @@ export function ReservedSeatMap({
       </div>
 
       <div className="p-3 sm:p-4 lg:p-5">
-        <div className="overflow-x-auto pb-2">
-          <div className="mx-auto w-full min-w-[44rem] max-w-[70rem] rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-3 sm:p-4 lg:min-w-0 lg:p-4 xl:p-5">
+        <p className="mb-3 text-xs font-medium text-slate-300 sm:hidden">
+          Swipe left or right to view all seats.
+        </p>
+
+        <div className="overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
+          <div className="mx-auto w-full min-w-[48rem] max-w-[70rem] rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:p-4 lg:min-w-0 lg:p-4 xl:p-5">
             <div className="mx-auto max-w-[62rem]">
-              <div className="mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1.5 rounded-[1.35rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-4 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)] sm:mb-4 sm:py-3.5">
+              <div className="mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1 rounded-[1.2rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3.5">
                 <div className="h-1.5 w-full rounded-full bg-[linear-gradient(90deg,transparent,rgba(251,191,36,0.45),transparent)]" />
-                <p className="text-2xl font-black uppercase tracking-[0.32em] text-white sm:text-[2rem] lg:text-[2.15rem]">{RESERVED_SEATING_VENUE.stageLabel}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100/80 sm:text-[11px]">{RESERVED_SEATING_VENUE.frontLabel}</p>
+                <p className="text-[1.65rem] font-black uppercase tracking-[0.3em] text-white sm:text-[2rem] lg:text-[2.15rem]">
+                  {RESERVED_SEATING_VENUE.stageLabel}
+                </p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100/80 sm:text-[11px]">
+                  {RESERVED_SEATING_VENUE.frontLabel}
+                </p>
               </div>
 
-              <div className="grid grid-cols-[1.65rem_minmax(0,1fr)_3.15rem_minmax(0,1fr)_1.65rem] gap-x-1.5 gap-y-1 sm:grid-cols-[1.95rem_minmax(0,1fr)_3.65rem_minmax(0,1fr)_1.95rem] sm:gap-x-2 sm:gap-y-1.5 lg:grid-cols-[2.1rem_minmax(0,1fr)_4.25rem_minmax(0,1fr)_2.1rem] xl:grid-cols-[2.3rem_minmax(0,1fr)_4.6rem_minmax(0,1fr)_2.3rem]">
+              <div className="grid grid-cols-[1.55rem_minmax(0,1fr)_2.8rem_minmax(0,1fr)_1.55rem] gap-x-1 gap-y-1 sm:grid-cols-[1.95rem_minmax(0,1fr)_3.65rem_minmax(0,1fr)_1.95rem] sm:gap-x-2 sm:gap-y-1.5 lg:grid-cols-[2.1rem_minmax(0,1fr)_4.25rem_minmax(0,1fr)_2.1rem] xl:grid-cols-[2.3rem_minmax(0,1fr)_4.6rem_minmax(0,1fr)_2.3rem]">
                 {RESERVED_SEATING_ROW_LABELS.map((rowLabel, rowIndex) => (
                   <Fragment key={rowLabel}>
-                    <div className="flex items-center justify-center text-sm font-black uppercase tracking-[0.18em] text-slate-200 sm:text-base xl:text-lg">
+                    <div className="flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-slate-200 sm:text-base xl:text-lg">
                       {rowLabel}
                     </div>
 
@@ -93,7 +103,10 @@ export function ReservedSeatMap({
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
                         const seatId = `${leftSectionConfig.prefix}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
-                        const titleText = showCustomerSeatDetails && seatState?.customerName ? `${seatState.label} - ${seatState.customerName}` : seatState?.label;
+                        const titleText =
+                          showCustomerSeatDetails && seatState?.customerName
+                            ? `${seatState.label} - ${seatState.customerName}`
+                            : seatState?.label;
                         return (
                           <button
                             key={seatId}
@@ -102,7 +115,7 @@ export function ReservedSeatMap({
                             disabled={Boolean(seatState?.disabled)}
                             title={titleText}
                             tabIndex={onSeatClick ? undefined : -1}
-                            className={`aspect-square min-h-[1.9rem] rounded-[0.62rem] border px-0 text-[0.72rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${onSeatClick ? "" : "cursor-default"} ${getSeatButtonClasses(
+                            className={`aspect-square min-h-[2.25rem] rounded-[0.58rem] border px-0 text-[0.78rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${onSeatClick ? "" : "cursor-default"} ${getSeatButtonClasses(
                               seatState?.status ?? "available",
                               Boolean(seatState?.disabled),
                             )}`}
@@ -113,10 +126,12 @@ export function ReservedSeatMap({
                       })}
                     </div>
 
-                    <div className="relative flex items-center justify-center overflow-hidden rounded-[0.9rem] border border-dashed border-slate-700/80 bg-slate-950/40 px-1 text-center">
-                      <div className="absolute inset-y-1/2 left-1.5 right-1.5 h-px -translate-y-1/2 bg-white/12" />
-                      <span className="relative bg-[#0b1220] px-1 text-[8px] font-bold uppercase tracking-[0.24em] text-slate-400 sm:text-[9px] xl:text-[10px]">
-                        {RESERVED_SEATING_VENUE.aisleLabelRows.includes(rowIndex as 0 | 4 | 7) ? RESERVED_SEATING_VENUE.aisleLabel : ""}
+                    <div className="relative flex items-center justify-center overflow-hidden rounded-[0.8rem] border border-dashed border-slate-700/80 bg-slate-950/40 px-1 text-center">
+                      <div className="absolute inset-y-1/2 left-1 right-1 h-px -translate-y-1/2 bg-white/12" />
+                      <span className="relative bg-[#0b1220] px-1 text-[8px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-[9px] xl:text-[10px]">
+                        {RESERVED_SEATING_VENUE.aisleLabelRows.includes(rowIndex as 0 | 4 | 7)
+                          ? RESERVED_SEATING_VENUE.aisleLabel
+                          : ""}
                       </span>
                     </div>
 
@@ -124,7 +139,10 @@ export function ReservedSeatMap({
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
                         const seatId = `${rightSectionConfig.prefix}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
-                        const titleText = showCustomerSeatDetails && seatState?.customerName ? `${seatState.label} - ${seatState.customerName}` : seatState?.label;
+                        const titleText =
+                          showCustomerSeatDetails && seatState?.customerName
+                            ? `${seatState.label} - ${seatState.customerName}`
+                            : seatState?.label;
                         return (
                           <button
                             key={seatId}
@@ -133,7 +151,7 @@ export function ReservedSeatMap({
                             disabled={Boolean(seatState?.disabled)}
                             title={titleText}
                             tabIndex={onSeatClick ? undefined : -1}
-                            className={`aspect-square min-h-[1.9rem] rounded-[0.62rem] border px-0 text-[0.72rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${onSeatClick ? "" : "cursor-default"} ${getSeatButtonClasses(
+                            className={`aspect-square min-h-[2.25rem] rounded-[0.58rem] border px-0 text-[0.78rem] font-bold leading-none transition sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem] ${onSeatClick ? "" : "cursor-default"} ${getSeatButtonClasses(
                               seatState?.status ?? "available",
                               Boolean(seatState?.disabled),
                             )}`}
@@ -144,7 +162,7 @@ export function ReservedSeatMap({
                       })}
                     </div>
 
-                    <div className="flex items-center justify-center text-sm font-black uppercase tracking-[0.18em] text-slate-200 sm:text-base xl:text-lg">
+                    <div className="flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-slate-200 sm:text-base xl:text-lg">
                       {rowLabel}
                     </div>
                   </Fragment>
@@ -160,7 +178,9 @@ export function ReservedSeatMap({
           </div>
         </div>
 
-        <div className={`mt-4 grid gap-2 rounded-2xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-200 sm:grid-cols-2 ${visibleLegendItems.length > 3 ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+        <div className={`mt-4 grid gap-2 rounded-2xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-200 sm:grid-cols-2 ${
+          visibleLegendItems.length > 3 ? "xl:grid-cols-4" : "xl:grid-cols-3"
+        }`}>
           {visibleLegendItems.map((item) => (
             <div key={item.label} className="flex items-center gap-2.5 rounded-xl border border-white/6 bg-white/[0.03] px-3 py-2">
               <span className={`h-4 w-4 rounded-md border ${item.classes}`} />

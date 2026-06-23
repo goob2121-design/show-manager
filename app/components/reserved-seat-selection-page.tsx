@@ -31,9 +31,7 @@ function formatShowDate(showDate: string | null) {
 }
 
 export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: ReservedSeatSelectionPageProps) {
-  const [venuePhotoSrc, setVenuePhotoSrc] = useState<string>(
-    RESERVED_SEATING_VENUE.venuePhotoPath,
-  );
+  const [venuePhotoSrc, setVenuePhotoSrc] = useState<string>(RESERVED_SEATING_VENUE.venuePhotoPath);
   const linkAssignments = useMemo(
     () => assignments.filter((assignment) => assignment.seating_link_id === seatingLink.id),
     [assignments, seatingLink.id],
@@ -150,7 +148,6 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
     }
 
     setErrorMessage(null);
-    setShowSubmitConfirmation(false);
     setShowSubmitConfirmation(true);
   }
 
@@ -178,7 +175,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const showVenueName = show.venue?.trim() || RESERVED_SEATING_VENUE.venueName;
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 text-slate-100 sm:px-6 sm:py-8">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 pb-28 text-slate-100 sm:px-6 sm:py-8 sm:pb-8">
       <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6">
         <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#08111f]/95 shadow-[0_24px_60px_rgba(2,6,23,0.45)]">
           <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.18),_transparent_30%),linear-gradient(135deg,_#0a182a,_#091220_58%,_#040911)] px-4 py-5 text-white sm:px-6 lg:px-8 lg:py-6">
@@ -218,18 +215,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
           </div>
 
           <div className="grid gap-6 px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
-            <ReservedSeatMap
-              seatStates={seatStates}
-              onSeatClick={handleSeatClick}
-              title="Select Your Seats"
-              helperText={
-                isAlreadySubmitted
-                  ? "Your seats are confirmed and highlighted in gold below the stage."
-                  : "Available seats are green. Taken seats are red. Blocked seats are gray. Your current choices are highlighted in gold."
-              }
-            />
-
-            <aside className="rounded-[1.75rem] border border-white/10 bg-slate-950/45 p-4 sm:p-5">
+            <aside className="order-1 rounded-[1.75rem] border border-white/10 bg-slate-950/45 p-4 sm:p-5 xl:order-2 xl:sticky xl:top-6">
               <h2 className="text-lg font-semibold text-white">Selection Summary</h2>
               <p className="mt-1 text-sm text-slate-300">
                 {isAlreadySubmitted
@@ -269,7 +255,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                   type="button"
                   onClick={handleConfirmClick}
                   disabled={isSubmitting || selectedSeatIds.length === 0}
-                  className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900 disabled:text-emerald-300"
+                  className="mt-4 hidden w-full items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900 disabled:text-emerald-300 sm:inline-flex"
                 >
                   {isSubmitting ? "Saving Seats..." : "Review And Confirm Seats"}
                 </button>
@@ -279,8 +265,22 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 </div>
               )}
             </aside>
+
+            <div className="order-2 xl:order-1">
+              <ReservedSeatMap
+                seatStates={seatStates}
+                onSeatClick={handleSeatClick}
+                title="Select Your Seats"
+                helperText={
+                  isAlreadySubmitted
+                    ? "Your seats are confirmed and highlighted in gold below the stage."
+                    : "Available seats are green. Taken seats are red. Blocked seats are gray. Your current choices are highlighted in gold."
+                }
+              />
+            </div>
           </div>
         </div>
+
         {showSubmitConfirmation ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
             <div className="w-full max-w-lg rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,_#0c1728,_#060d18)] p-5 text-slate-100 shadow-[0_24px_60px_rgba(2,6,23,0.55)] sm:p-6">
@@ -326,6 +326,23 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 </button>
               </div>
             </div>
+          </div>
+        ) : null}
+
+        {!isAlreadySubmitted ? (
+          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#08111f]/95 px-4 py-3 backdrop-blur sm:hidden">
+            <button
+              type="button"
+              onClick={handleConfirmClick}
+              disabled={isSubmitting || selectedSeatIds.length === 0}
+              className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900 disabled:text-emerald-300"
+            >
+              {selectedSeatIds.length === 0
+                ? "Select Seats To Continue"
+                : isSubmitting
+                  ? "Saving Seats..."
+                  : `Review ${selectedSeatIds.length} Selected Seat${selectedSeatIds.length === 1 ? "" : "s"}`}
+            </button>
           </div>
         ) : null}
       </section>
