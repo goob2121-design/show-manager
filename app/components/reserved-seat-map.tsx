@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Fragment } from "react";
 import {
@@ -11,7 +11,7 @@ import {
 export type ReservedSeatMapSeatState = {
   seatId: string;
   label: string;
-  status: "available" | "assigned" | "unavailable" | "selected";
+  status: "available" | "assigned" | "unavailable" | "selected" | "paid_reserved" | "comp" | "guest";
   customerName?: string | null;
   disabled?: boolean;
 };
@@ -23,13 +23,28 @@ type ReservedSeatMapProps = {
   helperText?: string;
   includeSelectedLegend?: boolean;
   showCustomerSeatDetails?: boolean;
+  legendVariant?: "customer" | "public" | "admin";
 };
 
-const legendItems = [
+const customerLegendItems = [
   { label: "Available", classes: "border-emerald-400/70 bg-emerald-500 text-white shadow-[0_0_18px_rgba(34,197,94,0.24)]" },
-  { label: "Taken / Assigned", classes: "border-rose-400/70 bg-rose-500 text-white shadow-[0_0_18px_rgba(244,63,94,0.22)]" },
+  { label: "Taken", classes: "border-rose-400/70 bg-rose-500 text-white shadow-[0_0_18px_rgba(244,63,94,0.22)]" },
   { label: "Unavailable", classes: "border-slate-500/80 bg-slate-500 text-white" },
   { label: "Your Selected Seats", classes: "border-amber-300/80 bg-amber-400 text-stone-950 shadow-[0_0_20px_rgba(251,191,36,0.26)]" },
+] as const;
+
+const publicLegendItems = [
+  { label: "Available", classes: "border-emerald-400/70 bg-emerald-500 text-white shadow-[0_0_18px_rgba(34,197,94,0.24)]" },
+  { label: "Taken", classes: "border-rose-400/70 bg-rose-500 text-white shadow-[0_0_18px_rgba(244,63,94,0.22)]" },
+  { label: "Unavailable", classes: "border-slate-500/80 bg-slate-500 text-white" },
+] as const;
+
+const adminLegendItems = [
+  { label: "Available", classes: "border-emerald-400/70 bg-emerald-500 text-white shadow-[0_0_18px_rgba(34,197,94,0.24)]" },
+  { label: "Paid Reserved", classes: "border-rose-400/70 bg-rose-500 text-white shadow-[0_0_18px_rgba(244,63,94,0.22)]" },
+  { label: "Comp", classes: "border-violet-400/70 bg-violet-500 text-white shadow-[0_0_18px_rgba(139,92,246,0.24)]" },
+  { label: "Guest", classes: "border-orange-400/70 bg-orange-500 text-white shadow-[0_0_18px_rgba(249,115,22,0.24)]" },
+  { label: "Unavailable", classes: "border-slate-500/80 bg-slate-500 text-white" },
 ] as const;
 
 function getSeatButtonClasses(status: ReservedSeatMapSeatState["status"], disabled: boolean) {
@@ -40,12 +55,17 @@ function getSeatButtonClasses(status: ReservedSeatMapSeatState["status"], disabl
   }
 
   if (disabled) {
-    return "cursor-not-allowed border-slate-700 bg-slate-900/60 text-slate-500 opacity-70";
+    return `cursor-not-allowed opacity-85 ${getSeatButtonClasses(status, false)}`;
   }
 
   switch (status) {
     case "assigned":
+    case "paid_reserved":
       return "border-rose-400/70 bg-rose-500 text-white shadow-[0_0_16px_rgba(244,63,94,0.18)] hover:bg-rose-400";
+    case "comp":
+      return "border-violet-400/70 bg-violet-500 text-white shadow-[0_0_16px_rgba(139,92,246,0.2)] hover:bg-violet-400";
+    case "guest":
+      return "border-orange-400/70 bg-orange-500 text-white shadow-[0_0_16px_rgba(249,115,22,0.2)] hover:bg-orange-400";
     case "unavailable":
       return "border-slate-500/80 bg-slate-500 text-white hover:bg-slate-400";
     default:
@@ -62,10 +82,15 @@ export function ReservedSeatMap({
   helperText,
   includeSelectedLegend = true,
   showCustomerSeatDetails = true,
+  legendVariant = "customer",
 }: ReservedSeatMapProps) {
-  const visibleLegendItems = includeSelectedLegend
-    ? legendItems
-    : legendItems.filter((item) => item.label !== "Your Selected Seats");
+  const visibleLegendItems = legendVariant === "admin"
+    ? adminLegendItems
+    : legendVariant === "public"
+      ? publicLegendItems
+      : includeSelectedLegend
+        ? customerLegendItems
+        : publicLegendItems;
 
   return (
     <div className="overflow-hidden rounded-[1.75rem] border border-slate-700 bg-[#09111f] text-slate-100 shadow-[0_18px_48px_rgba(2,6,23,0.45)]">
@@ -179,7 +204,7 @@ export function ReservedSeatMap({
         </div>
 
         <div className={`mt-4 grid gap-2 rounded-2xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-200 sm:grid-cols-2 ${
-          visibleLegendItems.length > 3 ? "xl:grid-cols-4" : "xl:grid-cols-3"
+          visibleLegendItems.length > 3 ? "xl:grid-cols-5" : "xl:grid-cols-3"
         }`}>
           {visibleLegendItems.map((item) => (
             <div key={item.label} className="flex items-center gap-2.5 rounded-xl border border-white/6 bg-white/[0.03] px-3 py-2">

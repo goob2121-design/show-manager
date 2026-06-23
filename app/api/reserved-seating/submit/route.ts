@@ -113,6 +113,8 @@ export async function POST(request: Request) {
       );
     }
 
+    const resolvedSeatCategory = typedSeatingLink.seat_category?.trim() || (typedSeatingLink.is_complimentary ? "comp" : "paid_reserved");
+
     const assignmentRows = uniqueSeatIds.map((seatId) => {
       const definition = getReservedSeatDefinition(seatId);
       return {
@@ -125,6 +127,7 @@ export async function POST(request: Request) {
         row_label: definition?.rowLabel ?? seatId.slice(2, 3),
         seat_number: definition?.seatNumber ?? 0,
         assignment_type: "customer",
+        seat_category: resolvedSeatCategory,
       };
     });
 

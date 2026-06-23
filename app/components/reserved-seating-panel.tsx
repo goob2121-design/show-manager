@@ -11,7 +11,7 @@ import {
   sortReservedSeatIds,
 } from "@/lib/reserved-seating";
 import { createClient } from "@/lib/supabase/client";
-import type { ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
+import type { ReservedSeatCategory, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
 type ReservedSeatingPanelProps = {
   showId: string;
@@ -26,6 +26,7 @@ type LinkFormState = {
   ticketCount: string;
   sourceNote: string;
   isComplimentary: boolean;
+  seatCategory: ReservedSeatCategory;
 };
 
 type LinkWithSeats = ShowReservedSeatingLink & {
@@ -38,6 +39,7 @@ const initialLinkFormState: LinkFormState = {
   ticketCount: "1",
   sourceNote: "",
   isComplimentary: false,
+  seatCategory: "paid_reserved",
 };
 
 function formatShowDate(showDate: string | null) {
@@ -86,10 +88,6 @@ function getLinkStatus(link: LinkWithSeats) {
     return { label: "Sent", classes: "bg-sky-500/15 text-sky-200 border-sky-400/25" };
   }
 
-  if (link.is_complimentary) {
-    return { label: "Comp", classes: "bg-violet-500/15 text-violet-200 border-violet-400/25" };
-  }
-
   return { label: "Not Sent", classes: "bg-amber-500/15 text-amber-200 border-amber-400/25" };
 }
 
@@ -103,6 +101,42 @@ function getResetSelectionMode(link: ShowReservedSeatingLink) {
   }
 
   return "customer";
+}
+
+const reservedSeatCategoryOptions: Array<{ value: ReservedSeatCategory; label: string }> = [
+  { value: "paid_reserved", label: "Paid Reserved" },
+  { value: "comp", label: "Comp" },
+  { value: "guest", label: "Guest" },
+];
+
+function normalizeReservedSeatCategory(value: string | null | undefined, isComplimentary?: boolean): ReservedSeatCategory {
+  if (value === "comp" || value === "guest" || value === "paid_reserved") {
+    return value;
+  }
+
+  return isComplimentary ? "comp" : "paid_reserved";
+}
+
+function getReservedSeatCategoryLabel(category: ReservedSeatCategory) {
+  switch (category) {
+    case "comp":
+      return "Comp";
+    case "guest":
+      return "Guest";
+    default:
+      return "Paid Reserved";
+  }
+}
+
+function getReservedSeatCategoryBadgeClasses(category: ReservedSeatCategory) {
+  switch (category) {
+    case "comp":
+      return "border-violet-400/25 bg-violet-500/15 text-violet-100";
+    case "guest":
+      return "border-orange-400/25 bg-orange-500/15 text-orange-100";
+    default:
+      return "border-rose-400/25 bg-rose-500/15 text-rose-100";
+  }
 }
 
 export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: ReservedSeatingPanelProps) {
@@ -172,10 +206,11 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
       RESERVED_SEAT_DEFINITIONS.map((seat) => {
         const assignment = assignmentBySeatId.get(seat.seatId);
         const isBlocked = assignment?.assignment_type === "blocked";
+        const category = normalizeReservedSeatCategory(assignment?.seat_category ?? null);
         const status: ReservedSeatMapSeatState["status"] = isBlocked
           ? "unavailable"
           : assignment
-            ? "assigned"
+            ? category
             : "available";
 
         return [
@@ -212,6 +247,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
         selection_mode: formState.isComplimentary ? "comp" : "customer",
         is_complimentary: formState.isComplimentary,
         source_note: formState.sourceNote.trim() || null,
+        seat_category: formState.seatCategory,
       });
 
       if (error) {
@@ -284,6 +320,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
           row_label: definition?.rowLabel ?? seatId.slice(2, 3),
           seat_number: definition?.seatNumber ?? 0,
           assignment_type: "customer",
+          seat_category: normalizeReservedSeatCategory(manualAssignLink.seat_category, manualAssignLink.is_complimentary),
         });
 
         if (insertError) {
@@ -300,7 +337,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
           throw updateError;
         }
 
-        const assignedLabel = manualAssignLink.is_complimentary ? "Comp seat" : "Seat";
+        const assignedLabel = getReservedSeatCategoryLabel(normalizeReservedSeatCategory(manualAssignLink.seat_category, manualAssignLink.is_complimentary));
         setStatusMessage(`${assignedLabel} ${formatReservedSeatLabel(seatId)} assigned to ${manualAssignLink.customer_name}.`);
         await loadReservedSeating();
         return;
@@ -402,6 +439,41 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
     }
   }
 
+  async function handleUpdateLinkCategory(link: ShowReservedSeatingLink, nextCategory: ReservedSeatCategory) {
+    setActiveActionId(`category-${link.id}`);
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const { error: updateLinkError } = await supabase
+        .from("show_reserved_seating_links")
+        .update({ seat_category: nextCategory })
+        .eq("id", link.id);
+
+      if (updateLinkError) {
+        throw updateLinkError;
+      }
+
+      const { error: updateAssignmentsError } = await supabase
+        .from("show_reserved_seat_assignments")
+        .update({ seat_category: nextCategory })
+        .eq("show_id", showId)
+        .eq("seating_link_id", link.id)
+        .eq("assignment_type", "customer");
+
+      if (updateAssignmentsError) {
+        throw updateAssignmentsError;
+      }
+
+      setStatusMessage(`${link.customer_name} category updated to ${getReservedSeatCategoryLabel(nextCategory)}.`);
+      await loadReservedSeating();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to update the seat category."));
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
   async function handleDeleteLink(linkId: string) {
     const shouldDelete = window.confirm("Delete this seat selection link?");
     if (!shouldDelete) {
@@ -465,10 +537,11 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
           seatStates={seatStates}
           onSeatClick={(seatId) => void handleSeatMapClick(seatId)}
           title="Venue Seat Map"
+          legendVariant="admin"
           helperText={
             manualAssignLink
-              ? "Manual assign mode: click green seats to assign them to the selected guest. Click gray seats to clear a block. Click red seats to clear an assignment."
-              : "Click green seats to block them. Click gray seats to clear a block. Click red seats to clear an assigned seat."
+              ? "Manual assign mode: click green seats to assign them to the selected guest. Purple, orange, and red seats are already assigned. Gray seats are unavailable."
+              : "Click green seats to block them. Gray seats can be reopened. Red, purple, and orange seats are existing assignments you can clear if needed."
           }
         />
 
@@ -477,7 +550,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setFormState((current) => ({ ...current, isComplimentary: false }))}
+                onClick={() => setFormState((current) => ({ ...current, isComplimentary: false, seatCategory: current.seatCategory === "comp" ? "paid_reserved" : current.seatCategory }))}
                 className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition ${
                   formState.isComplimentary
                     ? "border border-white/12 bg-white/[0.04] text-slate-300"
@@ -488,7 +561,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
               </button>
               <button
                 type="button"
-                onClick={() => setFormState((current) => ({ ...current, isComplimentary: true }))}
+                onClick={() => setFormState((current) => ({ ...current, isComplimentary: true, seatCategory: "comp" }))}
                 className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition ${
                   formState.isComplimentary
                     ? "border border-violet-400/25 bg-violet-500/15 text-violet-100"
@@ -537,6 +610,24 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
                   className="rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500"
                   required
                 />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
+                Seat Category
+                <select
+                  value={formState.seatCategory}
+                  onChange={(event) => setFormState((current) => ({
+                    ...current,
+                    seatCategory: event.target.value as ReservedSeatCategory,
+                    isComplimentary: event.target.value === "comp",
+                  }))}
+                  className="rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500"
+                >
+                  {reservedSeatCategoryOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
                 Optional Note / Source
@@ -601,6 +692,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
             {linksWithSeats.map((link) => {
               const status = getLinkStatus(link);
               const isManualAssigning = manualAssignLinkId === link.id;
+              const linkSeatCategory = normalizeReservedSeatCategory(link.seat_category, link.is_complimentary);
               return (
                 <article key={link.id} className={`rounded-2xl border p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : "border-white/10 bg-slate-950/30"}`}>
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -608,11 +700,9 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
                       <div className="flex flex-wrap items-center gap-2">
                         <h5 className="text-base font-semibold text-white">{link.customer_name}</h5>
                         <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${status.classes}`}>{status.label}</span>
-                        {link.is_complimentary ? (
-                          <span className="rounded-full border border-violet-400/25 bg-violet-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-violet-100">
-                            Comp
-                          </span>
-                        ) : null}
+                        <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getReservedSeatCategoryBadgeClasses(linkSeatCategory)}`}>
+                          {getReservedSeatCategoryLabel(linkSeatCategory)}
+                        </span>
                         <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                           {link.ticket_count} seat{link.ticket_count === 1 ? "" : "s"}
                         </span>
@@ -634,6 +724,21 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
                     </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row lg:flex-col lg:items-end">
+                      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        Seat Category
+                        <select
+                          value={linkSeatCategory}
+                          onChange={(event) => void handleUpdateLinkCategory(link, event.target.value as ReservedSeatCategory)}
+                          disabled={activeActionId === `category-${link.id}`}
+                          className="rounded-xl border border-white/12 bg-slate-950/70 px-3 py-2 text-sm font-semibold text-white outline-none transition focus:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {reservedSeatCategoryOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <button
                         type="button"
                         onClick={() => void handleCopyLink(link)}

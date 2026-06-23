@@ -145,6 +145,7 @@ export default async function AvailableSeatsPage() {
               helperText="Green seats are currently available. Red seats are already assigned. Gray seats are unavailable or blocked."
               includeSelectedLegend={false}
               showCustomerSeatDetails={false}
+              legendVariant="public"
             />
           </div>
         </div>

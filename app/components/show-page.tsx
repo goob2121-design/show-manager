@@ -26757,6 +26757,7 @@ async function syncReservedSeatingLinksForImportedOrders(
       source_order_id: sourceOrderId,
       source_import_key: sourceImportKey,
       selection_mode: "imported",
+      seat_category: "paid_reserved",
     };
 
     if (!matchedLink) {
@@ -26766,6 +26767,7 @@ async function syncReservedSeatingLinksForImportedOrders(
         email: normalizeOptionalField(ticket.email),
         ticket_count: ticket.ticket_count,
         selection_mode: "imported",
+        seat_category: "paid_reserved",
         source_ticket_id: ticket.id,
         source_order_id: sourceOrderId,
         source_import_key: sourceImportKey,

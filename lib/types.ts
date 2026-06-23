@@ -64,6 +64,7 @@ export type ShowRecord = {
   intermission_script: string | null;
   closing_script: string | null;
   created_at: string;
+  seat_category: ReservedSeatCategory | string;
 };
 
 export type SongRecord = {
@@ -411,6 +412,7 @@ export type McSpecialSegment = {
 };
 
 export type ReservedSeatingLinkMode = "customer" | "manual" | "imported" | "comp";
+export type ReservedSeatCategory = "paid_reserved" | "comp" | "guest";
 
 export type ShowReservedSeatingLink = {
   id: string;
@@ -427,6 +429,7 @@ export type ShowReservedSeatingLink = {
   source_ticket_id: string | null;
   source_order_id: string | null;
   source_import_key: string | null;
+  seat_category: ReservedSeatCategory | string;
   created_at: string;
 };
 
@@ -441,6 +444,7 @@ export type ShowReservedSeatAssignment = {
   row_label: string;
   seat_number: number;
   assignment_type: "customer" | "blocked" | string;
+  seat_category: ReservedSeatCategory | string | null;
   notes: string | null;
   created_at: string;
 };
