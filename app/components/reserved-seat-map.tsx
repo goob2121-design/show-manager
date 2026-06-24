@@ -24,6 +24,7 @@ type ReservedSeatMapProps = {
   includeSelectedLegend?: boolean;
   showCustomerSeatDetails?: boolean;
   legendVariant?: "customer" | "public" | "admin";
+  chromeVariant?: "stageflow" | "cmms-public";
 };
 
 const customerLegendItems = [
@@ -86,6 +87,7 @@ export function ReservedSeatMap({
   includeSelectedLegend = true,
   showCustomerSeatDetails = true,
   legendVariant = "customer",
+  chromeVariant = "stageflow",
 }: ReservedSeatMapProps) {
   const visibleLegendItems = legendVariant === "admin"
     ? adminLegendItems
@@ -95,27 +97,45 @@ export function ReservedSeatMap({
         ? customerLegendItems
         : publicLegendItems;
 
+  const isCmmsPublic = chromeVariant === "cmms-public";
+
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-[1.75rem] border border-slate-700 bg-[#09111f] text-slate-100 shadow-[0_18px_48px_rgba(2,6,23,0.45)]">
-      <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.16),_transparent_32%),linear-gradient(135deg,_#0b1628,_#08101d_58%,_#040910)] px-4 py-4 sm:px-5">
-        {title ? <h3 className="text-base font-semibold text-white sm:text-lg">{title}</h3> : null}
-        {helperText ? <p className="mt-1 text-sm text-slate-300">{helperText}</p> : null}
+    <div
+      className={isCmmsPublic
+        ? "w-full max-w-full overflow-hidden rounded-[1.6rem] border border-[rgba(200,155,60,0.16)] bg-[linear-gradient(180deg,rgba(10,14,21,0.98),rgba(6,9,15,0.98))] text-[#f5f1e8] shadow-[0_20px_44px_rgba(0,0,0,0.28)]"
+        : "w-full max-w-full overflow-hidden rounded-[1.75rem] border border-slate-700 bg-[#09111f] text-slate-100 shadow-[0_18px_48px_rgba(2,6,23,0.45)]"}
+    >
+      <div
+        className={isCmmsPublic
+          ? "border-b border-[rgba(200,155,60,0.14)] bg-[linear-gradient(180deg,rgba(28,20,12,0.58),rgba(12,15,20,0.9))] px-4 py-3.5 sm:px-5"
+          : "border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.16),_transparent_32%),linear-gradient(135deg,_#0b1628,_#08101d_58%,_#040910)] px-4 py-4 sm:px-5"}
+      >
+        {title ? <h3 className={isCmmsPublic ? "text-base font-semibold text-[#f5f1e8] sm:text-lg" : "text-base font-semibold text-white sm:text-lg"}>{title}</h3> : null}
+        {helperText ? <p className={isCmmsPublic ? "mt-1 text-sm text-[#d9d0c2]" : "mt-1 text-sm text-slate-300"}>{helperText}</p> : null}
       </div>
 
       <div className="w-full max-w-full overflow-hidden p-3 sm:p-4 lg:p-5">
-        <p className="mb-3 text-xs font-medium text-slate-300 sm:hidden">
+        <p className={isCmmsPublic ? "mb-3 text-xs font-medium text-[#d9d0c2] sm:hidden" : "mb-3 text-xs font-medium text-slate-300 sm:hidden"}>
           Swipe left or right to view all seats.
         </p>
 
         <div className="w-full max-w-full overflow-x-auto overscroll-x-contain touch-pan-x pb-2 [-webkit-overflow-scrolling:touch]">
-          <div className="min-w-[900px] rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5">
+          <div
+            className={isCmmsPublic
+              ? "min-w-[900px] rounded-[1.1rem] border border-[rgba(200,155,60,0.14)] bg-[radial-gradient(circle_at_top_center,_rgba(200,155,60,0.09),_transparent_36%),linear-gradient(180deg,_#0d1016,_#080b10)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5"
+              : "min-w-[900px] rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5"}
+          >
             <div className="mx-auto max-w-[62rem]">
-              <div className="mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1 rounded-[1.2rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3.5">
+              <div
+                className={isCmmsPublic
+                  ? "mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1 rounded-[1.05rem] border border-[rgba(200,155,60,0.18)] bg-[radial-gradient(circle_at_top,_rgba(200,155,60,0.18),_transparent_42%),linear-gradient(180deg,_#4a331c,_#1d140d_62%,_#0d0907)] px-3 py-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_14px_28px_rgba(0,0,0,0.26)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3"
+                  : "mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1 rounded-[1.2rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3.5"}
+              >
                 <div className="h-1.5 w-full rounded-full bg-[linear-gradient(90deg,transparent,rgba(251,191,36,0.45),transparent)]" />
                 <p className="text-[1.65rem] font-black uppercase tracking-[0.3em] text-white sm:text-[2rem] lg:text-[2.15rem]">
                   {RESERVED_SEATING_VENUE.stageLabel}
                 </p>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100/80 sm:text-[11px]">
+                <p className={isCmmsPublic ? "text-[10px] font-semibold uppercase tracking-[0.24em] text-[#f0d486]/80 sm:text-[11px]" : "text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100/80 sm:text-[11px]"}>
                   {RESERVED_SEATING_VENUE.frontLabel}
                 </p>
               </div>
@@ -123,7 +143,7 @@ export function ReservedSeatMap({
               <div className="grid grid-cols-[1.55rem_minmax(0,1fr)_2.8rem_minmax(0,1fr)_1.55rem] gap-x-1 gap-y-1 sm:grid-cols-[1.95rem_minmax(0,1fr)_3.65rem_minmax(0,1fr)_1.95rem] sm:gap-x-2 sm:gap-y-1.5 lg:grid-cols-[2.1rem_minmax(0,1fr)_4.25rem_minmax(0,1fr)_2.1rem] xl:grid-cols-[2.3rem_minmax(0,1fr)_4.6rem_minmax(0,1fr)_2.3rem]">
                 {RESERVED_SEATING_ROW_LABELS.map((rowLabel, rowIndex) => (
                   <Fragment key={rowLabel}>
-                    <div className="flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-slate-200 sm:text-base xl:text-lg">
+                    <div className={isCmmsPublic ? "flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-[#efe5d6] sm:text-base xl:text-lg" : "flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-slate-200 sm:text-base xl:text-lg"}>
                       {rowLabel}
                     </div>
 
@@ -154,9 +174,9 @@ export function ReservedSeatMap({
                       })}
                     </div>
 
-                    <div className="relative flex items-center justify-center overflow-hidden rounded-[0.8rem] border border-dashed border-slate-700/80 bg-slate-950/40 px-1 text-center">
+                    <div className={isCmmsPublic ? "relative flex items-center justify-center overflow-hidden rounded-[0.8rem] border border-dashed border-[rgba(200,155,60,0.12)] bg-[#080b10] px-1 text-center" : "relative flex items-center justify-center overflow-hidden rounded-[0.8rem] border border-dashed border-slate-700/80 bg-slate-950/40 px-1 text-center"}>
                       <div className="absolute inset-y-1/2 left-1 right-1 h-px -translate-y-1/2 bg-white/12" />
-                      <span className="relative bg-[#0b1220] px-1 text-[8px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-[9px] xl:text-[10px]">
+                      <span className={isCmmsPublic ? "relative bg-[#0b0f14] px-1 text-[8px] font-bold uppercase tracking-[0.2em] text-[#bda883] sm:text-[9px] xl:text-[10px]" : "relative bg-[#0b1220] px-1 text-[8px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-[9px] xl:text-[10px]"}>
                         {RESERVED_SEATING_VENUE.aisleLabelRows.includes(rowIndex as 0 | 4 | 7)
                           ? RESERVED_SEATING_VENUE.aisleLabel
                           : ""}
@@ -190,7 +210,7 @@ export function ReservedSeatMap({
                       })}
                     </div>
 
-                    <div className="flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-slate-200 sm:text-base xl:text-lg">
+                    <div className={isCmmsPublic ? "flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-[#efe5d6] sm:text-base xl:text-lg" : "flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-slate-200 sm:text-base xl:text-lg"}>
                       {rowLabel}
                     </div>
                   </Fragment>
@@ -198,7 +218,7 @@ export function ReservedSeatMap({
               </div>
 
               <div className="mt-3 flex items-center justify-center sm:mt-4">
-                <div className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-400 sm:px-4 sm:text-xs">
+                <div className={isCmmsPublic ? "rounded-full border border-[rgba(200,155,60,0.12)] bg-[#0b0f14] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.28em] text-[#bda883] sm:px-4 sm:text-xs" : "rounded-full border border-white/10 bg-slate-950/50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-400 sm:px-4 sm:text-xs"}>
                   {RESERVED_SEATING_VENUE.backLabel}
                 </div>
               </div>
@@ -206,11 +226,13 @@ export function ReservedSeatMap({
           </div>
         </div>
 
-        <div className={`mt-4 grid gap-2 rounded-2xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-200 sm:grid-cols-2 ${
-          visibleLegendItems.length > 3 ? "xl:grid-cols-5" : "xl:grid-cols-3"
-        }`}>
+        <div className={`mt-4 grid gap-2 rounded-2xl p-3 text-xs sm:grid-cols-2 ${
+          isCmmsPublic
+            ? "border border-[rgba(200,155,60,0.12)] bg-[rgba(255,255,255,0.03)] text-[#e8decf]"
+            : "border border-white/10 bg-slate-950/40 text-slate-200"
+        } ${visibleLegendItems.length > 3 ? "xl:grid-cols-5" : "xl:grid-cols-3"}`}>
           {visibleLegendItems.map((item) => (
-            <div key={item.label} className="flex items-center gap-2.5 rounded-xl border border-white/6 bg-white/[0.03] px-3 py-2">
+            <div key={item.label} className={isCmmsPublic ? "flex items-center gap-2.5 rounded-xl border border-[rgba(200,155,60,0.08)] bg-[rgba(255,255,255,0.02)] px-3 py-2" : "flex items-center gap-2.5 rounded-xl border border-white/6 bg-white/[0.03] px-3 py-2"}>
               <span className={`h-4 w-4 rounded-md border ${item.classes}`} />
               <span className="font-semibold">{item.label}</span>
             </div>

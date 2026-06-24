@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "./path";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
@@ -121,55 +122,99 @@ export async function AvailableSeatsView({ show }: AvailableSeatsViewProps) {
 
   const assignments = await loadSeatAssignments(show.id);
   const seatStates = buildSeatStates(assignments);
+  const formattedShowDate = formatShowDate(show.show_date);
 
   return (
-    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 text-slate-100 sm:px-6 sm:py-8">
-      <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6 overflow-x-hidden">
-        <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#08111f]/95 shadow-[0_24px_60px_rgba(2,6,23,0.45)]">
-          <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.18),_transparent_30%),linear-gradient(135deg,_#0a182a,_#091220_58%,_#040911)] px-4 py-5 text-white sm:px-6 lg:px-8 lg:py-6">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-              <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-950/30 shadow-[0_20px_40px_rgba(2,6,23,0.35)]">
-                <img
-                  src={RESERVED_SEATING_VENUE.venuePhotoPath}
-                  alt={RESERVED_SEATING_VENUE.venueName}
-                  className="h-48 w-full object-cover sm:h-56"
+    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(200,155,60,0.08),transparent_24%),linear-gradient(180deg,#060708,#0a1018_46%,#070b11_100%)] px-4 py-5 text-[#f5f1e8] sm:px-6 sm:py-7 lg:px-8">
+      <section className="mx-auto flex w-full max-w-5xl flex-col gap-4 overflow-x-hidden">
+        <header className="relative overflow-hidden rounded-[1.8rem] border border-[rgba(200,155,60,0.18)] shadow-[0_24px_50px_rgba(0,0,0,0.32)]">
+          <Image
+            src="/portal_bkg.png"
+            alt=""
+            fill
+            priority
+            aria-hidden="true"
+            className="object-cover object-center"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[linear-gradient(rgba(8,9,12,0.38),rgba(8,9,12,0.62))]"
+          />
+
+          <div className="relative px-5 py-5 text-[#f5f1e8] sm:px-7 sm:py-6">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-4 right-4 hidden w-24 rounded-r-[22px] opacity-40 lg:block"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(135deg, rgba(200,155,60,0.22) 0px, rgba(200,155,60,0.22) 1px, transparent 1px, transparent 18px)",
+              }}
+            />
+
+            <div className="grid items-center gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6 lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-8">
+              <div className="w-full max-w-[210px] sm:max-w-[230px] md:max-w-[220px] lg:max-w-[250px]">
+                <Image
+                  src="/cmms-logo.png"
+                  alt="Cumberland Mountain Music Show logo"
+                  width={320}
+                  height={160}
+                  className="h-auto w-full object-contain"
+                  priority
                 />
               </div>
-              <div>
-                <span className="inline-flex rounded-full border border-emerald-300/30 bg-emerald-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-100">
-                  Live Seat Availability
-                </span>
-                <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">{RESERVED_SEATING_VENUE.venueName}</h1>
-                <p className="mt-2 text-sm text-slate-200 sm:text-base">601 Colwyn St</p>
-                <p className="text-sm text-slate-200 sm:text-base">Cumberland Gap, TN 37724</p>
-                <p className="mt-4 text-lg font-semibold text-white">{show.name}</p>
-                <p className="mt-1 text-sm text-slate-300 sm:text-base">{formatShowDate(show.show_date)}</p>
-                <p className="mt-4 text-sm text-slate-200 sm:text-base">200-seat intimate theater setting</p>
-                <p className="mt-1 text-sm text-slate-200 sm:text-base">All seats provide an excellent view of the stage.</p>
-                <p className="mt-4 max-w-3xl text-sm text-slate-300 sm:text-base">
-                  After purchasing tickets, you will receive a private seat-selection link by email. Seat availability shown here is live and may change before your purchase is completed.
+
+              <div className="max-w-3xl space-y-2">
+                <p className="inline-flex w-fit rounded-full border border-[rgba(200,155,60,0.34)] bg-[rgba(200,155,60,0.10)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.26em] text-[#f2d38a] shadow-[0_0_18px_rgba(200,155,60,0.12)]">
+                  Public Seat Availability
                 </p>
-                <div className="mt-5 rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:px-5 sm:py-4 sm:text-base">
-                  <p className="font-semibold text-white">Reserved Seating Notice</p>
-                  <p className="mt-2 text-slate-200">
-                    Reserved seating is available for this show. After purchasing tickets, a seat selection link will be sent to the email address used during checkout. Please allow up to 24 hours to receive your link. Because our reserved seating is personally managed rather than fully automated, requests are processed in the order they are received, allowing us to take a few moments to ensure everything is accurate and running smoothly. If you do not receive your link within 24 hours, please contact us and we&apos;ll be happy to help. If you prefer not to select your seats, that&apos;s perfectly fine too?we&apos;ll be happy to reserve seats for you and have them ready when you arrive.
-                  </p>
-                </div>
+                <h1 className="text-2xl font-semibold tracking-tight text-[#fffaf1] sm:text-3xl lg:text-[2.1rem]">
+                  {show.name}
+                </h1>
+                <p className="text-sm font-medium text-[#f0d486] sm:text-base">{formattedShowDate}</p>
               </div>
             </div>
           </div>
+        </header>
 
-          <div className="w-full max-w-full overflow-hidden px-4 py-6 sm:px-6">
-            <ReservedSeatMap
-              seatStates={seatStates}
-              title="Current Seat Availability"
-              helperText="Green seats are currently available. Red seats are already assigned. Gray seats are unavailable or blocked."
-              includeSelectedLegend={false}
-              showCustomerSeatDetails={false}
-              legendVariant="public"
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start">
+          <div className="rounded-[1.5rem] border border-[rgba(200,155,60,0.16)] bg-[rgba(255,255,255,0.03)] px-4 py-4 shadow-[0_18px_34px_rgba(0,0,0,0.22)] sm:px-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#d8b35b]">Venue</p>
+            <h2 className="mt-2 text-xl font-semibold text-[#fffaf1]">Cumberland Gap Convention Center</h2>
+            <p className="mt-2 text-sm text-[#ddd4c7]">601 Colwyn St</p>
+            <p className="text-sm text-[#ddd4c7]">Cumberland Gap, TN 37724</p>
+            <p className="mt-4 text-sm text-[#f0d486]">200-seat intimate theater setting</p>
+            <p className="mt-1 text-sm text-[#ddd4c7]">All seats provide an excellent view of the stage.</p>
+          </div>
+
+          <div className="overflow-hidden rounded-[1.4rem] border border-[rgba(200,155,60,0.14)] bg-[rgba(255,255,255,0.03)] shadow-[0_18px_34px_rgba(0,0,0,0.22)]">
+            <Image
+              src={RESERVED_SEATING_VENUE.venuePhotoPath}
+              alt={RESERVED_SEATING_VENUE.venueName}
+              width={900}
+              height={520}
+              className="h-36 w-full object-cover sm:h-40"
             />
           </div>
-        </div>
+        </section>
+
+        <section className="rounded-[1.5rem] border border-[rgba(200,155,60,0.24)] bg-[rgba(200,155,60,0.08)] px-4 py-4 text-sm text-[#f5f1e8] shadow-[0_18px_34px_rgba(0,0,0,0.18)] sm:px-5 sm:text-[15px]">
+          <p className="font-semibold text-[#fffaf1]">Reserved Seating Notice</p>
+          <p className="mt-2 leading-7 text-[#e5dccf]">
+            Reserved seating is available for this show. After purchasing tickets, a seat selection link will be sent to the email address used during checkout. Please allow up to 24 hours to receive your link. Because our reserved seating is personally managed rather than fully automated, requests are processed in the order they are received, allowing us to take a few moments to ensure everything is accurate and running smoothly. If you do not receive your link within 24 hours, please contact us and we&apos;ll be happy to help. If you prefer not to select your seats, that&apos;s perfectly fine too-we&apos;ll be happy to reserve seats for you and have them ready when you arrive.
+          </p>
+        </section>
+
+        <section className="rounded-[1.6rem] border border-[rgba(200,155,60,0.16)] bg-[rgba(255,255,255,0.03)] p-3 shadow-[0_22px_40px_rgba(0,0,0,0.22)] sm:p-4">
+          <ReservedSeatMap
+            seatStates={seatStates}
+            title="Available Seats"
+            helperText="Green seats are available. Red seats are already taken. Gray seats are unavailable."
+            includeSelectedLegend={false}
+            showCustomerSeatDetails={false}
+            legendVariant="public"
+            chromeVariant="cmms-public"
+          />
+        </section>
       </section>
     </main>
   );
