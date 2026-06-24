@@ -7,6 +7,7 @@ import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
+import { SongEditorPanel } from "@/app/components/song-editor-panel";
 import {
   buildBlockNoteDrafts,
   buildMcFlowItems,
@@ -24177,59 +24178,39 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
                             {editingSetlistSongId === song.id ? (
                               <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
-                                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                  Custom Title
-                                  <input
-                                    type="text"
-                                    name="customTitle"
-                                    value={setlistSongEditFormState.customTitle}
-                                    onChange={handleSetlistSongEditChange}
-                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    placeholder="Leave blank to use the source song title"
-                                  />
-                                </label>
-
-                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                  Performance Flow / Break Order
-                                  <textarea
-                                    name="performanceFlow"
-                                    value={setlistSongEditFormState.performanceFlow}
-                                    onChange={handleSetlistSongEditChange}
-                                    rows={7}
-                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    placeholder={`Intro - Fiddle\nVerse 1 - Lead vocal\nBanjo break\nVerse 2\nMandolin break\nTag ending`}
-                                  />
-                                </label>
-
-                                <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                  Song Intro Notes
-                                  <textarea
-                                    name="songIntroNotes"
-                                    value={setlistSongEditFormState.songIntroNotes}
-                                    onChange={handleSetlistSongEditChange}
-                                    rows={5}
-                                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                    placeholder={`This next song was written by...\nHere's one we've always loved...\nFeature song for Kelly Caldwell...`}
-                                  />
-                                </label>
-
-                                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveSetlistSong(song.id)}
-                                    disabled={activeSetlistActionId === song.id}
-                                    className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                                  >
-                                    Save Song
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={handleCancelSetlistSongEdit}
-                                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
+                                <SongEditorPanel
+                                  formState={setlistSongEditFormState}
+                                  onChange={handleSetlistSongEditChange}
+                                  showTitle={false}
+                                  showKey={false}
+                                  showLeadVocal={false}
+                                  showTempo={false}
+                                  showSongType={false}
+                                  showNotes={false}
+                                  showLyrics={false}
+                                  customTitleField
+                                  performanceFlowField
+                                  songIntroNotesField
+                                  footer={
+                                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveSetlistSong(song.id)}
+                                        disabled={activeSetlistActionId === song.id}
+                                        className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                      >
+                                        Save Song
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={handleCancelSetlistSongEdit}
+                                        className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  }
+                                />
                               </div>
                             ) : null}
 
@@ -25290,121 +25271,58 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       className="rounded-xl border border-stone-200 bg-white px-4 py-4"
                     >
                       {editingPoolSongId === song.id ? (
-                        <div className="grid gap-4">
-                          <div className="grid gap-4 sm:grid-cols-2">
+                        <SongEditorPanel
+                          formState={poolSongEditFormState}
+                          onChange={handlePoolSongEditChange}
+                          topContent={
+                            <p className="text-sm text-stone-600">
+                              This song stays linked to the selected guest so it remains in the
+                              correct guest song list.
+                            </p>
+                          }
+                          readOnlyField={{
+                            label: "Guest",
+                            value: song.submitted_by_name ?? guestSingerName,
+                            placeholder: "Singer name",
+                          }}
+                          showChartUrl={false}
+                          showNotes={false}
+                          showLyrics={false}
+                          audioUploadInput={
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Song Title
+                              Optional Audio
                               <input
-                                type="text"
-                                name="title"
-                                value={poolSongEditFormState.title}
-                                onChange={handlePoolSongEditChange}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                required
+                                key={poolSongMp3InputKey}
+                                type="file"
+                                accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
+                                onChange={handlePoolSongMp3Change}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                               />
+                              <span className="text-xs font-normal text-stone-500">
+                                Optional. Upload a new MP3 or M4A attachment.
+                              </span>
                             </label>
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Guest
-                              <input
-                                type="text"
-                                value={song.submitted_by_name ?? guestSingerName}
-                                readOnly
-                                className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
-                                placeholder="Singer name"
-                              />
-                            </label>
-                          </div>
-
-                          <p className="text-sm text-stone-600">
-                            This song stays linked to the selected guest so it remains in the
-                            correct guest song list.
-                          </p>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Key
-                            <input
-                              type="text"
-                              name="key"
-                              value={poolSongEditFormState.key}
-                              onChange={handlePoolSongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              placeholder="Optional key"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Lead Vocal
-                            <input
-                              type="text"
-                              name="sungBy"
-                              value={poolSongEditFormState.sungBy}
-                              onChange={handlePoolSongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              placeholder="Optional lead vocal"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Tempo
-                            <select
-                              name="tempo"
-                              value={poolSongEditFormState.tempo}
-                              onChange={handlePoolSongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            >
-                              <option value="">Not set</option>
-                              <option value="fast">Fast</option>
-                              <option value="medium">Medium</option>
-                              <option value="slow">Slow</option>
-                            </select>
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Song Type
-                            <select
-                              name="songType"
-                              value={poolSongEditFormState.songType}
-                              onChange={handlePoolSongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            >
-                              <option value="">Not set</option>
-                              <option value="vocal">Vocal</option>
-                              <option value="instrumental">Instrumental</option>
-                            </select>
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Optional Audio
-                            <input
-                              key={poolSongMp3InputKey}
-                              type="file"
-                              accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
-                              onChange={handlePoolSongMp3Change}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                            />
-                            <span className="text-xs font-normal text-stone-500">
-                              Optional. Upload a new MP3 or M4A attachment.
-                            </span>
-                          </label>
-
-                          <div className="flex flex-col gap-3 sm:flex-row">
-                            <button
-                              type="button"
-                              onClick={() => handleSavePoolSong(song.id)}
-                              disabled={activePendingActionId === song.id}
-                              className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                            >
-                              Save Song
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleCancelPoolSongEdit}
-                              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
+                          }
+                          footer={
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleSavePoolSong(song.id)}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                              >
+                                Save Song
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelPoolSongEdit}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          }
+                        />
                       ) : (
                         <div className="flex flex-col gap-3">
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
@@ -25477,142 +25395,59 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
                 onSubmit={handleSubmit}
               >
-                <div className="grid gap-4">
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Song Title
-                    <input
-                      type="text"
-                      name="title"
-                      value={formState.title}
-                      onChange={handleChange}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Enter song title"
-                      required
-                    />
-                  </label>
-                </div>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Key
-                  <input
-                    type="text"
-                    name="key"
-                    value={formState.key}
-                    onChange={handleChange}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder="Optional key"
-                  />
-                </label>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Tempo
-                    <select
-                      name="tempo"
-                      value={formState.tempo}
-                      onChange={handleChange}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    >
-                      <option value="">Not set</option>
-                      <option value="fast">Fast</option>
-                      <option value="medium">Medium</option>
-                      <option value="slow">Slow</option>
-                    </select>
-                  </label>
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Song Type
-                    <select
-                      name="songType"
-                      value={formState.songType}
-                      onChange={handleChange}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    >
-                      <option value="">Not set</option>
-                      <option value="vocal">Vocal</option>
-                      <option value="instrumental">Instrumental</option>
-                    </select>
-                  </label>
-                </div>
-
+                <SongEditorPanel
+                  formState={formState}
+                  onChange={handleChange}
+                  showChartUrl
+                  chartUploadInput={
                     <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Notes / YouTube Link / Chart Link
-                      <textarea
-                        name="notes"
-                        value={formState.notes}
-                        onChange={handleChange}
-                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Optional YouTube link, chart link, arrangement notes, key notes, capo notes, or anything the band should know"
+                      Upload Chart
+                      <input
+                        key={songChartInputKey}
+                        type="file"
+                        accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
+                        onChange={handleSongChartChange}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                       />
+                      <span className="text-xs font-normal text-stone-500">
+                        Optional. PDF, DOC, DOCX, PNG, JPG, JPEG, or WEBP, up to 30 MB. Uploaded charts override the link above.
+                      </span>
                     </label>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Lyrics
-                  <textarea
-                    name="lyrics"
-                    value={formState.lyrics}
-                    onChange={handleChange}
-                    className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder="Optional lyrics"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Chart Link / Nashville Chart URL
-                  <input
-                    type="url"
-                    name="chartUrl"
-                    value={formState.chartUrl}
-                    onChange={handleChange}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder="https://..."
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Upload Chart
-                  <input
-                    key={songChartInputKey}
-                    type="file"
-                    accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
-                    onChange={handleSongChartChange}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                  />
-                  <span className="text-xs font-normal text-stone-500">
-                    Optional. PDF, DOC, DOCX, PNG, JPG, JPEG, or WEBP, up to 30 MB. Uploaded charts override the link above.
-                  </span>
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Optional Audio
-                  <input
-                    key={songMp3InputKey}
-                    type="file"
-                    accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
-                    onChange={handleSongMp3Change}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                  />
-                  <span className="text-xs font-normal text-stone-500">
-                    Optional. MP3 or M4A, up to 30 MB.
-                  </span>
-                </label>
-
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                  >
-                    {isSubmitting ? "Submitting..." : "Add to Library"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsAdminSongFormOpen(false)}
-                    className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                  >
-                    Cancel
-                  </button>
-                </div>
+                  }
+                  audioUploadInput={
+                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                      Optional Audio
+                      <input
+                        key={songMp3InputKey}
+                        type="file"
+                        accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
+                        onChange={handleSongMp3Change}
+                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                      />
+                      <span className="text-xs font-normal text-stone-500">
+                        Optional. MP3 or M4A, up to 30 MB.
+                      </span>
+                    </label>
+                  }
+                  footer={
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                      >
+                        {isSubmitting ? "Submitting..." : "Add to Library"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsAdminSongFormOpen(false)}
+                        className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  }
+                />
               </form>
             ) : null}
 
@@ -25643,95 +25478,44 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         className="rounded-xl border border-stone-200 bg-white px-4 py-4"
                       >
                         {editingPoolSongId === song.id ? (
-                          <div className="grid gap-4">
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Song Title
-                                <input
-                                  type="text"
-                                  name="title"
-                                  value={poolSongEditFormState.title}
-                                  onChange={handlePoolSongEditChange}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  required
-                                />
-                              </label>
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Guest
-                                <input
-                                  type="text"
-                                  value={song.submitted_by_name ?? guestSingerName}
-                                  readOnly
-                                  className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
-                                  placeholder="Singer name"
-                                />
-                              </label>
-                            </div>
-
-                            <p className="text-sm text-stone-600">
-                              This song stays linked to the selected guest so it remains in the
-                              correct guest song list.
-                            </p>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Key
-                              <input
-                                type="text"
-                                name="key"
-                                value={poolSongEditFormState.key}
-                                onChange={handlePoolSongEditChange}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                placeholder="Optional key"
-                              />
-                            </label>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Tempo
-                              <select
-                                name="tempo"
-                                value={poolSongEditFormState.tempo}
-                                onChange={handlePoolSongEditChange}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              >
-                                <option value="">Not set</option>
-                                <option value="fast">Fast</option>
-                                <option value="medium">Medium</option>
-                                <option value="slow">Slow</option>
-                              </select>
-                            </label>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Song Type
-                              <select
-                                name="songType"
-                                value={poolSongEditFormState.songType}
-                                onChange={handlePoolSongEditChange}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              >
-                                <option value="">Not set</option>
-                                <option value="vocal">Vocal</option>
-                                <option value="instrumental">Instrumental</option>
-                              </select>
-                            </label>
-
-                            <div className="flex flex-col gap-3 sm:flex-row">
-                              <button
-                                type="button"
-                                onClick={() => handleSavePoolSong(song.id)}
-                                disabled={activePendingActionId === song.id}
-                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                              >
-                                Save Song
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleCancelPoolSongEdit}
-                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
+                          <SongEditorPanel
+                            formState={poolSongEditFormState}
+                            onChange={handlePoolSongEditChange}
+                            topContent={
+                              <p className="text-sm text-stone-600">
+                                This song stays linked to the selected guest so it remains in the
+                                correct guest song list.
+                              </p>
+                            }
+                            readOnlyField={{
+                              label: "Guest",
+                              value: song.submitted_by_name ?? guestSingerName,
+                              placeholder: "Singer name",
+                            }}
+                            showLeadVocal={false}
+                            showNotes={false}
+                            showLyrics={false}
+                            showChartUrl={false}
+                            footer={
+                              <div className="flex flex-col gap-3 sm:flex-row">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSavePoolSong(song.id)}
+                                  disabled={activePendingActionId === song.id}
+                                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                                >
+                                  Save Song
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelPoolSongEdit}
+                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            }
+                          />
                         ) : (
                           <div className="flex flex-col gap-3">
                             <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
@@ -25810,163 +25594,76 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
               <div className="overflow-y-auto px-5 py-5 sm:px-6">
                 <form className="grid gap-4" onSubmit={handleSubmit}>
-                  <div className="grid gap-4">
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Song Title
-                      <input
-                        type="text"
-                        name="title"
-                        value={formState.title}
-                        onChange={handleChange}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Enter song title"
-                        required
-                      />
-                    </label>
-                  </div>
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Key
-                    <input
-                      type="text"
-                      name="key"
-                      value={formState.key}
-                      onChange={handleChange}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Optional key"
-                    />
-                  </label>
-
-                  <details className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-stone-800">
-                      Other Information
-                    </summary>
-
-                    <div className="mt-4 grid gap-4">
+                  <SongEditorPanel
+                    formState={formState}
+                    onChange={handleChange}
+                    detailsSummaryLabel="Other Information"
+                    detailsStartCollapsed
+                    detailsGuidance={
                       <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
                         Our house band has limited rehearsal time, so familiar songs are always
                         helpful. Original material is absolutely welcome, but if the song may not
                         be familiar to the band, please include anything that can help us prepare -
                         an MP3, YouTube link, chart, key notes, arrangement notes, or lyrics.
                       </div>
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Tempo
-                          <select
-                            name="tempo"
-                            value={formState.tempo}
-                            onChange={handleChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="fast">Fast</option>
-                            <option value="medium">Medium</option>
-                            <option value="slow">Slow</option>
-                          </select>
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Song Type
-                          <select
-                            name="songType"
-                            value={formState.songType}
-                            onChange={handleChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="vocal">Vocal</option>
-                            <option value="instrumental">Instrumental</option>
-                          </select>
-                        </label>
+                    }
+                    showChartUrl
+                    chartUploadInput={
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Upload Chart
+                        <input
+                          key={songChartInputKey}
+                          type="file"
+                          accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
+                          onChange={handleSongChartChange}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                        />
+                        <span className="text-xs font-normal text-stone-500">
+                          Optional. PDF, DOC, DOCX, PNG, JPG, JPEG, or WEBP, up to 30 MB. Uploaded charts override the link above.
+                        </span>
+                      </label>
+                    }
+                    audioUploadInput={
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Optional Audio
+                        <input
+                          key={songMp3InputKey}
+                          type="file"
+                          accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
+                          onChange={handleSongMp3Change}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                        />
+                        <span className="text-xs font-normal text-stone-500">
+                          Optional. MP3 or M4A, up to 30 MB.
+                        </span>
+                      </label>
+                    }
+                    supportMaterialNotice={
+                      hasGuestSubmissionSupportMaterial ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                          Thanks - that will help the band prepare.
+                        </div>
+                      ) : null
+                    }
+                    footer={
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                        >
+                          {isSubmitting ? "Submitting..." : "Add to Library"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsBandSongFormOpen(false)}
+                          className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Cancel
+                        </button>
                       </div>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Notes / YouTube Link / Chart Link
-                        <textarea
-                          name="notes"
-                          value={formState.notes}
-                          onChange={handleChange}
-                          className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional YouTube link, chart link, arrangement notes, key notes, capo notes, or anything the band should know"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Lyrics
-                        <textarea
-                          name="lyrics"
-                          value={formState.lyrics}
-                          onChange={handleChange}
-                          className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional lyrics"
-                        />
-                      </label>
-                    </div>
-                  </details>
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Chart Link / Nashville Chart URL
-                    <input
-                      type="url"
-                      name="chartUrl"
-                      value={formState.chartUrl}
-                      onChange={handleChange}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="https://..."
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Upload Chart
-                    <input
-                      key={songChartInputKey}
-                      type="file"
-                      accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
-                      onChange={handleSongChartChange}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                    />
-                    <span className="text-xs font-normal text-stone-500">
-                      Optional. PDF, DOC, DOCX, PNG, JPG, JPEG, or WEBP, up to 30 MB. Uploaded charts override the link above.
-                    </span>
-                  </label>
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Optional Audio
-                    <input
-                      key={songMp3InputKey}
-                      type="file"
-                      accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
-                      onChange={handleSongMp3Change}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                    />
-                    <span className="text-xs font-normal text-stone-500">
-                      Optional. MP3 or M4A, up to 30 MB.
-                    </span>
-                  </label>
-
-                  {hasGuestSubmissionSupportMaterial ? (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-                      Thanks - that will help the band prepare.
-                    </div>
-                  ) : null}
-
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                    >
-                      {isSubmitting ? "Submitting..." : "Add to Library"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsBandSongFormOpen(false)}
-                      className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                    }
+                  />
                 </form>
               </div>
             </section>
@@ -26002,148 +25699,74 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
               <div className="overflow-y-auto px-5 py-5 sm:px-6">
                 <form className="grid gap-4" onSubmit={handleSubmit}>
-                  <div className="grid gap-4">
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Song Title
-                      <input
-                        type="text"
-                        name="title"
-                        value={formState.title}
-                        onChange={handleChange}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Enter song title"
-                        required
-                      />
-                    </label>
-                  </div>
+                  <SongEditorPanel
+                    formState={formState}
+                    onChange={handleChange}
+                    topContent={
+                      <>
+                        <div className="flex flex-col gap-2 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                          {guestProfiles.length === 0 ? (
+                            <p>Please complete guest info first before submitting songs.</p>
+                          ) : selectedGuestProfile ? (
+                            <p>
+                              This song will be submitted for {selectedGuestProfile.name || "your guest profile"}.
+                            </p>
+                          ) : (
+                            <p>Choose a guest from the Songs tab before submitting a song.</p>
+                          )}
+                          <p>You can submit multiple songs for this show. Each one will be saved as its own entry.</p>
+                        </div>
 
-                  <div className="flex flex-col gap-2 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-                    {guestProfiles.length === 0 ? (
-                      <p>Please complete guest info first before submitting songs.</p>
-                    ) : selectedGuestProfile ? (
-                      <p>
-                        This song will be submitted for {selectedGuestProfile.name || "your guest profile"}.
-                      </p>
-                    ) : (
-                      <p>Choose a guest from the Songs tab before submitting a song.</p>
-                    )}
-                    <p>You can submit multiple songs for this show. Each one will be saved as its own entry.</p>
-                  </div>
-
-                  {selectedGuestProfile ? (
-                    <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                        Selected Guest
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-stone-900">
-                        {selectedGuestProfile.name || "Guest"}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Key
-                    <input
-                      type="text"
-                      name="key"
-                      value={formState.key}
-                      onChange={handleChange}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                      placeholder="Optional key"
-                    />
-                  </label>
-
-                  <details className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-                    <summary className="cursor-pointer list-none text-sm font-semibold text-stone-800">
-                      Other Information
-                    </summary>
-
-                    <div className="mt-4 grid gap-4">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Tempo
-                          <select
-                            name="tempo"
-                            value={formState.tempo}
-                            onChange={handleChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="fast">Fast</option>
-                            <option value="medium">Medium</option>
-                            <option value="slow">Slow</option>
-                          </select>
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Song Type
-                          <select
-                            name="songType"
-                            value={formState.songType}
-                            onChange={handleChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          >
-                            <option value="">Not set</option>
-                            <option value="vocal">Vocal</option>
-                            <option value="instrumental">Instrumental</option>
-                          </select>
-                        </label>
+                        {selectedGuestProfile ? (
+                          <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              Selected Guest
+                            </p>
+                            <p className="mt-1 text-sm font-medium text-stone-900">
+                              {selectedGuestProfile.name || "Guest"}
+                            </p>
+                          </div>
+                        ) : null}
+                      </>
+                    }
+                    detailsSummaryLabel="Other Information"
+                    detailsStartCollapsed
+                    showLeadVocal={false}
+                    showChartUrl={false}
+                    audioUploadInput={
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                        Optional Audio
+                        <input
+                          key={songMp3InputKey}
+                          type="file"
+                          accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
+                          onChange={handleSongMp3Change}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                        />
+                        <span className="text-xs font-normal text-stone-500">
+                          Optional. MP3 or M4A, up to 30 MB.
+                        </span>
+                      </label>
+                    }
+                    footer={
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting || isGuestSongSubmissionBlocked || requiresGuestSelection}
+                          className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                        >
+                          {isSubmitting ? "Submitting..." : "Submit Song"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsGuestSongFormOpen(false)}
+                          className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Cancel
+                        </button>
                       </div>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Notes / YouTube Link / Chart Link
-                        <textarea
-                          name="notes"
-                          value={formState.notes}
-                          onChange={handleChange}
-                          className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional YouTube link, chart link, arrangement notes, key notes, capo notes, or anything the band should know"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Lyrics
-                        <textarea
-                          name="lyrics"
-                          value={formState.lyrics}
-                          onChange={handleChange}
-                          className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional lyrics"
-                        />
-                      </label>
-                    </div>
-                  </details>
-
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                    Optional Audio
-                    <input
-                      key={songMp3InputKey}
-                      type="file"
-                      accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
-                      onChange={handleSongMp3Change}
-                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                    />
-                    <span className="text-xs font-normal text-stone-500">
-                      Optional. MP3 or M4A, up to 30 MB.
-                    </span>
-                  </label>
-
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || isGuestSongSubmissionBlocked || requiresGuestSelection}
-                      className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                    >
-                      {isSubmitting ? "Submitting..." : "Submit Song"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsGuestSongFormOpen(false)}
-                      className="rounded-xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                    }
+                  />
                 </form>
               </div>
             </section>
@@ -26176,140 +25799,51 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
                     >
                       {editingPoolSongId === song.id ? (
-                        <div className="grid gap-4">
-                          <div className="grid gap-4 sm:grid-cols-2">
+                        <SongEditorPanel
+                          formState={poolSongEditFormState}
+                          onChange={handlePoolSongEditChange}
+                          readOnlyField={{
+                            label: "Guest",
+                            value: song.submitted_by_name ?? "",
+                            placeholder: "Guest name",
+                          }}
+                          notesLabel="Notes / Reference Link"
+                          showChartUrl={false}
+                          audioUploadInput={
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Song Title
+                              Optional Audio
                               <input
-                                type="text"
-                                name="title"
-                                value={poolSongEditFormState.title}
-                                onChange={handlePoolSongEditChange}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                required
+                                key={poolSongMp3InputKey}
+                                type="file"
+                                accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
+                                onChange={handlePoolSongMp3Change}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                               />
+                              <span className="text-xs font-normal text-stone-500">
+                                Optional. Upload a new MP3 or M4A attachment.
+                              </span>
                             </label>
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Guest
-                              <input
-                                type="text"
-                                value={song.submitted_by_name ?? ""}
-                                readOnly
-                                className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700 outline-none"
-                                placeholder="Guest name"
-                              />
-                            </label>
-                          </div>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Key
-                            <input
-                              type="text"
-                              name="key"
-                              value={poolSongEditFormState.key}
-                              onChange={handlePoolSongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              placeholder="Optional key"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Lead Vocal
-                            <input
-                              type="text"
-                              name="sungBy"
-                              value={poolSongEditFormState.sungBy}
-                              onChange={handlePoolSongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              placeholder="Optional lead vocal"
-                            />
-                          </label>
-
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Tempo
-                              <select
-                                name="tempo"
-                                value={poolSongEditFormState.tempo}
-                                onChange={handlePoolSongEditChange}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          }
+                          footer={
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => handleSavePoolSong(song.id)}
+                                disabled={activePendingActionId === song.id}
+                                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                               >
-                                <option value="">Not set</option>
-                                <option value="fast">Fast</option>
-                                <option value="medium">Medium</option>
-                                <option value="slow">Slow</option>
-                              </select>
-                            </label>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Song Type
-                              <select
-                                name="songType"
-                                value={poolSongEditFormState.songType}
-                                onChange={handlePoolSongEditChange}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                                Save Song
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelPoolSongEdit}
+                                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                               >
-                                <option value="">Not set</option>
-                                <option value="vocal">Vocal</option>
-                                <option value="instrumental">Instrumental</option>
-                              </select>
-                            </label>
-                          </div>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Notes / Reference Link
-                            <textarea
-                              name="notes"
-                              value={poolSongEditFormState.notes ?? ""}
-                              onChange={handlePoolSongEditChange}
-                              className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              placeholder="Optional YouTube link, chart link, arrangement notes, key notes, capo notes, or anything the band should know"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Lyrics
-                            <textarea
-                              name="lyrics"
-                              value={poolSongEditFormState.lyrics ?? ""}
-                              onChange={handlePoolSongEditChange}
-                              className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              placeholder="Optional lyrics"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Optional Audio
-                            <input
-                              key={poolSongMp3InputKey}
-                              type="file"
-                              accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
-                              onChange={handlePoolSongMp3Change}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                            />
-                            <span className="text-xs font-normal text-stone-500">
-                              Optional. Upload a new MP3 or M4A attachment.
-                            </span>
-                          </label>
-
-                          <div className="flex flex-col gap-3 sm:flex-row">
-                            <button
-                              type="button"
-                              onClick={() => handleSavePoolSong(song.id)}
-                              disabled={activePendingActionId === song.id}
-                              className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                            >
-                              Save Song
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleCancelPoolSongEdit}
-                              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
+                                Cancel
+                              </button>
+                            </div>
+                          }
+                        />
                       ) : (
                         <>
                           <div className="flex flex-col gap-1">
@@ -26518,145 +26052,48 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4"
                   >
                     {editingLibrarySongId === song.id ? (
-                      <div className="grid gap-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
+                      <SongEditorPanel
+                        formState={librarySongEditFormState}
+                        onChange={handleLibrarySongEditChange}
+                        readOnlyField={{
+                          label: "Created By",
+                          value: formatLibrarySourceRole(song.source_role),
+                        }}
+                        notesLabel="Notes"
+                        notesPlaceholder="Optional notes for the setlist side"
+                        showChartUrl
+                        chartUploadInput={
                           <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Song Title
+                            Upload Chart
                             <input
-                              type="text"
-                              name="title"
-                              value={librarySongEditFormState.title}
-                              onChange={handleLibrarySongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              required
+                              key={librarySongChartInputKey}
+                              type="file"
+                              accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
+                              onChange={handleLibrarySongChartChange}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                             />
+                            <span className="text-xs font-normal text-stone-500">
+                              Optional. Upload a chart file to use instead of the link above.
+                            </span>
                           </label>
-                          <div className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            <span>Created By</span>
-                            <div className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2.5 text-sm text-stone-700">
-                              {formatLibrarySourceRole(song.source_role)}
-                            </div>
-                          </div>
-                        </div>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Key
-                          <input
-                            type="text"
-                            name="key"
-                            value={librarySongEditFormState.key}
-                            onChange={handleLibrarySongEditChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Optional key"
-                          />
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Lead Vocal
-                          <input
-                            type="text"
-                            name="sungBy"
-                            value={librarySongEditFormState.sungBy}
-                            onChange={handleLibrarySongEditChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Optional singer / lead vocal"
-                          />
-                        </label>
-
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        }
+                        audioUploadInput={
                           <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Tempo
-                            <select
-                              name="tempo"
-                              value={librarySongEditFormState.tempo}
-                              onChange={handleLibrarySongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            >
-                              <option value="">Not set</option>
-                              <option value="fast">Fast</option>
-                              <option value="medium">Medium</option>
-                              <option value="slow">Slow</option>
-                            </select>
+                            Optional Audio
+                            <input
+                              key={librarySongMp3InputKey}
+                              type="file"
+                              accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
+                              onChange={handleLibrarySongMp3Change}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
+                            />
+                            <span className="text-xs font-normal text-stone-500">
+                              Optional. Upload a new MP3 or M4A attachment.
+                            </span>
                           </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                            Song Type
-                            <select
-                              name="songType"
-                              value={librarySongEditFormState.songType}
-                              onChange={handleLibrarySongEditChange}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            >
-                              <option value="">Not set</option>
-                              <option value="vocal">Vocal</option>
-                              <option value="instrumental">Instrumental</option>
-                            </select>
-                          </label>
-                        </div>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Notes
-                          <textarea
-                            name="notes"
-                            value={librarySongEditFormState.notes ?? ""}
-                            onChange={handleLibrarySongEditChange}
-                            className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Optional notes for the setlist side"
-                          />
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Lyrics
-                          <textarea
-                            name="lyrics"
-                            value={librarySongEditFormState.lyrics ?? ""}
-                            onChange={handleLibrarySongEditChange}
-                            className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Optional lyrics"
-                          />
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Chart Link / Nashville Chart URL
-                          <input
-                            type="url"
-                            name="chartUrl"
-                            value={librarySongEditFormState.chartUrl ?? ""}
-                            onChange={handleLibrarySongEditChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="https://..."
-                          />
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Upload Chart
-                          <input
-                            key={librarySongChartInputKey}
-                            type="file"
-                            accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp"
-                            onChange={handleLibrarySongChartChange}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                          />
-                          <span className="text-xs font-normal text-stone-500">
-                            Optional. Upload a chart file to use instead of the link above.
-                          </span>
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Optional Audio
-                          <input
-                            key={librarySongMp3InputKey}
-                            type="file"
-                            accept="audio/mpeg,audio/mp4,audio/x-m4a,.mp3,.m4a"
-                            onChange={handleLibrarySongMp3Change}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                          />
-                          <span className="text-xs font-normal text-stone-500">
-                            Optional. Upload a new MP3 or M4A attachment.
-                          </span>
-                        </label>
-
-                        <div className="flex flex-col gap-3 sm:flex-row">
+                        }
+                        footer={
+                          <div className="flex flex-col gap-3 sm:flex-row">
                             <button
                               type="button"
                               onClick={() => handleSaveLibrarySong(song.id)}
@@ -26666,16 +26103,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
                             >
                               Save Song
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCancelLibrarySongEdit}
-                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelLibrarySongEdit}
+                              className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        }
+                      />
                     ) : (
                       <>
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
