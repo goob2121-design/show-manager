@@ -123,13 +123,12 @@ export async function AvailableSeatsView({ show }: AvailableSeatsViewProps) {
   const assignments = await loadSeatAssignments(show.id);
   const seatStates = buildSeatStates(assignments);
   const formattedShowDate = formatShowDate(show.show_date);
-
   return (
     <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(200,155,60,0.08),transparent_24%),linear-gradient(180deg,#060708,#0a1018_46%,#070b11_100%)] px-4 py-5 text-[#f5f1e8] sm:px-6 sm:py-7 lg:px-8">
       <section className="mx-auto flex w-full max-w-5xl flex-col gap-4 overflow-x-hidden">
         <header className="relative overflow-hidden rounded-[1.8rem] border border-[rgba(200,155,60,0.18)] shadow-[0_24px_50px_rgba(0,0,0,0.32)]">
           <Image
-            src="/portal_bkg.png"
+            src="/cmms-header.png"
             alt=""
             fill
             priority
@@ -192,7 +191,7 @@ export async function AvailableSeatsView({ show }: AvailableSeatsViewProps) {
               alt={RESERVED_SEATING_VENUE.venueName}
               width={900}
               height={520}
-              className="h-36 w-full object-cover sm:h-40"
+              className="h-44 w-full object-cover sm:h-48"
             />
           </div>
         </section>
@@ -215,6 +214,20 @@ export async function AvailableSeatsView({ show }: AvailableSeatsViewProps) {
             chromeVariant="cmms-public"
           />
         </section>
+
+        <div className="flex justify-center">
+          <a
+            href="https://www.cumberlandmountainmusic.com/contact"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-full border border-[rgba(200,155,60,0.18)] bg-[rgba(255,255,255,0.03)] px-4 py-2 text-center text-sm text-[#e9dece] shadow-[0_12px_24px_rgba(0,0,0,0.16)] transition hover:border-[rgba(200,155,60,0.3)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#fff7eb] sm:text-[15px]"
+          >
+            <span aria-hidden="true" className="text-[#d8b35b]">
+              ?
+            </span>
+            <span>Questions or having trouble? Contact us and we&apos;ll be happy to help.</span>
+          </a>
+        </div>
       </section>
     </main>
   );

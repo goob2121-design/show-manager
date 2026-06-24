@@ -226,13 +226,20 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
 
       <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6 overflow-x-hidden">
         <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#08111f]/95 shadow-[0_24px_60px_rgba(2,6,23,0.45)]">
-          <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.18),_transparent_30%),linear-gradient(135deg,_#0a182a,_#091220_58%,_#040911)] px-4 py-5 text-white sm:px-6 lg:px-8 lg:py-6">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+          <div className="relative border-b border-white/10 px-4 py-5 text-white sm:px-6 lg:px-8 lg:py-6">
+            <img
+              src="/cmms-header.png"
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 h-full w-full object-cover object-center"
+            />
+            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(10,24,42,0.78),rgba(9,18,32,0.72)_58%,rgba(4,9,17,0.86)),radial-gradient(circle_at_top_right,rgba(251,191,36,0.12),transparent_22%)]" />
+            <div className="relative grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
               <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-950/30 shadow-[0_20px_40px_rgba(2,6,23,0.35)]">
                 <img
                   src={venuePhotoSrc}
                   alt={RESERVED_SEATING_VENUE.venueName}
-                  className="h-48 w-full object-cover sm:h-56"
+                  className="h-56 w-full object-cover sm:h-64"
                   onError={() => {
                     if (venuePhotoSrc !== RESERVED_SEATING_VENUE.venuePhotoFallbackPath) {
                       setVenuePhotoSrc(RESERVED_SEATING_VENUE.venuePhotoFallbackPath);
@@ -240,7 +247,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                   }}
                 />
               </div>
-              <div>
+              <div className="relative">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="inline-flex rounded-full border border-emerald-300/30 bg-emerald-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-100">
                     Reserved Seating

@@ -20,7 +20,7 @@ export const RESERVED_SEATING_SECTION_CONFIG = [
 export const RESERVED_SEATING_VENUE_CONFIG = {
   venueName: "Cumberland Gap Convention Center",
   venueAddress: "601 Colwyn St, Cumberland Gap, TN 37724",
-  venuePhotoPath: "/cumberland-gap-convention-center.jpg",
+  venuePhotoPath: "/cumberland-gap-convention-center-night.png",
   venuePhotoFallbackPath: "/portal_bkg.png",
   stageLabel: "Stage",
   frontLabel: "Front Of Room",
