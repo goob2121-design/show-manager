@@ -1,4 +1,4 @@
-﻿import { notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "./path";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
@@ -123,8 +123,8 @@ export async function AvailableSeatsView({ show }: AvailableSeatsViewProps) {
   const seatStates = buildSeatStates(assignments);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 text-slate-100 sm:px-6 sm:py-8">
-      <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6">
+    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 text-slate-100 sm:px-6 sm:py-8">
+      <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6 overflow-x-hidden">
         <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#08111f]/95 shadow-[0_24px_60px_rgba(2,6,23,0.45)]">
           <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.18),_transparent_30%),linear-gradient(135deg,_#0a182a,_#091220_58%,_#040911)] px-4 py-5 text-white sm:px-6 lg:px-8 lg:py-6">
             <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
@@ -159,7 +159,7 @@ export async function AvailableSeatsView({ show }: AvailableSeatsViewProps) {
             </div>
           </div>
 
-          <div className="px-4 py-6 sm:px-6">
+          <div className="w-full max-w-full overflow-hidden px-4 py-6 sm:px-6">
             <ReservedSeatMap
               seatStates={seatStates}
               title="Current Seat Availability"

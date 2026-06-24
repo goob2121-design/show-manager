@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
@@ -195,7 +195,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const formattedShowDate = formatShowDate(show.show_date);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 pb-28 text-slate-100 sm:px-6 sm:py-8 sm:pb-8">
+    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 pb-28 text-slate-100 sm:px-6 sm:py-8 sm:pb-8">
       <style jsx global>{`
         @media print {
           body {
@@ -224,7 +224,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
         }
       `}</style>
 
-      <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6">
+      <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6 overflow-x-hidden">
         <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#08111f]/95 shadow-[0_24px_60px_rgba(2,6,23,0.45)]">
           <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.18),_transparent_30%),linear-gradient(135deg,_#0a182a,_#091220_58%,_#040911)] px-4 py-5 text-white sm:px-6 lg:px-8 lg:py-6">
             <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
@@ -262,7 +262,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             </div>
           </div>
 
-          <div className="grid gap-6 px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
+          <div className="grid w-full max-w-full gap-6 overflow-x-hidden px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
             <aside className="order-1 rounded-[1.75rem] border border-white/10 bg-slate-950/45 p-4 sm:p-5 xl:order-2 xl:sticky xl:top-6">
               <h2 className="text-lg font-semibold text-white">Selection Summary</h2>
               <p className="mt-1 text-sm text-slate-300">
@@ -323,7 +323,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
               )}
             </aside>
 
-            <div className="order-2 xl:order-1">
+            <div className="order-2 w-full max-w-full overflow-hidden xl:order-1">
               <ReservedSeatMap
                 seatStates={seatStates}
                 onSeatClick={handleSeatClick}
