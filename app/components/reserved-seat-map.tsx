@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Fragment } from "react";
 import {
@@ -107,8 +107,8 @@ export function ReservedSeatMap({
           Swipe left or right to view all seats.
         </p>
 
-        <div className="overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
-          <div className="mx-auto w-full min-w-[48rem] max-w-[70rem] rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:p-4 lg:min-w-0 lg:p-4 xl:p-5">
+        <div className="w-full overflow-x-auto overscroll-x-contain touch-pan-x pb-2 [-webkit-overflow-scrolling:touch]">
+          <div className="w-[52rem] max-w-none rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:w-[54rem] sm:p-4 lg:mx-auto lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5">
             <div className="mx-auto max-w-[62rem]">
               <div className="mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1 rounded-[1.2rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3.5">
                 <div className="h-1.5 w-full rounded-full bg-[linear-gradient(90deg,transparent,rgba(251,191,36,0.45),transparent)]" />
