@@ -918,28 +918,28 @@ function SelectedReservedSeatCardsPrintView({
                   alt="Cumberland Mountain Music Show logo"
                   className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
                 />
-                <div className="flex flex-1 flex-col items-center justify-center py-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
+                <div className="flex flex-1 flex-col items-center justify-center py-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[11px]">
                     Seat Reserved
                   </p>
-                  <h2 className="mt-2 text-lg font-black uppercase tracking-[0.06em] text-stone-950 print:text-[17px]">
+                  <h2 className="mt-1 text-[1.95rem] font-black tracking-[0.01em] text-stone-950 print:text-[30px] leading-none max-w-full">
                     {card.customer_name?.trim() || "Reserved Guest"}
                   </h2>
                   {reservedLink?.is_complimentary ? (
-                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-stone-600 print:text-[9px]">
+                    <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[9px]">
                       Complimentary
                     </p>
                   ) : null}
                   {reservedLink?.source_note?.trim() ? (
-                    <p className="mt-1 text-[10px] font-medium tracking-[0.12em] text-stone-500 print:text-[9px]">
+                    <p className="mt-1 text-[10px] font-medium tracking-[0.1em] text-stone-500 print:text-[9px]">
                       {reservedLink.source_note}
                     </p>
                   ) : null}
-                  <p className="mt-3 text-sm font-semibold text-stone-800 print:text-[12px]">{card.seat_id}</p>
-                  <p className="mt-1 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
+                  <p className="mt-1.5 text-lg font-black tracking-[0.03em] text-stone-900 print:text-[18px]">{card.seat_id}</p>
+                  <p className="mt-1 text-sm font-semibold tracking-[0.12em] text-stone-600 print:text-[12px]">
                     Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
                   </p>
-                  <p className="mt-3 text-xs font-medium tracking-[0.14em] text-stone-500 print:text-[10px]">
+                  <p className="mt-1.5 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
                     {formatShowDate(showDate)}
                   </p>
                 </div>
