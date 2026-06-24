@@ -760,6 +760,19 @@ function buildProposalCoverageLabel({
   return showName.trim() || showDateLabel || "Current Show";
 }
 
+function repairGuestPortalText(value: string | null | undefined) {
+  const text = value ?? "";
+
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢/g, "'")
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â/g, "—")
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢/g, "•");
+}
+
 function formatShowDate(showDate: string | null) {
   if (!showDate) {
     return "Date TBD";
@@ -5969,7 +5982,7 @@ function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
     parkingNotes: show.parking_notes ?? "",
     loadInNotes: show.load_in_notes ?? "",
     announcements: show.announcements ?? "",
-    guestMessage: show.guest_message ?? "",
+    guestMessage: repairGuestPortalText(show.guest_message),
     promoShort: show.promo_short ?? "",
     promoLong: show.promo_long ?? "",
     ticketLink: show.ticket_link ?? "",
@@ -15720,19 +15733,19 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       ]
     : [];
 
-  const guestMessage = show?.guest_message?.trim() ?? "";
+  const guestMessage = repairGuestPortalText(show?.guest_message).trim();
   const formattedGuestShowDate = formatShowDateWithOrdinal(show?.show_date ?? null);
   const guestWelcomeMessage =
     guestMessage ||
     [
       DEFAULT_GUEST_WELCOME_MESSAGE_INTRO,
       formattedGuestShowDate
-        ? `WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re truly honored to have you as part of our ${formattedGuestShowDate} Show! This event is built around great music, great people, and the rich tradition of mountain and acoustic sound, and weÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re excited for you to help us bring that to life on stage.`
-        : "WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re truly honored to have you as part of the show!",
-      "This portal is here to make your experience as smooth as possible. YouÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ll find everything you need in one place ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â from submitting your song choices, to reviewing the show itinerary, to sharing any promo materials we may need.",
-      "Our goal is simple: take care of the details so you can focus on what you do best ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â making great music.",
-      "If you need anything at all, donÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢t hesitate to reach out. WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re looking forward to working with you and putting on a great show together.",
-      "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Bryan Turner & The Cumberland Mountain Music Show Team",
+        ? `We're truly honored to have you as part of our ${formattedGuestShowDate} Show! This event is built around great music, great people, and the rich tradition of mountain and acoustic sound, and we're excited for you to help us bring that to life on stage.`
+        : "We're truly honored to have you as part of the show!",
+      "This portal is here to make your experience as smooth as possible. You'll find everything you need in one place \u2014 from submitting your song choices, to reviewing the show itinerary, to sharing any promo materials we may need.",
+      "Our goal is simple: take care of the details so you can focus on what you do best \u2014 making great music.",
+      "If you need anything at all, don't hesitate to reach out. We're looking forward to working with you and putting on a great show together.",
+      "\u2014 Bryan Turner & The Cumberland Mountain Music Show Team",
     ].join("\n\n");
   const portalGuestProfiles = isPrivateGuestPortal
     ? guestProfiles
@@ -15778,14 +15791,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
   const privateGuestWelcomeInformation = isPrivateGuestPortal
     ? {
         intro: formattedGuestShowDate
-          ? `WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re excited to have you as part of the Cumberland Mountain Music Show on ${formattedGuestShowDate}!`
-          : "WeÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re excited to have you as part of the Cumberland Mountain Music Show!",
+          ? `We're excited to have you as part of the Cumberland Mountain Music Show on ${formattedGuestShowDate}!`
+          : "We're excited to have you as part of the Cumberland Mountain Music Show!",
         summary:
-          "This portal contains everything youÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes.",
+          "This portal contains everything you'll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes.",
         portalSections: [
-          "Songs ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare.",
-          "Artist Info ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Add your bio, hometown, photo, social media links, and other information for promo materials and introductions.",
-          "Itinerary ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Contains show-day details including call times, arrival information, show schedule, and other important notes.",
+          "Songs \u2014 Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare.",
+          "Artist Info \u2014 Add your bio, hometown, photo, social media links, and other information for promo materials and introductions.",
+          "Itinerary \u2014 Contains show-day details including call times, arrival information, show schedule, and other important notes.",
         ],
         showInformation: [
           "Our shows typically consist of approximately 45 minutes of music, followed by a short intermission, and then another 45 minutes to finish the evening.",
