@@ -6385,6 +6385,10 @@ export function ShowPage({
   const [selectedCompTicketIds, setSelectedCompTicketIds] = useState<string[]>([]);
   const [isTicketImportOpen, setIsTicketImportOpen] = useState(false);
   const [isManualTicketFormOpen, setIsManualTicketFormOpen] = useState(false);
+  const [activeTicketWorkflowSection, setActiveTicketWorkflowSection] = useState<
+    "ticket-sales" | "reserved-seating" | "sponsor-comp" | "reports" | null
+  >("ticket-sales");
+  const [isTicketTotalsOpen, setIsTicketTotalsOpen] = useState(false);
   const [activeGuestAppearanceSaveId, setActiveGuestAppearanceSaveId] = useState<string | null>(null);
   const [activeGuestConfirmationSaveId, setActiveGuestConfirmationSaveId] = useState<string | null>(null);
   const [openGuestAppearanceDetailsById, setOpenGuestAppearanceDetailsById] = useState<
@@ -19468,64 +19472,303 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
         {shouldShowAdminCompTicketsTab ? (
           <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex flex-col gap-1">
-                <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
-                <p className="text-sm text-stone-600">
-                  Track paid online tickets, complimentary tickets, expected attendance, and check-in management for this show.
-                </p>
-              </div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-                <Link
-                  href={`/admin/${showSlug}/door`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 sm:w-auto"
-                >
-                  Open Door Mode
-                </Link>
-                <Link
-                  href={`/admin/${showSlug}/print/door-guest-list`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                >
-                  Print Door Guest List
-                </Link>
-                <Link
-                  href={`/admin/${showSlug}/print/reserved-seat-cards`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                >
-                  Print Generic Reserved Seat Cards (Paid Online Fallback)
-                </Link>
-                <Link
-                  href={`/admin/${showSlug}/print/comp-reserved-seat-cards`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                >
-                  Print Comp Reserved Seat Cards
-                </Link>
-                <Link
-                  href={`/admin/${showSlug}/print/blank-seat-cards`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                >
-                  Print Blank Seat Cards
-                </Link>
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
+              <p className="text-sm text-stone-600">
+                Organize ticket imports, reserved seating, sponsor comps, and show-night check-in in the order you actually use them.
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              <div className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <div>
+                  <h3 className="text-base font-semibold text-stone-900">Summary / Totals</h3>
+                  <p className="text-sm text-stone-600">Reference numbers for online sales, complimentary tickets, attendance, and sponsor comps.</p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setIsReservedSeatingOpen((currentValue) => !currentValue)}
-                  className={`inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
-                    isReservedSeatingOpen
-                      ? "border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
-                      : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
-                  }`}
+                  onClick={() => setIsTicketTotalsOpen((currentValue) => !currentValue)}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                 >
-                  {isReservedSeatingOpen ? "Hide Reserved Seating" : "Reserved Seating"}
+                  {isTicketTotalsOpen ? "Hide Totals" : "Show Totals"}
                 </button>
               </div>
+
+              {isTicketTotalsOpen ? (
+                <div className="grid gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Paid Online Tickets
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{paidOnlineTickets}</p>
+                      <p className="mt-1 text-sm text-stone-500">{paidOnlineOrders} order{paidOnlineOrders === 1 ? "" : "s"}</p>
+                    </article>
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Paid Online Revenue
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{formatCurrency(paidOnlineRevenue)}</p>
+                    </article>
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Complimentary Tickets
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{complimentaryTickets}</p>
+                    </article>
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Complimentary Ticket Value
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{formatCurrency(complimentaryTicketValue)}</p>
+                    </article>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Manual / Offline Tickets
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{manualTickets}</p>
+                    </article>
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Total Expected Attendance
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{totalCompTickets}</p>
+                    </article>
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Checked In
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-emerald-700">{checkedInCompTickets} of {totalCompTickets}</p>
+                    </article>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Sponsor Comps Included
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsAllowed}</p>
+                    </article>
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Sponsor Comps Checked In
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsCheckedIn}</p>
+                    </article>
+                    <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        Sponsor Comps Remaining
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsRemaining}</p>
+                    </article>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
-            <SectionLoadWarning message={dataSectionErrors.compTickets} />
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  key: "ticket-sales",
+                  title: "Ticket Sales & Check-In",
+                  subtitle: "Import orders, add tickets, and open door mode",
+                },
+                {
+                  key: "reserved-seating",
+                  title: "Reserved Seating",
+                  subtitle: "Manage seat assignments and seat cards",
+                },
+                {
+                  key: "sponsor-comp",
+                  title: "Sponsor & Comp Tickets",
+                  subtitle: "Manage sponsor comps and guest tickets",
+                },
+                {
+                  key: "reports",
+                  title: "Reports & Printouts",
+                  subtitle: "Print lists and backup sheets",
+                },
+              ].map((section) => {
+                const isActive = activeTicketWorkflowSection === section.key;
 
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-              Online orders are automatically added to Reserved Seating. Print assigned seat cards from Reserved Seating after seats are selected. Use the paid online fallback print option only for orders that still need generic reserved cards.
+                return (
+                  <button
+                    key={section.key}
+                    type="button"
+                    onClick={() =>
+                      setActiveTicketWorkflowSection((currentValue) =>
+                        currentValue === section.key
+                          ? null
+                          : (section.key as "ticket-sales" | "reserved-seating" | "sponsor-comp" | "reports"),
+                      )
+                    }
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ${
+                      isActive
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                        : "border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-50"
+                    }`}
+                  >
+                    <p className="text-base font-semibold">{section.title}</p>
+                    <p className={`mt-1 text-sm ${isActive ? "text-emerald-800" : "text-stone-600"}`}>{section.subtitle}</p>
+                  </button>
+                );
+              })}
             </div>
 
+            {activeTicketWorkflowSection ? (
+              <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
+                {activeTicketWorkflowSection === "ticket-sales" ? (
+                  <div className="grid gap-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-stone-900">Ticket Sales &amp; Check-In</h3>
+                      <p className="text-sm text-stone-600">Import paid online orders, add manual tickets, or jump straight into door mode.</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <button
+                        type="button"
+                        onClick={() => setIsTicketImportOpen((currentValue) => !currentValue)}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        {isTicketImportOpen ? "Hide Import Paid Online Orders" : "Import Paid Online Orders"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsManualTicketFormOpen((currentValue) => !currentValue)}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        {isManualTicketFormOpen ? "Hide Manual / Complimentary Ticket" : "Add Manual / Complimentary Ticket"}
+                      </button>
+                      <Link
+                        href={`/admin/${showSlug}/door`}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                      >
+                        Open Door Mode / Door Check-In
+                      </Link>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeTicketWorkflowSection === "reserved-seating" ? (
+                  <div className="grid gap-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-stone-900">Reserved Seating</h3>
+                      <p className="text-sm text-stone-600">Manage reserved seating, public availability, and seat card printing from one place.</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <button
+                        type="button"
+                        onClick={() => setIsReservedSeatingOpen((currentValue) => !currentValue)}
+                        className={`inline-flex min-h-12 items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                          isReservedSeatingOpen
+                            ? "border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
+                            : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
+                        }`}
+                      >
+                        {isReservedSeatingOpen ? "Hide Reserved Seating" : "Open Reserved Seating"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOpenPublicSeatAvailabilityPage}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Public Seat Availability
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyPublicSeatAvailabilityLink()}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                      >
+                        {copiedPublicSeatAvailabilityLink ? "Copied Public Link" : "Copy Public Seat Availability Link"}
+                      </button>
+                      <Link
+                        href={`/admin/${showSlug}/print/reserved-seat-cards`}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Print Reserved Seat Cards
+                      </Link>
+                      <Link
+                        href={`/admin/${showSlug}/print/comp-reserved-seat-cards`}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Print Comp Reserved Seat Cards
+                      </Link>
+                      <Link
+                        href={`/admin/${showSlug}/print/blank-seat-cards`}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Print Back-Up / Blank Seat Cards
+                      </Link>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeTicketWorkflowSection === "sponsor-comp" ? (
+                  <div className="grid gap-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-stone-900">Sponsor &amp; Comp Tickets</h3>
+                      <p className="text-sm text-stone-600">Use sponsor-specific tools here instead of mixing comps into the main ticket flow.</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Sponsor Comps Included</p>
+                        <p className="mt-2 text-2xl font-semibold text-stone-900">{sponsorCompTicketsAllowed}</p>
+                      </div>
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Sponsor Comps Checked In</p>
+                        <p className="mt-2 text-2xl font-semibold text-stone-900">{sponsorCompTicketsCheckedIn}</p>
+                      </div>
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Sponsor Comps Remaining</p>
+                        <p className="mt-2 text-2xl font-semibold text-stone-900">{sponsorCompTicketsRemaining}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setIsSponsorCompTicketsOpen((currentValue) => !currentValue)}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        {isSponsorCompTicketsOpen ? "Hide Sponsor Comp Tickets" : "Sponsor Comp Tickets"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeTicketWorkflowSection === "reports" ? (
+                  <div className="grid gap-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-stone-900">Reports &amp; Printouts</h3>
+                      <p className="text-sm text-stone-600">Print front-door lists and backup sheets without digging through operational controls.</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <Link
+                        href={`/admin/${showSlug}/print/door-guest-list`}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Print Door Count List
+                      </Link>
+                      <Link
+                        href={`/admin/${showSlug}/print/blank-seat-cards`}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Print Back-Up / Guest List Cards
+                      </Link>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeTicketWorkflowSection === "reserved-seating" ? (
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                Online orders are automatically added to Reserved Seating. Print assigned seat cards from Reserved Seating after seats are selected. Use the paid online fallback print option only for orders that still need generic reserved cards.
+              </div>
+            ) : null}
+
+            {activeTicketWorkflowSection === "reserved-seating" ? (
             <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
@@ -19561,8 +19804,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </div>
               </div>
             </div>
+            ) : null}
 
-            {isReservedSeatingOpen && show ? (
+            {activeTicketWorkflowSection === "reserved-seating" && isReservedSeatingOpen && show ? (
               <ReservedSeatingPanel
                 showId={show.id}
                 showSlug={show.slug}
@@ -19570,7 +19814,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 showDate={show.show_date}
               />
             ) : null}
-
 
             {compTicketStatusMessage ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -19584,85 +19827,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               </div>
             ) : null}
 
-            <div className="grid gap-4">
-              <div className="flex items-center justify-between rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 sm:px-5">
-                <div>
-                  <h3 className="text-base font-semibold text-stone-900">Summary / Totals</h3>
-                  <p className="text-sm text-stone-600">Paid online totals, comp value, expected attendance, and check-in counts.</p>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Paid Online Tickets
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{paidOnlineTickets}</p>
-                  <p className="mt-1 text-sm text-stone-500">{paidOnlineOrders} order{paidOnlineOrders === 1 ? "" : "s"}</p>
-                </article>
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Paid Online Revenue
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{formatCurrency(paidOnlineRevenue)}</p>
-                </article>
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Complimentary Tickets
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{complimentaryTickets}</p>
-                </article>
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Complimentary Ticket Value
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{formatCurrency(complimentaryTicketValue)}</p>
-                </article>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Manual / Other Tickets
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{manualTickets}</p>
-                </article>
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Total Expected Attendance
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{totalCompTickets}</p>
-                </article>
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Checked In
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-emerald-700">{checkedInCompTickets} of {totalCompTickets}</p>
-                </article>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Sponsor Comps Allowed
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsAllowed}</p>
-                </article>
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Sponsor Comps Checked In
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsCheckedIn}</p>
-                </article>
-                <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    Sponsor Comps Remaining
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-stone-900">{sponsorCompTicketsRemaining}</p>
-                </article>
-              </div>
-            </div>
-
+            {activeTicketWorkflowSection === "ticket-sales" ? (
             <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -19791,7 +19956,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </form>
               ) : null}
             </div>
+            ) : null}
 
+            {activeTicketWorkflowSection === "ticket-sales" ? (
             <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -19946,7 +20113,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </form>
               ) : null}
             </div>
+            ) : null}
 
+            {activeTicketWorkflowSection === "sponsor-comp" ? (
             <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -20064,6 +20233,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 )
               ) : null}
             </div>
+            ) : null}
 
             {compTickets.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
