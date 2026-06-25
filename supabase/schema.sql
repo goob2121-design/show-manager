@@ -96,6 +96,10 @@ create table if not exists public.setlist_entries (
 alter table public.setlist_entries
   add column if not exists performance_flow text;
 
+alter table public.songs
+  add column if not exists performance_flow text,
+  add column if not exists song_intro_notes text;
+
 create table if not exists public.guest_profiles (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,

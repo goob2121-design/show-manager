@@ -74,6 +74,8 @@ export type SongRecord = {
   sung_by: string | null;
   tempo: SongTempo | null;
   song_type: SongType | null;
+  performance_flow: string | null;
+  song_intro_notes: string | null;
   notes?: string | null;
   lyrics?: string | null;
   chart_url?: string | null;

@@ -470,6 +470,8 @@ type SongEditFormState = {
   tempo: "" | SongTempo;
   songType: "" | SongType;
   artist?: string;
+  performanceFlow?: string;
+  songIntroNotes?: string;
   notes?: string;
   lyrics?: string;
   chartUrl?: string;
@@ -754,7 +756,7 @@ function buildProposalCoverageLabel({
   const showDateLabel = formatShowDate(showDate);
 
   if (showName.trim() && showDateLabel && showDateLabel !== "Date TBD") {
-    return `${showName.trim()} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${showDateLabel}`;
+    return `${showName.trim()} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${showDateLabel}`;
   }
 
   return showName.trim() || showDateLabel || "Current Show";
@@ -768,9 +770,9 @@ function repairGuestPortalText(value: string | null | undefined) {
   }
 
   return text
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢/g, "'")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â/g, "—")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢/g, "•");
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢|ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢/g, "'")
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â/g, "â€”")
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢/g, "â€¢");
 }
 
 function formatShowDate(showDate: string | null) {
@@ -1621,6 +1623,8 @@ function buildSongEditFormState(song: {
   sung_by?: string | null;
   tempo: SongTempo | null;
   song_type: SongType | null;
+  performance_flow?: string | null;
+  song_intro_notes?: string | null;
   notes?: string | null;
   lyrics?: string | null;
   chart_url?: string | null;
@@ -1631,6 +1635,8 @@ function buildSongEditFormState(song: {
     sungBy: song.sung_by ?? "",
     tempo: song.tempo ?? "",
     songType: song.song_type ?? "",
+    performanceFlow: song.performance_flow ?? "",
+    songIntroNotes: song.song_intro_notes ?? "",
     notes: song.notes ?? "",
     lyrics: song.lyrics ?? "",
     chartUrl: song.chart_url ?? "",
@@ -3169,7 +3175,7 @@ function buildYearToDateFinanceReportHtml({
                           <strong>${escapeHtml(item.label || "Untitled item")}</strong>
                           <span class="${toneClass}">${escapeHtml(formatCurrency(item.amount))}</span>
                         </div>
-                        <p>${escapeHtml(item.showName)}${item.showDate ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${escapeHtml(formatShowDate(item.showDate))}` : ""}</p>
+                        <p>${escapeHtml(item.showName)}${item.showDate ? ` ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ ${escapeHtml(formatShowDate(item.showDate))}` : ""}</p>
                         ${item.notes?.trim() ? `<p class="line-item-notes">${escapeHtml(item.notes.trim())}</p>` : ""}
                       </div>
                     </div>
@@ -3191,7 +3197,7 @@ function buildYearToDateFinanceReportHtml({
   <html lang="en">
     <head>
       <meta charset="utf-8" />
-      <title>${escapeHtml(`Year-to-Date Finance Report ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${year}`)}</title>
+      <title>${escapeHtml(`Year-to-Date Finance Report ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${year}`)}</title>
       <style>
         :root { color-scheme: light; }
         * { box-sizing: border-box; }
@@ -3575,8 +3581,14 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     section: normalizeSetSection(song.section),
     source_type: song.source_type === "guest" ? "guest" : "library",
     title: resolvedTitle,
-    performance_flow: "performance_flow" in song ? song.performance_flow ?? null : null,
-    song_intro_notes: "song_intro_notes" in song ? song.song_intro_notes ?? null : null,
+    performance_flow:
+      ("performance_flow" in song ? song.performance_flow ?? null : null) ??
+      librarySong?.performance_flow ??
+      null,
+    song_intro_notes:
+      ("song_intro_notes" in song ? song.song_intro_notes ?? null : null) ??
+      librarySong?.song_intro_notes ??
+      null,
     key: resolvedKey,
     sung_by: resolvedLeadVocal,
     tempo: normalizeSongTempo(resolvedTempo),
@@ -4031,9 +4043,9 @@ This link is unique to you, and you can use it anytime to revisit the portal, su
 
 Please make sure your song selections and artist information are submitted as soon as possible so we can prepare for the show.
 
-Thanks again ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â weÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re looking forward to having you with us!
+Thanks again ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â weÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢re looking forward to having you with us!
 
-ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Bryan Turner
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Bryan Turner
 Cumberland Mountain Music Show`;
 }
 
@@ -4043,7 +4055,7 @@ function buildGuestReminderTextMessage(profile: GuestProfile) {
   const guestFirstName = getGuestFirstName(profile.name);
   const greeting = guestFirstName ? `Hey ${guestFirstName},` : "Hey,";
 
-  return `${greeting} hereÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s your private Cumberland Mountain Music Show guest portal link: ${guestLink}
+  return `${greeting} hereÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢s your private Cumberland Mountain Music Show guest portal link: ${guestLink}
 
 You can use it anytime to submit songs, update artist info, and review show-day details.`;
 }
@@ -4053,7 +4065,7 @@ function buildBandSetlistMessage(showSlug: string) {
   const siteBaseUrl = getSiteBaseUrl();
   const bandLink = siteBaseUrl ? `${siteBaseUrl}${bandPath}` : bandPath;
 
-  return `Hey everyone, hereÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s the setlist link for the show:
+  return `Hey everyone, hereÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢s the setlist link for the show:
 
 ${bandLink}
 
@@ -4167,7 +4179,7 @@ function buildRehearsalSheetPrintHtml({
     <html lang="en">
       <head>
         <meta charset="utf-8" />
-        <title>${escapeHtml(showName)} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Rehearsal Sheet</title>
+        <title>${escapeHtml(showName)} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Rehearsal Sheet</title>
         <style>
           body { font-family: Arial, sans-serif; color: #111827; background: #ffffff; margin: 24px; }
           .header { margin-bottom: 20px; }
@@ -4238,7 +4250,7 @@ function buildRehearsalSheetPrintHtml({
               ]
                 .filter(Boolean)
                 .map((value) => escapeHtml(value ?? ""))
-                .join(" ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ");
+                .join(" ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ ");
 
               return `
                 ${sectionHeading && sectionHeading !== previousSectionHeading ? `<p class="section-header${printMode === "all" && sectionHeading === "SET 2" ? " set2-break" : ""}">${sectionHeading}</p>` : ""}
@@ -4246,7 +4258,7 @@ function buildRehearsalSheetPrintHtml({
                   <div class="song-grid">
                     <div class="song-left">
                       <p class="eyebrow">Rehearsal Song ${index + 1}</p>
-                      <h2 class="title">${escapeHtml(entry.songKey ? `${entry.title} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Key: ${entry.songKey}` : entry.title)}</h2>
+                      <h2 class="title">${escapeHtml(entry.songKey ? `${entry.title} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Key: ${entry.songKey}` : entry.title)}</h2>
                       ${entry.sungBy ? `<p class="eyebrow">Lead Vocal: ${escapeHtml(entry.sungBy)}</p>` : ""}
                     </div>
                     <div class="song-right">
@@ -4507,7 +4519,7 @@ function buildSetLyricsPrintHtml(showName: string, showDate: string | null, song
   const songSections = songs
     .map((song) => {
       const printableLyrics = buildSetLyricsSongBody(song);
-      const pageHeader = `${showName} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${formattedShowDate} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${getSetLyricsSectionLabel(song.section)} Lyrics`;
+      const pageHeader = `${showName} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${formattedShowDate} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${getSetLyricsSectionLabel(song.section)} Lyrics`;
 
       return `
         <section class="song">
@@ -4617,7 +4629,7 @@ function buildSetLyricsPrintHtml(showName: string, showDate: string | null, song
       </head>
       <body>
         <main class="shell">
-          ${songSections || `<section class="song"><p class="page-header">${escapeHtml(`${showName} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${formattedShowDate} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Set Lyrics`)}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
+          ${songSections || `<section class="song"><p class="page-header">${escapeHtml(`${showName} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${formattedShowDate} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Set Lyrics`)}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
         </main>
       </body>
     </html>
@@ -4633,7 +4645,7 @@ function buildStageFlowSetLyricsPrintHtml(
   const songSections = songs
     .map((song) => {
       const printableLyrics = buildSetLyricsSongBody(song);
-      const pageHeader = [showName, formattedShowDate, `${getSetLyricsSectionLabel(song.section)} Lyrics`].join(" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ");
+      const pageHeader = [showName, formattedShowDate, `${getSetLyricsSectionLabel(song.section)} Lyrics`].join(" ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ");
 
       return `
         <section class="song">
@@ -4752,7 +4764,7 @@ function buildStageFlowSetLyricsPrintHtml(
       </head>
       <body>
         <main class="shell">
-          ${songSections || `<section class="song"><p class="brand-mark">StageFlow &mdash; by Pinnacle Recording Studio</p><p class="page-header">${escapeHtml([showName, formattedShowDate, "Set Lyrics"].join(" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "))}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
+          ${songSections || `<section class="song"><p class="brand-mark">StageFlow &mdash; by Pinnacle Recording Studio</p><p class="page-header">${escapeHtml([showName, formattedShowDate, "Set Lyrics"].join(" ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â "))}</p><h2>Setlist</h2><div class="lyrics"><p class="lyrics-block">No lyrics available</p></div></section>`}
         </main>
       </body>
     </html>
@@ -4853,6 +4865,8 @@ function normalizeSongLibrarySong(
     key: song.key ?? null,
     tempo: normalizeSongTempo(song.tempo),
     song_type: normalizeSongType(song.song_type),
+    performance_flow: song.performance_flow ?? null,
+    song_intro_notes: song.song_intro_notes ?? null,
     chart_url: normalizeChartUrl(song.chart_url),
     sung_by: song.sung_by ?? null,
     created_by_role: normalizeSubmittedByRole(song.created_by_role) as SongLibrarySong["created_by_role"],
@@ -5029,11 +5043,11 @@ I wanted to reach out and invite you to be part of the Cumberland Mountain Music
 
 Your support helps us continue bringing live bluegrass, gospel, traditional country, and acoustic music to our community, while also giving your business recognition through show promotions, social media, stage mentions, and sponsor materials.
 
-We currently have sponsorship options available at the Platinum, Gold, and Silver levels, and IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢d be glad to send over more details.
+We currently have sponsorship options available at the Platinum, Gold, and Silver levels, and IÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢d be glad to send over more details.
 
 Thank you for considering being part of the show.
 
-ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Bryan Turner
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Bryan Turner
 Cumberland Mountain Music Show`;
 }
 
@@ -5139,7 +5153,7 @@ function buildSponsorDocumentHtml({
     .filter((tier) => tier.title !== sponsorshipLevel)
     .map(
       (tier) =>
-        `<li><strong>${escapeHtml(tier.title)}</strong> ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${escapeHtml(tier.amount)}</li>`,
+        `<li><strong>${escapeHtml(tier.title)}</strong> ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${escapeHtml(tier.amount)}</li>`,
     )
     .join("");
 
@@ -6751,7 +6765,7 @@ export function ShowPage({
     show?.name ?? "",
     [formatShowDate(show?.show_date ?? null), show?.show_start_time ?? ""]
       .filter((part) => part.trim())
-      .join(" ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ "),
+      .join(" ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ "),
     showDetailsFormState.promoShort,
     showDetailsFormState.ticketLink
       ? `Tickets:\n${showDetailsFormState.ticketLink}`
@@ -8318,6 +8332,8 @@ export function ShowPage({
                   sung_by,
                   tempo,
                   song_type,
+                  performance_flow,
+                  song_intro_notes,
                   notes,
                   lyrics,
                   created_by_role,
@@ -13518,6 +13534,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           sung_by: normalizeOptionalField(librarySongEditFormState.sungBy),
           tempo: librarySongEditFormState.tempo || null,
           song_type: librarySongEditFormState.songType || null,
+          performance_flow: normalizeOptionalField(librarySongEditFormState.performanceFlow ?? ""),
+          song_intro_notes: normalizeOptionalField(librarySongEditFormState.songIntroNotes ?? ""),
           notes: appendMp3MarkerToNotes(
             normalizeOptionalField(librarySongEditFormState.notes ?? ""),
             songToUpdate.mp3_path,
@@ -13644,6 +13662,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             sung_by,
             tempo,
             song_type,
+            performance_flow,
+            song_intro_notes,
             notes,
             lyrics,
             created_by_role,
@@ -15673,6 +15693,41 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         throw error;
       }
 
+      if (songToUpdate.source_type === "library" && songToUpdate.song_id) {
+        const linkedLibrarySong = songLibrary.find((librarySong) => librarySong.id === songToUpdate.song_id) ?? null;
+        const libraryPerformanceFlow = normalizeOptionalField(linkedLibrarySong?.performance_flow ?? "");
+        const librarySongIntroNotes = normalizeOptionalField(linkedLibrarySong?.song_intro_notes ?? "");
+        const nextLibraryPerformanceFlow = libraryPerformanceFlow ?? performanceFlow;
+        const nextLibrarySongIntroNotes = librarySongIntroNotes ?? songIntroNotes;
+
+        if (
+          (nextLibraryPerformanceFlow !== libraryPerformanceFlow ||
+            nextLibrarySongIntroNotes !== librarySongIntroNotes) &&
+          (nextLibraryPerformanceFlow || nextLibrarySongIntroNotes)
+        ) {
+          const { data: updatedLibrarySong, error: updateLibraryError } = await supabase
+            .from("songs")
+            .update({
+              performance_flow: nextLibraryPerformanceFlow,
+              song_intro_notes: nextLibrarySongIntroNotes,
+            })
+            .eq("id", songToUpdate.song_id)
+            .select("*")
+            .single();
+
+          if (updateLibraryError) {
+            throw updateLibraryError;
+          }
+
+          const normalizedLibrarySong = normalizeSongLibrarySong(updatedLibrarySong as SongLibrarySong);
+          setSongLibrary((currentSongs) =>
+            currentSongs
+              .map((song) => (song.id === normalizedLibrarySong.id ? normalizedLibrarySong : song))
+              .sort((songA, songB) => songA.title.localeCompare(songB.title)),
+          );
+        }
+      }
+
       setSetlist((currentSetlist) =>
         currentSetlist.map((song) =>
           song.id === songToUpdate.id
@@ -16883,7 +16938,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 entry.song_type ? `Type: ${entry.song_type}` : null,
                               ]
                                 .filter(Boolean)
-                                .join(" ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ")}
+                                .join(" • ")}
                             </p>
                           </div>
 
@@ -20099,7 +20154,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             <div className="space-y-1">
                               <p className="text-sm font-semibold text-stone-900">{entry.guestName}</p>
                               <p className="text-sm text-stone-600">
-                                {entry.ticketCount} ticket{entry.ticketCount === 1 ? "" : "s"} Ãƒâ€šÃ‚Â· {formatCurrency(entry.amountPaid)}
+                                {entry.ticketCount} ticket{entry.ticketCount === 1 ? "" : "s"} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {formatCurrency(entry.amountPaid)}
                               </p>
                               {entry.email ? (
                                 <p className="text-sm text-stone-600">{entry.email}</p>
@@ -24831,8 +24886,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               {activeGuestConfirmationSaveId === profile.id
                                 ? "Saving..."
                                 : profile.is_confirmed
-                                  ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Confirmed"
-                                  : "ÃƒÂ¢Ã…Â¡Ã‚Âª Unconfirmed"}
+                                  ? "ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Confirmed"
+                                  : "ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Âª Unconfirmed"}
                             </button>
                           </div>
 
@@ -24883,10 +24938,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                                 Promo Materials
                               </p>
-                              <p>{profile.short_bio?.trim() ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Bio" : "ÃƒÂ¢Ã‚ÂÃ…â€™ Bio"}</p>
-                              <p>{profile.photo_url?.trim() ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Photo" : "ÃƒÂ¢Ã‚ÂÃ…â€™ Photo"}</p>
-                              <p>{hasSocialLinks ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Social Links" : "ÃƒÂ¢Ã‚ÂÃ…â€™ Social Links"}</p>
-                              <p>{hasSubmittedSongs ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Songs Submitted" : "ÃƒÂ¢Ã‚ÂÃ…â€™ Songs Submitted"}</p>
+                              <p>{profile.short_bio?.trim() ? "ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Bio" : "ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ Bio"}</p>
+                              <p>{profile.photo_url?.trim() ? "ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Photo" : "ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ Photo"}</p>
+                              <p>{hasSocialLinks ? "ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Social Links" : "ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ Social Links"}</p>
+                              <p>{hasSubmittedSongs ? "ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Songs Submitted" : "ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ Songs Submitted"}</p>
                             </div>
                           </div>
 
@@ -25028,9 +25083,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                       </p>
                                       <p className="text-sm text-stone-600">
                                         {song.artist || song.submitted_by_name || "Guest Submission"}
-                                        {song.song_key ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Key: ${song.song_key}` : ""}
-                                        {song.tempo ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Tempo: ${song.tempo}` : ""}
-                                        {song.song_type ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${song.song_type}` : ""}
+                                        {song.song_key ? ` • Key: ${song.song_key}` : ""}
+                                        {song.tempo ? ` • Tempo: ${song.tempo}` : ""}
+                                        {song.song_type ? ` • ${song.song_type}` : ""}
                                       </p>
                                     </div>
 
@@ -25345,7 +25400,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               </p>
                               <p className="text-sm text-stone-600">
                                 {song.artist || guestSingerName}
-                                {song.song_key ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Key: ${song.song_key}` : ""}
+                                {song.song_key ? ` ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ Key: ${song.song_key}` : ""}
                               </p>
                             </div>
                             <button
@@ -25538,7 +25593,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 </p>
                                 <p className="text-sm text-stone-600">
                                   {song.artist || guestSingerName}
-                                  {song.song_key ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Key: ${song.song_key}` : ""}
+                                  {song.song_key ? ` ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ Key: ${song.song_key}` : ""}
                                 </p>
                               </div>
                               <button
@@ -26072,6 +26127,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           label: "Created By",
                           value: formatLibrarySourceRole(song.source_role),
                         }}
+                        performanceFlowField
+                        songIntroNotesField
                         notesLabel="Notes"
                         notesPlaceholder="Optional notes for the setlist side"
                         showChartUrl

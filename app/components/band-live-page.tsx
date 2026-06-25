@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { LiveShowState, RehearsalEntry, RehearsalRecording, SetSection, ShowRecord, SongTempo, SongType } from "@/lib/types";
 
 const FOLLOW_MODE_STORAGE_KEY = "stageflow-band-live-follow-mode";
+const FOCUS_MODE_STORAGE_KEY = "stageflow-band-live-focus-mode";
 const LIVE_LYRICS_FONT_SIZE_STORAGE_KEY = "stageflow_live_lyrics_font_size";
 const LIVE_SONG_INTRO_FONT_SIZE_STORAGE_KEY = "stageflow_live_song_intro_font_size";
 const LIVE_LYRICS_READING_MODE_STORAGE_KEY = "stageflow_live_lyrics_reading_mode";
@@ -37,6 +38,8 @@ type LiveSetlistSongRow = {
         sung_by: string | null;
         tempo: SongTempo | null;
         song_type: SongType | null;
+        performance_flow?: string | null;
+        song_intro_notes?: string | null;
         notes: string | null;
         lyrics: string | null;
         chart_url?: string | null;
@@ -48,6 +51,8 @@ type LiveSetlistSongRow = {
         sung_by: string | null;
         tempo: SongTempo | null;
         song_type: SongType | null;
+        performance_flow?: string | null;
+        song_intro_notes?: string | null;
         notes: string | null;
         lyrics: string | null;
         chart_url?: string | null;
@@ -358,8 +363,8 @@ function normalizeLiveSong(
   const key = librarySong?.key ?? guestSong?.key ?? null;
   const leadVocal = librarySong?.sung_by ?? guestSong?.sung_by ?? null;
   const performerName = guestSong?.submitted_by_name?.trim() || leadVocal?.trim() || null;
-  const performanceFlow = row.performance_flow?.trim() || null;
-  const songIntroNotes = row.song_intro_notes?.trim() || null;
+  const performanceFlow = row.performance_flow?.trim() || librarySong?.performance_flow?.trim() || null;
+  const songIntroNotes = row.song_intro_notes?.trim() || librarySong?.song_intro_notes?.trim() || null;
   const performanceNotes = stripMp3MarkerFromNotes(librarySong?.notes ?? guestSong?.notes ?? null);
   const rehearsalEntry =
     (row.song_id ? rehearsalBySongId.get(row.song_id) : null) ??
@@ -409,11 +414,22 @@ function sortSetlistRows(rows: LiveSetlistSongRow[]) {
   });
 }
 
+function hasLeaderStartedLiveMode(sharedState: LiveShowState | null) {
+  if (!sharedState) {
+    return false;
+  }
+
+  return sharedState.updated_by !== "band-live-mode-init";
+}
+
 export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [songs, setSongs] = useState<LiveSong[]>([]);
   const [sharedState, setSharedState] = useState<LiveShowState | null>(null);
   const [manualIndex, setManualIndex] = useState(0);
+  const [hasStartedLiveMode, setHasStartedLiveMode] = useState(false);
+  const [isStartingLiveMode, setIsStartingLiveMode] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const [followBandLeader, setFollowBandLeader] = useState(true);
   const [isLeaderUnlocked, setIsLeaderUnlocked] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -428,8 +444,9 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [songIntroReadingMode, setSongIntroReadingMode] = useState(false);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(false);
   const [showStartConfirmOpen, setShowStartConfirmOpen] = useState(false);
-  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+  const liveModeStartTimeoutRef = useRef<number | null>(null);
   const followBandLeaderRef = useRef(followBandLeader);
   const songsLengthRef = useRef(songs.length);
   const modalScrollLockRef = useRef(0);
@@ -448,6 +465,11 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       setFollowBandLeader(false);
     }
 
+    const savedFocusMode = window.localStorage.getItem(FOCUS_MODE_STORAGE_KEY);
+    if (savedFocusMode === "true") {
+      setFocusMode(true);
+    }
+
   }, []);
 
   useEffect(() => {
@@ -459,6 +481,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   }, [followBandLeader]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(FOCUS_MODE_STORAGE_KEY, focusMode ? "true" : "false");
+  }, [focusMode]);
+
+  useEffect(() => {
     followBandLeaderRef.current = followBandLeader;
   }, [followBandLeader]);
 
@@ -467,8 +497,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   }, [songs.length]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
+    const updateClock = () => {
       setCurrentTime(new Date());
+    };
+
+    updateClock();
+    const interval = window.setInterval(() => {
+      updateClock();
     }, 1000);
 
     return () => {
@@ -488,6 +523,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     syncLeaderAccess();
     return subscribeToAdminAccess(syncLeaderAccess);
   }, [showSlug]);
+
+  useEffect(() => {
+    return () => {
+      if (liveModeStartTimeoutRef.current !== null) {
+        window.clearTimeout(liveModeStartTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -623,6 +666,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 sung_by,
                 tempo,
                 song_type,
+                performance_flow,
+                song_intro_notes,
                 notes,
                 lyrics,
                 chart_url
@@ -975,23 +1020,218 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     }
   }, [connectionState]);
 
-  const clockState = useMemo(() => getClockWindowState(currentTime), [currentTime]);
+  const clockState = useMemo(
+    () =>
+      currentTime
+        ? getClockWindowState(currentTime)
+        : {
+            label: "Current Time",
+            className: "border-white/10 bg-white/5 text-slate-100",
+            accentClassName: "text-emerald-200",
+          },
+    [currentTime],
+  );
+  const showDisplayTitle = show?.name?.trim() || "Cumberland Mountain Music Show";
+  const showDisplayDate = show ? formatShowDate(show.show_date) : "Loading show...";
   const formattedCurrentTime = useMemo(
     () =>
-      new Intl.DateTimeFormat("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-      }).format(currentTime),
+      currentTime
+        ? new Intl.DateTimeFormat("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            second: "2-digit",
+          }).format(currentTime)
+        : "--:-- --",
+    [currentTime],
+  );
+  const formattedCurrentDate = useMemo(
+    () =>
+      currentTime
+        ? new Intl.DateTimeFormat("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          }).format(currentTime)
+        : "",
     [currentTime],
   );
 
   const followStatusLabel = followBandLeader ? "FOLLOWING" : "MANUAL";
   const showLeaderControls = isLeaderUnlocked && !followBandLeader;
+  const liveShowHasStarted = useMemo(() => hasLeaderStartedLiveMode(sharedState), [sharedState]);
+  const showFollowerWaitingScreen = !hasStartedLiveMode && followBandLeader && !isLeaderUnlocked;
+
+  const startLiveMode = () => {
+    if (isStartingLiveMode) {
+      return;
+    }
+
+    setIsStartingLiveMode(true);
+    liveModeStartTimeoutRef.current = window.setTimeout(() => {
+      setHasStartedLiveMode(true);
+      setIsStartingLiveMode(false);
+      liveModeStartTimeoutRef.current = null;
+    }, 220);
+  };
+
+  useEffect(() => {
+    if (!showFollowerWaitingScreen || !liveShowHasStarted || isStartingLiveMode) {
+      return;
+    }
+
+    setIsStartingLiveMode(true);
+    liveModeStartTimeoutRef.current = window.setTimeout(() => {
+      setHasStartedLiveMode(true);
+      setIsStartingLiveMode(false);
+      liveModeStartTimeoutRef.current = null;
+    }, 220);
+  }, [isStartingLiveMode, liveShowHasStarted, showFollowerWaitingScreen]);
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,_#020617_0%,_#0f172a_38%,_#020617_100%)] text-slate-100">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-3 px-3 py-2 sm:px-4 sm:py-3 lg:gap-4 lg:px-6">
-        <header className="sticky top-0 z-20 -mx-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-slate-950/90 px-3 py-2 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur lg:hidden">
+      {showFollowerWaitingScreen && !liveShowHasStarted ? (
+        <div className="relative isolate flex min-h-screen items-center justify-center overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.2),_transparent_34%),radial-gradient(circle_at_bottom,_rgba(120,53,15,0.22),_transparent_38%),linear-gradient(180deg,_rgba(2,6,23,0.8)_0%,_rgba(9,9,11,0.92)_42%,_rgba(2,6,23,0.98)_100%)]" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[52vh] bg-[radial-gradient(circle_at_12%_10%,_rgba(251,191,36,0.34),_transparent_14%),radial-gradient(circle_at_88%_12%,_rgba(251,191,36,0.3),_transparent_16%),linear-gradient(180deg,_rgba(0,0,0,0)_0%,_rgba(2,6,23,0.82)_100%)] opacity-90" />
+          <div className="pointer-events-none absolute inset-x-[8%] bottom-0 h-[34vh] bg-[radial-gradient(circle_at_center,_rgba(245,158,11,0.14),_transparent_55%)]" />
+
+          <div
+            className={`relative z-10 w-full max-w-5xl rounded-[2rem] border border-amber-300/25 bg-[linear-gradient(180deg,rgba(9,9,11,0.8)_0%,rgba(9,9,11,0.72)_100%)] px-6 py-8 text-center shadow-[0_40px_120px_-65px_rgba(251,191,36,0.4)] backdrop-blur-sm transition duration-200 sm:px-10 sm:py-10 lg:px-14 lg:py-12 ${
+              isStartingLiveMode ? "scale-[0.99] opacity-0" : "scale-100 opacity-100"
+            }`}
+          >
+            <div className="mx-auto flex max-w-3xl flex-col items-center gap-6 pt-8 sm:gap-7">
+              <img
+                src="/cmms-logo.png"
+                alt="Cumberland Mountain Music Show"
+                className="h-auto w-full max-w-[16rem] drop-shadow-[0_16px_40px_rgba(0,0,0,0.55)] sm:max-w-[20rem] lg:max-w-[28rem]"
+              />
+
+              <div className="space-y-3">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.42em] text-amber-200/85 sm:text-xs">
+                  Please Stand By
+                </p>
+                <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
+                  {showDisplayTitle}
+                </h1>
+                <p className="text-sm font-medium uppercase tracking-[0.24em] text-amber-100/80 sm:text-base">
+                  {showDisplayDate}
+                </p>
+              </div>
+
+              <div className="max-w-2xl space-y-4">
+                <p className="text-xl font-semibold text-amber-100 sm:text-2xl">Please Stand By</p>
+                <div className="space-y-1 text-base leading-7 text-stone-200 sm:text-lg sm:leading-8">
+                  <p>The show has not started yet.</p>
+                  <p>Your device is connected and ready.</p>
+                  <p>You&apos;ll automatically join Live Mode as soon as the show begins.</p>
+                </div>
+              </div>
+
+              <div className="flex w-full max-w-2xl flex-col items-center rounded-[1.6rem] border border-amber-200/15 bg-black/20 px-6 py-5 shadow-[0_18px_55px_-32px_rgba(251,191,36,0.45)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-100/70">Current Time</p>
+                <p className="mt-2 text-[2.6rem] font-black leading-none tracking-[0.08em] text-stone-50 drop-shadow-[0_0_18px_rgba(255,248,220,0.22)] sm:text-[3.6rem] lg:text-[4.6rem]">
+                  {formattedCurrentTime}
+                </p>
+                <p className="mt-3 text-sm font-medium tracking-[0.18em] text-amber-200/90 sm:text-base">
+                  {formattedCurrentDate}
+                </p>
+              </div>
+
+              <div className="inline-flex items-center gap-3 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200">
+                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,0.8)] animate-pulse" />
+                Connected to Leader
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : !hasStartedLiveMode && isLeaderUnlocked ? (
+        <div className="relative isolate flex min-h-screen items-center justify-center overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.2),_transparent_34%),radial-gradient(circle_at_bottom,_rgba(120,53,15,0.22),_transparent_38%),linear-gradient(180deg,_rgba(2,6,23,0.8)_0%,_rgba(9,9,11,0.92)_42%,_rgba(2,6,23,0.98)_100%)]" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[52vh] bg-[radial-gradient(circle_at_12%_10%,_rgba(251,191,36,0.34),_transparent_14%),radial-gradient(circle_at_88%_12%,_rgba(251,191,36,0.3),_transparent_16%),linear-gradient(180deg,_rgba(0,0,0,0)_0%,_rgba(2,6,23,0.82)_100%)] opacity-90" />
+          <div className="pointer-events-none absolute inset-x-[8%] bottom-0 h-[34vh] bg-[radial-gradient(circle_at_center,_rgba(245,158,11,0.14),_transparent_55%)]" />
+
+          <div
+            className={`relative z-10 w-full max-w-5xl rounded-[2rem] border border-amber-300/25 bg-[linear-gradient(180deg,rgba(9,9,11,0.8)_0%,rgba(9,9,11,0.72)_100%)] px-6 py-8 text-center shadow-[0_40px_120px_-65px_rgba(251,191,36,0.4)] backdrop-blur-sm transition duration-200 sm:px-10 sm:py-10 lg:px-14 lg:py-12 ${
+              isStartingLiveMode ? "scale-[0.99] opacity-0" : "scale-100 opacity-100"
+            }`}
+          >
+            <Link
+              href={`/band/${encodeURIComponent(showSlug)}`}
+              className="absolute right-4 top-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-amber-200/20 bg-black/20 px-4 text-sm font-semibold text-amber-100 transition hover:bg-black/30 sm:right-6 sm:top-6"
+            >
+              <HomeIcon />
+              Back to Band Portal
+            </Link>
+
+            <div className="mx-auto flex max-w-3xl flex-col items-center gap-6 pt-10 sm:gap-7 sm:pt-8">
+              <img
+                src="/cmms-logo.png"
+                alt="Cumberland Mountain Music Show"
+                className="h-auto w-full max-w-[16rem] drop-shadow-[0_16px_40px_rgba(0,0,0,0.55)] sm:max-w-[20rem] lg:max-w-[28rem]"
+              />
+
+              <div className="space-y-3">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.42em] text-amber-200/85 sm:text-xs">
+                  Welcome to Live Mode
+                </p>
+                <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
+                  {showDisplayTitle}
+                </h1>
+                <p className="text-sm font-medium uppercase tracking-[0.24em] text-amber-100/80 sm:text-base">
+                  {showDisplayDate}
+                </p>
+              </div>
+
+              <div className="max-w-2xl space-y-3">
+                <p className="text-xl font-semibold text-amber-100 sm:text-2xl">Welcome to Live Mode</p>
+              </div>
+
+              <div className="flex w-full max-w-2xl flex-col items-center rounded-[1.6rem] border border-amber-200/15 bg-black/20 px-6 py-5 shadow-[0_18px_55px_-32px_rgba(251,191,36,0.45)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-100/70">Current Time</p>
+                <p className="mt-2 text-[2.6rem] font-black leading-none tracking-[0.08em] text-stone-50 drop-shadow-[0_0_18px_rgba(255,248,220,0.22)] sm:text-[3.6rem] lg:text-[4.6rem]">
+                  {formattedCurrentTime}
+                </p>
+                <p className="mt-3 text-sm font-medium tracking-[0.18em] text-amber-200/90 sm:text-base">
+                  {formattedCurrentDate}
+                </p>
+              </div>
+
+              <div className="flex w-full max-w-xl flex-col items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={startLiveMode}
+                  className="inline-flex min-h-[4.25rem] w-full items-center justify-center rounded-[1.35rem] border border-amber-200/50 bg-[linear-gradient(180deg,#fcd34d_0%,#f59e0b_100%)] px-6 text-xl font-black uppercase tracking-[0.26em] text-stone-950 shadow-[0_22px_50px_-24px_rgba(245,158,11,0.9)] transition hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-amber-300/70 disabled:cursor-wait disabled:opacity-80 sm:min-h-[4.75rem] sm:text-2xl"
+                  disabled={isStartingLiveMode}
+                >
+                  Start Show
+                </button>
+                <Link
+                  href={`/band/${encodeURIComponent(showSlug)}`}
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 bg-white/5 px-5 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
+                >
+                  Exit Live Mode
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+      <>
+      {focusMode ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setFocusMode(false)}
+            className="fixed left-3 top-3 z-30 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-slate-950/88 px-4 text-sm font-semibold text-slate-100 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur transition hover:bg-slate-900/95 sm:left-4 sm:top-4"
+          >
+            ☰ Show Menu
+          </button>
+        </>
+      ) : null}
+      <div className={`mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-3 px-3 py-2 transition-all duration-300 sm:px-4 sm:py-3 lg:gap-4 lg:px-6 ${focusMode ? "pt-14 sm:pt-16" : ""}`}>
+        <header className={`sticky top-0 z-20 -mx-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-slate-950/90 px-3 py-2 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur transition-all duration-300 lg:hidden ${focusMode ? "pointer-events-none -translate-y-4 opacity-0 max-h-0 overflow-hidden border-transparent px-0 py-0" : "translate-y-0 opacity-100"}`}>
           <div className="inline-flex min-w-full items-center gap-2 whitespace-nowrap">
             <label className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
               <UsersIcon />
@@ -1024,6 +1264,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               <EyeIcon />
               {wakeLockEnabled ? "Keep Awake On" : "Keep Awake"}
             </button>
+            <button
+              type="button"
+              onClick={() => setFocusMode(true)}
+              className="inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+            >
+              Focus Mode
+            </button>
             <span
               className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
             >
@@ -1046,7 +1293,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
           </div>
         </header>
 
-        <header className="hidden rounded-[1.75rem] border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_24px_72px_-48px_rgba(15,23,42,0.95)] backdrop-blur lg:block">
+        <header className={`hidden rounded-[1.75rem] border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_24px_72px_-48px_rgba(15,23,42,0.95)] backdrop-blur transition-all duration-300 lg:block ${focusMode ? "pointer-events-none -translate-y-4 opacity-0 max-h-0 overflow-hidden border-transparent px-0 py-0" : "translate-y-0 opacity-100"}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 flex-1 text-center lg:text-left">
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-300/80">StageFlow Live Performance Mode</p>
@@ -1099,6 +1346,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               >
                 <EyeIcon />
                 {wakeLockEnabled ? "Keep Awake On" : "Keep Awake"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFocusMode(true)}
+                className="inline-flex min-h-9 items-center rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10 sm:text-sm"
+              >
+                Focus Mode
               </button>
               {!followBandLeader && !showLeaderControls ? (
                 <button
@@ -1169,7 +1423,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     {currentSong.leadVocal?.trim() || currentSong.performerName?.trim() || "CMMS Band"}
                   </p>
                 </div>
-                <div className={`rounded-2xl border px-3 py-2.5 text-center lg:hidden ${clockState.className}`}>
+                <div className={`rounded-2xl border px-3 py-2.5 text-center lg:hidden ${focusMode ? "hidden" : ""} ${clockState.className}`}>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-300">{clockState.label}</p>
                   <p className={`mt-1 text-[1.56rem] font-black leading-none sm:text-2xl ${clockState.accentClassName}`}>
                     {formattedCurrentTime}
@@ -1252,7 +1506,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             </article>
 
             <aside className="flex flex-col gap-3">
-              <section className={`hidden rounded-[1.75rem] border p-3.5 lg:block ${clockState.className}`}>
+              <section className={`hidden rounded-[1.75rem] border p-3.5 lg:block ${focusMode ? "hidden" : ""} ${clockState.className}`}>
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">{clockState.label}</h3>
                 <p className={`mt-2 text-3xl font-black tracking-tight xl:text-4xl ${clockState.accentClassName}`}>
                   {formattedCurrentTime}
@@ -1614,6 +1868,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
           </div>
         </div>
       ) : null}
+      </>
+      )}
     </main>
   );
 }
