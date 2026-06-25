@@ -2015,25 +2015,11 @@ export default function ShowsDashboardPage() {
     return (
       <>
         <Link
-          href={`/guest/${show.slug}`}
-          className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-        >
-          <DashboardIcon><GuestsIcon /></DashboardIcon>
-          Guest
-        </Link>
-        <Link
           href={`/band/${show.slug}`}
           className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
         >
           <DashboardIcon><MusicNoteIcon /></DashboardIcon>
           Band
-        </Link>
-        <Link
-          href={`/mc/${show.slug}`}
-          className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-        >
-          <DashboardIcon><MicrophoneIcon /></DashboardIcon>
-          MC
         </Link>
         <Link
           href={`/admin/${show.slug}`}
@@ -2280,12 +2266,6 @@ export default function ShowsDashboardPage() {
                         className="flex min-h-12 min-w-[9rem] items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                       >
                         Band
-                      </Link>
-                      <Link
-                        href={`/guest/${show.slug}`}
-                        className="flex min-h-12 min-w-[9rem] items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Guest
                       </Link>
                       <Link
                         href={`/admin/${show.slug}?tab=setlist`}

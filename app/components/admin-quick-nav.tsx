@@ -43,27 +43,10 @@ function ShieldIcon() {
   );
 }
 
-function MicIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
-      <rect x="7" y="2.75" width="6" height="9" rx="3" />
-      <path d="M5.5 9.5a4.5 4.5 0 0 0 9 0M10 14v3.25M7 17.25h6" />
-    </svg>
-  );
-}
-
 function MusicIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
       <path d="M12.5 3.5v8.25a2.5 2.5 0 1 1-1.5-2.28V5.2l5-1.2v6.55a2.5 2.5 0 1 1-1.5-2.28V3.5l-2 .48Z" />
-    </svg>
-  );
-}
-
-function UserGroupIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
-      <path d="M7 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM13.25 8.25a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM3.75 15.75a3.75 3.75 0 0 1 7.5 0M11 15.75a3.1 3.1 0 0 1 5.25-2.25" />
     </svg>
   );
 }
@@ -87,10 +70,7 @@ function LogoutIcon() {
 
 const quickNavLinks = [
   { key: "dashboard", label: "Dashboard", href: "/shows", icon: <HomeIcon /> },
-  { key: "admin", label: "Admin", href: (slug: string) => `/admin/${slug}`, icon: <ShieldIcon /> },
-  { key: "mc", label: "MC", href: (slug: string) => `/mc/${slug}`, icon: <MicIcon /> },
   { key: "band", label: "Band", href: (slug: string) => `/band/${slug}`, icon: <MusicIcon /> },
-  { key: "guest", label: "Guest", href: (slug: string) => `/guest/${slug}`, icon: <UserGroupIcon /> },
 ] as const;
 const chartBuilderUrl = "https://charts.pinnaclestudiotn.com";
 type ScannerConnectionState = "checking" | "online" | "offline";
@@ -212,6 +192,17 @@ export function AdminQuickNav({
             <NavIcon><FileChartIcon /></NavIcon>
             ChartBuilder
           </a>
+          <Link
+            href={`/admin/${slug}`}
+            className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-2 transition sm:min-h-0 sm:py-1.5 ${
+              currentView === "admin"
+                ? "border border-emerald-300 bg-emerald-700 text-white shadow-sm hover:bg-emerald-600 dark:border-emerald-300 dark:bg-emerald-700 dark:text-white dark:hover:bg-emerald-600"
+                : "border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            }`}
+          >
+            <NavIcon><ShieldIcon /></NavIcon>
+            Admin
+          </Link>
           <button
             type="button"
             onClick={handleLogout}
