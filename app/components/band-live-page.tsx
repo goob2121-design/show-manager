@@ -12,10 +12,33 @@ const FOCUS_MODE_STORAGE_KEY = "stageflow-band-live-focus-mode";
 const LIVE_LYRICS_FONT_SIZE_STORAGE_KEY = "stageflow_live_lyrics_font_size";
 const LIVE_SONG_INTRO_FONT_SIZE_STORAGE_KEY = "stageflow_live_song_intro_font_size";
 const LIVE_LYRICS_READING_MODE_STORAGE_KEY = "stageflow_live_lyrics_reading_mode";
+const LIVE_LYRICS_AUTOSCROLL_SPEED_STORAGE_KEY = "stageflow_live_lyrics_autoscroll_speed";
+const LIVE_LYRICS_AUTOSCROLL_DELAY_STORAGE_KEY = "stageflow_live_lyrics_autoscroll_delay";
 const LIVE_SONG_INTRO_READING_MODE_STORAGE_KEY = "stageflow_live_song_intro_reading_mode";
 const LIVE_MODAL_FONT_SIZE_MIN = 18;
 const LIVE_MODAL_FONT_SIZE_MAX = 42;
 const LIVE_LYRICS_FONT_SIZE_DEFAULT = 28;
+const LIVE_LYRICS_AUTOSCROLL_SPEED_MIN = 1;
+const LIVE_LYRICS_AUTOSCROLL_SPEED_MAX = 10;
+const LIVE_LYRICS_AUTOSCROLL_SPEED_DEFAULT = 4;
+const LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS = [0, 3, 5, 10, 15, 20] as const;
+const LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT = 3;
+type LyricsAutoScrollDelay = (typeof LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS)[number];
+type LyricsAutoScrollStatus = "stopped" | "countdown" | "running" | "paused";
+type LyricsAutoScrollStep = { pixels: number; intervalMs: number };
+
+const LIVE_LYRICS_AUTOSCROLL_STEPS: Record<number, LyricsAutoScrollStep> = {
+  1: { pixels: 1, intervalMs: 250 },
+  2: { pixels: 1, intervalMs: 150 },
+  3: { pixels: 1, intervalMs: 100 },
+  4: { pixels: 1, intervalMs: 70 },
+  5: { pixels: 1, intervalMs: 50 },
+  6: { pixels: 2, intervalMs: 60 },
+  7: { pixels: 2, intervalMs: 45 },
+  8: { pixels: 3, intervalMs: 45 },
+  9: { pixels: 4, intervalMs: 40 },
+  10: { pixels: 5, intervalMs: 35 },
+};
 const LIVE_SONG_INTRO_FONT_SIZE_DEFAULT = 24;
 
 type LiveSetlistSongRow = {
@@ -210,6 +233,53 @@ function clampModalFontSize(value: number, fallback: number) {
   }
 
   return Math.min(LIVE_MODAL_FONT_SIZE_MAX, Math.max(LIVE_MODAL_FONT_SIZE_MIN, value));
+}
+
+function clampLyricsAutoScrollSpeed(value: number) {
+  if (!Number.isFinite(value)) {
+    return LIVE_LYRICS_AUTOSCROLL_SPEED_DEFAULT;
+  }
+
+  return Math.min(
+    LIVE_LYRICS_AUTOSCROLL_SPEED_MAX,
+    Math.max(LIVE_LYRICS_AUTOSCROLL_SPEED_MIN, value),
+  );
+}
+
+function getLyricsAutoScrollStep(speed: number) {
+  const safeSpeed = clampLyricsAutoScrollSpeed(speed);
+
+  return LIVE_LYRICS_AUTOSCROLL_STEPS[safeSpeed] ??
+    LIVE_LYRICS_AUTOSCROLL_STEPS[LIVE_LYRICS_AUTOSCROLL_SPEED_DEFAULT];
+}
+
+function normalizeLyricsAutoScrollDelay(value: number): LyricsAutoScrollDelay {
+  return LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS.includes(value as LyricsAutoScrollDelay)
+    ? (value as LyricsAutoScrollDelay)
+    : LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT;
+}
+
+function getNextLyricsAutoScrollDelay(currentDelay: LyricsAutoScrollDelay) {
+  const currentIndex = LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS.indexOf(currentDelay);
+  const nextIndex = (currentIndex + 1) % LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS.length;
+
+  return LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS[nextIndex] ?? LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT;
+}
+
+function buildLiveLyricsStorageKey(baseKey: string, songSettingsId: string | null) {
+  return songSettingsId ? `${baseKey}_${songSettingsId}` : baseKey;
+}
+
+function readLiveLyricsSetting(baseKey: string, songSettingsId: string | null) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const songValue = songSettingsId
+    ? window.localStorage.getItem(buildLiveLyricsStorageKey(baseKey, songSettingsId))
+    : null;
+
+  return songValue ?? window.localStorage.getItem(baseKey);
 }
 
 function isLyricSectionMarker(line: string) {
@@ -441,6 +511,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [lyricsFontSize, setLyricsFontSize] = useState(LIVE_LYRICS_FONT_SIZE_DEFAULT);
   const [songIntroFontSize, setSongIntroFontSize] = useState(LIVE_SONG_INTRO_FONT_SIZE_DEFAULT);
   const [lyricsReadingMode, setLyricsReadingMode] = useState(false);
+  const [lyricsAutoScrollSpeed, setLyricsAutoScrollSpeed] = useState(LIVE_LYRICS_AUTOSCROLL_SPEED_DEFAULT);
+  const [lyricsAutoScrollDelay, setLyricsAutoScrollDelay] = useState<LyricsAutoScrollDelay>(
+    LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT,
+  );
+  const [lyricsAutoScrollStatus, setLyricsAutoScrollStatus] = useState<LyricsAutoScrollStatus>("stopped");
+  const [lyricsAutoScrollCountdown, setLyricsAutoScrollCountdown] = useState(0);
+  const [isLyricsAutoScrolling, setIsLyricsAutoScrolling] = useState(false);
   const [songIntroReadingMode, setSongIntroReadingMode] = useState(false);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(false);
   const [showStartConfirmOpen, setShowStartConfirmOpen] = useState(false);
@@ -454,6 +531,21 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const songIntroOverlayRef = useRef<HTMLDivElement | null>(null);
   const lyricsScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const songIntroScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const lyricsAutoScrollIntervalRef = useRef<number | null>(null);
+  const lyricsAutoScrollCountdownIntervalRef = useRef<number | null>(null);
+  const lyricsAutoScrollResumeTimeoutRef = useRef<number | null>(null);
+  const lyricsAutoScrollSpeedRef = useRef(lyricsAutoScrollSpeed);
+  const lyricsAutoScrollDelayRef = useRef<LyricsAutoScrollDelay>(lyricsAutoScrollDelay);
+  const lyricsAutoScrollStatusRef = useRef<LyricsAutoScrollStatus>(lyricsAutoScrollStatus);
+  const isProgrammaticLyricsScrollRef = useRef(false);
+  const programmaticLyricsScrollTimeoutRef = useRef<number | null>(null);
+
+  const sharedIndex = clampIndex(sharedState?.current_song_index ?? 0, songs.length);
+  const currentIndex = clampIndex(followBandLeader ? sharedIndex : manualIndex, songs.length);
+  const currentSong = songs[currentIndex] ?? null;
+  const nextSong = songs[currentIndex + 1] ?? null;
+  const showLyricsPerformanceFlowPanel = Boolean(isLeaderUnlocked && currentSong?.performanceFlow?.trim());
+  const currentLyricsSettingsId = currentSong?.id ?? null;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -537,25 +629,45 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       return;
     }
 
-    const savedLyricsFontSize = window.localStorage.getItem(LIVE_LYRICS_FONT_SIZE_STORAGE_KEY);
+    const savedLyricsFontSize = readLiveLyricsSetting(
+      LIVE_LYRICS_FONT_SIZE_STORAGE_KEY,
+      currentLyricsSettingsId,
+    );
+    const savedLyricsAutoScrollSpeed = readLiveLyricsSetting(
+      LIVE_LYRICS_AUTOSCROLL_SPEED_STORAGE_KEY,
+      currentLyricsSettingsId,
+    );
+    const savedLyricsAutoScrollDelay = readLiveLyricsSetting(
+      LIVE_LYRICS_AUTOSCROLL_DELAY_STORAGE_KEY,
+      currentLyricsSettingsId,
+    );
+    const savedLyricsReadingMode = readLiveLyricsSetting(
+      LIVE_LYRICS_READING_MODE_STORAGE_KEY,
+      currentLyricsSettingsId,
+    );
     const savedSongIntroFontSize = window.localStorage.getItem(
       LIVE_SONG_INTRO_FONT_SIZE_STORAGE_KEY,
-    );
-    const savedLyricsReadingMode = window.localStorage.getItem(
-      LIVE_LYRICS_READING_MODE_STORAGE_KEY,
     );
     const savedSongIntroReadingMode = window.localStorage.getItem(
       LIVE_SONG_INTRO_READING_MODE_STORAGE_KEY,
     );
 
-    if (savedLyricsFontSize) {
-      setLyricsFontSize(
-        clampModalFontSize(
-          Number.parseInt(savedLyricsFontSize, 10),
-          LIVE_LYRICS_FONT_SIZE_DEFAULT,
-        ),
-      );
-    }
+    setLyricsFontSize(
+      savedLyricsFontSize
+        ? clampModalFontSize(Number.parseInt(savedLyricsFontSize, 10), LIVE_LYRICS_FONT_SIZE_DEFAULT)
+        : LIVE_LYRICS_FONT_SIZE_DEFAULT,
+    );
+    setLyricsAutoScrollSpeed(
+      savedLyricsAutoScrollSpeed
+        ? clampLyricsAutoScrollSpeed(Number.parseInt(savedLyricsAutoScrollSpeed, 10))
+        : LIVE_LYRICS_AUTOSCROLL_SPEED_DEFAULT,
+    );
+    setLyricsAutoScrollDelay(
+      savedLyricsAutoScrollDelay
+        ? normalizeLyricsAutoScrollDelay(Number.parseInt(savedLyricsAutoScrollDelay, 10))
+        : LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT,
+    );
+    setLyricsReadingMode(savedLyricsReadingMode ? savedLyricsReadingMode === "true" : false);
 
     if (savedSongIntroFontSize) {
       setSongIntroFontSize(
@@ -566,14 +678,10 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       );
     }
 
-    if (savedLyricsReadingMode) {
-      setLyricsReadingMode(savedLyricsReadingMode === "true");
-    }
-
     if (savedSongIntroReadingMode) {
       setSongIntroReadingMode(savedSongIntroReadingMode === "true");
     }
-  }, []);
+  }, [currentLyricsSettingsId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -581,7 +689,56 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     }
 
     window.localStorage.setItem(LIVE_LYRICS_FONT_SIZE_STORAGE_KEY, String(lyricsFontSize));
-  }, [lyricsFontSize]);
+
+    if (currentLyricsSettingsId) {
+      window.localStorage.setItem(
+        buildLiveLyricsStorageKey(LIVE_LYRICS_FONT_SIZE_STORAGE_KEY, currentLyricsSettingsId),
+        String(lyricsFontSize),
+      );
+    }
+  }, [currentLyricsSettingsId, lyricsFontSize]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(LIVE_LYRICS_AUTOSCROLL_SPEED_STORAGE_KEY, String(lyricsAutoScrollSpeed));
+
+    if (currentLyricsSettingsId) {
+      window.localStorage.setItem(
+        buildLiveLyricsStorageKey(LIVE_LYRICS_AUTOSCROLL_SPEED_STORAGE_KEY, currentLyricsSettingsId),
+        String(lyricsAutoScrollSpeed),
+      );
+    }
+  }, [currentLyricsSettingsId, lyricsAutoScrollSpeed]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(LIVE_LYRICS_AUTOSCROLL_DELAY_STORAGE_KEY, String(lyricsAutoScrollDelay));
+
+    if (currentLyricsSettingsId) {
+      window.localStorage.setItem(
+        buildLiveLyricsStorageKey(LIVE_LYRICS_AUTOSCROLL_DELAY_STORAGE_KEY, currentLyricsSettingsId),
+        String(lyricsAutoScrollDelay),
+      );
+    }
+  }, [currentLyricsSettingsId, lyricsAutoScrollDelay]);
+
+  useEffect(() => {
+    lyricsAutoScrollSpeedRef.current = lyricsAutoScrollSpeed;
+  }, [lyricsAutoScrollSpeed]);
+
+  useEffect(() => {
+    lyricsAutoScrollDelayRef.current = lyricsAutoScrollDelay;
+  }, [lyricsAutoScrollDelay]);
+
+  useEffect(() => {
+    lyricsAutoScrollStatusRef.current = lyricsAutoScrollStatus;
+  }, [lyricsAutoScrollStatus]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -603,7 +760,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       LIVE_LYRICS_READING_MODE_STORAGE_KEY,
       String(lyricsReadingMode),
     );
-  }, [lyricsReadingMode]);
+
+    if (currentLyricsSettingsId) {
+      window.localStorage.setItem(
+        buildLiveLyricsStorageKey(LIVE_LYRICS_READING_MODE_STORAGE_KEY, currentLyricsSettingsId),
+        String(lyricsReadingMode),
+      );
+    }
+  }, [currentLyricsSettingsId, lyricsReadingMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -864,10 +1028,118 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     };
   }, [show?.id]);
 
-  const sharedIndex = clampIndex(sharedState?.current_song_index ?? 0, songs.length);
-  const currentIndex = clampIndex(followBandLeader ? sharedIndex : manualIndex, songs.length);
-  const currentSong = songs[currentIndex] ?? null;
-  const nextSong = songs[currentIndex + 1] ?? null;
+
+  const clearLyricsAutoScrollTimers = () => {
+    if (lyricsAutoScrollIntervalRef.current !== null) {
+      window.clearInterval(lyricsAutoScrollIntervalRef.current);
+      lyricsAutoScrollIntervalRef.current = null;
+    }
+
+    if (lyricsAutoScrollCountdownIntervalRef.current !== null) {
+      window.clearInterval(lyricsAutoScrollCountdownIntervalRef.current);
+      lyricsAutoScrollCountdownIntervalRef.current = null;
+    }
+
+    if (lyricsAutoScrollResumeTimeoutRef.current !== null) {
+      window.clearTimeout(lyricsAutoScrollResumeTimeoutRef.current);
+      lyricsAutoScrollResumeTimeoutRef.current = null;
+    }
+  };
+
+  const stopLyricsAutoScroll = () => {
+    clearLyricsAutoScrollTimers();
+    setIsLyricsAutoScrolling(false);
+    setLyricsAutoScrollStatus("stopped");
+    lyricsAutoScrollStatusRef.current = "stopped";
+    setLyricsAutoScrollCountdown(0);
+  };
+
+  const startLyricsAutoScroll = (useDelay = true) => {
+    clearLyricsAutoScrollTimers();
+    setIsLyricsAutoScrolling(true);
+
+    const delay = useDelay ? lyricsAutoScrollDelayRef.current : 0;
+
+    if (delay > 0) {
+      let remainingSeconds = delay;
+      setLyricsAutoScrollStatus("countdown");
+      lyricsAutoScrollStatusRef.current = "countdown";
+      setLyricsAutoScrollCountdown(remainingSeconds);
+
+      lyricsAutoScrollCountdownIntervalRef.current = window.setInterval(() => {
+        remainingSeconds -= 1;
+
+        if (remainingSeconds <= 0) {
+          if (lyricsAutoScrollCountdownIntervalRef.current !== null) {
+            window.clearInterval(lyricsAutoScrollCountdownIntervalRef.current);
+            lyricsAutoScrollCountdownIntervalRef.current = null;
+          }
+
+          setLyricsAutoScrollCountdown(0);
+          setLyricsAutoScrollStatus("running");
+          lyricsAutoScrollStatusRef.current = "running";
+          return;
+        }
+
+        setLyricsAutoScrollCountdown(remainingSeconds);
+      }, 1000);
+      return;
+    }
+
+    setLyricsAutoScrollCountdown(0);
+    setLyricsAutoScrollStatus("running");
+    lyricsAutoScrollStatusRef.current = "running";
+  };
+
+  const markProgrammaticLyricsScroll = () => {
+    isProgrammaticLyricsScrollRef.current = true;
+
+    if (programmaticLyricsScrollTimeoutRef.current !== null) {
+      window.clearTimeout(programmaticLyricsScrollTimeoutRef.current);
+    }
+
+    programmaticLyricsScrollTimeoutRef.current = window.setTimeout(() => {
+      isProgrammaticLyricsScrollRef.current = false;
+      programmaticLyricsScrollTimeoutRef.current = null;
+    }, 120);
+  };
+
+  const resetLyricsScrollToTop = () => {
+    const scrollContainer = lyricsScrollContainerRef.current;
+    const shouldRestartAutoScroll = isLyricsAutoScrolling;
+
+    if (!scrollContainer) {
+      return;
+    }
+
+    clearLyricsAutoScrollTimers();
+    markProgrammaticLyricsScroll();
+    scrollContainer.scrollTo({ top: 0, behavior: "smooth" });
+
+    if (shouldRestartAutoScroll) {
+      startLyricsAutoScroll(true);
+    } else {
+      stopLyricsAutoScroll();
+    }
+  };
+
+  const handleLyricsManualScrollIntent = () => {
+    if (isProgrammaticLyricsScrollRef.current || lyricsAutoScrollStatusRef.current !== "running") {
+      return;
+    }
+
+    if (lyricsAutoScrollIntervalRef.current !== null) {
+      window.clearInterval(lyricsAutoScrollIntervalRef.current);
+      lyricsAutoScrollIntervalRef.current = null;
+    }
+
+    setLyricsAutoScrollStatus("paused");
+    lyricsAutoScrollStatusRef.current = "paused";
+    lyricsAutoScrollResumeTimeoutRef.current = window.setTimeout(() => {
+      lyricsAutoScrollResumeTimeoutRef.current = null;
+      startLyricsAutoScroll(false);
+    }, 1500);
+  };
 
   async function updateSharedSongIndex(nextIndex: number) {
     if (!show?.id || !isLeaderUnlocked || songs.length === 0) {
@@ -956,6 +1228,77 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       activeScrollContainer.focus();
     }, 0);
   }, [lyricsOpen, songIntroOpen]);
+
+  useEffect(() => {
+    if (lyricsAutoScrollStatus !== "running" || !lyricsOpen) {
+      return;
+    }
+
+    const scrollContainer = lyricsScrollContainerRef.current;
+
+    if (!scrollContainer) {
+      stopLyricsAutoScroll();
+      return;
+    }
+
+    const { pixels, intervalMs } = getLyricsAutoScrollStep(lyricsAutoScrollSpeedRef.current);
+
+    lyricsAutoScrollIntervalRef.current = window.setInterval(() => {
+      const activeScrollContainer = lyricsScrollContainerRef.current;
+
+      if (!activeScrollContainer || lyricsAutoScrollStatusRef.current !== "running") {
+        return;
+      }
+
+      const maxTop = activeScrollContainer.scrollHeight - activeScrollContainer.clientHeight;
+      const nextTop = Math.min(activeScrollContainer.scrollTop + pixels, maxTop);
+
+      markProgrammaticLyricsScroll();
+      activeScrollContainer.scrollTop = nextTop;
+
+      if (nextTop >= maxTop) {
+        stopLyricsAutoScroll();
+      }
+    }, intervalMs);
+
+    return () => {
+      if (lyricsAutoScrollIntervalRef.current !== null) {
+        window.clearInterval(lyricsAutoScrollIntervalRef.current);
+        lyricsAutoScrollIntervalRef.current = null;
+      }
+
+    };
+  }, [lyricsAutoScrollStatus, lyricsAutoScrollSpeed, lyricsOpen]);
+
+  useEffect(() => {
+    if (!lyricsOpen) {
+      stopLyricsAutoScroll();
+    }
+  }, [lyricsOpen]);
+
+  useEffect(() => {
+    stopLyricsAutoScroll();
+  }, [currentSong?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (lyricsAutoScrollIntervalRef.current !== null) {
+        window.clearInterval(lyricsAutoScrollIntervalRef.current);
+      }
+
+
+      if (lyricsAutoScrollCountdownIntervalRef.current !== null) {
+        window.clearInterval(lyricsAutoScrollCountdownIntervalRef.current);
+      }
+
+      if (lyricsAutoScrollResumeTimeoutRef.current !== null) {
+        window.clearTimeout(lyricsAutoScrollResumeTimeoutRef.current);
+      }
+      if (programmaticLyricsScrollTimeoutRef.current !== null) {
+        window.clearTimeout(programmaticLyricsScrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -1583,7 +1926,9 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         >
           <div className="flex min-h-full items-start justify-center">
           <div
-            className={`flex max-h-[90vh] w-full max-w-4xl flex-col rounded-[2rem] p-5 shadow-[0_40px_100px_-55px_rgba(15,23,42,0.95)] ${
+            className={`flex max-h-[90vh] w-full flex-col rounded-[2rem] p-5 shadow-[0_40px_100px_-55px_rgba(15,23,42,0.95)] ${
+              showLyricsPerformanceFlowPanel ? "max-w-7xl" : "max-w-4xl"
+            } ${
               lyricsReadingMode
                 ? "border border-stone-300 bg-white"
                 : "border border-white/10 bg-slate-950"
@@ -1610,7 +1955,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   {currentSong.title}
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setLyricsReadingMode((currentValue) => !currentValue)}
@@ -1656,7 +2001,115 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setLyricsOpen(false)}
+                  onClick={() => {
+                    if (isLyricsAutoScrolling) {
+                      stopLyricsAutoScroll();
+                    } else {
+                      startLyricsAutoScroll(true);
+                    }
+                  }}
+                  className={`flex min-h-[5rem] w-full basis-full flex-col items-center justify-center rounded-[1.5rem] px-5 py-4 text-center text-2xl font-black uppercase tracking-[0.12em] shadow-[0_22px_55px_-32px_rgba(16,185,129,0.9)] transition sm:min-h-[5.5rem] sm:text-3xl ${
+                    lyricsAutoScrollStatus === "running"
+                      ? lyricsReadingMode
+                        ? "border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100"
+                        : "border border-rose-400/40 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30"
+                      : lyricsAutoScrollStatus === "countdown"
+                        ? lyricsReadingMode
+                          ? "border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                          : "border border-amber-400/40 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"
+                        : lyricsReadingMode
+                          ? "border border-emerald-700/30 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                          : "border border-emerald-400/40 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30"
+                  }`}
+                >
+                  {lyricsAutoScrollStatus === "running" ? (
+                    <span>? STOP AUTO SCROLL</span>
+                  ) : lyricsAutoScrollStatus === "countdown" ? (
+                    <>
+                      <span>? STARTING IN...</span>
+                      <span className="mt-1 text-4xl leading-none sm:text-5xl">{lyricsAutoScrollCountdown}</span>
+                    </>
+                  ) : (
+                    <span>? START AUTO SCROLL</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLyricsAutoScrollSpeed((currentSpeed) =>
+                      clampLyricsAutoScrollSpeed(currentSpeed - 1),
+                    )
+                  }
+                  disabled={lyricsAutoScrollSpeed <= LIVE_LYRICS_AUTOSCROLL_SPEED_MIN}
+                  className={`min-h-10 rounded-full px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    lyricsReadingMode
+                      ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                      : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  }`}
+                >
+                  Speed -
+                </button>
+                <span
+                  className={`min-h-10 rounded-full px-3 py-2 text-sm font-semibold ${
+                    lyricsReadingMode
+                      ? "border border-stone-300 bg-white text-stone-800"
+                      : "border border-white/10 bg-slate-900 text-slate-100"
+                  }`}
+                >
+                  Speed {lyricsAutoScrollSpeed}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLyricsAutoScrollSpeed((currentSpeed) =>
+                      clampLyricsAutoScrollSpeed(currentSpeed + 1),
+                    )
+                  }
+                  disabled={lyricsAutoScrollSpeed >= LIVE_LYRICS_AUTOSCROLL_SPEED_MAX}
+                  className={`min-h-10 rounded-full px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    lyricsReadingMode
+                      ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                      : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  }`}
+                >
+                  Speed +
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextDelay = getNextLyricsAutoScrollDelay(lyricsAutoScrollDelay);
+                    lyricsAutoScrollDelayRef.current = nextDelay;
+                    setLyricsAutoScrollDelay(nextDelay);
+
+                    if (lyricsAutoScrollStatusRef.current === "countdown") {
+                      startLyricsAutoScroll(true);
+                    }
+                  }}
+                  className={`min-h-10 rounded-full px-3 py-2 text-sm font-semibold transition ${
+                    lyricsReadingMode
+                      ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                      : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  }`}
+                >
+                  Delay {lyricsAutoScrollDelay}s
+                </button>
+                <button
+                  type="button"
+                  onClick={resetLyricsScrollToTop}
+                  className={`min-h-10 rounded-full px-3 py-2 text-sm font-semibold transition ${
+                    lyricsReadingMode
+                      ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                      : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  }`}
+                >
+                  Reset to Top
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopLyricsAutoScroll();
+                    setLyricsOpen(false);
+                  }}
                   className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                     lyricsReadingMode
                       ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
@@ -1668,41 +2121,73 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               </div>
             </div>
             <div
-              ref={lyricsScrollContainerRef}
-              className={`mt-4 rounded-[1.5rem] border px-4 py-4 pr-3 ${
-                lyricsReadingMode
-                  ? "border-stone-300 bg-white [color-scheme:light]"
-                  : "border-white/10 bg-slate-900"
+              className={`mt-4 grid min-h-0 flex-1 gap-4 ${
+                showLyricsPerformanceFlowPanel ? "md:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]" : ""
               }`}
             >
               <div
-                className={`font-sans ${
-                  lyricsReadingMode ? "text-stone-950" : "text-slate-100"
+                ref={lyricsScrollContainerRef}
+                onScroll={handleLyricsManualScrollIntent}
+                onWheel={handleLyricsManualScrollIntent}
+                onTouchStart={handleLyricsManualScrollIntent}
+                onPointerDown={handleLyricsManualScrollIntent}
+                className={`min-h-0 overflow-y-auto rounded-[1.5rem] border px-4 py-4 pr-3 ${
+                  lyricsReadingMode
+                    ? "border-stone-300 bg-white [color-scheme:light]"
+                    : "border-white/10 bg-slate-900"
                 }`}
-                style={{
-                  fontSize: `${lyricsFontSize}px`,
-                  lineHeight: Math.max(lyricsFontSize * 1.55, lyricsFontSize + 10) / lyricsFontSize,
-                }}
               >
-                {currentSong.lyrics.split(/\r?\n/).map((line, index) => {
-                  const isSectionMarker = isLyricSectionMarker(line);
+                <div
+                  className={`font-sans ${lyricsReadingMode ? "text-stone-950" : "text-slate-100"}`}
+                  style={{
+                    fontSize: `${lyricsFontSize}px`,
+                    lineHeight: Math.max(lyricsFontSize * 1.55, lyricsFontSize + 10) / lyricsFontSize,
+                  }}
+                >
+                  {currentSong.lyrics.split(/\r?\n/).map((line, index) => {
+                    const isSectionMarker = isLyricSectionMarker(line);
 
-                  return (
-                    <div
-                      key={`lyrics-line-${index}`}
-                      className={`whitespace-pre-wrap ${
-                        isSectionMarker
-                          ? lyricsReadingMode
-                            ? "pt-2 text-[1.08em] font-extrabold tracking-[0.03em] text-emerald-800"
-                            : "pt-2 text-[1.08em] font-extrabold tracking-[0.03em] text-emerald-300"
-                          : ""
-                      }`}
-                    >
-                      {line || "\u00A0"}
-                    </div>
-                  );
-                })}
+                    return (
+                      <div
+                        key={`lyrics-line-${index}`}
+                        className={`whitespace-pre-wrap ${
+                          isSectionMarker
+                            ? lyricsReadingMode
+                              ? "pt-2 text-[1.08em] font-extrabold tracking-[0.03em] text-emerald-800"
+                              : "pt-2 text-[1.08em] font-extrabold tracking-[0.03em] text-emerald-300"
+                            : ""
+                        }`}
+                      >
+                        {line || "\u00A0"}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
+              {showLyricsPerformanceFlowPanel ? (
+                <aside
+                  className={`min-h-0 overflow-y-auto rounded-[1.5rem] border px-4 py-4 ${
+                    lyricsReadingMode
+                      ? "border-emerald-700/30 bg-emerald-50 [color-scheme:light]"
+                      : "border-emerald-400/25 bg-emerald-500/10"
+                  }`}
+                >
+                  <h4
+                    className={`text-sm font-semibold uppercase tracking-[0.22em] ${
+                      lyricsReadingMode ? "text-emerald-900" : "text-emerald-200"
+                    }`}
+                  >
+                    Performance Flow / Break Order
+                  </h4>
+                  <pre
+                    className={`mt-4 whitespace-pre-wrap font-sans text-2xl font-semibold leading-10 ${
+                      lyricsReadingMode ? "text-stone-950" : "text-white"
+                    }`}
+                  >
+                    {currentSong.performanceFlow}
+                  </pre>
+                </aside>
+              ) : null}
             </div>
           </div>
           </div>

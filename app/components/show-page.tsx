@@ -6477,11 +6477,12 @@ export function ShowPage({
   const isAdminView = viewMode === "admin";
   const isBandView = viewMode === "band";
   const isGuestView = viewMode === "guest";
+  const hasAdminPortalAccess = isAdminView || (isBandView && isBandAdminUnlocked);
   const shouldShowAdminSongSubmission =
     isAdminView && activeAdminTab === "songs";
   const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
   const shouldShowBandRehearsalTab = isBandView && activeBandTab === "rehearsal";
-  const canEditBandRehearsal = isBandView && isBandAdminUnlocked;
+  const canEditBandRehearsal = isBandView && hasAdminPortalAccess;
   const isBandRehearsalReadOnly = isBandView && !isBandAdminUnlocked;
   const shouldShowGuestWelcomeTab = isGuestView && activeGuestTab === "welcome";
   const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
@@ -7039,7 +7040,7 @@ export function ShowPage({
   );
 
   function canEditPoolSong() {
-    if (viewMode === "admin") {
+    if (hasAdminPortalAccess) {
       return true;
     }
 
@@ -7051,11 +7052,7 @@ export function ShowPage({
   }
 
   function canEditSetlistSong() {
-    if (viewMode === "admin") {
-      return true;
-    }
-
-    return false;
+    return hasAdminPortalAccess;
   }
 
   function getPrintSetlistSongKey(song: SetlistSong) {
@@ -7102,7 +7099,7 @@ export function ShowPage({
   }
 
   function canEditLibrarySong(song: SongLibrarySong) {
-    if (viewMode === "admin") {
+    if (hasAdminPortalAccess) {
       return true;
     }
 
@@ -14538,7 +14535,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       let linkedSong = existingLibrarySong ?? null;
 
       if (!linkedSong) {
-        const createdByRole = viewMode === "admin" ? "admin" : "band";
+        const createdByRole = hasAdminPortalAccess ? "admin" : "band";
         const { data: createdSong, error: createSongError } = await supabase
           .from("songs")
           .insert({
@@ -14903,7 +14900,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     try {
       const supabase = createClient();
-      const createdByRole = viewMode === "admin" ? "admin" : "band";
+      const createdByRole = hasAdminPortalAccess ? "admin" : "band";
       let nextSongLibrary = [...songLibrary];
       let nextRehearsalEntries = [...rehearsalEntries];
       const rehearsalEntriesById = new Map(nextRehearsalEntries.map((entry) => [entry.id, entry] as const));
@@ -16003,9 +16000,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     />
                   </div>
                 ) : null}
-                  <p className="text-sm font-semibold uppercase tracking-[0.22em] text-emerald-200">
-                    {portalLabel}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold uppercase tracking-[0.22em] text-emerald-200">
+                      {portalLabel}
+                    </p>
+                    {isBandView && hasAdminPortalAccess ? (
+                      <span className="rounded-full border border-emerald-200/70 bg-emerald-300/20 px-2.5 py-1 text-xs font-bold uppercase tracking-[0.16em] text-emerald-100">
+                        Admin Mode
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="flex min-w-0 flex-col justify-center gap-3 lg:min-h-[180px]">
@@ -16040,15 +16044,22 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     />
                   </div>
                 ) : null}
-                <p
-                  className={`uppercase ${
-                    isGuestView
-                      ? "text-lg font-black tracking-[0.3em] text-emerald-700 sm:text-xl"
-                      : "text-sm font-semibold tracking-[0.16em] text-stone-500"
-                  }`}
-                >
-                  {portalLabel}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p
+                    className={`uppercase ${
+                      isGuestView
+                        ? "text-lg font-black tracking-[0.3em] text-emerald-700 sm:text-xl"
+                        : "text-sm font-semibold tracking-[0.16em] text-stone-500"
+                    }`}
+                  >
+                    {portalLabel}
+                  </p>
+                  {isBandView && hasAdminPortalAccess ? (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">
+                      Admin Mode
+                    </span>
+                  ) : null}
+                </div>
                 {show.show_logo_url ? (
                   <div className="mt-2">
                     <img
@@ -24181,7 +24192,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                       Edit Song
                                     </button>
                                   ) : null}
-                                  {viewMode === "admin" ? (
+                                  {hasAdminPortalAccess ? (
                                     <>
                                       <button
                                         type="button"
@@ -25967,7 +25978,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 </div>
                               ) : null}
 
-                              {viewMode === "admin" ? (
+                              {hasAdminPortalAccess ? (
                                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                                   <button
                                     type="button"
@@ -25996,7 +26007,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 </div>
                               ) : null}
 
-                              {viewMode === "admin" ? (
+                              {hasAdminPortalAccess ? (
                                 <div className="border-t border-stone-200 pt-3">
                                   <div className="flex flex-col gap-3 sm:flex-row">
                                     {isUsedInSetlist ? (
