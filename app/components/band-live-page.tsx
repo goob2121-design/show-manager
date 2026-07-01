@@ -14,8 +14,11 @@ const LIVE_SONG_INTRO_FONT_SIZE_STORAGE_KEY = "stageflow_live_song_intro_font_si
 const LIVE_LYRICS_READING_MODE_STORAGE_KEY = "stageflow_live_lyrics_reading_mode";
 const LIVE_LYRICS_AUTOSCROLL_SPEED_STORAGE_KEY = "stageflow_live_lyrics_autoscroll_speed";
 const LIVE_LYRICS_AUTOSCROLL_DELAY_STORAGE_KEY = "stageflow_live_lyrics_autoscroll_delay";
+const LIVE_LYRICS_AUTOSTART_SCROLL_STORAGE_KEY = "stageflow_live_lyrics_autostart_scroll";
 const LIVE_LYRICS_HIDE_CONTROLS_STORAGE_KEY = "stageflow_live_lyrics_hide_controls";
 const LIVE_SONG_INTRO_READING_MODE_STORAGE_KEY = "stageflow_live_song_intro_reading_mode";
+const LIVE_INTRO_AUTO_OPEN_LYRICS_ENABLED_STORAGE_KEY = "stageflow_live_intro_auto_open_lyrics_enabled";
+const LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_STORAGE_KEY = "stageflow_live_intro_auto_open_lyrics_delay";
 const LIVE_MODAL_FONT_SIZE_MIN = 18;
 const LIVE_MODAL_FONT_SIZE_MAX = 42;
 const LIVE_LYRICS_FONT_SIZE_DEFAULT = 28;
@@ -25,6 +28,8 @@ const LIVE_LYRICS_AUTOSCROLL_SPEED_DEFAULT = 4;
 const LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS = [0, 3, 5, 10, 15, 20] as const;
 const LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT = 3;
 type LyricsAutoScrollDelay = (typeof LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS)[number];
+const LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_OPTIONS = [0, 10, 20, 30, 45, 60, 90] as const;
+type IntroAutoOpenLyricsDelay = (typeof LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_OPTIONS)[number];
 type LyricsAutoScrollStatus = "stopped" | "countdown" | "running" | "paused";
 type LyricsAutoScrollStep = { pixels: number; intervalMs: number };
 
@@ -267,6 +272,19 @@ function getNextLyricsAutoScrollDelay(currentDelay: LyricsAutoScrollDelay) {
   return LIVE_LYRICS_AUTOSCROLL_DELAY_OPTIONS[nextIndex] ?? LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT;
 }
 
+
+function normalizeIntroAutoOpenLyricsDelay(value: number): IntroAutoOpenLyricsDelay {
+  return LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_OPTIONS.includes(value as IntroAutoOpenLyricsDelay)
+    ? (value as IntroAutoOpenLyricsDelay)
+    : 0;
+}
+
+function getNextIntroAutoOpenLyricsDelay(currentDelay: IntroAutoOpenLyricsDelay) {
+  const currentIndex = LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_OPTIONS.indexOf(currentDelay);
+  const nextIndex = (currentIndex + 1) % LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_OPTIONS.length;
+
+  return LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_OPTIONS[nextIndex] ?? 0;
+}
 function buildLiveLyricsStorageKey(baseKey: string, songSettingsId: string | null) {
   return songSettingsId ? `${baseKey}_${songSettingsId}` : baseKey;
 }
@@ -519,8 +537,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [lyricsAutoScrollStatus, setLyricsAutoScrollStatus] = useState<LyricsAutoScrollStatus>("stopped");
   const [lyricsAutoScrollCountdown, setLyricsAutoScrollCountdown] = useState(0);
   const [isLyricsAutoScrolling, setIsLyricsAutoScrolling] = useState(false);
+  const [lyricsAutoStartScroll, setLyricsAutoStartScroll] = useState(false);
+  const [pendingLyricsAutoStart, setPendingLyricsAutoStart] = useState(false);
   const [lyricsControlsHidden, setLyricsControlsHidden] = useState(false);
   const [songIntroReadingMode, setSongIntroReadingMode] = useState(false);
+  const [introAutoOpenLyricsEnabled, setIntroAutoOpenLyricsEnabled] = useState(false);
+  const [introAutoOpenLyricsDelay, setIntroAutoOpenLyricsDelay] = useState<IntroAutoOpenLyricsDelay>(0);
+  const [introAutoOpenLyricsCountdown, setIntroAutoOpenLyricsCountdown] = useState<number | null>(null);
   const [wakeLockEnabled, setWakeLockEnabled] = useState(false);
   const [showStartConfirmOpen, setShowStartConfirmOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
@@ -533,12 +556,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const songIntroOverlayRef = useRef<HTMLDivElement | null>(null);
   const lyricsScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const songIntroScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const introAutoOpenLyricsIntervalRef = useRef<number | null>(null);
   const lyricsAutoScrollIntervalRef = useRef<number | null>(null);
   const lyricsAutoScrollCountdownIntervalRef = useRef<number | null>(null);
   const lyricsAutoScrollResumeTimeoutRef = useRef<number | null>(null);
   const lyricsAutoScrollSpeedRef = useRef(lyricsAutoScrollSpeed);
   const lyricsAutoScrollDelayRef = useRef<LyricsAutoScrollDelay>(lyricsAutoScrollDelay);
   const lyricsAutoScrollStatusRef = useRef<LyricsAutoScrollStatus>(lyricsAutoScrollStatus);
+  const lyricsAutoStartScrollHandledRef = useRef<string | null>(null);
   const isProgrammaticLyricsScrollRef = useRef(false);
   const programmaticLyricsScrollTimeoutRef = useRef<number | null>(null);
 
@@ -663,6 +688,18 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       LIVE_LYRICS_READING_MODE_STORAGE_KEY,
       currentLyricsSettingsId,
     );
+    const savedLyricsAutoStartScroll = readLiveLyricsSetting(
+      LIVE_LYRICS_AUTOSTART_SCROLL_STORAGE_KEY,
+      currentLyricsSettingsId,
+    );
+    const savedIntroAutoOpenLyricsEnabled = readLiveLyricsSetting(
+      LIVE_INTRO_AUTO_OPEN_LYRICS_ENABLED_STORAGE_KEY,
+      currentLyricsSettingsId,
+    );
+    const savedIntroAutoOpenLyricsDelay = readLiveLyricsSetting(
+      LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_STORAGE_KEY,
+      currentLyricsSettingsId,
+    );
     const savedSongIntroFontSize = window.localStorage.getItem(
       LIVE_SONG_INTRO_FONT_SIZE_STORAGE_KEY,
     );
@@ -686,6 +723,13 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         : LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT,
     );
     setLyricsReadingMode(savedLyricsReadingMode ? savedLyricsReadingMode === "true" : false);
+    setLyricsAutoStartScroll(savedLyricsAutoStartScroll ? savedLyricsAutoStartScroll === "true" : false);
+    setIntroAutoOpenLyricsEnabled(savedIntroAutoOpenLyricsEnabled ? savedIntroAutoOpenLyricsEnabled === "true" : false);
+    setIntroAutoOpenLyricsDelay(
+      savedIntroAutoOpenLyricsDelay
+        ? normalizeIntroAutoOpenLyricsDelay(Number.parseInt(savedIntroAutoOpenLyricsDelay, 10))
+        : 0,
+    );
 
     if (savedSongIntroFontSize) {
       setSongIntroFontSize(
@@ -747,6 +791,24 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   }, [currentLyricsSettingsId, lyricsAutoScrollDelay]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      LIVE_LYRICS_AUTOSTART_SCROLL_STORAGE_KEY,
+      lyricsAutoStartScroll ? "true" : "false",
+    );
+
+    if (currentLyricsSettingsId) {
+      window.localStorage.setItem(
+        buildLiveLyricsStorageKey(LIVE_LYRICS_AUTOSTART_SCROLL_STORAGE_KEY, currentLyricsSettingsId),
+        lyricsAutoStartScroll ? "true" : "false",
+      );
+    }
+  }, [currentLyricsSettingsId, lyricsAutoStartScroll]);
+
+  useEffect(() => {
     lyricsAutoScrollSpeedRef.current = lyricsAutoScrollSpeed;
   }, [lyricsAutoScrollSpeed]);
 
@@ -797,6 +859,42 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       String(songIntroReadingMode),
     );
   }, [songIntroReadingMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      LIVE_INTRO_AUTO_OPEN_LYRICS_ENABLED_STORAGE_KEY,
+      introAutoOpenLyricsEnabled ? "true" : "false",
+    );
+
+    if (currentLyricsSettingsId) {
+      window.localStorage.setItem(
+        buildLiveLyricsStorageKey(LIVE_INTRO_AUTO_OPEN_LYRICS_ENABLED_STORAGE_KEY, currentLyricsSettingsId),
+        introAutoOpenLyricsEnabled ? "true" : "false",
+      );
+    }
+  }, [currentLyricsSettingsId, introAutoOpenLyricsEnabled]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_STORAGE_KEY,
+      String(introAutoOpenLyricsDelay),
+    );
+
+    if (currentLyricsSettingsId) {
+      window.localStorage.setItem(
+        buildLiveLyricsStorageKey(LIVE_INTRO_AUTO_OPEN_LYRICS_DELAY_STORAGE_KEY, currentLyricsSettingsId),
+        String(introAutoOpenLyricsDelay),
+      );
+    }
+  }, [currentLyricsSettingsId, introAutoOpenLyricsDelay]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1109,6 +1207,36 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     lyricsAutoScrollStatusRef.current = "running";
   };
 
+  const openLyricsModal = () => {
+    if (!currentSong?.lyrics?.trim()) {
+      return;
+    }
+
+    setLyricsOpen(true);
+  };
+
+  const clearIntroAutoOpenLyricsTimer = () => {
+    if (introAutoOpenLyricsIntervalRef.current !== null) {
+      window.clearInterval(introAutoOpenLyricsIntervalRef.current);
+      introAutoOpenLyricsIntervalRef.current = null;
+    }
+
+    setIntroAutoOpenLyricsCountdown(null);
+  };
+
+  const openLyricsFromSongIntro = () => {
+    clearIntroAutoOpenLyricsTimer();
+
+    if (!currentSong?.lyrics?.trim()) {
+      return;
+    }
+
+    console.log("Song Intro requested Lyrics auto-open");
+    setPendingLyricsAutoStart(true);
+    setSongIntroOpen(false);
+    openLyricsModal();
+  };
+
   const markProgrammaticLyricsScroll = () => {
     isProgrammaticLyricsScrollRef.current = true;
 
@@ -1291,12 +1419,201 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   useEffect(() => {
     if (!lyricsOpen) {
       stopLyricsAutoScroll();
+      setPendingLyricsAutoStart(false);
     }
   }, [lyricsOpen]);
 
   useEffect(() => {
+    if (!lyricsOpen) {
+      lyricsAutoStartScrollHandledRef.current = null;
+      return;
+    }
+
+    if (!currentSong?.id || !currentSong.lyrics?.trim() || pendingLyricsAutoStart) {
+      return;
+    }
+
+    if (lyricsAutoStartScrollHandledRef.current === currentSong.id) {
+      return;
+    }
+
+    const savedAutoStartScroll = readLiveLyricsSetting(
+      LIVE_LYRICS_AUTOSTART_SCROLL_STORAGE_KEY,
+      currentSong.id,
+    );
+    const shouldAutoStart = savedAutoStartScroll
+      ? savedAutoStartScroll === "true"
+      : lyricsAutoStartScroll;
+
+    if (!shouldAutoStart) {
+      return;
+    }
+
+    const savedSpeed = readLiveLyricsSetting(
+      LIVE_LYRICS_AUTOSCROLL_SPEED_STORAGE_KEY,
+      currentSong.id,
+    );
+    const savedDelay = readLiveLyricsSetting(
+      LIVE_LYRICS_AUTOSCROLL_DELAY_STORAGE_KEY,
+      currentSong.id,
+    );
+    const nextSpeed = savedSpeed
+      ? clampLyricsAutoScrollSpeed(Number.parseInt(savedSpeed, 10))
+      : lyricsAutoScrollSpeed;
+    const nextDelay = savedDelay
+      ? normalizeLyricsAutoScrollDelay(Number.parseInt(savedDelay, 10))
+      : lyricsAutoScrollDelay;
+
+    lyricsAutoScrollSpeedRef.current = nextSpeed;
+    lyricsAutoScrollDelayRef.current = nextDelay;
+    setLyricsAutoScrollSpeed(nextSpeed);
+    setLyricsAutoScrollDelay(nextDelay);
+    setLyricsAutoStartScroll(shouldAutoStart);
+    lyricsAutoStartScrollHandledRef.current = currentSong.id;
+    startLyricsAutoScroll(true);
+  }, [
+    currentSong?.id,
+    currentSong?.lyrics,
+    lyricsAutoScrollDelay,
+    lyricsAutoScrollSpeed,
+    lyricsAutoStartScroll,
+    lyricsOpen,
+    pendingLyricsAutoStart,
+  ]);
+
+  useEffect(() => {
+    if (!pendingLyricsAutoStart) {
+      return;
+    }
+
+    if (!lyricsOpen || !currentSong?.id || !currentSong.lyrics?.trim()) {
+      return;
+    }
+
+    let attempts = 0;
+    const intervalId = window.setInterval(() => {
+      attempts += 1;
+      const lyricsScrollContainer = lyricsScrollContainerRef.current;
+
+      if (!lyricsScrollContainer) {
+        if (attempts >= 20) {
+          setPendingLyricsAutoStart(false);
+          window.clearInterval(intervalId);
+        }
+
+        return;
+      }
+
+      window.clearInterval(intervalId);
+      console.log("Lyrics modal ready");
+
+      const savedAutoStartScroll = readLiveLyricsSetting(
+        LIVE_LYRICS_AUTOSTART_SCROLL_STORAGE_KEY,
+        currentSong.id,
+      );
+      const shouldAutoStart = savedAutoStartScroll
+        ? savedAutoStartScroll === "true"
+        : lyricsAutoStartScroll;
+
+      console.log(`Auto Start setting for song: ${shouldAutoStart}`);
+
+      if (!shouldAutoStart) {
+        setPendingLyricsAutoStart(false);
+        return;
+      }
+
+      const savedSpeed = readLiveLyricsSetting(
+        LIVE_LYRICS_AUTOSCROLL_SPEED_STORAGE_KEY,
+        currentSong.id,
+      );
+      const savedDelay = readLiveLyricsSetting(
+        LIVE_LYRICS_AUTOSCROLL_DELAY_STORAGE_KEY,
+        currentSong.id,
+      );
+      const nextSpeed = savedSpeed
+        ? clampLyricsAutoScrollSpeed(Number.parseInt(savedSpeed, 10))
+        : lyricsAutoScrollSpeed;
+      const nextDelay = savedDelay
+        ? normalizeLyricsAutoScrollDelay(Number.parseInt(savedDelay, 10))
+        : lyricsAutoScrollDelay;
+
+      lyricsAutoScrollSpeedRef.current = nextSpeed;
+      lyricsAutoScrollDelayRef.current = nextDelay;
+      setLyricsAutoScrollSpeed(nextSpeed);
+      setLyricsAutoScrollDelay(nextDelay);
+      setLyricsAutoStartScroll(shouldAutoStart);
+      markProgrammaticLyricsScroll();
+      lyricsScrollContainer.scrollTop = 0;
+      console.log("Starting auto-scroll countdown");
+      startLyricsAutoScroll(true);
+      console.log("Auto-scroll started");
+      lyricsAutoStartScrollHandledRef.current = currentSong.id;
+      setPendingLyricsAutoStart(false);
+    }, 50);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    currentSong?.id,
+    currentSong?.lyrics,
+    lyricsAutoScrollDelay,
+    lyricsAutoScrollSpeed,
+    lyricsAutoStartScroll,
+    lyricsOpen,
+    pendingLyricsAutoStart,
+  ]);
+
+  useEffect(() => {
+    clearIntroAutoOpenLyricsTimer();
+
+    if (
+      !songIntroOpen ||
+      !currentSong?.lyrics?.trim() ||
+      !introAutoOpenLyricsEnabled ||
+      introAutoOpenLyricsDelay <= 0
+    ) {
+      return;
+    }
+
+    let remainingSeconds = introAutoOpenLyricsDelay;
+    setIntroAutoOpenLyricsCountdown(remainingSeconds);
+
+    introAutoOpenLyricsIntervalRef.current = window.setInterval(() => {
+      remainingSeconds -= 1;
+
+      if (remainingSeconds <= 0) {
+        openLyricsFromSongIntro();
+        return;
+      }
+
+      setIntroAutoOpenLyricsCountdown(remainingSeconds);
+    }, 1000);
+
+    return () => {
+      clearIntroAutoOpenLyricsTimer();
+    };
+  }, [
+    currentSong?.id,
+    currentSong?.lyrics,
+    introAutoOpenLyricsDelay,
+    introAutoOpenLyricsEnabled,
+    songIntroOpen,
+  ]);
+
+  useEffect(() => {
     stopLyricsAutoScroll();
-  }, [currentSong?.id]);
+
+    const lyricsScrollContainer = lyricsScrollContainerRef.current;
+    if (lyricsScrollContainer) {
+      markProgrammaticLyricsScroll();
+      lyricsScrollContainer.scrollTop = 0;
+    }
+
+    if (lyricsOpen && currentSong && !currentSong.lyrics?.trim()) {
+      setLyricsOpen(false);
+    }
+  }, [currentSong?.id, lyricsOpen]);
 
   useEffect(() => {
     return () => {
@@ -1587,7 +1904,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             onClick={() => setFocusMode(false)}
             className="fixed left-3 top-3 z-30 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-slate-950/88 px-4 text-sm font-semibold text-slate-100 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur transition hover:bg-slate-900/95 sm:left-4 sm:top-4"
           >
-            ☰ Show Menu
+            Show Menu
           </button>
         </>
       ) : null}
@@ -1772,7 +2089,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 <div className="shrink-0 self-start rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-right min-w-[6.5rem] sm:min-w-[9.75rem]">
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Key</p>
                   <p className="mt-1 text-3xl font-black text-emerald-200 sm:text-4xl lg:text-5xl">
-                    {currentSong.key?.trim() || "—"}
+                    {currentSong.key?.trim() || "-"}
                   </p>
                 </div>
               </div>
@@ -1793,7 +2110,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 {currentSong.lyrics?.trim() ? (
                   <button
                     type="button"
-                    onClick={() => setLyricsOpen(true)}
+                    onClick={openLyricsModal}
                     className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[1.35rem] border border-sky-400/25 bg-sky-500/12 px-4 py-4 text-left transition hover:bg-sky-500/18 sm:min-h-[6.75rem] sm:px-5 sm:py-4.5 lg:min-h-[7rem] lg:px-5 lg:py-5"
                   >
                     <span className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-200">Lyrics</span>
@@ -1879,7 +2196,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-300">Leader Controls</h3>
                 <div className="mt-3 flex flex-col gap-3.5 lg:min-h-[30rem] lg:justify-start">
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200">
-                    Shared position: {songs[sharedIndex] ? `${songs[sharedIndex].sectionLabel} • Song ${songs[sharedIndex].songNumber}` : "Not set yet"}
+                    Shared position: {songs[sharedIndex] ? `${songs[sharedIndex].sectionLabel} - Song ${songs[sharedIndex].songNumber}` : "Not set yet"}
                   </div>
                   <button
                     type="button"
@@ -1920,7 +2237,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">On Deck</p>
                       <p className="mt-2 text-lg font-semibold text-white">{nextSong.title}</p>
                       <p className="mt-2 text-sm font-medium text-emerald-200">
-                        Key: {nextSong.key?.trim() || "—"}
+                        Key: {nextSong.key?.trim() || "-"}
                       </p>
                     </div>
                   ) : (
@@ -1953,27 +2270,36 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             }`}
           >
             <div
-              className={`flex items-center justify-between gap-4 pb-4 ${
-                lyricsReadingMode ? "border-b border-stone-200" : "border-b border-white/10"
-              }`}
+              className={`${
+                lyricsControlsHidden ? "relative block text-center" : "flex items-center justify-between gap-4"
+              } pb-4 ${lyricsReadingMode ? "border-b border-stone-200" : "border-b border-white/10"}`}
             >
-              <div>
-                <p
-                  className={`text-xs font-semibold uppercase tracking-[0.24em] ${
+              <div className={lyricsControlsHidden ? "mx-auto max-w-5xl px-24" : undefined}>
+                {!lyricsControlsHidden ? (
+                  <p
+                    className={`text-xs font-semibold uppercase tracking-[0.24em] ${
                     lyricsReadingMode ? "text-stone-500" : "text-emerald-300/80"
                   }`}
-                >
-                  Lyrics
-                </p>
+                  >
+                    Lyrics
+                  </p>
+                ) : null}
                 <h3
-                  className={`mt-2 text-2xl font-bold ${
+                  className={`${lyricsControlsHidden ? "text-4xl font-black sm:text-5xl lg:text-6xl" : "mt-2 text-2xl font-bold"} ${
                     lyricsReadingMode ? "text-stone-950" : "text-white"
                   }`}
                 >
                   {currentSong.title}
                 </h3>
+                <p
+                  className={`${lyricsControlsHidden ? "mt-3 text-2xl font-black sm:text-3xl" : "mt-2 text-lg font-bold"} ${
+                    lyricsReadingMode ? "text-emerald-800" : "text-emerald-200"
+                  }`}
+                >
+                  Key: {currentSong.key?.trim() || "-"}
+                </p>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className={lyricsControlsHidden ? "absolute right-0 top-0 flex items-center justify-end gap-2" : "flex flex-wrap items-center justify-end gap-2"}>
                 {!lyricsControlsHidden ? (
                   <>
                     <button
@@ -2021,16 +2347,17 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     </button>
                   </>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isLyricsAutoScrolling) {
+                {!lyricsControlsHidden || !showLyricsPerformanceFlowPanel ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isLyricsAutoScrolling) {
                       stopLyricsAutoScroll();
-                    } else {
-                      startLyricsAutoScroll(true);
-                    }
-                  }}
-                  className={`mx-auto flex min-h-[4.5rem] w-fit min-w-[20rem] max-w-full flex-col items-center justify-center rounded-[1.5rem] px-8 py-3.5 text-center text-xl font-black uppercase tracking-[0.12em] shadow-[0_22px_55px_-32px_rgba(16,185,129,0.9)] transition sm:min-h-[5rem] sm:min-w-[24rem] sm:px-10 sm:text-2xl ${
+                      } else {
+                        startLyricsAutoScroll(true);
+                      }
+                    }}
+                    className={`mx-auto flex min-h-[4.5rem] w-fit min-w-[20rem] max-w-full flex-col items-center justify-center rounded-[1.5rem] px-8 py-3.5 text-center text-xl font-black uppercase tracking-[0.12em] shadow-[0_22px_55px_-32px_rgba(16,185,129,0.9)] transition sm:min-h-[5rem] sm:min-w-[24rem] sm:px-10 sm:text-2xl ${
                     lyricsAutoScrollStatus === "running"
                       ? lyricsReadingMode
                         ? "border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100"
@@ -2043,18 +2370,19 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                           ? "border border-emerald-700/30 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
                           : "border border-emerald-400/40 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30"
                   }`}
-                >
-                  {lyricsAutoScrollStatus === "running" ? (
-                    <span>STOP AUTO SCROLL</span>
+                  >
+                    {lyricsAutoScrollStatus === "running" ? (
+                      <span>STOP AUTO SCROLL</span>
                   ) : lyricsAutoScrollStatus === "countdown" ? (
-                    <>
-                      <span>STARTING IN...</span>
-                      <span className="mt-1 text-4xl leading-none sm:text-5xl">{lyricsAutoScrollCountdown}</span>
-                    </>
+                      <>
+                        <span>STARTING IN...</span>
+                        <span className="mt-1 text-4xl leading-none sm:text-5xl">{lyricsAutoScrollCountdown}</span>
+                      </>
                   ) : (
-                    <span>START AUTO SCROLL</span>
-                  )}
-                </button>
+                      <span>START AUTO SCROLL</span>
+                    )}
+                  </button>
+                ) : null}
                 {!lyricsControlsHidden ? (
                   <>
                     <button
@@ -2116,6 +2444,21 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                       }`}
                     >
                       Delay {lyricsAutoScrollDelay}s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLyricsAutoStartScroll((currentValue) => !currentValue)}
+                      className={`min-h-10 rounded-full px-3 py-2 text-sm font-semibold transition ${
+                        lyricsAutoStartScroll
+                          ? lyricsReadingMode
+                            ? "border border-emerald-700/25 bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
+                            : "border border-emerald-400/25 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/20"
+                          : lyricsReadingMode
+                            ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                            : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      }`}
+                    >
+                      Auto Start Scroll {lyricsAutoStartScroll ? "On" : "Off"}
                     </button>
                     <button
                       type="button"
@@ -2203,11 +2546,11 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               </div>
               {showLyricsPerformanceFlowPanel ? (
                 <aside
-                  className={`min-h-0 overflow-y-auto rounded-[1.5rem] border px-4 py-4 ${
+                  className={`min-h-0 rounded-[1.5rem] border px-4 py-4 ${
                     lyricsReadingMode
                       ? "border-emerald-700/30 bg-emerald-50 [color-scheme:light]"
                       : "border-emerald-400/25 bg-emerald-500/10"
-                  }`}
+                  } flex flex-col`}
                 >
                   <h4
                     className={`text-sm font-semibold uppercase tracking-[0.22em] ${
@@ -2217,12 +2560,63 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     Performance Flow / Break Order
                   </h4>
                   <pre
-                    className={`mt-4 whitespace-pre-wrap font-sans text-2xl font-semibold leading-10 ${
+                    className={`${lyricsControlsHidden ? "mt-3 text-xl leading-8" : "mt-4 text-2xl leading-10"} min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap font-sans font-semibold ${
                       lyricsReadingMode ? "text-stone-950" : "text-white"
                     }`}
                   >
                     {currentSong.performanceFlow}
                   </pre>
+                  {lyricsControlsHidden ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isLyricsAutoScrolling) {
+                          stopLyricsAutoScroll();
+                        } else {
+                          startLyricsAutoScroll(true);
+                        }
+                      }}
+                      className={`mt-5 flex min-h-[5rem] w-full shrink-0 flex-col items-center justify-center rounded-[1.5rem] px-5 py-3 text-center text-lg font-black uppercase tracking-[0.12em] shadow-[0_22px_55px_-32px_rgba(16,185,129,0.9)] transition ${
+                        lyricsAutoScrollStatus === "running"
+                          ? lyricsReadingMode
+                            ? "border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100"
+                            : "border border-rose-400/40 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30"
+                          : lyricsAutoScrollStatus === "countdown"
+                            ? lyricsReadingMode
+                              ? "border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                              : "border border-amber-400/40 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"
+                            : lyricsReadingMode
+                              ? "border border-emerald-700/30 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                              : "border border-emerald-400/40 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30"
+                      }`}
+                    >
+                      {lyricsAutoScrollStatus === "running" ? (
+                        <span>STOP AUTO SCROLL</span>
+                      ) : lyricsAutoScrollStatus === "countdown" ? (
+                        <>
+                          <span>STARTING IN...</span>
+                          <span className="mt-1 text-3xl leading-none">{lyricsAutoScrollCountdown}</span>
+                        </>
+                      ) : (
+                        <span>START AUTO SCROLL</span>
+                      )}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void updateSharedSongIndex(sharedIndex + 1)}
+                    disabled={songs.length === 0 || sharedIndex >= songs.length - 1}
+                    className={`mt-5 min-h-[6.5rem] shrink-0 rounded-[1.5rem] border px-5 text-[1.15rem] font-bold shadow-[0_24px_48px_-28px_rgba(16,185,129,0.75)] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                      lyricsReadingMode
+                        ? "border-emerald-700/25 bg-emerald-600/15 text-emerald-950 hover:bg-emerald-600/20"
+                        : "border-emerald-400/20 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/20"
+                    }`}
+                  >
+                    <span className="block">Advance Everyone</span>
+                    <span className={`mt-2 block text-sm font-semibold uppercase tracking-[0.24em] ${lyricsReadingMode ? "text-emerald-900" : "text-emerald-200/90"}`}>
+                      Next Song
+                    </span>
+                  </button>
                 </aside>
               ) : null}
             </div>
@@ -2263,7 +2657,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   {currentSong.title}
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setSongIntroReadingMode((currentValue) => !currentValue)}
@@ -2308,24 +2702,77 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   A+
                 </button>
                 {currentSong.lyrics?.trim() ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSongIntroOpen(false);
-                      setLyricsOpen(true);
-                    }}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      songIntroReadingMode
-                        ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
-                        : "border border-sky-400/20 bg-sky-500/15 text-sky-100 hover:bg-sky-500/20"
-                    }`}
-                  >
-                    Open Lyrics
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={openLyricsFromSongIntro}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        songIntroReadingMode
+                          ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                          : "border border-sky-400/20 bg-sky-500/15 text-sky-100 hover:bg-sky-500/20"
+                      }`}
+                    >
+                      Open Lyrics Now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIntroAutoOpenLyricsEnabled((currentValue) => {
+                          const nextValue = !currentValue;
+
+                          if (nextValue && introAutoOpenLyricsDelay === 0) {
+                            setIntroAutoOpenLyricsDelay(20);
+                          }
+
+                          return nextValue;
+                        });
+                      }}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        introAutoOpenLyricsEnabled
+                          ? songIntroReadingMode
+                            ? "border border-emerald-700/25 bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
+                            : "border border-emerald-400/25 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/20"
+                          : songIntroReadingMode
+                            ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                            : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      }`}
+                    >
+                      Auto Open Lyrics {introAutoOpenLyricsEnabled ? "On" : "Off"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextDelay = getNextIntroAutoOpenLyricsDelay(introAutoOpenLyricsDelay);
+                        setIntroAutoOpenLyricsDelay(nextDelay);
+                        setIntroAutoOpenLyricsEnabled(nextDelay > 0);
+                      }}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        songIntroReadingMode
+                          ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
+                          : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      }`}
+                    >
+                      Delay {introAutoOpenLyricsDelay > 0 ? `${introAutoOpenLyricsDelay}s` : "Off"}
+                    </button>
+                    {introAutoOpenLyricsCountdown !== null ? (
+                      <span
+                        className={`rounded-full px-3 py-2 text-sm font-bold ${
+                          songIntroReadingMode
+                            ? "border border-amber-300 bg-amber-50 text-amber-900"
+                            : "border border-amber-400/25 bg-amber-500/15 text-amber-100"
+                        }`}
+                      >
+                        Lyrics opening in {introAutoOpenLyricsCountdown}...
+                      </span>
+                    ) : null}
+                  </>
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => setSongIntroOpen(false)}
+                  onClick={() => {
+                    clearIntroAutoOpenLyricsTimer();
+                    setSongIntroOpen(false);
+                  }}
                   className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                     songIntroReadingMode
                       ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
@@ -2430,4 +2877,3 @@ function getClockWindowState(date: Date) {
     accentClassName: "text-emerald-200",
   };
 }
-
