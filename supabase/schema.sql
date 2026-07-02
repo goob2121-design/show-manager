@@ -94,11 +94,27 @@ create table if not exists public.setlist_entries (
 );
 
 alter table public.setlist_entries
-  add column if not exists performance_flow text;
+  add column if not exists performance_flow text,
+  add column if not exists intro_auto_open_lyrics boolean,
+  add column if not exists intro_auto_open_delay integer,
+  add column if not exists lyrics_auto_start_scroll boolean,
+  add column if not exists lyrics_auto_scroll_speed integer,
+  add column if not exists lyrics_auto_scroll_delay integer,
+  add column if not exists lyrics_font_size integer,
+  add column if not exists lyrics_reading_mode boolean;
 
 alter table public.songs
   add column if not exists performance_flow text,
-  add column if not exists song_intro_notes text;
+  add column if not exists song_intro_notes text,
+  add column if not exists default_performance_flow text,
+  add column if not exists default_song_intro_notes text,
+  add column if not exists default_intro_auto_open_lyrics boolean default false,
+  add column if not exists default_intro_auto_open_delay integer,
+  add column if not exists default_lyrics_auto_start_scroll boolean default false,
+  add column if not exists default_lyrics_auto_scroll_speed integer default 4,
+  add column if not exists default_lyrics_auto_scroll_delay integer default 3,
+  add column if not exists default_lyrics_font_size integer default 28,
+  add column if not exists default_lyrics_reading_mode boolean default false;
 
 create table if not exists public.guest_profiles (
   id uuid primary key default gen_random_uuid(),
@@ -1113,3 +1129,42 @@ on conflict (slug) do update
 set
   name = excluded.name,
   show_date = excluded.show_date;
+
+create table if not exists public.sponsor_ticket_templates (
+  id uuid primary key default gen_random_uuid(),
+  show_id uuid references public.shows(id) on delete cascade,
+  name text not null,
+  file_name text not null,
+  file_path text not null,
+  file_url text not null,
+  file_mime_type text,
+  file_size bigint,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists sponsor_ticket_templates_show_id_created_at_idx
+  on public.sponsor_ticket_templates(show_id, created_at desc);
+
+insert into storage.buckets (id, name, public)
+values ('sponsor-ticket-templates', 'sponsor-ticket-templates', true)
+on conflict (id) do update
+set public = excluded.public;
+alter table public.sponsor_ticket_templates enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'sponsor_ticket_templates' and policyname = 'Allow authenticated read sponsor ticket templates') then
+    create policy "Allow authenticated read sponsor ticket templates" on public.sponsor_ticket_templates for select to authenticated using (true);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'sponsor_ticket_templates' and policyname = 'Allow authenticated insert sponsor ticket templates') then
+    create policy "Allow authenticated insert sponsor ticket templates" on public.sponsor_ticket_templates for insert to authenticated with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'sponsor_ticket_templates' and policyname = 'Allow authenticated update sponsor ticket templates') then
+    create policy "Allow authenticated update sponsor ticket templates" on public.sponsor_ticket_templates for update to authenticated using (true) with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'sponsor_ticket_templates' and policyname = 'Allow authenticated delete sponsor ticket templates') then
+    create policy "Allow authenticated delete sponsor ticket templates" on public.sponsor_ticket_templates for delete to authenticated using (true);
+  end if;
+end
+$$;

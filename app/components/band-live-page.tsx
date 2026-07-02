@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { createClient } from "@/lib/supabase/client";
+import { resolveLeadVocal, resolvePerformanceFlow, resolveSongIntroNotes, resolveSongKey, resolveSongLyrics, resolveSongTempo, resolveSongTitle } from "@/lib/song-resolvers";
 import type { LiveShowState, RehearsalEntry, RehearsalRecording, SetSection, ShowRecord, SongTempo, SongType } from "@/lib/types";
 
 const FOLLOW_MODE_STORAGE_KEY = "stageflow-band-live-follow-mode";
@@ -58,6 +59,13 @@ type LiveSetlistSongRow = {
   custom_title: string | null;
   performance_flow?: string | null;
   song_intro_notes?: string | null;
+  intro_auto_open_lyrics?: boolean | null;
+  intro_auto_open_delay?: number | null;
+  lyrics_auto_start_scroll?: boolean | null;
+  lyrics_auto_scroll_speed?: number | null;
+  lyrics_auto_scroll_delay?: number | null;
+  lyrics_font_size?: number | null;
+  lyrics_reading_mode?: boolean | null;
   created_at: string;
   library_song?:
     | {
@@ -69,6 +77,15 @@ type LiveSetlistSongRow = {
         song_type: SongType | null;
         performance_flow?: string | null;
         song_intro_notes?: string | null;
+        default_performance_flow?: string | null;
+        default_song_intro_notes?: string | null;
+        default_intro_auto_open_lyrics?: boolean | null;
+        default_intro_auto_open_delay?: number | null;
+        default_lyrics_auto_start_scroll?: boolean | null;
+        default_lyrics_auto_scroll_speed?: number | null;
+        default_lyrics_auto_scroll_delay?: number | null;
+        default_lyrics_font_size?: number | null;
+        default_lyrics_reading_mode?: boolean | null;
         notes: string | null;
         lyrics: string | null;
         chart_url?: string | null;
@@ -82,6 +99,15 @@ type LiveSetlistSongRow = {
         song_type: SongType | null;
         performance_flow?: string | null;
         song_intro_notes?: string | null;
+        default_performance_flow?: string | null;
+        default_song_intro_notes?: string | null;
+        default_intro_auto_open_lyrics?: boolean | null;
+        default_intro_auto_open_delay?: number | null;
+        default_lyrics_auto_start_scroll?: boolean | null;
+        default_lyrics_auto_scroll_speed?: number | null;
+        default_lyrics_auto_scroll_delay?: number | null;
+        default_lyrics_font_size?: number | null;
+        default_lyrics_reading_mode?: boolean | null;
         notes: string | null;
         lyrics: string | null;
         chart_url?: string | null;
@@ -147,6 +173,13 @@ type LiveSong = {
   rehearsalNotes: string | null;
   lyrics: string | null;
   chartUrl: string | null;
+  introAutoOpenLyrics: boolean | null;
+  introAutoOpenDelay: number | null;
+  lyricsAutoStartScroll: boolean | null;
+  lyricsAutoScrollSpeed: number | null;
+  lyricsAutoScrollDelay: number | null;
+  lyricsFontSize: number | null;
+  lyricsReadingModeDefault: boolean | null;
 };
 
 type ConnectionState = "connecting" | "connected" | "offline";
@@ -444,16 +477,12 @@ function normalizeLiveSong(
   const librarySong = Array.isArray(row.library_song) ? row.library_song[0] ?? null : row.library_song ?? null;
   const guestSong = Array.isArray(row.guest_song) ? row.guest_song[0] ?? null : row.guest_song ?? null;
   const section = normalizeSetSection(row.section);
-  const title =
-    sanitizeSongTitle(row.custom_title) ||
-    sanitizeSongTitle(librarySong?.title) ||
-    sanitizeSongTitle(guestSong?.title) ||
-    "Untitled Song";
-  const key = librarySong?.key ?? guestSong?.key ?? null;
-  const leadVocal = librarySong?.sung_by ?? guestSong?.sung_by ?? null;
+  const title = sanitizeSongTitle(resolveSongTitle(row)) || "Untitled Song";
+  const key = resolveSongKey(row);
+  const leadVocal = resolveLeadVocal(row);
   const performerName = guestSong?.submitted_by_name?.trim() || leadVocal?.trim() || null;
-  const performanceFlow = row.performance_flow?.trim() || librarySong?.performance_flow?.trim() || null;
-  const songIntroNotes = row.song_intro_notes?.trim() || librarySong?.song_intro_notes?.trim() || null;
+  const performanceFlow = resolvePerformanceFlow(row)?.trim() || null;
+  const songIntroNotes = resolveSongIntroNotes(row)?.trim() || null;
   const performanceNotes = stripMp3MarkerFromNotes(librarySong?.notes ?? guestSong?.notes ?? null);
   const rehearsalEntry =
     (row.song_id ? rehearsalBySongId.get(row.song_id) : null) ??
@@ -468,15 +497,22 @@ function normalizeLiveSong(
     songNumber: songNumberLookup.get(row.id) ?? 1,
     title,
     key,
-    tempo: librarySong?.tempo ?? guestSong?.tempo ?? null,
+    tempo: resolveSongTempo(row) as SongTempo | null,
     leadVocal,
     performerName,
     performanceFlow,
     songIntroNotes,
     performanceNotes,
     rehearsalNotes,
-    lyrics: librarySong?.lyrics ?? guestSong?.lyrics ?? null,
+    lyrics: resolveSongLyrics(row),
     chartUrl: librarySong?.chart_url?.trim() || null,
+    introAutoOpenLyrics: row.intro_auto_open_lyrics ?? librarySong?.default_intro_auto_open_lyrics ?? null,
+    introAutoOpenDelay: row.intro_auto_open_delay ?? librarySong?.default_intro_auto_open_delay ?? null,
+    lyricsAutoStartScroll: row.lyrics_auto_start_scroll ?? librarySong?.default_lyrics_auto_start_scroll ?? null,
+    lyricsAutoScrollSpeed: row.lyrics_auto_scroll_speed ?? librarySong?.default_lyrics_auto_scroll_speed ?? null,
+    lyricsAutoScrollDelay: row.lyrics_auto_scroll_delay ?? librarySong?.default_lyrics_auto_scroll_delay ?? null,
+    lyricsFontSize: row.lyrics_font_size ?? librarySong?.default_lyrics_font_size ?? null,
+    lyricsReadingModeDefault: row.lyrics_reading_mode ?? librarySong?.default_lyrics_reading_mode ?? null,
   } satisfies LiveSong;
 }
 
@@ -710,25 +746,25 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     setLyricsFontSize(
       savedLyricsFontSize
         ? clampModalFontSize(Number.parseInt(savedLyricsFontSize, 10), LIVE_LYRICS_FONT_SIZE_DEFAULT)
-        : LIVE_LYRICS_FONT_SIZE_DEFAULT,
+        : currentSong?.lyricsFontSize ? clampModalFontSize(currentSong.lyricsFontSize, LIVE_LYRICS_FONT_SIZE_DEFAULT) : LIVE_LYRICS_FONT_SIZE_DEFAULT,
     );
     setLyricsAutoScrollSpeed(
       savedLyricsAutoScrollSpeed
         ? clampLyricsAutoScrollSpeed(Number.parseInt(savedLyricsAutoScrollSpeed, 10))
-        : LIVE_LYRICS_AUTOSCROLL_SPEED_DEFAULT,
+        : currentSong?.lyricsAutoScrollSpeed ? clampLyricsAutoScrollSpeed(currentSong.lyricsAutoScrollSpeed) : LIVE_LYRICS_AUTOSCROLL_SPEED_DEFAULT,
     );
     setLyricsAutoScrollDelay(
       savedLyricsAutoScrollDelay
         ? normalizeLyricsAutoScrollDelay(Number.parseInt(savedLyricsAutoScrollDelay, 10))
-        : LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT,
+        : currentSong?.lyricsAutoScrollDelay ? normalizeLyricsAutoScrollDelay(currentSong.lyricsAutoScrollDelay) : LIVE_LYRICS_AUTOSCROLL_DELAY_DEFAULT,
     );
-    setLyricsReadingMode(savedLyricsReadingMode ? savedLyricsReadingMode === "true" : false);
-    setLyricsAutoStartScroll(savedLyricsAutoStartScroll ? savedLyricsAutoStartScroll === "true" : false);
-    setIntroAutoOpenLyricsEnabled(savedIntroAutoOpenLyricsEnabled ? savedIntroAutoOpenLyricsEnabled === "true" : false);
+    setLyricsReadingMode(savedLyricsReadingMode ? savedLyricsReadingMode === "true" : currentSong?.lyricsReadingModeDefault ?? false);
+    setLyricsAutoStartScroll(savedLyricsAutoStartScroll ? savedLyricsAutoStartScroll === "true" : currentSong?.lyricsAutoStartScroll ?? false);
+    setIntroAutoOpenLyricsEnabled(savedIntroAutoOpenLyricsEnabled ? savedIntroAutoOpenLyricsEnabled === "true" : currentSong?.introAutoOpenLyrics ?? false);
     setIntroAutoOpenLyricsDelay(
       savedIntroAutoOpenLyricsDelay
         ? normalizeIntroAutoOpenLyricsDelay(Number.parseInt(savedIntroAutoOpenLyricsDelay, 10))
-        : 0,
+        : currentSong?.introAutoOpenDelay ? normalizeIntroAutoOpenLyricsDelay(currentSong.introAutoOpenDelay) : 0,
     );
 
     if (savedSongIntroFontSize) {
@@ -743,7 +779,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     if (savedSongIntroReadingMode) {
       setSongIntroReadingMode(savedSongIntroReadingMode === "true");
     }
-  }, [currentLyricsSettingsId]);
+  }, [currentLyricsSettingsId, currentSong?.introAutoOpenDelay, currentSong?.introAutoOpenLyrics, currentSong?.lyricsAutoScrollDelay, currentSong?.lyricsAutoScrollSpeed, currentSong?.lyricsAutoStartScroll, currentSong?.lyricsFontSize, currentSong?.lyricsReadingModeDefault]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1443,7 +1479,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     );
     const shouldAutoStart = savedAutoStartScroll
       ? savedAutoStartScroll === "true"
-      : lyricsAutoStartScroll;
+      : currentSong.lyricsAutoStartScroll ?? lyricsAutoStartScroll;
 
     if (!shouldAutoStart) {
       return;
@@ -1459,10 +1495,10 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     );
     const nextSpeed = savedSpeed
       ? clampLyricsAutoScrollSpeed(Number.parseInt(savedSpeed, 10))
-      : lyricsAutoScrollSpeed;
+      : currentSong.lyricsAutoScrollSpeed ? clampLyricsAutoScrollSpeed(currentSong.lyricsAutoScrollSpeed) : lyricsAutoScrollSpeed;
     const nextDelay = savedDelay
       ? normalizeLyricsAutoScrollDelay(Number.parseInt(savedDelay, 10))
-      : lyricsAutoScrollDelay;
+      : currentSong.lyricsAutoScrollDelay ? normalizeLyricsAutoScrollDelay(currentSong.lyricsAutoScrollDelay) : lyricsAutoScrollDelay;
 
     lyricsAutoScrollSpeedRef.current = nextSpeed;
     lyricsAutoScrollDelayRef.current = nextDelay;
@@ -1532,10 +1568,10 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       );
       const nextSpeed = savedSpeed
         ? clampLyricsAutoScrollSpeed(Number.parseInt(savedSpeed, 10))
-        : lyricsAutoScrollSpeed;
+        : currentSong.lyricsAutoScrollSpeed ? clampLyricsAutoScrollSpeed(currentSong.lyricsAutoScrollSpeed) : lyricsAutoScrollSpeed;
       const nextDelay = savedDelay
         ? normalizeLyricsAutoScrollDelay(Number.parseInt(savedDelay, 10))
-        : lyricsAutoScrollDelay;
+        : currentSong.lyricsAutoScrollDelay ? normalizeLyricsAutoScrollDelay(currentSong.lyricsAutoScrollDelay) : lyricsAutoScrollDelay;
 
       lyricsAutoScrollSpeedRef.current = nextSpeed;
       lyricsAutoScrollDelayRef.current = nextDelay;

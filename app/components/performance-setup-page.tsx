@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveLeadVocal, resolvePerformanceFlow, resolveSongIntroNotes, resolveSongKey, resolveSongLyrics, resolveSongTitle } from "@/lib/song-resolvers";
 import type { ShowRecord, SongTempo, SongType } from "@/lib/types";
 
 const FONT_KEY = "stageflow_live_lyrics_font_size";
@@ -21,16 +22,16 @@ type SectionKey = "set1" | "set2" | "encore" | "other";
 type Status = "ready" | "attention" | "missing" | "na";
 type JoinedSong = {
   id: string; title: string | null; key: string | null; sung_by: string | null; tempo: SongTempo | null; song_type: SongType | null;
-  lyrics?: string | null; performance_flow?: string | null; song_intro_notes?: string | null; submitted_by_name?: string | null;
+  lyrics?: string | null; performance_flow?: string | null; song_intro_notes?: string | null; default_performance_flow?: string | null; default_song_intro_notes?: string | null; default_intro_auto_open_lyrics?: boolean | null; default_intro_auto_open_delay?: number | null; default_lyrics_auto_start_scroll?: boolean | null; default_lyrics_auto_scroll_speed?: number | null; default_lyrics_auto_scroll_delay?: number | null; default_lyrics_font_size?: number | null; default_lyrics_reading_mode?: boolean | null; submitted_by_name?: string | null;
 };
 type Row = {
   id: string; show_id: string; section: string | null; position: number; source_type: string | null; song_id: string | null; guest_song_id: string | null;
-  custom_title: string | null; performance_flow?: string | null; song_intro_notes?: string | null; created_at: string;
+  custom_title: string | null; performance_flow?: string | null; song_intro_notes?: string | null; intro_auto_open_lyrics?: boolean | null; intro_auto_open_delay?: number | null; lyrics_auto_start_scroll?: boolean | null; lyrics_auto_scroll_speed?: number | null; lyrics_auto_scroll_delay?: number | null; lyrics_font_size?: number | null; lyrics_reading_mode?: boolean | null; created_at: string;
   library_song?: JoinedSong | JoinedSong[] | null; guest_song?: JoinedSong | JoinedSong[] | null;
 };
 type SetupSong = {
-  id: string; section: SectionKey; songNumber: number; title: string; key: string | null; lead: string | null; songType: SongType | null;
-  lyrics: string | null; performanceFlow: string; songIntroNotes: string;
+  id: string; section: SectionKey; songNumber: number; sourceType: string | null; songId: string | null; guestSongId: string | null; title: string; key: string | null; lead: string | null; songType: SongType | null;
+  lyrics: string | null; performanceFlow: string; songIntroNotes: string; initialSettings: Partial<Settings>;
 };
 type Settings = { autoStart: boolean; speed: number; delay: number; fontSize: number; reading: boolean; introAuto: boolean; introDelay: number };
 
@@ -44,7 +45,7 @@ function readNum(base: string, id: string, fallback: number) { const value = rea
 function write(id: string, base: string, value: string | number | boolean) { window.localStorage.setItem(key(base, id), String(value)); }
 function loadSettings(id: string): Settings { return { autoStart: readBool(AUTOSTART_KEY, id, false), speed: readNum(SPEED_KEY, id, 4), delay: readNum(DELAY_KEY, id, 3), fontSize: readNum(FONT_KEY, id, 28), reading: readBool(MODE_KEY, id, false), introAuto: readBool(INTRO_ENABLED_KEY, id, false), introDelay: readNum(INTRO_DELAY_KEY, id, 0) }; }
 function saveSettings(id: string, s: Settings) { write(id, AUTOSTART_KEY, s.autoStart); write(id, SPEED_KEY, s.speed); write(id, DELAY_KEY, s.delay); write(id, FONT_KEY, s.fontSize); write(id, MODE_KEY, s.reading); write(id, INTRO_ENABLED_KEY, s.introAuto); write(id, INTRO_DELAY_KEY, s.introDelay); }
-function normalize(row: Row, songNumber: number): SetupSong { const lib = first(row.library_song); const guest = first(row.guest_song); const section = sec(row.section); return { id: row.id, section, songNumber, title: row.custom_title?.trim() || lib?.title?.trim() || guest?.title?.trim() || "Untitled Song", key: lib?.key ?? guest?.key ?? null, lead: lib?.sung_by ?? guest?.sung_by ?? guest?.submitted_by_name ?? null, songType: lib?.song_type ?? guest?.song_type ?? null, lyrics: lib?.lyrics ?? guest?.lyrics ?? null, performanceFlow: row.performance_flow?.trim() || lib?.performance_flow?.trim() || "", songIntroNotes: row.song_intro_notes?.trim() || lib?.song_intro_notes?.trim() || "" }; }
+function normalize(row: Row, songNumber: number): SetupSong { const lib = first(row.library_song); const guest = first(row.guest_song); const section = sec(row.section); return { id: row.id, section, songNumber, sourceType: row.source_type, songId: row.song_id, guestSongId: row.guest_song_id, title: resolveSongTitle(row), key: resolveSongKey(row), lead: resolveLeadVocal(row), songType: lib?.song_type ?? guest?.song_type ?? null, lyrics: resolveSongLyrics(row), performanceFlow: resolvePerformanceFlow(row)?.trim() || "", songIntroNotes: resolveSongIntroNotes(row)?.trim() || "", initialSettings: { autoStart: row.lyrics_auto_start_scroll ?? lib?.default_lyrics_auto_start_scroll ?? undefined, speed: row.lyrics_auto_scroll_speed ?? lib?.default_lyrics_auto_scroll_speed ?? undefined, delay: row.lyrics_auto_scroll_delay ?? lib?.default_lyrics_auto_scroll_delay ?? undefined, fontSize: row.lyrics_font_size ?? lib?.default_lyrics_font_size ?? undefined, reading: row.lyrics_reading_mode ?? lib?.default_lyrics_reading_mode ?? undefined, introAuto: row.intro_auto_open_lyrics ?? lib?.default_intro_auto_open_lyrics ?? undefined, introDelay: row.intro_auto_open_delay ?? lib?.default_intro_auto_open_delay ?? undefined } }; }
 function status(song: SetupSong, s: Settings): Status { const hasLyrics = Boolean(song.lyrics?.trim()); const hasFlow = Boolean(song.performanceFlow.trim()); const hasIntro = Boolean(song.songIntroNotes.trim()); if (song.songType === "instrumental" && !hasLyrics && !s.introAuto) return "na"; if (!hasLyrics) return "missing"; if (s.introAuto && !hasIntro) return "missing"; if (!hasFlow || (s.introAuto && s.introDelay <= 0)) return "attention"; return "ready"; }
 function statusLabel(value: Status) { return value === "ready" ? "Ready" : value === "attention" ? "Needs Attention" : value === "missing" ? "Missing Content" : "Not Applicable"; }
 function statusClass(value: Status) { return value === "ready" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : value === "attention" ? "border-amber-300 bg-amber-50 text-amber-800" : value === "missing" ? "border-rose-300 bg-rose-50 text-rose-800" : "border-slate-300 bg-slate-100 text-slate-700"; }
@@ -57,6 +58,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
   const [settings, setSettings] = useState<Record<string, Settings>>({});
   const [flowDrafts, setFlowDrafts] = useState<Record<string, string>>({});
   const [introDrafts, setIntroDrafts] = useState<Record<string, string>>({});
+  const [lyricsDrafts, setLyricsDrafts] = useState<Record<string, string>>({});
   const [defaults, setDefaults] = useState<Settings>({ autoStart: false, speed: 4, delay: 3, fontSize: 28, reading: false, introAuto: false, introDelay: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -90,9 +92,10 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
         const nextSongs = ordered.map((row) => { const section = sec(row.section); counts[section] += 1; return normalize(row, counts[section]); });
         if (cancelled) return;
         setShow(showRow as ShowRecord); setSongs(nextSongs);
-        setSettings(nextSongs.reduce<Record<string, Settings>>((out, song) => { out[song.id] = loadSettings(song.id); return out; }, {}));
+        setSettings(nextSongs.reduce<Record<string, Settings>>((out, song) => { out[song.id] = { ...loadSettings(song.id), ...song.initialSettings }; return out; }, {}));
         setFlowDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.performanceFlow; return out; }, {}));
         setIntroDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.songIntroNotes; return out; }, {}));
+        setLyricsDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.lyrics ?? ""; return out; }, {}));
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load Performance Setup.");
       } finally { if (!cancelled) setIsLoading(false); }
@@ -115,13 +118,22 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
   async function saveText(song: SetupSong) {
     setSavingId(song.id); setMessage(null); setError(null);
     try {
+      const supabase = createClient();
       const performance_flow = flowDrafts[song.id]?.trim() || null;
       const song_intro_notes = introDrafts[song.id]?.trim() || null;
-      const { error: saveError } = await createClient().from("setlist_entries").update({ performance_flow, song_intro_notes }).eq("id", song.id);
+      const lyrics = lyricsDrafts[song.id]?.trim() || null;
+      const { error: saveError } = await supabase.from("setlist_entries").update({ performance_flow, song_intro_notes }).eq("id", song.id);
       if (saveError) throw saveError;
-      setSongs((current) => current.map((item) => item.id === song.id ? { ...item, performanceFlow: performance_flow ?? "", songIntroNotes: song_intro_notes ?? "" } : item));
-      setMessage(`Saved setup notes for ${song.title}.`);
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not save setup notes."); }
+      if (song.sourceType === "library" && song.songId) {
+        const { error: lyricsError } = await supabase.from("songs").update({ lyrics }).eq("id", song.songId);
+        if (lyricsError) throw lyricsError;
+      } else if (song.sourceType === "guest" && song.guestSongId) {
+        const { error: lyricsError } = await supabase.from("show_guest_songs").update({ lyrics }).eq("id", song.guestSongId);
+        if (lyricsError) throw lyricsError;
+      }
+      setSongs((current) => current.map((item) => item.id === song.id ? { ...item, performanceFlow: performance_flow ?? "", songIntroNotes: song_intro_notes ?? "", lyrics } : item));
+      setMessage(`Saved setup notes and lyrics for ${song.title}.`);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not save setup notes or lyrics."); }
     finally { setSavingId(null); }
   }
 

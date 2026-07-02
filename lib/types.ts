@@ -79,6 +79,15 @@ export type SongRecord = {
   notes?: string | null;
   lyrics?: string | null;
   chart_url?: string | null;
+  default_performance_flow?: string | null;
+  default_song_intro_notes?: string | null;
+  default_intro_auto_open_lyrics?: boolean | null;
+  default_intro_auto_open_delay?: number | null;
+  default_lyrics_auto_start_scroll?: boolean | null;
+  default_lyrics_auto_scroll_speed?: number | null;
+  default_lyrics_auto_scroll_delay?: number | null;
+  default_lyrics_font_size?: number | null;
+  default_lyrics_reading_mode?: boolean | null;
   created_by_role: Extract<SubmittedByRole, "band" | "admin"> | string;
   created_by_name: string | null;
   created_at: string;
@@ -109,6 +118,13 @@ export type SetlistEntry = {
   custom_title: string | null;
   performance_flow: string | null;
   song_intro_notes: string | null;
+  intro_auto_open_lyrics?: boolean | null;
+  intro_auto_open_delay?: number | null;
+  lyrics_auto_start_scroll?: boolean | null;
+  lyrics_auto_scroll_speed?: number | null;
+  lyrics_auto_scroll_delay?: number | null;
+  lyrics_font_size?: number | null;
+  lyrics_reading_mode?: boolean | null;
   created_at: string;
   title: string;
   key: string | null;
@@ -435,6 +451,18 @@ export type ShowReservedSeatingLink = {
   created_at: string;
 };
 
+export type ShowSponsorTicketTemplate = {
+  id: string;
+  show_id: string | null;
+  name: string;
+  file_name: string;
+  file_path: string;
+  file_url: string;
+  file_mime_type: string | null;
+  file_size: number | null;
+  created_at: string;
+  updated_at: string;
+};
 export type ShowReservedSeatAssignment = {
   id: string;
   show_id: string;

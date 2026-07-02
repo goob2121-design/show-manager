@@ -29,6 +29,7 @@ import {
 } from "@/app/components/promo-materials-view";
 import { formatPromoLinkType } from "@/app/components/promo-links-view";
 import { ReservedSeatingPanel } from "@/app/components/reserved-seating-panel";
+import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "@/app/available-seats/path";
 import {
   buildShowReminderSummary,
@@ -74,6 +75,8 @@ import type {
   ShowChecklistItem,
   ShowCompTicket,
   ShowReservedSeatingLink,
+  ShowReservedSeatAssignment,
+  ShowSponsorTicketTemplate,
   SongFormState,
   SongTempo,
   SongType,
@@ -3581,14 +3584,8 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     section: normalizeSetSection(song.section),
     source_type: song.source_type === "guest" ? "guest" : "library",
     title: resolvedTitle,
-    performance_flow:
-      ("performance_flow" in song ? song.performance_flow ?? null : null) ??
-      librarySong?.performance_flow ??
-      null,
-    song_intro_notes:
-      ("song_intro_notes" in song ? song.song_intro_notes ?? null : null) ??
-      librarySong?.song_intro_notes ??
-      null,
+    performance_flow: "performance_flow" in song ? song.performance_flow ?? null : null,
+    song_intro_notes: "song_intro_notes" in song ? song.song_intro_notes ?? null : null,
     key: resolvedKey,
     sung_by: resolvedLeadVocal,
     tempo: normalizeSongTempo(resolvedTempo),
@@ -6129,6 +6126,99 @@ function getPortalLabel(role: ViewMode) {
   return "Guest Portal";
 }
 
+const ADMIN_SONG_LIVE_AUTOSTART_KEY = "stageflow_live_lyrics_autostart_scroll";
+const ADMIN_SONG_LIVE_SPEED_KEY = "stageflow_live_lyrics_autoscroll_speed";
+const ADMIN_SONG_LIVE_DELAY_KEY = "stageflow_live_lyrics_autoscroll_delay";
+const ADMIN_SONG_LIVE_FONT_KEY = "stageflow_live_lyrics_font_size";
+const ADMIN_SONG_LIVE_READING_KEY = "stageflow_live_lyrics_reading_mode";
+const ADMIN_SONG_INTRO_AUTO_OPEN_KEY = "stageflow_live_intro_auto_open_lyrics_enabled";
+const ADMIN_SONG_INTRO_DELAY_KEY = "stageflow_live_intro_auto_open_lyrics_delay";
+const ADMIN_SONG_SCROLL_SPEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const ADMIN_SONG_SCROLL_DELAYS = [0, 3, 5, 10, 15, 20];
+const ADMIN_SONG_INTRO_DELAYS = [0, 10, 20, 30, 45, 60, 90];
+const ADMIN_SONG_FONT_SIZES = [18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42];
+
+type AdminSongPerformanceDefaultsDraft = {
+  performanceFlow: string;
+  songIntroNotes: string;
+  autoOpenLyrics: boolean;
+  introDelay: number;
+  autoStartScroll: boolean;
+  scrollSpeed: number;
+  scrollDelay: number;
+  fontSize: number;
+  readingMode: boolean;
+};
+
+type AdminSongLiveSetupDraft = {
+  performanceFlow: string;
+  songIntroNotes: string;
+  autoOpenLyrics: boolean;
+  introDelay: number;
+  autoStartScroll: boolean;
+  scrollSpeed: number;
+  scrollDelay: number;
+  fontSize: number;
+  readingMode: boolean;
+};
+
+function adminSongLiveStorageKey(base: string, entryId: string) {
+  return `${base}_${entryId}`;
+}
+
+function readAdminSongLiveBool(base: string, entryId: string, fallback: boolean) {
+  if (typeof window === "undefined") return fallback;
+  const value = window.localStorage.getItem(adminSongLiveStorageKey(base, entryId)) ?? window.localStorage.getItem(base);
+  return value === null ? fallback : value === "true";
+}
+
+function readAdminSongLiveNumber(base: string, entryId: string, fallback: number) {
+  if (typeof window === "undefined") return fallback;
+  const value = window.localStorage.getItem(adminSongLiveStorageKey(base, entryId)) ?? window.localStorage.getItem(base);
+  const parsed = value ? Number.parseInt(value, 10) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function buildAdminSongPerformanceDefaultsDraft(song: SongLibrarySong): AdminSongPerformanceDefaultsDraft {
+  return {
+    performanceFlow: song.default_performance_flow ?? "",
+    songIntroNotes: song.default_song_intro_notes ?? "",
+    autoOpenLyrics: song.default_intro_auto_open_lyrics ?? false,
+    introDelay: song.default_intro_auto_open_delay ?? 0,
+    autoStartScroll: song.default_lyrics_auto_start_scroll ?? false,
+    scrollSpeed: song.default_lyrics_auto_scroll_speed ?? 4,
+    scrollDelay: song.default_lyrics_auto_scroll_delay ?? 3,
+    fontSize: song.default_lyrics_font_size ?? 28,
+    readingMode: song.default_lyrics_reading_mode ?? false,
+  };
+}
+
+function buildSetlistInsertDefaults(song: SongLibrarySong) {
+  return {
+    performance_flow: song.default_performance_flow ?? null,
+    song_intro_notes: song.default_song_intro_notes ?? null,
+    intro_auto_open_lyrics: song.default_intro_auto_open_lyrics ?? false,
+    intro_auto_open_delay: song.default_intro_auto_open_delay ?? null,
+    lyrics_auto_start_scroll: song.default_lyrics_auto_start_scroll ?? false,
+    lyrics_auto_scroll_speed: song.default_lyrics_auto_scroll_speed ?? 4,
+    lyrics_auto_scroll_delay: song.default_lyrics_auto_scroll_delay ?? 3,
+    lyrics_font_size: song.default_lyrics_font_size ?? 28,
+    lyrics_reading_mode: song.default_lyrics_reading_mode ?? false,
+  };
+}
+function buildAdminSongLiveSetupDraft(entry: SetlistSong): AdminSongLiveSetupDraft {
+  return {
+    performanceFlow: entry.performance_flow ?? "",
+    songIntroNotes: entry.song_intro_notes ?? "",
+    autoOpenLyrics: entry.intro_auto_open_lyrics ?? readAdminSongLiveBool(ADMIN_SONG_INTRO_AUTO_OPEN_KEY, entry.id, false),
+    introDelay: entry.intro_auto_open_delay ?? readAdminSongLiveNumber(ADMIN_SONG_INTRO_DELAY_KEY, entry.id, 0),
+    autoStartScroll: entry.lyrics_auto_start_scroll ?? readAdminSongLiveBool(ADMIN_SONG_LIVE_AUTOSTART_KEY, entry.id, false),
+    scrollSpeed: entry.lyrics_auto_scroll_speed ?? readAdminSongLiveNumber(ADMIN_SONG_LIVE_SPEED_KEY, entry.id, 4),
+    scrollDelay: entry.lyrics_auto_scroll_delay ?? readAdminSongLiveNumber(ADMIN_SONG_LIVE_DELAY_KEY, entry.id, 3),
+    fontSize: entry.lyrics_font_size ?? readAdminSongLiveNumber(ADMIN_SONG_LIVE_FONT_KEY, entry.id, 28),
+    readingMode: entry.lyrics_reading_mode ?? readAdminSongLiveBool(ADMIN_SONG_LIVE_READING_KEY, entry.id, false),
+  };
+}
 export function ShowPage({
   showSlug = "cmms-april-27",
   initialRole = "guest",
@@ -6306,6 +6396,10 @@ export function ShowPage({
     performanceFlow: "",
     songIntroNotes: "",
   });
+  const [adminSongLiveSetupDrafts, setAdminSongLiveSetupDrafts] = useState<Record<string, AdminSongLiveSetupDraft>>({});
+  const [adminSongPerformanceDefaultsDrafts, setAdminSongPerformanceDefaultsDrafts] = useState<Record<string, AdminSongPerformanceDefaultsDraft>>({});
+  const [expandedAdminSongPerformanceDefaults, setExpandedAdminSongPerformanceDefaults] = useState<Record<string, boolean>>({});
+  const [expandedAdminSongPerformanceSetup, setExpandedAdminSongPerformanceSetup] = useState<Record<string, boolean>>({});
   const [librarySongEditFormState, setLibrarySongEditFormState] = useState<SongEditFormState>({
     title: "",
     key: "",
@@ -6342,6 +6436,19 @@ export function ShowPage({
   const [editingShowSponsorFormState, setEditingShowSponsorFormState] =
     useState<ShowSponsorAssignmentFormState>(initialShowSponsorAssignmentFormState);
   const [isSponsorCompTicketsOpen, setIsSponsorCompTicketsOpen] = useState(false);
+  const [isSponsorTicketPrinterOpen, setIsSponsorTicketPrinterOpen] = useState(false);
+  const [sponsorTicketTemplateDataUrl, setSponsorTicketTemplateDataUrl] = useState<string | null>(null);
+  const [sponsorTicketTemplates, setSponsorTicketTemplates] = useState<ShowSponsorTicketTemplate[]>([]);
+  const [selectedSponsorTicketTemplateId, setSelectedSponsorTicketTemplateId] = useState("");
+  const [isUploadingSponsorTicketTemplate, setIsUploadingSponsorTicketTemplate] = useState(false);
+  const [activeSponsorTicketTemplateActionId, setActiveSponsorTicketTemplateActionId] = useState<string | null>(null);
+  const [sponsorTicketSponsorId, setSponsorTicketSponsorId] = useState("");
+  const [selectedSponsorTicketSeatIds, setSelectedSponsorTicketSeatIds] = useState<string[]>([]);
+  const [sponsorTicketReservedLinks, setSponsorTicketReservedLinks] = useState<ShowReservedSeatingLink[]>([]);
+  const [sponsorTicketReservedAssignments, setSponsorTicketReservedAssignments] = useState<ShowReservedSeatAssignment[]>([]);
+  const [sponsorTicketSeatRefreshKey, setSponsorTicketSeatRefreshKey] = useState(0);
+  const [sponsorTicketStatusMessage, setSponsorTicketStatusMessage] = useState<string | null>(null);
+  const [sponsorTicketErrorMessage, setSponsorTicketErrorMessage] = useState<string | null>(null);
   const [sponsorCompCustomAmounts, setSponsorCompCustomAmounts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -6983,6 +7090,18 @@ export function ShowPage({
       }, {}),
     [setlist],
   );
+
+  useEffect(() => {
+    setAdminSongLiveSetupDrafts((currentDrafts) => {
+      const nextDrafts: Record<string, AdminSongLiveSetupDraft> = {};
+
+      for (const entry of setlist) {
+        nextDrafts[entry.id] = currentDrafts[entry.id] ?? buildAdminSongLiveSetupDraft(entry);
+      }
+
+      return nextDrafts;
+    });
+  }, [setlist]);
   const guestSongSetlistUsageCounts = useMemo(
     () =>
       setlist.reduce<Record<string, number>>((usageCounts, song) => {
@@ -7978,6 +8097,399 @@ export function ShowPage({
     }
   }
 
+
+  useEffect(() => {
+    if (!show || !isSponsorTicketPrinterOpen) {
+      return;
+    }
+
+    let cancelled = false;
+    const sponsorTicketShowId = show.id;
+    const storageKey = `stageflow_sponsor_ticket_template_${sponsorTicketShowId}`;
+
+    async function loadSponsorTicketTemplates() {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("sponsor_ticket_templates")
+          .select("*")
+          .or(`show_id.eq.${sponsorTicketShowId},show_id.is.null`)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        const templates = (data ?? []) as ShowSponsorTicketTemplate[];
+        setSponsorTicketTemplates(templates);
+        setSelectedSponsorTicketTemplateId((currentId) => {
+          if (currentId && templates.some((template) => template.id === currentId)) return currentId;
+          const savedId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+          if (savedId && templates.some((template) => template.id === savedId)) return savedId;
+          return templates[0]?.id ?? "";
+        });
+      } catch (error) {
+        if (!cancelled) setSponsorTicketErrorMessage("Unable to load saved ticket templates. Check Supabase permissions or try again.");
+      }
+    }
+
+    void loadSponsorTicketTemplates();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSponsorTicketPrinterOpen, show]);
+  useEffect(() => {
+    if (!show || !isSponsorTicketPrinterOpen) {
+      return;
+    }
+
+    let cancelled = false;
+    const sponsorTicketShowId = show.id;
+
+    async function loadSponsorTicketSeats() {
+      setSponsorTicketErrorMessage(null);
+      try {
+        const supabase = createClient();
+        const [{ data: links, error: linksError }, { data: assignments, error: assignmentsError }] = await Promise.all([
+          supabase
+            .from("show_reserved_seating_links")
+            .select("*")
+            .eq("show_id", sponsorTicketShowId)
+            .eq("seat_category", "comp"),
+          supabase
+            .from("show_reserved_seat_assignments")
+            .select("*")
+            .eq("show_id", sponsorTicketShowId)
+            .eq("seat_category", "comp"),
+        ]);
+
+        if (linksError) throw linksError;
+        if (assignmentsError) throw assignmentsError;
+        if (cancelled) return;
+
+        setSponsorTicketReservedLinks((links ?? []) as ShowReservedSeatingLink[]);
+        setSponsorTicketReservedAssignments((assignments ?? []) as ShowReservedSeatAssignment[]);
+      } catch (error) {
+        if (!cancelled) setSponsorTicketErrorMessage(getErrorMessage(error));
+      }
+    }
+
+    void loadSponsorTicketSeats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTicketWorkflowSection, isSponsorTicketPrinterOpen, show, sponsorTicketSeatRefreshKey]);
+
+  const selectedSponsorTicketTemplate = sponsorTicketTemplates.find((template) => template.id === selectedSponsorTicketTemplateId) ?? null;
+  const activeSponsorTicketTemplateUrl = selectedSponsorTicketTemplate?.file_url || sponsorTicketTemplateDataUrl;
+
+  async function handleSponsorTicketTemplateChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    setSponsorTicketStatusMessage(null);
+    setSponsorTicketErrorMessage(null);
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setSponsorTicketTemplateDataUrl(typeof reader.result === "string" ? reader.result : null);
+    };
+    reader.onerror = () => setSponsorTicketErrorMessage("Could not load the ticket template image.");
+    reader.readAsDataURL(file);
+
+    if (!show) {
+      return;
+    }
+
+    setIsUploadingSponsorTicketTemplate(true);
+    try {
+      const supabase = createClient();
+      const originalName = sanitizeFileName(file.name || "sponsor-ticket-template");
+      const filePath = `${show.id}/${Date.now()}-${originalName}`;
+      const { error: uploadError } = await supabase.storage
+        .from("sponsor-ticket-templates")
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type || undefined,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("sponsor-ticket-templates")
+        .getPublicUrl(filePath);
+
+      const { data, error } = await supabase
+        .from("sponsor_ticket_templates")
+        .insert({
+          show_id: show.id,
+          name: file.name.replace(/\.[^.]+$/, "") || "Sponsor Ticket Template",
+          file_name: originalName,
+          file_path: filePath,
+          file_url: publicUrlData.publicUrl,
+          file_mime_type: file.type || null,
+          file_size: file.size,
+        })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      const savedTemplate = data as ShowSponsorTicketTemplate;
+      setSponsorTicketTemplates((currentTemplates) => [savedTemplate, ...currentTemplates]);
+      setSelectedSponsorTicketTemplateId(savedTemplate.id);
+      setSponsorTicketTemplateDataUrl(null);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, savedTemplate.id);
+      }
+      setSponsorTicketStatusMessage("Ticket template saved and selected.");
+    } catch (error) {
+      setSponsorTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsUploadingSponsorTicketTemplate(false);
+      event.target.value = "";
+    }
+  }
+
+  async function handleDeleteSponsorTicketTemplate() {
+    if (!selectedSponsorTicketTemplate) return;
+    const shouldDelete = window.confirm(`Delete ticket template "${selectedSponsorTicketTemplate.name}"?`);
+    if (!shouldDelete) return;
+
+    setActiveSponsorTicketTemplateActionId(selectedSponsorTicketTemplate.id);
+    setSponsorTicketStatusMessage(null);
+    setSponsorTicketErrorMessage(null);
+    try {
+      const supabase = createClient();
+      await supabase.storage.from("sponsor-ticket-templates").remove([selectedSponsorTicketTemplate.file_path]);
+      const { error } = await supabase.from("sponsor_ticket_templates").delete().eq("id", selectedSponsorTicketTemplate.id);
+      if (error) throw error;
+
+      setSponsorTicketTemplates((currentTemplates) => {
+        const nextTemplates = currentTemplates.filter((template) => template.id !== selectedSponsorTicketTemplate.id);
+        const nextId = nextTemplates[0]?.id ?? "";
+        setSelectedSponsorTicketTemplateId(nextId);
+        if (show && typeof window !== "undefined") {
+          if (nextId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, nextId);
+          else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}`);
+        }
+        return nextTemplates;
+      });
+      setSponsorTicketStatusMessage("Ticket template deleted.");
+    } catch (error) {
+      setSponsorTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorTicketTemplateActionId(null);
+    }
+  }
+
+  function getSponsorTicketSponsorName(sponsor: ShowSponsor) {
+    return sponsor.sponsor?.name ?? sponsor.custom_note?.trim() ?? "Sponsor";
+  }
+
+  function getSponsorReservedSeatOptions(sponsor: ShowSponsor) {
+    const sponsorName = getSponsorTicketSponsorName(sponsor).trim().toLowerCase();
+    const matchedLinks = sponsorTicketReservedLinks.filter((link) =>
+      link.customer_name.trim().toLowerCase().includes(sponsorName) ||
+      sponsorName.includes(link.customer_name.trim().toLowerCase()),
+    );
+    const matchedLinkIds = new Set(matchedLinks.map((link) => link.id));
+    const assignments = sponsorTicketReservedAssignments.filter((assignment) =>
+      assignment.seating_link_id ? matchedLinkIds.has(assignment.seating_link_id) : assignment.customer_name?.trim().toLowerCase().includes(sponsorName),
+    );
+    const seatIds = sortReservedSeatIds(assignments.map((assignment) => assignment.seat_id));
+    return seatIds.map((seatId) => ({ seatId, label: formatReservedSeatLabel(seatId) }));
+  }
+
+  function toggleSponsorTicketSeat(seatId: string) {
+    setSelectedSponsorTicketSeatIds((currentSeatIds) =>
+      currentSeatIds.includes(seatId)
+        ? currentSeatIds.filter((currentSeatId) => currentSeatId !== seatId)
+        : sortReservedSeatIds([...currentSeatIds, seatId]),
+    );
+  }
+
+  function handleAssignReservedSeatsFromSponsorTickets() {
+    setActiveTicketWorkflowSection("reserved-seating");
+    setIsReservedSeatingOpen(true);
+    setSponsorTicketErrorMessage(null);
+    const sponsor = sponsorsWithCompTickets.find((item) => item.id === sponsorTicketSponsorId) ?? null;
+    if (sponsor) {
+      setSponsorTicketStatusMessage("Assign comp reserved seats for " + getSponsorTicketSponsorName(sponsor) + ", then return to Sponsor Ticket Printing.");
+    }
+    window.setTimeout(() => {
+      document.getElementById("reserved-seating-admin-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  }
+
+  type CompListReportRow = {
+    id: string;
+    name: string;
+    category: "sponsor" | "band" | "guest" | "other";
+    categoryLabel: string;
+    quantity: number;
+    reservedSeats: string;
+    checkedIn: number;
+    notes: string;
+  };
+
+  function getCompListReservedSeatsForName(name: string) {
+    const normalizedName = name.trim().toLowerCase();
+    if (!normalizedName) return "";
+    const matchedLinks = sponsorTicketReservedLinks.filter((link) => {
+      const customerName = link.customer_name.trim().toLowerCase();
+      return customerName.includes(normalizedName) || normalizedName.includes(customerName);
+    });
+    const matchedLinkIds = new Set(matchedLinks.map((link) => link.id));
+    const matchedSeatIds = sponsorTicketReservedAssignments.filter((assignment) => {
+      const assignmentName = assignment.customer_name?.trim().toLowerCase() ?? "";
+      return assignment.seating_link_id ? matchedLinkIds.has(assignment.seating_link_id) : assignmentName.includes(normalizedName) || normalizedName.includes(assignmentName);
+    }).map((assignment) => assignment.seat_id);
+    return sortReservedSeatIds(matchedSeatIds).map((seatId) => formatReservedSeatLabel(seatId)).join(", ");
+  }
+
+  function classifyCompTicket(item: ShowCompTicket): CompListReportRow["category"] {
+    const text = `${item.guest_name} ${item.notes ?? ""} ${item.order_id ?? ""}`.toLowerCase();
+    if (text.includes("band")) return "band";
+    if (text.includes("guest")) return "guest";
+    if (text.includes("volunteer") || text.includes("media") || text.includes("press")) return "other";
+    return normalizeGuestListTicketType(item.ticket_type) === "manual" ? "other" : "guest";
+  }
+
+  function getCompListCategoryLabel(category: CompListReportRow["category"]) {
+    if (category === "sponsor") return "Sponsor Comp";
+    if (category === "band") return "Band Comp";
+    if (category === "guest") return "Guest Comp";
+    return "Volunteer / Media / Other Comp";
+  }
+
+  function buildCompListReportRows() {
+    const sponsorRows: CompListReportRow[] = sponsorsWithCompTickets.map((sponsor) => {
+      const name = getSponsorTicketSponsorName(sponsor);
+      return { id: `sponsor-${sponsor.id}`, name, category: "sponsor", categoryLabel: "Sponsor Comp", quantity: Math.max(0, sponsor.comp_ticket_allowance ?? 0), reservedSeats: getCompListReservedSeatsForName(name), checkedIn: Math.max(0, sponsor.comp_tickets_checked_in ?? 0), notes: sponsor.recognition_notes ?? "" };
+    });
+    const compRows: CompListReportRow[] = compTickets.filter((item) => {
+      const ticketType = normalizeGuestListTicketType(item.ticket_type);
+      return ticketType !== "paid_online" && ticketType !== "door_paid";
+    }).map((item) => {
+      const category = classifyCompTicket(item);
+      return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompListReservedSeatsForName(item.guest_name), checkedIn: item.checked_in_count, notes: item.notes ?? "" };
+    });
+    return [...sponsorRows, ...compRows];
+  }
+
+  function buildSponsorCompListPrintHtml({ printMode }: { printMode: "print" | "pdf" }) {
+    const rows = buildCompListReportRows();
+    const groupedRows = [
+      { title: "Sponsor Comps", rows: rows.filter((row) => row.category === "sponsor") },
+      { title: "Band Comps", rows: rows.filter((row) => row.category === "band") },
+      { title: "Guest Comps", rows: rows.filter((row) => row.category === "guest") },
+      { title: "Volunteer / Media / Other Comps", rows: rows.filter((row) => row.category === "other") },
+    ];
+    const totalSponsorComps = groupedRows[0].rows.reduce((sum, row) => sum + row.quantity, 0);
+    const totalBandComps = groupedRows[1].rows.reduce((sum, row) => sum + row.quantity, 0);
+    const totalGuestOtherComps = [...groupedRows[2].rows, ...groupedRows[3].rows].reduce((sum, row) => sum + row.quantity, 0);
+    const totalComplimentaryTickets = rows.reduce((sum, row) => sum + row.quantity, 0);
+    const totalCheckedIn = rows.reduce((sum, row) => sum + row.checkedIn, 0);
+    const generatedAt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date());
+    const groupMarkup = groupedRows.map((group) => `<section class="group"><h2>${escapeHtml(group.title)}</h2>${group.rows.length === 0 ? '<p class="empty">No entries in this category.</p>' : `<table><thead><tr><th>Name / Sponsor</th><th>Comp Type</th><th>Qty</th><th>Reserved Seat(s)</th><th>Checked In</th><th>Notes</th></tr></thead><tbody>${group.rows.map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.categoryLabel)}</td><td class="number">${escapeHtml(String(row.quantity))}</td><td>${escapeHtml(row.reservedSeats || "-")}</td><td>${escapeHtml(`${row.checkedIn} of ${row.quantity}`)}</td><td>${escapeHtml(row.notes || "-")}</td></tr>`).join("")}</tbody></table>`}</section>`).join("");
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(show?.name ?? "Show")} Sponsor & Comp Ticket List</title><style>@page{size:letter portrait;margin:.45in}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#1c1917;background:#fff}h1{margin:0;font-size:24px}h2{margin:24px 0 8px;font-size:16px;border-bottom:2px solid #d6d3d1;padding-bottom:5px}.meta{margin-top:6px;color:#57534e;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11px}th{text-align:left;background:#f5f5f4;color:#44403c;border:1px solid #d6d3d1;padding:6px}td{border:1px solid #e7e5e4;padding:6px;vertical-align:top}.number{text-align:right;font-weight:700}.empty{margin:0;border:1px dashed #d6d3d1;padding:10px;color:#78716c;font-size:12px}.totals{margin-top:24px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px;break-inside:avoid}.total-card{border:1px solid #d6d3d1;background:#fafaf9;padding:10px}.total-label{color:#57534e;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.total-value{margin-top:4px;font-size:20px;font-weight:800}@media print{.group{break-inside:avoid}}</style></head><body><header><h1>Sponsor & Comp Ticket List</h1><p class="meta">${escapeHtml(show?.name ?? "Show")} - ${escapeHtml(formatShowDate(show?.show_date ?? null))} - Generated ${escapeHtml(generatedAt)}</p></header>${groupMarkup}<section class="totals"><div class="total-card"><div class="total-label">Sponsor Comps</div><div class="total-value">${totalSponsorComps}</div></div><div class="total-card"><div class="total-label">Band Comps</div><div class="total-value">${totalBandComps}</div></div><div class="total-card"><div class="total-label">Guest / Other</div><div class="total-value">${totalGuestOtherComps}</div></div><div class="total-card"><div class="total-label">Total Comps</div><div class="total-value">${totalComplimentaryTickets}</div></div><div class="total-card"><div class="total-label">Checked In</div><div class="total-value">${totalCheckedIn}</div></div></section><script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
+  }
+
+  function openSponsorCompListPrintWindow(printMode: "print" | "pdf") {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setCompTicketErrorMessage("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(buildSponsorCompListPrintHtml({ printMode }));
+    printWindow.document.close();
+    setCompTicketStatusMessage(printMode === "pdf" ? "Use Save as PDF in the print dialog to export the comp list." : "Sponsor & comp ticket list opened.");
+  }
+  function buildSponsorTicketPrintHtml({ printMode }: { printMode: "print" | "pdf" }) {
+    const sponsor = sponsorsWithCompTickets.find((item) => item.id === sponsorTicketSponsorId) ?? null;
+    const selectedSeatIds = sortReservedSeatIds(selectedSponsorTicketSeatIds);
+
+    if (!show || !sponsor || !activeSponsorTicketTemplateUrl || selectedSeatIds.length === 0) {
+      return null;
+    }
+
+    const sponsorName = getSponsorTicketSponsorName(sponsor);
+    const showDate = formatShowDate(show.show_date);
+    const doorsTime = show.guest_arrival_time || "6:00 PM";
+    const showTime = show.show_start_time || "TBD";
+    const totalTickets = selectedSeatIds.length;
+    const tickets = selectedSeatIds.map((seatId, index) => ({
+      seatLabel: formatReservedSeatLabel(seatId),
+      ticketNumber: `${index + 1} of ${totalTickets}`,
+    }));
+    const ticketSheets = Array.from({ length: Math.ceil(tickets.length / 4) }, (_, sheetIndex) => tickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
+
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(sponsorName)} Sponsor Tickets</title><style>
+      @page { size: 8.5in 11in portrait; margin: .18in; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #111; font-family: Arial, Helvetica, sans-serif; }
+      .ticket-sheet { width: 8.14in; height: 10.64in; display: grid; grid-template-columns: 5.26in; grid-template-rows: repeat(4, 2.55in); gap: .08in; align-content: center; justify-content: center; page-break-after: always; overflow: hidden; background: #fff; }
+      .ticket-slot { width: 5.26in; height: 2.55in; overflow: hidden; position: relative; background: #000; }
+      .ticket-page { width: 11in; height: 5.33in; position: absolute; left: 0; top: 0; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; }
+      .ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .field { position: absolute; color: #14110d; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sponsor { left: 1.15in; top: 2.69in; width: 3.05in; font-size: .18in; }
+      .date { left: 5.25in; top: 3.15in; width: 1.82in; font-size: .15in; }
+      .time { left: 3.06in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
+      .event { left: 1.34in; top: 3.15in; width: 2.9in; font-size: .125in; letter-spacing: 0; text-overflow: clip; }
+      .count { left: 5.78in; top: 3.62in; width: 1.18in; text-align: center; font-size: .17in; }
+      .seat-main { left: 1.58in; top: 4.09in; width: 5.5in; font-size: .18in; }
+      .doors-main { left: .88in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
+      .stub-count { left: 8.88in; top: 2.34in; width: 1.58in; height: .42in; display: flex; align-items: center; justify-content: center; text-align: center; color: #17120e; font-size: .34in; font-weight: 900; letter-spacing: 0; line-height: 1; white-space: nowrap; overflow: visible; text-overflow: clip; }
+      .stub-seat { left: 8.72in; top: 3.39in; width: 1.87in; text-align: center; color: #2d2721; font-size: .3in; font-weight: 900; }
+      @media print { body { background: #fff; } .ticket-sheet { break-after: page; } .ticket-sheet:last-child { break-after: auto; } }
+    </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page"><img src="${activeSponsorTicketTemplateUrl}" alt="" />
+      <div class="field sponsor">${escapeHtml(sponsorName)}</div>
+      <div class="field event">${escapeHtml(show.name)}</div>
+      <div class="field date">${escapeHtml(showDate)}</div>
+      <div class="field doors-main">${escapeHtml(doorsTime)}</div>
+      <div class="field time">${escapeHtml(showTime)}</div>
+      <div class="field count">${escapeHtml(String(totalTickets))}</div>
+      <div class="field seat-main">${escapeHtml(ticket.seatLabel)}</div>
+      <div class="field stub-count">${escapeHtml(ticket.ticketNumber)}</div>
+      <div class="field stub-seat">${escapeHtml(ticket.seatLabel)}</div>
+    </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
+  }
+
+  function openSponsorTicketPrintWindow(printMode: "print" | "pdf") {
+    if (!activeSponsorTicketTemplateUrl) {
+      setSponsorTicketErrorMessage("Upload or choose a ticket template image before printing sponsor tickets.");
+      return;
+    }
+    if (!sponsorTicketSponsorId) {
+      setSponsorTicketErrorMessage("Choose a sponsor before printing sponsor tickets.");
+      return;
+    }
+    if (selectedSponsorTicketSeatIds.length === 0) {
+      setSponsorTicketErrorMessage("Select at least one reserved comp seat before printing sponsor tickets.");
+      return;
+    }
+
+    const html = buildSponsorTicketPrintHtml({ printMode });
+    if (!html) {
+      setSponsorTicketErrorMessage("Ticket information is incomplete. Check the template, sponsor, and reserved seats before printing.");
+      return;
+    }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setSponsorTicketErrorMessage("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setSponsorTicketStatusMessage(printMode === "pdf" ? "Use Save as PDF in the print dialog to export the tickets." : "Ticket print view opened.");
+  }
   async function handleCheckInCustomSponsorCompAmount(sponsor: ShowSponsor) {
     const customAmount = parseNonNegativeIntegerInput(sponsorCompCustomAmounts[sponsor.id] ?? "");
 
@@ -8320,8 +8832,8 @@ export function ShowPage({
                 guest_song_id,
                 custom_title,
                 performance_flow,
-                song_intro_notes,
-                created_at,
+              song_intro_notes,
+              created_at,
                 library_song:song_id (
                   id,
                   title,
@@ -8330,8 +8842,8 @@ export function ShowPage({
                   tempo,
                   song_type,
                   performance_flow,
-                  song_intro_notes,
-                  notes,
+                song_intro_notes,
+                notes,
                   lyrics,
                   created_by_role,
                   created_by_name,
@@ -13531,8 +14043,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           sung_by: normalizeOptionalField(librarySongEditFormState.sungBy),
           tempo: librarySongEditFormState.tempo || null,
           song_type: librarySongEditFormState.songType || null,
-          performance_flow: normalizeOptionalField(librarySongEditFormState.performanceFlow ?? ""),
-          song_intro_notes: normalizeOptionalField(librarySongEditFormState.songIntroNotes ?? ""),
           notes: appendMp3MarkerToNotes(
             normalizeOptionalField(librarySongEditFormState.notes ?? ""),
             songToUpdate.mp3_path,
@@ -13660,8 +14170,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             tempo,
             song_type,
             performance_flow,
-            song_intro_notes,
-            notes,
+                song_intro_notes,
+                notes,
             lyrics,
             created_by_role,
             created_by_name,
@@ -15639,6 +16149,194 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
   }
 
+
+
+  function updateAdminSongPerformanceDefaultsDraft(songId: string, updater: (draft: AdminSongPerformanceDefaultsDraft) => AdminSongPerformanceDefaultsDraft) {
+    setAdminSongPerformanceDefaultsDrafts((currentDrafts) => {
+      const song = songLibrary.find((item) => item.id === songId);
+      const currentDraft = currentDrafts[songId] ?? (song ? buildAdminSongPerformanceDefaultsDraft(song) : null);
+
+      if (!currentDraft) return currentDrafts;
+
+      return { ...currentDrafts, [songId]: updater(currentDraft) };
+    });
+  }
+
+  async function handleSaveAdminSongPerformanceDefaults(songId: string) {
+    const song = songLibrary.find((item) => item.id === songId);
+    const draft = adminSongPerformanceDefaultsDrafts[songId] ?? (song ? buildAdminSongPerformanceDefaultsDraft(song) : null);
+
+    if (!song || !draft || !canEditLibrarySong(song)) return;
+
+    setActionError(null);
+    setActiveSetlistActionId(songId);
+
+    try {
+      const payload = {
+        default_performance_flow: normalizeOptionalField(draft.performanceFlow),
+        default_song_intro_notes: normalizeOptionalField(draft.songIntroNotes),
+        default_intro_auto_open_lyrics: draft.autoOpenLyrics,
+        default_intro_auto_open_delay: draft.introDelay || null,
+        default_lyrics_auto_start_scroll: draft.autoStartScroll,
+        default_lyrics_auto_scroll_speed: draft.scrollSpeed,
+        default_lyrics_auto_scroll_delay: draft.scrollDelay,
+        default_lyrics_font_size: draft.fontSize,
+        default_lyrics_reading_mode: draft.readingMode,
+      };
+      const { data, error } = await createClient().from("songs").update(payload).eq("id", songId).select("*").single();
+      if (error) throw error;
+      const normalizedSong = normalizeSongLibrarySong(data as SongLibrarySong);
+      setSongLibrary((currentSongs) => currentSongs.map((item) => item.id === songId ? normalizedSong : item).sort((a, b) => a.title.localeCompare(b.title)));
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSetlistActionId(null);
+    }
+  }
+
+  function adminDefaultsToLiveDraft(song: SongLibrarySong): AdminSongLiveSetupDraft {
+    const defaults = adminSongPerformanceDefaultsDrafts[song.id] ?? buildAdminSongPerformanceDefaultsDraft(song);
+    return { ...defaults };
+  }
+
+  function liveDraftToDefaultsDraft(draft: AdminSongLiveSetupDraft): AdminSongPerformanceDefaultsDraft {
+    return { ...draft };
+  }
+
+  async function handleUpdateSetlistEntryFromLibraryDefaults(entryId: string, songId: string) {
+    const song = songLibrary.find((item) => item.id === songId);
+    if (!song) return;
+    const draft = adminDefaultsToLiveDraft(song);
+    setAdminSongLiveSetupDrafts((current) => ({ ...current, [entryId]: draft }));
+    setActionError(null);
+    setActiveSetlistActionId(entryId);
+    try {
+      const payload = buildSetlistInsertDefaults(song);
+      const { error } = await createClient().from("setlist_entries").update(payload).eq("id", entryId);
+      if (error) throw error;
+      setSetlist((currentSetlist) => currentSetlist.map((entry) => entry.id === entryId ? { ...entry, ...payload } : entry));
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_INTRO_AUTO_OPEN_KEY, draft.autoOpenLyrics);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_INTRO_DELAY_KEY, draft.introDelay);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_AUTOSTART_KEY, draft.autoStartScroll);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_SPEED_KEY, draft.scrollSpeed);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_DELAY_KEY, draft.scrollDelay);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_FONT_KEY, draft.fontSize);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_READING_KEY, draft.readingMode);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSetlistActionId(null);
+    }
+  }
+
+  async function handleSaveSetlistEntryAsLibraryDefaults(entryId: string, songId: string) {
+    const song = songLibrary.find((item) => item.id === songId);
+    const entry = setlist.find((item) => item.id === entryId);
+    const liveDraft = adminSongLiveSetupDrafts[entryId] ?? (entry ? buildAdminSongLiveSetupDraft(entry) : null);
+    if (!song || !liveDraft) return;
+    const defaultsDraft = liveDraftToDefaultsDraft(liveDraft);
+    setAdminSongPerformanceDefaultsDrafts((current) => ({ ...current, [songId]: defaultsDraft }));
+    await handleSaveAdminSongPerformanceDefaultsFromDraft(songId, defaultsDraft);
+  }
+
+  async function handleSaveAdminSongPerformanceDefaultsFromDraft(songId: string, draft: AdminSongPerformanceDefaultsDraft) {
+    const song = songLibrary.find((item) => item.id === songId);
+    if (!song || !canEditLibrarySong(song)) return;
+    setActionError(null);
+    setActiveSetlistActionId(songId);
+    try {
+      const payload = {
+        default_performance_flow: normalizeOptionalField(draft.performanceFlow),
+        default_song_intro_notes: normalizeOptionalField(draft.songIntroNotes),
+        default_intro_auto_open_lyrics: draft.autoOpenLyrics,
+        default_intro_auto_open_delay: draft.introDelay || null,
+        default_lyrics_auto_start_scroll: draft.autoStartScroll,
+        default_lyrics_auto_scroll_speed: draft.scrollSpeed,
+        default_lyrics_auto_scroll_delay: draft.scrollDelay,
+        default_lyrics_font_size: draft.fontSize,
+        default_lyrics_reading_mode: draft.readingMode,
+      };
+      const { data, error } = await createClient().from("songs").update(payload).eq("id", songId).select("*").single();
+      if (error) throw error;
+      const normalizedSong = normalizeSongLibrarySong(data as SongLibrarySong);
+      setSongLibrary((currentSongs) => currentSongs.map((item) => item.id === songId ? normalizedSong : item).sort((a, b) => a.title.localeCompare(b.title)));
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSetlistActionId(null);
+    }
+  }  function updateAdminSongLiveSetupDraft(entryId: string, updater: (draft: AdminSongLiveSetupDraft) => AdminSongLiveSetupDraft) {
+    setAdminSongLiveSetupDrafts((currentDrafts) => {
+      const entry = setlist.find((song) => song.id === entryId);
+      const currentDraft = currentDrafts[entryId] ?? (entry ? buildAdminSongLiveSetupDraft(entry) : null);
+
+      if (!currentDraft) {
+        return currentDrafts;
+      }
+
+      return {
+        ...currentDrafts,
+        [entryId]: updater(currentDraft),
+      };
+    });
+  }
+
+  function writeAdminSongLiveSetupSetting(entryId: string, base: string, value: string | number | boolean) {
+    window.localStorage.setItem(adminSongLiveStorageKey(base, entryId), String(value));
+  }
+
+  async function handleSaveAdminSongLiveSetup(entryId: string) {
+    const songToUpdate = setlist.find((song) => song.id === entryId);
+    const draft = adminSongLiveSetupDrafts[entryId];
+
+    if (!songToUpdate || !draft || !canEditSetlistSong()) {
+      return;
+    }
+
+    const performanceFlow = normalizeOptionalField(draft.performanceFlow);
+    const songIntroNotes = normalizeOptionalField(draft.songIntroNotes);
+
+    setActionError(null);
+    setActiveSetlistActionId(entryId);
+
+    try {
+      const { error } = await createClient()
+        .from("setlist_entries")
+        .update({
+          performance_flow: performanceFlow,
+          song_intro_notes: songIntroNotes,
+        })
+        .eq("id", entryId);
+
+      if (error) {
+        throw error;
+      }
+
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_INTRO_AUTO_OPEN_KEY, draft.autoOpenLyrics);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_INTRO_DELAY_KEY, draft.introDelay);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_AUTOSTART_KEY, draft.autoStartScroll);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_SPEED_KEY, draft.scrollSpeed);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_DELAY_KEY, draft.scrollDelay);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_FONT_KEY, draft.fontSize);
+      writeAdminSongLiveSetupSetting(entryId, ADMIN_SONG_LIVE_READING_KEY, draft.readingMode);
+
+      setSetlist((currentSetlist) =>
+        currentSetlist.map((song) =>
+          song.id === entryId
+            ? {
+                ...song,
+                performance_flow: performanceFlow,
+                song_intro_notes: songIntroNotes,
+              }
+            : song,
+        ),
+      );
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveSetlistActionId(null);
+    }
+  }
   function handleSetlistSongEditChange(
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
@@ -15688,41 +16386,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
       if (error) {
         throw error;
-      }
-
-      if (songToUpdate.source_type === "library" && songToUpdate.song_id) {
-        const linkedLibrarySong = songLibrary.find((librarySong) => librarySong.id === songToUpdate.song_id) ?? null;
-        const libraryPerformanceFlow = normalizeOptionalField(linkedLibrarySong?.performance_flow ?? "");
-        const librarySongIntroNotes = normalizeOptionalField(linkedLibrarySong?.song_intro_notes ?? "");
-        const nextLibraryPerformanceFlow = libraryPerformanceFlow ?? performanceFlow;
-        const nextLibrarySongIntroNotes = librarySongIntroNotes ?? songIntroNotes;
-
-        if (
-          (nextLibraryPerformanceFlow !== libraryPerformanceFlow ||
-            nextLibrarySongIntroNotes !== librarySongIntroNotes) &&
-          (nextLibraryPerformanceFlow || nextLibrarySongIntroNotes)
-        ) {
-          const { data: updatedLibrarySong, error: updateLibraryError } = await supabase
-            .from("songs")
-            .update({
-              performance_flow: nextLibraryPerformanceFlow,
-              song_intro_notes: nextLibrarySongIntroNotes,
-            })
-            .eq("id", songToUpdate.song_id)
-            .select("*")
-            .single();
-
-          if (updateLibraryError) {
-            throw updateLibraryError;
-          }
-
-          const normalizedLibrarySong = normalizeSongLibrarySong(updatedLibrarySong as SongLibrarySong);
-          setSongLibrary((currentSongs) =>
-            currentSongs
-              .map((song) => (song.id === normalizedLibrarySong.id ? normalizedLibrarySong : song))
-              .sort((songA, songB) => songA.title.localeCompare(songB.title)),
-          );
-        }
       }
 
       setSetlist((currentSetlist) =>
@@ -19301,14 +19964,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                  Guest Arrival Time
+                  Doors Open Time
                   <input
                     type="text"
                     name="guestArrivalTime"
                     value={showDetailsFormState.guestArrivalTime}
                     onChange={handleShowDetailsChange}
                     className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                    placeholder="6:15 PM"
+                    placeholder="6:00 PM"
                   />
                 </label>
 
@@ -19789,6 +20452,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       >
                         Print Back-Up / Blank Seat Cards
                       </Link>
+                      <button
+                        type="button"
+                        onClick={() => openSponsorCompListPrintWindow("print")}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Print Comp List
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openSponsorCompListPrintWindow("pdf")}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                      >
+                        Export Comp List PDF
+                      </button>
                     </div>
                   </div>
                 ) : null}
@@ -19844,6 +20521,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       >
                         Print Back-Up / Guest List Cards
                       </Link>
+                      <button
+                        type="button"
+                        onClick={() => openSponsorCompListPrintWindow("print")}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                      >
+                        Print Comp List
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openSponsorCompListPrintWindow("pdf")}
+                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                      >
+                        Export Comp List PDF
+                      </button>
                     </div>
                   </div>
                 ) : null}
@@ -19895,12 +20586,21 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             ) : null}
 
             {activeTicketWorkflowSection === "reserved-seating" && isReservedSeatingOpen && show ? (
-              <ReservedSeatingPanel
-                showId={show.id}
-                showSlug={show.slug}
-                showName={show.name}
-                showDate={show.show_date}
-              />
+              <div id="reserved-seating-admin-section">
+                <ReservedSeatingPanel
+                  showId={show.id}
+                  showSlug={show.slug}
+                  showName={show.name}
+                  showDate={show.show_date}
+                  sponsorOptions={sponsorsWithCompTickets.map((sponsor) => ({
+                    id: sponsor.id,
+                    name: getSponsorTicketSponsorName(sponsor),
+                    compTicketAllowance: sponsor.comp_ticket_allowance,
+                  }))}
+                  selectedSponsorId={sponsorTicketSponsorId}
+                  onAssignmentsChange={() => setSponsorTicketSeatRefreshKey((currentValue) => currentValue + 1)}
+                />
+              </div>
             ) : null}
 
             {compTicketStatusMessage ? (
@@ -20221,6 +20921,183 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </button>
               </div>
 
+
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-black uppercase tracking-[0.14em] text-amber-900">Sponsor Ticket Printing</h4>
+                    <p className="mt-1 text-sm text-amber-900/80">Upload a ticket template, choose a sponsor, select reserved comp seats, then print or save as PDF.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleAssignReservedSeatsFromSponsorTickets}
+                      className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+                    >
+                      Assign Reserved Seats
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsSponsorTicketPrinterOpen((currentValue) => !currentValue)}
+                      className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+                    >
+                      {isSponsorTicketPrinterOpen ? "Hide Ticket Printer" : "Open Ticket Printer"}
+                    </button>
+                  </div>
+                </div>
+
+                {isSponsorTicketPrinterOpen ? (() => {
+                  const selectedSponsor = sponsorsWithCompTickets.find((sponsor) => sponsor.id === sponsorTicketSponsorId) ?? null;
+                  const seatOptions = selectedSponsor ? getSponsorReservedSeatOptions(selectedSponsor) : [];
+                  return (
+                    <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
+                      <div className="grid gap-3 rounded-2xl border border-amber-200 bg-white p-4">
+                        <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                          Saved Ticket Templates
+                          <select
+                            value={selectedSponsorTicketTemplateId}
+                            onChange={(event) => {
+                              const templateId = event.target.value;
+                              setSelectedSponsorTicketTemplateId(templateId);
+                              setSponsorTicketTemplateDataUrl(null);
+                              if (show && typeof window !== "undefined") {
+                                if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, templateId);
+                                else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}`);
+                              }
+                            }}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
+                          >
+                            <option value="">Choose saved template</option>
+                            {sponsorTicketTemplates.map((template) => (
+                              <option key={template.id} value={template.id}>{template.name}</option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                          Upload New Template
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/webp"
+                            onChange={(event) => void handleSponsorTicketTemplateChange(event)}
+                            disabled={isUploadingSponsorTicketTemplate}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        </label>
+
+                        {activeSponsorTicketTemplateUrl ? (
+                          <div className="grid gap-3">
+                            <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100">
+                              <img src={activeSponsorTicketTemplateUrl} alt="Sponsor ticket template preview" className="h-auto w-full" />
+                            </div>
+                            {selectedSponsorTicketTemplate ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteSponsorTicketTemplate()}
+                                disabled={activeSponsorTicketTemplateActionId === selectedSponsorTicketTemplate.id}
+                                className="w-fit rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {activeSponsorTicketTemplateActionId === selectedSponsorTicketTemplate.id ? "Deleting Template..." : "Delete Selected Template"}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose a saved ticket template or upload a new ticket design image. StageFlow will overlay the sponsor, show, and seat text.</p>
+                        )}
+                      </div>
+
+                      <div className="grid gap-3 rounded-2xl border border-amber-200 bg-white p-4">
+                        <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                          Sponsor
+                          <select
+                            value={sponsorTicketSponsorId}
+                            onChange={(event) => {
+                              setSponsorTicketSponsorId(event.target.value);
+                              setSelectedSponsorTicketSeatIds([]);
+                              setSponsorTicketStatusMessage(null);
+                              setSponsorTicketErrorMessage(null);
+                            }}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
+                          >
+                            <option value="">Choose sponsor</option>
+                            {sponsorsWithCompTickets.map((sponsor) => (
+                              <option key={sponsor.id} value={sponsor.id}>{getSponsorTicketSponsorName(sponsor)} ({sponsor.comp_ticket_allowance})</option>
+                            ))}
+                          </select>
+                        </label>
+
+                        {selectedSponsor ? (
+                          <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-bold text-stone-900">Reserved Comp Seats</p>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedSponsorTicketSeatIds(seatOptions.map((seat) => seat.seatId))}
+                                disabled={seatOptions.length === 0}
+                                className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Select All
+                              </button>
+                            </div>
+                            {seatOptions.length === 0 ? (
+                              <div className="mt-3 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3 py-3">
+                                <p className="text-sm font-semibold text-amber-900">No reserved comp seats have been assigned to this sponsor yet. Assign seats before printing sponsor tickets.</p>
+                                <button
+                                  type="button"
+                                  onClick={handleAssignReservedSeatsFromSponsorTickets}
+                                  className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
+                                >
+                                  Assign Reserved Seats
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="mt-3 grid max-h-44 gap-2 overflow-y-auto sm:grid-cols-2">
+                                {seatOptions.map((seat) => (
+                                  <label key={seat.seatId} className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedSponsorTicketSeatIds.includes(seat.seatId)}
+                                      onChange={() => toggleSponsorTicketSeat(seat.seatId)}
+                                      className="h-4 w-4 rounded border-stone-300 text-emerald-700"
+                                    />
+                                    {seat.label}
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+
+                        <div className="rounded-xl bg-stone-50 px-3 py-3 text-sm text-stone-700">
+                          <p><span className="font-semibold">Tickets ready:</span> {selectedSponsorTicketSeatIds.length}</p>
+                          <p><span className="font-semibold">Show:</span> {show?.name ?? "Show"}</p>
+                          <p><span className="font-semibold">Date:</span> {formatShowDate(show?.show_date ?? null)}</p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openSponsorTicketPrintWindow("print")}
+                            className="rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-amber-800"
+                          >
+                            Print Tickets
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openSponsorTicketPrintWindow("pdf")}
+                            className="rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm font-bold text-amber-900 transition hover:bg-amber-100"
+                          >
+                            Export / Save PDF
+                          </button>
+                        </div>
+
+                        {sponsorTicketStatusMessage ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">{sponsorTicketStatusMessage}</p> : null}
+                        {sponsorTicketErrorMessage ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{sponsorTicketErrorMessage}</p> : null}
+                      </div>
+                    </div>
+                  );
+                })() : null}
+              </div>
               {isSponsorCompTicketsOpen ? (
                 sponsorsWithCompTickets.length === 0 ? (
                   <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
@@ -26132,6 +27009,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   const setlistUsageCount = librarySongSetlistUsageCounts[song.id] ?? 0;
                   const isUsedInSetlist = setlistUsageCount > 0;
                   const chartUrl = normalizeChartUrl(song.chart_url);
+                  const currentShowSetlistEntries = setlist.filter((entry) => entry.source_type === "library" && entry.song_id === song.id);
 
                   return (
                   <article
@@ -26146,8 +27024,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           label: "Created By",
                           value: formatLibrarySourceRole(song.source_role),
                         }}
-                        performanceFlowField
-                        songIntroNotesField
                         notesLabel="Notes"
                         notesPlaceholder="Optional notes for the setlist side"
                         showChartUrl
@@ -26352,7 +27228,129 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           </div>
                         ) : null}
 
-                        {openLibraryLyricsSongId === song.id ? (
+
+                        {isAdminView && canEditLibrarySong(song) ? (() => {
+                          const defaultsDraft = adminSongPerformanceDefaultsDrafts[song.id] ?? buildAdminSongPerformanceDefaultsDraft(song);
+                          return (
+                            <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/70">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedAdminSongPerformanceDefaults((current) => ({ ...current, [song.id]: !current[song.id] }))}
+                                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-black uppercase tracking-[0.14em] text-violet-800 transition hover:bg-violet-100/70"
+                                aria-expanded={Boolean(expandedAdminSongPerformanceDefaults[song.id])}
+                              >
+                                <span>{expandedAdminSongPerformanceDefaults[song.id] ? "Collapse" : "Expand"} Performance Defaults</span>
+                                <span className="text-base" aria-hidden="true">{expandedAdminSongPerformanceDefaults[song.id] ? "-" : "+"}</span>
+                              </button>
+                              {expandedAdminSongPerformanceDefaults[song.id] ? (
+                                <div className="border-t border-violet-200 px-4 py-4">
+                                  <p className="text-xs font-semibold text-violet-900/70">These defaults are copied into a show when this song is added to a setlist.</p>
+                                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                    <label className="text-sm font-semibold text-stone-700">Default Performance Flow / Break Order
+                                      <textarea value={defaultsDraft.performanceFlow} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, performanceFlow: event.target.value }))} rows={5} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" />
+                                    </label>
+                                    <label className="text-sm font-semibold text-stone-700">Default Song Intro Notes
+                                      <textarea value={defaultsDraft.songIntroNotes} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, songIntroNotes: event.target.value }))} rows={5} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" />
+                                    </label>
+                                  </div>
+                                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                    <label className="text-sm font-semibold text-stone-700">Default Intro Auto Open
+                                      <select value={defaultsDraft.autoOpenLyrics ? "on" : "off"} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, autoOpenLyrics: event.target.value === "on" }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900"><option value="off">Off</option><option value="on">On</option></select>
+                                    </label>
+                                    <label className="text-sm font-semibold text-stone-700">Default Intro Delay
+                                      <select value={defaultsDraft.introDelay} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, introDelay: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900">{ADMIN_SONG_INTRO_DELAYS.map((value) => <option key={value} value={value}>{value === 0 ? "Off" : `${value}s`}</option>)}</select>
+                                    </label>
+                                    <label className="text-sm font-semibold text-stone-700">Default Auto Start Scroll
+                                      <select value={defaultsDraft.autoStartScroll ? "on" : "off"} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, autoStartScroll: event.target.value === "on" }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900"><option value="off">Off</option><option value="on">On</option></select>
+                                    </label>
+                                    <label className="text-sm font-semibold text-stone-700">Default Scroll Speed
+                                      <select value={defaultsDraft.scrollSpeed} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, scrollSpeed: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900">{ADMIN_SONG_SCROLL_SPEEDS.map((value) => <option key={value} value={value}>Speed {value}</option>)}</select>
+                                    </label>
+                                    <label className="text-sm font-semibold text-stone-700">Default Scroll Delay
+                                      <select value={defaultsDraft.scrollDelay} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, scrollDelay: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900">{ADMIN_SONG_SCROLL_DELAYS.map((value) => <option key={value} value={value}>{value}s</option>)}</select>
+                                    </label>
+                                    <label className="text-sm font-semibold text-stone-700">Default Lyrics Font Size
+                                      <select value={defaultsDraft.fontSize} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, fontSize: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900">{ADMIN_SONG_FONT_SIZES.map((value) => <option key={value} value={value}>{value}px</option>)}</select>
+                                    </label>
+                                    <label className="text-sm font-semibold text-stone-700">Default Lyrics Mode
+                                      <select value={defaultsDraft.readingMode ? "reading" : "dark"} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, readingMode: event.target.value === "reading" }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900"><option value="dark">Dark Mode</option><option value="reading">Reading Mode</option></select>
+                                    </label>
+                                  </div>
+                                  <button type="button" onClick={() => handleSaveAdminSongPerformanceDefaults(song.id)} disabled={activeSetlistActionId === song.id} className="mt-4 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-violet-400">{activeSetlistActionId === song.id ? "Saving Defaults..." : "Save Performance Defaults"}</button>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })() : null}
+                        {isAdminView && currentShowSetlistEntries.length > 0 ? (
+                          <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/70">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedAdminSongPerformanceSetup((current) => ({ ...current, [song.id]: !current[song.id] }))}
+                              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-black uppercase tracking-[0.14em] text-sky-800 transition hover:bg-sky-100/70"
+                              aria-expanded={Boolean(expandedAdminSongPerformanceSetup[song.id])}
+                            >
+                              <span>{expandedAdminSongPerformanceSetup[song.id] ? "Collapse" : "Expand"} Performance Setup</span>
+                              <span className="text-base" aria-hidden="true">{expandedAdminSongPerformanceSetup[song.id] ? "-" : "+"}</span>
+                            </button>
+                            {expandedAdminSongPerformanceSetup[song.id] ? (
+                              <div className="border-t border-sky-200 px-4 py-4">
+                                <p className="text-xs font-semibold text-sky-900/70">These fields save to this show's setlist entry and local Live Mode automation settings.</p>
+                                <div className="mt-4 flex flex-col gap-4">
+                                  {currentShowSetlistEntries.map((entry) => {
+                                    const draft = adminSongLiveSetupDrafts[entry.id] ?? buildAdminSongLiveSetupDraft(entry);
+                                    return (
+                                      <div key={entry.id} className="rounded-2xl border border-sky-200 bg-white p-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <p className="text-sm font-bold text-stone-900">{formatMcBlockSectionLabel(entry.section)} - Song {entry.position}</p>
+                                          <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-stone-600">Setlist Entry</span>
+                                        </div>
+                                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                          <label className="text-sm font-semibold text-stone-700">Performance Flow / Break Order
+                                            <textarea value={draft.performanceFlow} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, performanceFlow: event.target.value }))} rows={5} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" placeholder="Break order, solos, tags, repeats, endings..." />
+                                          </label>
+                                          <label className="text-sm font-semibold text-stone-700">Song Intro Notes
+                                            <textarea value={draft.songIntroNotes} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, songIntroNotes: event.target.value }))} rows={5} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" placeholder="MC read, sponsor intro, or song setup..." />
+                                          </label>
+                                        </div>
+                                        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                          <label className="text-sm font-semibold text-stone-700">Auto Open Lyrics
+                                            <select value={draft.autoOpenLyrics ? "on" : "off"} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, autoOpenLyrics: event.target.value === "on" }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900"><option value="off">Off</option><option value="on">On</option></select>
+                                          </label>
+                                          <label className="text-sm font-semibold text-stone-700">Intro Delay
+                                            <select value={draft.introDelay} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, introDelay: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900">{ADMIN_SONG_INTRO_DELAYS.map((value) => <option key={value} value={value}>{value === 0 ? "Off" : `${value}s`}</option>)}</select>
+                                          </label>
+                                          <label className="text-sm font-semibold text-stone-700">Auto Start Scroll
+                                            <select value={draft.autoStartScroll ? "on" : "off"} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, autoStartScroll: event.target.value === "on" }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900"><option value="off">Off</option><option value="on">On</option></select>
+                                          </label>
+                                          <label className="text-sm font-semibold text-stone-700">Scroll Speed
+                                            <select value={draft.scrollSpeed} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, scrollSpeed: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900">{ADMIN_SONG_SCROLL_SPEEDS.map((value) => <option key={value} value={value}>Speed {value}</option>)}</select>
+                                          </label>
+                                          <label className="text-sm font-semibold text-stone-700">Scroll Delay
+                                            <select value={draft.scrollDelay} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, scrollDelay: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900">{ADMIN_SONG_SCROLL_DELAYS.map((value) => <option key={value} value={value}>{value}s</option>)}</select>
+                                          </label>
+                                          <label className="text-sm font-semibold text-stone-700">Lyrics Font Size
+                                            <select value={draft.fontSize} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, fontSize: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900">{ADMIN_SONG_FONT_SIZES.map((value) => <option key={value} value={value}>{value}px</option>)}</select>
+                                          </label>
+                                          <label className="text-sm font-semibold text-stone-700">Lyrics Mode
+                                            <select value={draft.readingMode ? "reading" : "dark"} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, readingMode: event.target.value === "reading" }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900"><option value="dark">Dark Mode</option><option value="reading">Reading Mode</option></select>
+                                          </label>
+                                        </div>
+                                        <div className="mt-4 flex flex-wrap gap-2">
+                                          <button type="button" onClick={() => handleUpdateSetlistEntryFromLibraryDefaults(entry.id, song.id)} disabled={activeSetlistActionId === entry.id} className="rounded-xl border border-sky-300 bg-white px-4 py-2.5 text-sm font-bold text-sky-800 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60">Update From Library Defaults</button>
+                                          <button type="button" onClick={() => handleSaveSetlistEntryAsLibraryDefaults(entry.id, song.id)} disabled={activeSetlistActionId === entry.id} className="rounded-xl border border-violet-300 bg-white px-4 py-2.5 text-sm font-bold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60">Save This Show Setup as Library Defaults</button>
+                                        </div>
+                                        <button type="button" onClick={() => handleSaveAdminSongLiveSetup(entry.id)} disabled={activeSetlistActionId === entry.id} className="mt-3 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-sky-400">
+                                          {activeSetlistActionId === entry.id ? "Saving Live Setup..." : "Save Live Setup"}
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}                        {openLibraryLyricsSongId === song.id ? (
                           <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-4 py-4">
                             <div className="flex items-center justify-between gap-3">
                               <p className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">

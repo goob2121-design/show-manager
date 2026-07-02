@@ -14,11 +14,20 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import type { ReservedSeatCategory, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
+type ReservedSeatingSponsorOption = {
+  id: string;
+  name: string;
+  compTicketAllowance: number;
+};
+
 type ReservedSeatingPanelProps = {
   showId: string;
   showSlug: string;
   showName: string;
   showDate: string | null;
+  sponsorOptions?: ReservedSeatingSponsorOption[];
+  selectedSponsorId?: string;
+  onAssignmentsChange?: () => void;
 };
 
 type LinkFormState = {
@@ -35,6 +44,7 @@ type LinkWithSeats = ShowReservedSeatingLink & {
 };
 
 type CopyFeedbackTarget = "subject" | "body" | "link" | null;
+type ReservedSeatListFilter = "all" | ReservedSeatCategory;
 
 const initialLinkFormState: LinkFormState = {
   customerName: "",
@@ -108,7 +118,7 @@ function getResetSelectionMode(link: ShowReservedSeatingLink) {
 
 const reservedSeatCategoryOptions: Array<{ value: ReservedSeatCategory; label: string }> = [
   { value: "paid_reserved", label: "Paid Reserved" },
-  { value: "comp", label: "Comp" },
+  { value: "comp", label: "Sponsor / General Comp" },
   { value: "guest", label: "Guest" },
 ];
 
@@ -123,7 +133,7 @@ function normalizeReservedSeatCategory(value: string | null | undefined, isCompl
 function getReservedSeatCategoryLabel(category: ReservedSeatCategory) {
   switch (category) {
     case "comp":
-      return "Comp";
+      return "Sponsor / General Comp";
     case "guest":
       return "Guest";
     default:
@@ -173,7 +183,7 @@ function buildReservedSeatingMessageBody(link: LinkWithSeats, absoluteUrl: strin
   ].join("\n");
 }
 
-export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: ReservedSeatingPanelProps) {
+export function ReservedSeatingPanel({ showId, showSlug, showName, showDate, sponsorOptions = [], selectedSponsorId = "", onAssignmentsChange }: ReservedSeatingPanelProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -184,6 +194,8 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
   const [manualAssignLinkId, setManualAssignLinkId] = useState<string | null>(null);
   const [messageLinkId, setMessageLinkId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<CopyFeedbackTarget>(null);
+  const [selectedSponsorCompId, setSelectedSponsorCompId] = useState(selectedSponsorId);
+  const [seatListFilter, setSeatListFilter] = useState<ReservedSeatListFilter>("all");
   const supabase = useMemo(() => createClient(), []);
 
   async function loadReservedSeating() {
@@ -217,6 +229,22 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
     void loadReservedSeating();
   }, [showId]);
 
+  useEffect(() => {
+    if (!selectedSponsorId) return;
+    const sponsor = sponsorOptions.find((item) => item.id === selectedSponsorId);
+    setSelectedSponsorCompId(selectedSponsorId);
+    if (sponsor) {
+      setFormState((current) => ({
+        ...current,
+        customerName: sponsor.name,
+        ticketCount: String(Math.max(1, sponsor.compTicketAllowance || 1)),
+        sourceNote: "Sponsor Comp",
+        isComplimentary: true,
+        seatCategory: "comp",
+      }));
+    }
+  }, [selectedSponsorId, sponsorOptions]);
+
   const linksWithSeats = useMemo<LinkWithSeats[]>(
     () =>
       links.map((link) => ({
@@ -238,6 +266,11 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
   const messageLink = useMemo(
     () => linksWithSeats.find((link) => link.id === messageLinkId) ?? null,
     [linksWithSeats, messageLinkId],
+  );
+
+  const filteredLinksWithSeats = useMemo(
+    () => linksWithSeats.filter((link) => seatListFilter === "all" || normalizeReservedSeatCategory(link.seat_category, link.is_complimentary) === seatListFilter),
+    [linksWithSeats, seatListFilter],
   );
 
   const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
@@ -299,6 +332,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
       setFormState(initialLinkFormState);
       setStatusMessage(`${createdLabel} created.`);
       await loadReservedSeating();
+      onAssignmentsChange?.();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, formState.isComplimentary ? "Unable to create comp guest." : "Unable to create seat selection link."));
     } finally {
@@ -400,6 +434,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
         const assignedLabel = getReservedSeatCategoryLabel(normalizeReservedSeatCategory(manualAssignLink.seat_category, manualAssignLink.is_complimentary));
         setStatusMessage(`${assignedLabel} ${formatReservedSeatLabel(seatId)} assigned to ${manualAssignLink.customer_name}.`);
         await loadReservedSeating();
+        onAssignmentsChange?.();
         return;
       }
 
@@ -442,6 +477,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
       }
 
       await loadReservedSeating();
+      onAssignmentsChange?.();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to update the selected seat."));
       await loadReservedSeating();
@@ -492,6 +528,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
 
       setStatusMessage("Seat assignment cleared.");
       await loadReservedSeating();
+      onAssignmentsChange?.();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to clear this assignment."));
     } finally {
@@ -527,6 +564,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
 
       setStatusMessage(`${link.customer_name} category updated to ${getReservedSeatCategoryLabel(nextCategory)}.`);
       await loadReservedSeating();
+      onAssignmentsChange?.();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to update the seat category."));
     } finally {
@@ -557,6 +595,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
 
       setStatusMessage("Seat selection link deleted.");
       await loadReservedSeating();
+      onAssignmentsChange?.();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to delete this seat selection link."));
     } finally {
@@ -683,7 +722,10 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setFormState((current) => ({ ...current, isComplimentary: false, seatCategory: current.seatCategory === "comp" ? "paid_reserved" : current.seatCategory }))}
+                onClick={() => {
+                  setSelectedSponsorCompId("");
+                  setFormState((current) => ({ ...current, isComplimentary: false, seatCategory: "paid_reserved" }));
+                }}
                 className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition ${
                   formState.isComplimentary
                     ? "border border-white/12 bg-white/[0.04] text-slate-300"
@@ -711,8 +753,38 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
                 : "Create a private customer link for reserved seating."}
             </p>
             <div className="mt-4 grid gap-4">
+              {formState.isComplimentary && sponsorOptions.length > 0 ? (
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
+                  Sponsor Comp Sponsor
+                  <select
+                    value={selectedSponsorCompId}
+                    onChange={(event) => {
+                      const sponsorId = event.target.value;
+                      const sponsor = sponsorOptions.find((item) => item.id === sponsorId) ?? null;
+                      setSelectedSponsorCompId(sponsorId);
+                      setFormState((current) => ({
+                        ...current,
+                        customerName: sponsor?.name ?? current.customerName,
+                        ticketCount: sponsor ? String(Math.max(1, sponsor.compTicketAllowance || 1)) : current.ticketCount,
+                        sourceNote: sponsor ? "Sponsor Comp" : current.sourceNote,
+                        isComplimentary: true,
+                        seatCategory: "comp",
+                      }));
+                    }}
+                    className="rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500"
+                  >
+                    <option value="">General comp / no sponsor</option>
+                    {sponsorOptions.map((sponsor) => (
+                      <option key={sponsor.id} value={sponsor.id}>
+                        {sponsor.name} ({sponsor.compTicketAllowance})
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-slate-400">Choose a sponsor here, then use Manual Assign Seats so Sponsor Ticket Printing can find those seats automatically.</span>
+                </label>
+              ) : null}
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
-                Guest Name
+                {formState.isComplimentary ? "Guest / Sponsor Name" : "Guest Name"}
                 <input
                   type="text"
                   value={formState.customerName}
@@ -816,13 +888,39 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate }: R
           {isLoading ? <span className="text-sm text-slate-400">Loading...</span> : null}
         </div>
 
+        <div className="mt-4 flex flex-wrap gap-2">
+          {[
+            { value: "all", label: "All Seats" },
+            { value: "paid_reserved", label: "Paid Reserved Seats" },
+            { value: "comp", label: "Sponsor / General Comps" },
+            { value: "guest", label: "Guest Comps" },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setSeatListFilter(option.value as ReservedSeatListFilter)}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                seatListFilter === option.value
+                  ? "border border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
+                  : "border border-white/12 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
         {linksWithSeats.length === 0 && !isLoading ? (
           <div className="mt-4 rounded-2xl border border-dashed border-white/12 bg-slate-950/35 px-4 py-6 text-sm text-slate-400">
             No reserved seating guests have been created for this show yet.
           </div>
+        ) : filteredLinksWithSeats.length === 0 && !isLoading ? (
+          <div className="mt-4 rounded-2xl border border-dashed border-white/12 bg-slate-950/35 px-4 py-6 text-sm text-slate-400">
+            No reserved seating guests match this filter.
+          </div>
         ) : (
           <div className="mt-4 grid gap-3">
-            {linksWithSeats.map((link) => {
+            {filteredLinksWithSeats.map((link) => {
               const status = getLinkStatus(link);
               const isManualAssigning = manualAssignLinkId === link.id;
               const linkSeatCategory = normalizeReservedSeatCategory(link.seat_category, link.is_complimentary);
