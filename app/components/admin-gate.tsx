@@ -121,15 +121,29 @@ export function AdminGate({
     return subscribeToAdminAccess(syncAccessState);
   }, [isGateEnabled, slug]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!isGateEnabled) {
+      await fetch("/api/admin-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, password: "" }),
+      }).catch(() => null);
       setIsAuthorized(true);
       return;
     }
 
     if (password === expectedPassword) {
+      const response = await fetch("/api/admin-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, password }),
+      });
+      if (!response.ok) {
+        setErrorMessage("Admin session could not be created. Please try again.");
+        return;
+      }
       persistAdminAccess(slug);
       setIsAuthorized(true);
       setErrorMessage(null);

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -65,6 +65,7 @@ import type {
   ShowGuestSong,
   ShowFinanceItem,
   ShowSponsor,
+  ShowSponsorTicketTemplate,
   SongRecord,
   SponsorLibraryEntry,
   SponsorLibraryFormState,
@@ -6436,7 +6437,13 @@ export function ShowPage({
     useState<ShowSponsorAssignmentFormState>(initialShowSponsorAssignmentFormState);
   const [isSponsorCompTicketsOpen, setIsSponsorCompTicketsOpen] = useState(false);
   const [isSponsorTicketPrinterOpen, setIsSponsorTicketPrinterOpen] = useState(false);
+  const [sponsorTicketTemplates, setSponsorTicketTemplates] = useState<ShowSponsorTicketTemplate[]>([]);
+  const [selectedSponsorTicketTemplateId, setSelectedSponsorTicketTemplateId] = useState("");
+  const [selectedGeneralTicketTemplateId, setSelectedGeneralTicketTemplateId] = useState("");
+  const [isUploadingSponsorTicketTemplate, setIsUploadingSponsorTicketTemplate] = useState(false);
+  const [activeSponsorTicketTemplateActionId, setActiveSponsorTicketTemplateActionId] = useState<string | null>(null);
   const [sponsorTicketTemplateDataUrl, setSponsorTicketTemplateDataUrl] = useState<string | null>(null);
+  const [generalTicketTemplateDataUrl, setGeneralTicketTemplateDataUrl] = useState<string | null>(null);
   const [sponsorTicketSponsorId, setSponsorTicketSponsorId] = useState("");
   const [selectedSponsorTicketSeatIds, setSelectedSponsorTicketSeatIds] = useState<string[]>([]);
   const [sponsorTicketReservedLinks, setSponsorTicketReservedLinks] = useState<ShowReservedSeatingLink[]>([]);
@@ -8093,6 +8100,42 @@ export function ShowPage({
   }
 
 
+
+  useEffect(() => {
+    if (!show || !isSponsorTicketPrinterOpen) return;
+    let cancelled = false;
+    const sponsorTicketShowId = show.id;
+    const sponsorTicketShowSlug = show.slug;
+    const storageKey = `stageflow_sponsor_ticket_template_${sponsorTicketShowId}`;
+    async function loadSponsorTicketTemplates() {
+      try {
+        const response = await fetch(`/api/sponsor-ticket-templates?showId=${encodeURIComponent(sponsorTicketShowId)}&slug=${encodeURIComponent(sponsorTicketShowSlug)}`);
+        const payload = (await response.json()) as { success?: boolean; templates?: ShowSponsorTicketTemplate[]; error?: string };
+        if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to load saved ticket templates.");
+        if (cancelled) return;
+        const templates = payload.templates ?? [];
+        setSponsorTicketTemplates(templates);
+        const sponsorTemplates = templates.filter((template) => template.template_kind !== "general");
+        const generalTemplates = templates.filter((template) => template.template_kind === "general");
+        setSelectedSponsorTicketTemplateId((currentId) => {
+          if (currentId && sponsorTemplates.some((template) => template.id === currentId)) return currentId;
+          const savedId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+          if (savedId && sponsorTemplates.some((template) => template.id === savedId)) return savedId;
+          return sponsorTemplates[0]?.id ?? "";
+        });
+        setSelectedGeneralTicketTemplateId((currentId) => {
+          if (currentId && generalTemplates.some((template) => template.id === currentId)) return currentId;
+          const savedId = typeof window !== "undefined" ? window.localStorage.getItem(`${storageKey}_general`) : null;
+          if (savedId && generalTemplates.some((template) => template.id === savedId)) return savedId;
+          return generalTemplates[0]?.id ?? "";
+        });
+      } catch (error) {
+        if (!cancelled) setSponsorTicketErrorMessage(getErrorMessage(error));
+      }
+    }
+    void loadSponsorTicketTemplates();
+    return () => { cancelled = true; };
+  }, [isSponsorTicketPrinterOpen, show]);
   useEffect(() => {
     if (!show || !isSponsorTicketPrinterOpen) {
       return;
@@ -8136,9 +8179,14 @@ export function ShowPage({
     };
   }, [activeTicketWorkflowSection, isSponsorTicketPrinterOpen, show, sponsorTicketSeatRefreshKey]);
 
-  const activeSponsorTicketTemplateUrl = sponsorTicketTemplateDataUrl;
+  const sponsorTicketTemplateOptions = sponsorTicketTemplates.filter((template) => template.template_kind !== "general");
+  const generalTicketTemplateOptions = sponsorTicketTemplates.filter((template) => template.template_kind === "general");
+  const selectedSponsorTicketTemplate = sponsorTicketTemplateOptions.find((template) => template.id === selectedSponsorTicketTemplateId) ?? null;
+  const selectedGeneralTicketTemplate = generalTicketTemplateOptions.find((template) => template.id === selectedGeneralTicketTemplateId) ?? null;
+  const activeSponsorTicketTemplateUrl = selectedSponsorTicketTemplate?.file_url || sponsorTicketTemplateDataUrl;
+  const activeGeneralTicketTemplateUrl = selectedGeneralTicketTemplate?.file_url || generalTicketTemplateDataUrl;
 
-  async function handleSponsorTicketTemplateChange(event: ChangeEvent<HTMLInputElement>) {
+  async function handleSponsorTicketTemplateChange(event: ChangeEvent<HTMLInputElement>, templateKind: "sponsor" | "general" = "sponsor") {
     const file = event.target.files?.[0];
     setSponsorTicketStatusMessage(null);
     setSponsorTicketErrorMessage(null);
@@ -8149,7 +8197,8 @@ export function ShowPage({
 
     const reader = new FileReader();
     reader.onload = () => {
-      setSponsorTicketTemplateDataUrl(typeof reader.result === "string" ? reader.result : null);
+      if (templateKind === "general") setGeneralTicketTemplateDataUrl(typeof reader.result === "string" ? reader.result : null);
+      else setSponsorTicketTemplateDataUrl(typeof reader.result === "string" ? reader.result : null);
     };
     reader.onerror = () => setSponsorTicketErrorMessage("Could not load the ticket template image.");
     reader.readAsDataURL(file);
@@ -8158,8 +8207,70 @@ export function ShowPage({
       return;
     }
 
-    setSponsorTicketStatusMessage("Ticket template loaded for this print session.");
-    event.target.value = "";
+    setIsUploadingSponsorTicketTemplate(true);
+    try {
+      const formData = new FormData();
+      formData.append("showId", show.id);
+      formData.append("slug", show.slug);
+      formData.append("template", file);
+      formData.append("templateKind", templateKind);
+      const response = await fetch("/api/sponsor-ticket-templates", { method: "POST", body: formData });
+      const payload = (await response.json()) as { success?: boolean; template?: ShowSponsorTicketTemplate; error?: string };
+      if (!response.ok || !payload.success || !payload.template) throw new Error(payload.error || "Unable to save ticket template.");
+      setSponsorTicketTemplates((currentTemplates) => [payload.template!, ...currentTemplates]);
+      if (templateKind === "general") {
+        setSelectedGeneralTicketTemplateId(payload.template.id);
+        setGeneralTicketTemplateDataUrl(null);
+      } else {
+        setSelectedSponsorTicketTemplateId(payload.template.id);
+        setSponsorTicketTemplateDataUrl(null);
+      }
+      if (typeof window !== "undefined") window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}${templateKind === "general" ? "_general" : ""}`, payload.template.id);
+      setSponsorTicketStatusMessage(templateKind === "general" ? "General comp ticket template saved and selected." : "Sponsor ticket template saved and selected.");
+    } catch (error) {
+      setSponsorTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsUploadingSponsorTicketTemplate(false);
+      event.target.value = "";
+    }
+  }
+
+
+  async function handleDeleteSponsorTicketTemplate() {
+    const templateToDelete = selectedSponsorTicketTemplate ?? selectedGeneralTicketTemplate;
+    if (!show || !templateToDelete) return;
+    const shouldDelete = window.confirm(`Delete ticket template "${templateToDelete.name}"?`);
+    if (!shouldDelete) return;
+    setActiveSponsorTicketTemplateActionId(templateToDelete.id);
+    setSponsorTicketStatusMessage(null);
+    setSponsorTicketErrorMessage(null);
+    try {
+      const response = await fetch("/api/sponsor-ticket-templates", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: show.slug, templateId: templateToDelete.id, filePath: templateToDelete.file_path }),
+      });
+      const payload = (await response.json()) as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to delete ticket template.");
+      setSponsorTicketTemplates((currentTemplates) => {
+        const nextTemplates = currentTemplates.filter((template) => template.id !== templateToDelete.id);
+        const sameKindTemplates = nextTemplates.filter((template) => template.template_kind === templateToDelete.template_kind);
+        const nextId = sameKindTemplates[0]?.id ?? "";
+        if (templateToDelete.template_kind === "general") setSelectedGeneralTicketTemplateId(nextId);
+        else setSelectedSponsorTicketTemplateId(nextId);
+        if (typeof window !== "undefined") {
+          const key = `stageflow_sponsor_ticket_template_${show.id}${templateToDelete.template_kind === "general" ? "_general" : ""}`;
+          if (nextId) window.localStorage.setItem(key, nextId);
+          else window.localStorage.removeItem(key);
+        }
+        return nextTemplates;
+      });
+      setSponsorTicketStatusMessage("Ticket template deleted.");
+    } catch (error) {
+      setSponsorTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveSponsorTicketTemplateActionId(null);
+    }
   }
 
   function getSponsorTicketSponsorName(sponsor: ShowSponsor) {
@@ -8353,6 +8464,96 @@ export function ShowPage({
     </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
   }
 
+  type CompTicketPrintScope = "sponsor" | "non_sponsor" | "all";
+
+  function getCompTicketPrintRows(scope: CompTicketPrintScope) {
+    return buildCompListReportRows().filter((row) => {
+      if (scope === "sponsor") return row.category === "sponsor";
+      if (scope === "non_sponsor") return row.category !== "sponsor";
+      return true;
+    });
+  }
+
+  function buildCompTicketPrintHtml({ printMode, scope }: { printMode: "print" | "pdf"; scope: CompTicketPrintScope }) {
+    const rows = getCompTicketPrintRows(scope);
+    if (!show || rows.length === 0) return null;
+
+    const needsSponsorTemplate = rows.some((row) => row.category === "sponsor");
+    const needsGeneralTemplate = rows.some((row) => row.category !== "sponsor");
+    if ((needsSponsorTemplate && !activeSponsorTicketTemplateUrl) || (needsGeneralTemplate && !activeGeneralTicketTemplateUrl)) return null;
+
+    const tickets = rows.flatMap((row) => {
+      const seats = row.reservedSeats
+        ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean)
+        : [];
+      const count = Math.max(row.quantity, seats.length, 1);
+      const templateUrl = row.category === "sponsor" ? activeSponsorTicketTemplateUrl : activeGeneralTicketTemplateUrl;
+      return Array.from({ length: count }, (_, index) => ({
+        name: row.name,
+        categoryLabel: row.categoryLabel,
+        seatLabel: seats[index] ?? "Comp",
+        ticketNumber: `${index + 1} of ${count}`,
+        totalForReservation: count,
+        templateUrl: templateUrl!,
+      }));
+    });
+    const ticketSheets = Array.from({ length: Math.ceil(tickets.length / 4) }, (_, sheetIndex) => tickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
+    const showDate = formatShowDate(show.show_date);
+    const doorsTime = show.guest_arrival_time || "6:00 PM";
+    const showTime = show.show_start_time || "TBD";
+
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(show.name)} Comp Tickets</title><style>
+      @page { size: 8.5in 11in portrait; margin: .18in; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #111; font-family: Arial, Helvetica, sans-serif; }
+      .ticket-sheet { width: 8.14in; height: 10.64in; display: grid; grid-template-columns: 5.26in; grid-template-rows: repeat(4, 2.55in); gap: .08in; align-content: center; justify-content: center; page-break-after: always; overflow: hidden; background: #fff; }
+      .ticket-slot { width: 5.26in; height: 2.55in; overflow: hidden; position: relative; background: #000; }
+      .ticket-page { width: 11in; height: 5.33in; position: absolute; left: 0; top: 0; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; }
+      .ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .field { position: absolute; color: #14110d; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sponsor { left: 1.15in; top: 2.69in; width: 3.05in; font-size: .17in; }
+      .event { left: 1.34in; top: 3.15in; width: 2.9in; font-size: .125in; letter-spacing: 0; text-overflow: clip; }
+      .date { left: 5.25in; top: 3.15in; width: 1.82in; font-size: .15in; }
+      .doors-main { left: .88in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
+      .time { left: 3.06in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
+      .count { left: 5.78in; top: 3.62in; width: 1.18in; text-align: center; font-size: .17in; }
+      .seat-main { left: 1.58in; top: 4.09in; width: 5.5in; font-size: .18in; }
+      .stub-count { left: 8.88in; top: 2.34in; width: 1.58in; height: .42in; display: flex; align-items: center; justify-content: center; text-align: center; color: #17120e; font-size: .34in; font-weight: 900; letter-spacing: 0; line-height: 1; white-space: nowrap; overflow: visible; text-overflow: clip; }
+      .stub-seat { left: 8.72in; top: 3.39in; width: 1.87in; text-align: center; color: #2d2721; font-size: .3in; font-weight: 900; }
+      @media print { body { background: #fff; } .ticket-sheet { break-after: page; } .ticket-sheet:last-child { break-after: auto; } }
+    </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page"><img src="${ticket.templateUrl}" alt="" />
+      <div class="field sponsor">${escapeHtml(ticket.name)}</div>
+      <div class="field event">${escapeHtml(show.name)}</div>
+      <div class="field date">${escapeHtml(showDate)}</div>
+      <div class="field doors-main">${escapeHtml(doorsTime)}</div>
+      <div class="field time">${escapeHtml(showTime)}</div>
+      <div class="field count">${escapeHtml(String(ticket.totalForReservation))}</div>
+      <div class="field seat-main">${escapeHtml(`${ticket.categoryLabel} - ${ticket.seatLabel}`)}</div>
+      <div class="field stub-count">${escapeHtml(ticket.ticketNumber)}</div>
+      <div class="field stub-seat">${escapeHtml(ticket.seatLabel)}</div>
+    </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
+  }
+
+  function openCompTicketPrintWindow(scope: CompTicketPrintScope, printMode: "print" | "pdf" = "print") {
+    if (!activeSponsorTicketTemplateUrl) {
+      setSponsorTicketErrorMessage("Choose or upload a ticket template before printing comp tickets.");
+      return;
+    }
+    const html = buildCompTicketPrintHtml({ printMode, scope });
+    if (!html) {
+      setSponsorTicketErrorMessage("No comp tickets are available for that print option.");
+      return;
+    }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setSponsorTicketErrorMessage("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setSponsorTicketStatusMessage("Comp ticket print view opened.");
+  }
   function openSponsorTicketPrintWindow(printMode: "print" | "pdf") {
     if (!activeSponsorTicketTemplateUrl) {
       setSponsorTicketErrorMessage("Upload or choose a ticket template image before printing sponsor tickets.");
@@ -20814,6 +21015,69 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               </div>
 
 
+              {(() => {
+                const compRows = buildCompListReportRows();
+                const sponsorCompTotal = compRows.filter((row) => row.category === "sponsor").reduce((sum, row) => sum + row.quantity, 0);
+                const nonSponsorCompTotal = compRows.filter((row) => row.category !== "sponsor").reduce((sum, row) => sum + row.quantity, 0);
+                const checkedInTotal = compRows.reduce((sum, row) => sum + row.checkedIn, 0);
+                const remainingTotal = Math.max(0, compRows.reduce((sum, row) => sum + row.quantity, 0) - checkedInTotal);
+                return (
+                  <div className="mt-4 grid gap-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        ["Sponsor Comps", sponsorCompTotal],
+                        ["General / Guest / Band / Other", nonSponsorCompTotal],
+                        ["Comps Checked In", checkedInTotal],
+                        ["Comps Remaining", remainingTotal],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-stone-500">{label}</p>
+                          <p className="mt-1 text-2xl font-black text-stone-950">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h4 className="text-sm font-black uppercase tracking-[0.14em] text-stone-900">All Sponsor & Comp Entries</h4>
+                          <p className="mt-1 text-sm text-stone-600">Sponsor, guest, band, volunteer, media, other comps, and comp reserved seats assigned in Reserved Seating.</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => openSponsorCompListPrintWindow("print")} className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700 transition hover:bg-stone-100">Print Comp List</button>
+                          <button type="button" onClick={() => openCompTicketPrintWindow("sponsor")} className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100">Print Sponsor Tickets</button>
+                          <button type="button" onClick={() => openCompTicketPrintWindow("non_sponsor")} className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-900 transition hover:bg-sky-100">Print General/Guest/Band</button>
+                          <button type="button" onClick={() => openCompTicketPrintWindow("all")} className="rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-stone-700">Print All Comp Tickets</button>
+                        </div>
+                      </div>
+
+                      {compRows.length === 0 ? (
+                        <p className="mt-4 rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">No sponsor or comp ticket entries are available yet.</p>
+                      ) : (
+                        <div className="mt-4 overflow-x-auto rounded-xl border border-stone-200">
+                          <table className="min-w-full divide-y divide-stone-200 text-sm">
+                            <thead className="bg-stone-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-stone-500">
+                              <tr><th className="px-3 py-2">Name / Sponsor</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Qty</th><th className="px-3 py-2">Reserved Seat(s)</th><th className="px-3 py-2">Checked In</th><th className="px-3 py-2">Notes</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-stone-100 bg-white">
+                              {compRows.map((row) => (
+                                <tr key={row.id}>
+                                  <td className="px-3 py-2 font-semibold text-stone-900">{row.name}</td>
+                                  <td className="px-3 py-2 text-stone-700">{row.categoryLabel}</td>
+                                  <td className="px-3 py-2 text-stone-700">{row.quantity}</td>
+                                  <td className="px-3 py-2 text-stone-700">{row.reservedSeats || "-"}</td>
+                                  <td className="px-3 py-2 text-stone-700">{row.checkedIn} of {row.quantity}</td>
+                                  <td className="px-3 py-2 text-stone-600">{row.notes || "-"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -20843,26 +21107,71 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   const seatOptions = selectedSponsor ? getSponsorReservedSeatOptions(selectedSponsor) : [];
                   return (
                     <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
-                      <div className="grid gap-3 rounded-2xl border border-amber-200 bg-white p-4">
-                        <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                          Upload Ticket Template
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/jpg,image/webp"
-                            onChange={(event) => void handleSponsorTicketTemplateChange(event)}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
-                          />
-                        </label>
+                      <div className="grid gap-4 rounded-2xl border border-amber-200 bg-white p-4">
+                        <div className="grid gap-3">
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                            Sponsor Comp Ticket Template
+                            <select
+                              value={selectedSponsorTicketTemplateId}
+                              onChange={(event) => {
+                                const templateId = event.target.value;
+                                setSelectedSponsorTicketTemplateId(templateId);
+                                setSponsorTicketTemplateDataUrl(null);
+                                if (show && typeof window !== "undefined") {
+                                  if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, templateId);
+                                  else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}`);
+                                }
+                              }}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
+                            >
+                              <option value="">Choose sponsor template</option>
+                              {sponsorTicketTemplateOptions.map((template) => (
+                                <option key={template.id} value={template.id}>{template.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                            Upload Sponsor Template
+                            <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => void handleSponsorTicketTemplateChange(event, "sponsor")} disabled={isUploadingSponsorTicketTemplate} className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60" />
+                          </label>
+                          {activeSponsorTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeSponsorTicketTemplateUrl} alt="Sponsor ticket template preview" className="h-auto w-full" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the Sponsor Comp ticket template.</p>}
+                        </div>
 
-                        {activeSponsorTicketTemplateUrl ? (
-                          <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100">
-                            <img src={activeSponsorTicketTemplateUrl} alt="Sponsor ticket template preview" className="h-auto w-full" />
-                          </div>
-                        ) : (
-                          <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Upload a ticket design image. StageFlow will overlay the sponsor, show, and seat text for this print session.</p>
-                        )}
+                        <div className="grid gap-3 border-t border-stone-200 pt-4">
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                            General Comp Ticket Template
+                            <select
+                              value={selectedGeneralTicketTemplateId}
+                              onChange={(event) => {
+                                const templateId = event.target.value;
+                                setSelectedGeneralTicketTemplateId(templateId);
+                                setGeneralTicketTemplateDataUrl(null);
+                                if (show && typeof window !== "undefined") {
+                                  if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}_general`, templateId);
+                                  else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}_general`);
+                                }
+                              }}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
+                            >
+                              <option value="">Choose general comp template</option>
+                              {generalTicketTemplateOptions.map((template) => (
+                                <option key={template.id} value={template.id}>{template.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                            Upload General Comp Template
+                            <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => void handleSponsorTicketTemplateChange(event, "general")} disabled={isUploadingSponsorTicketTemplate} className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60" />
+                          </label>
+                          {activeGeneralTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeGeneralTicketTemplateUrl} alt="General comp ticket template preview" className="h-auto w-full" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the General Comp ticket template for guest, band, volunteer, media, and other comps.</p>}
+                        </div>
+
+                        {selectedSponsorTicketTemplate || selectedGeneralTicketTemplate ? (
+                          <button type="button" onClick={() => void handleDeleteSponsorTicketTemplate()} disabled={activeSponsorTicketTemplateActionId === (selectedSponsorTicketTemplate ?? selectedGeneralTicketTemplate)?.id} className="w-fit rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60">
+                            Delete Selected Template
+                          </button>
+                        ) : null}
                       </div>
-
                       <div className="grid gap-3 rounded-2xl border border-amber-200 bg-white p-4">
                         <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
                           Sponsor

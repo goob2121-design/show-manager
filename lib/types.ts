@@ -1,4 +1,4 @@
-export type ViewMode = "guest" | "band" | "admin";
+﻿export type ViewMode = "guest" | "band" | "admin";
 export type SubmittedByRole = "guest" | "band" | "admin";
 export type SetSection = "set1" | "set2" | "encore";
 export type SongTempo = "fast" | "medium" | "slow";
@@ -451,6 +451,20 @@ export type ShowReservedSeatingLink = {
   created_at: string;
 };
 
+
+export type ShowSponsorTicketTemplate = {
+  id: string;
+  show_id: string | null;
+  name: string;
+  file_name: string;
+  file_path: string;
+  file_url: string;
+  template_kind: "sponsor" | "general" | string;
+  file_mime_type: string | null;
+  file_size: number | null;
+  created_at: string;
+  updated_at: string;
+};
 export type ShowReservedSeatAssignment = {
   id: string;
   show_id: string;
