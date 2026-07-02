@@ -6446,6 +6446,7 @@ export function ShowPage({
   const [generalTicketTemplateDataUrl, setGeneralTicketTemplateDataUrl] = useState<string | null>(null);
   const [sponsorTicketSponsorId, setSponsorTicketSponsorId] = useState("");
   const [selectedSponsorTicketSeatIds, setSelectedSponsorTicketSeatIds] = useState<string[]>([]);
+  const [selectedCompTicketPrintScope, setSelectedCompTicketPrintScope] = useState("all");
   const [sponsorTicketReservedLinks, setSponsorTicketReservedLinks] = useState<ShowReservedSeatingLink[]>([]);
   const [sponsorTicketReservedAssignments, setSponsorTicketReservedAssignments] = useState<ShowReservedSeatAssignment[]>([]);
   const [sponsorTicketSeatRefreshKey, setSponsorTicketSeatRefreshKey] = useState(0);
@@ -7810,6 +7811,37 @@ export function ShowPage({
     }
   }
 
+  function buildCompCategoryNotes(notes: string | null | undefined, category: CompListReportRow["category"]) {
+    const cleanedNotes = (notes ?? "").replace(/\s*\[Comp Type:\s*(sponsor|band|guest|other)\]\s*/gi, "").trim();
+    if (category === "sponsor") return cleanedNotes;
+    const marker = `[Comp Type: ${category}]`;
+    return cleanedNotes ? `${marker}\n${cleanedNotes}` : marker;
+  }
+
+  async function handleUpdateCompTicketCategory(item: ShowCompTicket, category: CompListReportRow["category"]) {
+    if (!show || category === "sponsor") return;
+    setActiveCompTicketActionId(`category-${item.id}`);
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+    try {
+      const notes = buildCompCategoryNotes(item.notes, category);
+      const { data, error } = await createClient()
+        .from("show_comp_tickets")
+        .update({ notes: normalizeOptionalField(notes) })
+        .eq("id", item.id)
+        .eq("show_id", show.id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      setCompTickets((currentItems) => sortShowCompTickets(currentItems.map((currentItem) => currentItem.id === item.id ? normalizeShowCompTicket(data as ShowCompTicket) : currentItem)));
+      setCompTicketStatusMessage("Comp type updated.");
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCompTicketActionId(null);
+    }
+  }
+
   async function handleSaveCompTicket(item: ShowCompTicket) {
     if (!show) {
       setCompTicketErrorMessage("The show is not loaded yet.");
@@ -8305,7 +8337,7 @@ export function ShowPage({
     setSponsorTicketErrorMessage(null);
     const sponsor = sponsorsWithCompTickets.find((item) => item.id === sponsorTicketSponsorId) ?? null;
     if (sponsor) {
-      setSponsorTicketStatusMessage("Assign comp reserved seats for " + getSponsorTicketSponsorName(sponsor) + ", then return to Sponsor Ticket Printing.");
+      setSponsorTicketStatusMessage("Assign comp reserved seats for " + getSponsorTicketSponsorName(sponsor) + ", then return to Ticket Printing.");
     }
     window.setTimeout(() => {
       document.getElementById("reserved-seating-admin-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -8340,6 +8372,8 @@ export function ShowPage({
 
   function classifyCompTicket(item: ShowCompTicket): CompListReportRow["category"] {
     const text = `${item.guest_name} ${item.notes ?? ""} ${item.order_id ?? ""}`.toLowerCase();
+    const markerMatch = text.match(/\\[comp type:\\s*(sponsor|band|guest|other)\\]/);
+    if (markerMatch?.[1] === "band" || markerMatch?.[1] === "guest" || markerMatch?.[1] === "other") return markerMatch[1] as CompListReportRow["category"];
     if (text.includes("band")) return "band";
     if (text.includes("guest")) return "guest";
     if (text.includes("volunteer") || text.includes("media") || text.includes("press")) return "other";
@@ -8464,12 +8498,14 @@ export function ShowPage({
     </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
   }
 
-  type CompTicketPrintScope = "sponsor" | "non_sponsor" | "all";
+  type CompTicketPrintScope = "sponsor" | "non_sponsor" | "all" | `category:${CompListReportRow["category"]}` | `row:${string}`;
 
   function getCompTicketPrintRows(scope: CompTicketPrintScope) {
     return buildCompListReportRows().filter((row) => {
       if (scope === "sponsor") return row.category === "sponsor";
       if (scope === "non_sponsor") return row.category !== "sponsor";
+      if (scope.startsWith("category:")) return row.category === scope.slice("category:".length);
+      if (scope.startsWith("row:")) return row.id === scope.slice("row:".length);
       return true;
     });
   }
@@ -8535,8 +8571,11 @@ export function ShowPage({
   }
 
   function openCompTicketPrintWindow(scope: CompTicketPrintScope, printMode: "print" | "pdf" = "print") {
-    if (!activeSponsorTicketTemplateUrl) {
-      setSponsorTicketErrorMessage("Choose or upload a ticket template before printing comp tickets.");
+    const rows = getCompTicketPrintRows(scope);
+    const needsSponsorTemplate = rows.some((row) => row.category === "sponsor");
+    const needsGeneralTemplate = rows.some((row) => row.category !== "sponsor");
+    if ((needsSponsorTemplate && !activeSponsorTicketTemplateUrl) || (needsGeneralTemplate && !activeGeneralTicketTemplateUrl)) {
+      setSponsorTicketErrorMessage("Choose the needed Sponsor and General Comp ticket templates before printing comp tickets.");
       return;
     }
     const html = buildCompTicketPrintHtml({ printMode, scope });
@@ -20589,7 +20628,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         onClick={() => setIsSponsorCompTicketsOpen((currentValue) => !currentValue)}
                         className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                       >
-                        {isSponsorCompTicketsOpen ? "Hide Sponsor Comp Tickets" : "Sponsor Comp Tickets"}
+                        {isSponsorCompTicketsOpen ? "Hide Sponsor & Comp Tickets" : "Sponsor & Comp Tickets"}
                       </button>
                     </div>
                   </div>
@@ -21000,7 +21039,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h3 className="text-base font-semibold text-stone-900">Sponsor Comp Tickets</h3>
+                  <h3 className="text-base font-semibold text-stone-900">Sponsor & Comp Tickets</h3>
                   <p className="text-sm text-stone-600">
                     Track sponsor comp check-ins separately from paid online and door tickets.
                   </p>
@@ -21010,7 +21049,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   onClick={() => setIsSponsorCompTicketsOpen((currentValue) => !currentValue)}
                   className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
                 >
-                  {isSponsorCompTicketsOpen ? "Hide Sponsor Comp Tickets" : "Show Sponsor Comp Tickets"}
+                  {isSponsorCompTicketsOpen ? "Hide Sponsor & Comp Tickets" : "Show Sponsor & Comp Tickets"}
                 </button>
               </div>
 
@@ -21046,7 +21085,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         <div className="flex flex-wrap gap-2">
                           <button type="button" onClick={() => openSponsorCompListPrintWindow("print")} className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700 transition hover:bg-stone-100">Print Comp List</button>
                           <button type="button" onClick={() => openCompTicketPrintWindow("sponsor")} className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100">Print Sponsor Tickets</button>
-                          <button type="button" onClick={() => openCompTicketPrintWindow("non_sponsor")} className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-900 transition hover:bg-sky-100">Print General/Guest/Band</button>
+                          <button type="button" onClick={() => openCompTicketPrintWindow("non_sponsor")} className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-900 transition hover:bg-sky-100">Print Non-Sponsor Comps</button>
                           <button type="button" onClick={() => openCompTicketPrintWindow("all")} className="rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-stone-700">Print All Comp Tickets</button>
                         </div>
                       </div>
@@ -21081,8 +21120,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h4 className="text-sm font-black uppercase tracking-[0.14em] text-amber-900">Sponsor Ticket Printing</h4>
-                    <p className="mt-1 text-sm text-amber-900/80">Upload a ticket template, choose a sponsor, select reserved comp seats, then print or save as PDF.</p>
+                    <h4 className="text-sm font-black uppercase tracking-[0.14em] text-amber-900">Ticket Printing</h4>
+                    <p className="mt-1 text-sm text-amber-900/80">Choose ticket templates, select a sponsor or comp group, then print or save as PDF.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -21105,6 +21144,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 {isSponsorTicketPrinterOpen ? (() => {
                   const selectedSponsor = sponsorsWithCompTickets.find((sponsor) => sponsor.id === sponsorTicketSponsorId) ?? null;
                   const seatOptions = selectedSponsor ? getSponsorReservedSeatOptions(selectedSponsor) : [];
+                  const compPrintRows = buildCompListReportRows();
                   return (
                     <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
                       <div className="grid gap-4 rounded-2xl border border-amber-200 bg-white p-4">
@@ -21173,6 +21213,29 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         ) : null}
                       </div>
                       <div className="grid gap-3 rounded-2xl border border-amber-200 bg-white p-4">
+                        <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                          Ticket Group to Print
+                          <select
+                            value={selectedCompTicketPrintScope}
+                            onChange={(event) => setSelectedCompTicketPrintScope(event.target.value)}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
+                          >
+                            <option value="all">All comp tickets</option>
+                            <option value="sponsor">Sponsor Comp</option>
+                            <option value="category:guest">Guest Comp</option>
+                            <option value="category:band">Band Comp</option>
+                            <option value="category:other">Volunteer / Media / Other Comp</option>
+                            {compPrintRows.map((row) => (
+                              <option key={row.id} value={`row:${row.id}`}>{row.name} - {row.categoryLabel} - {row.quantity} ticket{row.quantity === 1 ? "" : "s"}</option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope)} className="rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-stone-700">Print Selected Group</button>
+                          <button type="button" onClick={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope, "pdf")} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-bold text-stone-700 transition hover:bg-stone-100">Export Selected PDF</button>
+                        </div>
+
                         <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
                           Sponsor
                           <select
@@ -21538,6 +21601,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-800">
                                     {formatGuestListTicketTypeLabel(item.ticket_type)}
                                   </span>
+                                  {normalizeGuestListTicketType(item.ticket_type) !== "paid_online" && normalizeGuestListTicketType(item.ticket_type) !== "door_paid" ? (
+                                    <select
+                                      value={classifyCompTicket(item)}
+                                      onChange={(event) => void handleUpdateCompTicketCategory(item, event.target.value as CompListReportRow["category"])}
+                                      disabled={activeCompTicketActionId === `category-${item.id}`}
+                                      className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 disabled:opacity-60"
+                                    >
+                                      <option value="guest">Guest Comp</option>
+                                      <option value="band">Band Comp</option>
+                                      <option value="other">Volunteer / Media / Other Comp</option>
+                                    </select>
+                                  ) : null}
                                   {(() => {
                                     const checkInStatus = getCompTicketCheckInStatus(item);
 
