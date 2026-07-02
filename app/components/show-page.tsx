@@ -76,7 +76,6 @@ import type {
   ShowCompTicket,
   ShowReservedSeatingLink,
   ShowReservedSeatAssignment,
-  ShowSponsorTicketTemplate,
   SongFormState,
   SongTempo,
   SongType,
@@ -6438,10 +6437,6 @@ export function ShowPage({
   const [isSponsorCompTicketsOpen, setIsSponsorCompTicketsOpen] = useState(false);
   const [isSponsorTicketPrinterOpen, setIsSponsorTicketPrinterOpen] = useState(false);
   const [sponsorTicketTemplateDataUrl, setSponsorTicketTemplateDataUrl] = useState<string | null>(null);
-  const [sponsorTicketTemplates, setSponsorTicketTemplates] = useState<ShowSponsorTicketTemplate[]>([]);
-  const [selectedSponsorTicketTemplateId, setSelectedSponsorTicketTemplateId] = useState("");
-  const [isUploadingSponsorTicketTemplate, setIsUploadingSponsorTicketTemplate] = useState(false);
-  const [activeSponsorTicketTemplateActionId, setActiveSponsorTicketTemplateActionId] = useState<string | null>(null);
   const [sponsorTicketSponsorId, setSponsorTicketSponsorId] = useState("");
   const [selectedSponsorTicketSeatIds, setSelectedSponsorTicketSeatIds] = useState<string[]>([]);
   const [sponsorTicketReservedLinks, setSponsorTicketReservedLinks] = useState<ShowReservedSeatingLink[]>([]);
@@ -8105,46 +8100,6 @@ export function ShowPage({
 
     let cancelled = false;
     const sponsorTicketShowId = show.id;
-    const storageKey = `stageflow_sponsor_ticket_template_${sponsorTicketShowId}`;
-
-    async function loadSponsorTicketTemplates() {
-      try {
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from("sponsor_ticket_templates")
-          .select("*")
-          .or(`show_id.eq.${sponsorTicketShowId},show_id.is.null`)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        if (cancelled) return;
-
-        const templates = (data ?? []) as ShowSponsorTicketTemplate[];
-        setSponsorTicketTemplates(templates);
-        setSelectedSponsorTicketTemplateId((currentId) => {
-          if (currentId && templates.some((template) => template.id === currentId)) return currentId;
-          const savedId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
-          if (savedId && templates.some((template) => template.id === savedId)) return savedId;
-          return templates[0]?.id ?? "";
-        });
-      } catch (error) {
-        if (!cancelled) setSponsorTicketErrorMessage("Unable to load saved ticket templates. Check Supabase permissions or try again.");
-      }
-    }
-
-    void loadSponsorTicketTemplates();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isSponsorTicketPrinterOpen, show]);
-  useEffect(() => {
-    if (!show || !isSponsorTicketPrinterOpen) {
-      return;
-    }
-
-    let cancelled = false;
-    const sponsorTicketShowId = show.id;
 
     async function loadSponsorTicketSeats() {
       setSponsorTicketErrorMessage(null);
@@ -8154,21 +8109,21 @@ export function ShowPage({
           supabase
             .from("show_reserved_seating_links")
             .select("*")
-            .eq("show_id", sponsorTicketShowId)
-            .eq("seat_category", "comp"),
+            .eq("show_id", sponsorTicketShowId),
           supabase
             .from("show_reserved_seat_assignments")
             .select("*")
-            .eq("show_id", sponsorTicketShowId)
-            .eq("seat_category", "comp"),
+            .eq("show_id", sponsorTicketShowId),
         ]);
 
         if (linksError) throw linksError;
         if (assignmentsError) throw assignmentsError;
         if (cancelled) return;
 
-        setSponsorTicketReservedLinks((links ?? []) as ShowReservedSeatingLink[]);
-        setSponsorTicketReservedAssignments((assignments ?? []) as ShowReservedSeatAssignment[]);
+        const compLinks = ((links ?? []) as ShowReservedSeatingLink[]).filter((link) => link.is_complimentary || link.seat_category === "comp" || link.seat_category === "guest");
+        const compAssignments = ((assignments ?? []) as ShowReservedSeatAssignment[]).filter((assignment) => assignment.seat_category === "comp" || assignment.seat_category === "guest");
+        setSponsorTicketReservedLinks(compLinks);
+        setSponsorTicketReservedAssignments(compAssignments);
       } catch (error) {
         if (!cancelled) setSponsorTicketErrorMessage(getErrorMessage(error));
       }
@@ -8181,8 +8136,7 @@ export function ShowPage({
     };
   }, [activeTicketWorkflowSection, isSponsorTicketPrinterOpen, show, sponsorTicketSeatRefreshKey]);
 
-  const selectedSponsorTicketTemplate = sponsorTicketTemplates.find((template) => template.id === selectedSponsorTicketTemplateId) ?? null;
-  const activeSponsorTicketTemplateUrl = selectedSponsorTicketTemplate?.file_url || sponsorTicketTemplateDataUrl;
+  const activeSponsorTicketTemplateUrl = sponsorTicketTemplateDataUrl;
 
   async function handleSponsorTicketTemplateChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -8204,86 +8158,8 @@ export function ShowPage({
       return;
     }
 
-    setIsUploadingSponsorTicketTemplate(true);
-    try {
-      const supabase = createClient();
-      const originalName = sanitizeFileName(file.name || "sponsor-ticket-template");
-      const filePath = `${show.id}/${Date.now()}-${originalName}`;
-      const { error: uploadError } = await supabase.storage
-        .from("sponsor-ticket-templates")
-        .upload(filePath, file, {
-          upsert: true,
-          contentType: file.type || undefined,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("sponsor-ticket-templates")
-        .getPublicUrl(filePath);
-
-      const { data, error } = await supabase
-        .from("sponsor_ticket_templates")
-        .insert({
-          show_id: show.id,
-          name: file.name.replace(/\.[^.]+$/, "") || "Sponsor Ticket Template",
-          file_name: originalName,
-          file_path: filePath,
-          file_url: publicUrlData.publicUrl,
-          file_mime_type: file.type || null,
-          file_size: file.size,
-        })
-        .select("*")
-        .single();
-
-      if (error) throw error;
-
-      const savedTemplate = data as ShowSponsorTicketTemplate;
-      setSponsorTicketTemplates((currentTemplates) => [savedTemplate, ...currentTemplates]);
-      setSelectedSponsorTicketTemplateId(savedTemplate.id);
-      setSponsorTicketTemplateDataUrl(null);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, savedTemplate.id);
-      }
-      setSponsorTicketStatusMessage("Ticket template saved and selected.");
-    } catch (error) {
-      setSponsorTicketErrorMessage(getErrorMessage(error));
-    } finally {
-      setIsUploadingSponsorTicketTemplate(false);
-      event.target.value = "";
-    }
-  }
-
-  async function handleDeleteSponsorTicketTemplate() {
-    if (!selectedSponsorTicketTemplate) return;
-    const shouldDelete = window.confirm(`Delete ticket template "${selectedSponsorTicketTemplate.name}"?`);
-    if (!shouldDelete) return;
-
-    setActiveSponsorTicketTemplateActionId(selectedSponsorTicketTemplate.id);
-    setSponsorTicketStatusMessage(null);
-    setSponsorTicketErrorMessage(null);
-    try {
-      const supabase = createClient();
-      await supabase.storage.from("sponsor-ticket-templates").remove([selectedSponsorTicketTemplate.file_path]);
-      const { error } = await supabase.from("sponsor_ticket_templates").delete().eq("id", selectedSponsorTicketTemplate.id);
-      if (error) throw error;
-
-      setSponsorTicketTemplates((currentTemplates) => {
-        const nextTemplates = currentTemplates.filter((template) => template.id !== selectedSponsorTicketTemplate.id);
-        const nextId = nextTemplates[0]?.id ?? "";
-        setSelectedSponsorTicketTemplateId(nextId);
-        if (show && typeof window !== "undefined") {
-          if (nextId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, nextId);
-          else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}`);
-        }
-        return nextTemplates;
-      });
-      setSponsorTicketStatusMessage("Ticket template deleted.");
-    } catch (error) {
-      setSponsorTicketErrorMessage(getErrorMessage(error));
-    } finally {
-      setActiveSponsorTicketTemplateActionId(null);
-    }
+    setSponsorTicketStatusMessage("Ticket template loaded for this print session.");
+    event.target.value = "";
   }
 
   function getSponsorTicketSponsorName(sponsor: ShowSponsor) {
@@ -8378,7 +8254,23 @@ export function ShowPage({
       const category = classifyCompTicket(item);
       return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompListReservedSeatsForName(item.guest_name), checkedIn: item.checked_in_count, notes: item.notes ?? "" };
     });
-    return [...sponsorRows, ...compRows];
+    const existingKeys = new Set([...sponsorRows, ...compRows].map((row) => row.name.trim().toLowerCase()).filter(Boolean));
+    const reservedOnlyRowsByName = new Map<string, CompListReportRow>();
+    sponsorTicketReservedAssignments.forEach((assignment) => {
+      const name = assignment.customer_name?.trim() || "Reserved Comp Guest";
+      const key = name.toLowerCase();
+      if (!key || existingKeys.has(key)) return;
+      const category: CompListReportRow["category"] = assignment.seat_category === "guest" ? "guest" : "other";
+      const current = reservedOnlyRowsByName.get(key);
+      const seatLabel = formatReservedSeatLabel(assignment.seat_id);
+      if (current) {
+        current.quantity += 1;
+        current.reservedSeats = current.reservedSeats ? `${current.reservedSeats}, ${seatLabel}` : seatLabel;
+      } else {
+        reservedOnlyRowsByName.set(key, { id: `reserved-comp-${assignment.id}`, name, category, categoryLabel: getCompListCategoryLabel(category), quantity: 1, reservedSeats: seatLabel, checkedIn: 0, notes: "Reserved seating comp" });
+      }
+    });
+    return [...sponsorRows, ...compRows, ...reservedOnlyRowsByName.values()];
   }
 
   function buildSponsorCompListPrintHtml({ printMode }: { printMode: "print" | "pdf" }) {
@@ -20953,56 +20845,21 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
                       <div className="grid gap-3 rounded-2xl border border-amber-200 bg-white p-4">
                         <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                          Saved Ticket Templates
-                          <select
-                            value={selectedSponsorTicketTemplateId}
-                            onChange={(event) => {
-                              const templateId = event.target.value;
-                              setSelectedSponsorTicketTemplateId(templateId);
-                              setSponsorTicketTemplateDataUrl(null);
-                              if (show && typeof window !== "undefined") {
-                                if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, templateId);
-                                else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}`);
-                              }
-                            }}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
-                          >
-                            <option value="">Choose saved template</option>
-                            {sponsorTicketTemplates.map((template) => (
-                              <option key={template.id} value={template.id}>{template.name}</option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                          Upload New Template
+                          Upload Ticket Template
                           <input
                             type="file"
                             accept="image/png,image/jpeg,image/jpg,image/webp"
                             onChange={(event) => void handleSponsorTicketTemplateChange(event)}
-                            disabled={isUploadingSponsorTicketTemplate}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700"
                           />
                         </label>
 
                         {activeSponsorTicketTemplateUrl ? (
-                          <div className="grid gap-3">
-                            <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100">
-                              <img src={activeSponsorTicketTemplateUrl} alt="Sponsor ticket template preview" className="h-auto w-full" />
-                            </div>
-                            {selectedSponsorTicketTemplate ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleDeleteSponsorTicketTemplate()}
-                                disabled={activeSponsorTicketTemplateActionId === selectedSponsorTicketTemplate.id}
-                                className="w-fit rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {activeSponsorTicketTemplateActionId === selectedSponsorTicketTemplate.id ? "Deleting Template..." : "Delete Selected Template"}
-                              </button>
-                            ) : null}
+                          <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100">
+                            <img src={activeSponsorTicketTemplateUrl} alt="Sponsor ticket template preview" className="h-auto w-full" />
                           </div>
                         ) : (
-                          <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose a saved ticket template or upload a new ticket design image. StageFlow will overlay the sponsor, show, and seat text.</p>
+                          <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Upload a ticket design image. StageFlow will overlay the sponsor, show, and seat text for this print session.</p>
                         )}
                       </div>
 

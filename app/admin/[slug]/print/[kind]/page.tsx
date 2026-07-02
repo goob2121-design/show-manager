@@ -37,6 +37,23 @@ type DoorGuestListRow = ShowCompTicket;
 type SelectedReservedSeatRow = ShowReservedSeatAssignment;
 type ReservedSeatingLinkRow = ShowReservedSeatingLink;
 
+type ReservedSeatCategoryValue = "paid_reserved" | "comp" | "guest";
+
+function normalizeReservedSeatCategory(value: string | null | undefined, isComplimentary?: boolean): ReservedSeatCategoryValue {
+  if (value === "comp" || value === "guest" || value === "paid_reserved") return value;
+  return isComplimentary ? "comp" : "paid_reserved";
+}
+
+function getReservedSeatCategoryLabel(category: ReservedSeatCategoryValue) {
+  if (category === "comp") return "Sponsor / General Comp";
+  if (category === "guest") return "Guest Comp";
+  return "Paid Reserved";
+}
+
+function isCompReservedSeatCategory(value: string | null | undefined, isComplimentary?: boolean) {
+  const category = normalizeReservedSeatCategory(value, isComplimentary);
+  return category === "comp" || category === "guest";
+}
 type PrintPageProps = {
   params: Promise<{ slug: string; kind: string }>;
 };
@@ -750,20 +767,26 @@ function ReservedSeatCardsPrintView({
   );
 }
 
-function CompReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
-  const compReservedEntries = sortReservedSeatCards(
-    tickets.filter((ticket) => normalizeGuestListTicketType(ticket.ticket_type) === "complimentary"),
-  );
-  const seatCards = compReservedEntries.flatMap((ticket) => {
-    const seatCount = Math.max(1, ticket.ticket_count);
-
-    return Array.from({ length: seatCount }, (_, index) => ({
-      id: `${ticket.id}-comp-seat-${index + 1}`,
-      purchaserName: ticket.guest_name?.trim() || "Reserved Guest",
-      seatNumber: index + 1,
-      totalSeats: seatCount,
-    }));
-  });
+function CompReservedSeatCardsPrintView({
+  assignments,
+  reservedLinks,
+  show,
+}: {
+  assignments: SelectedReservedSeatRow[];
+  reservedLinks: ReservedSeatingLinkRow[];
+  show: ShowRecord;
+}) {
+  const reservedLinkById = new Map(reservedLinks.map((link) => [link.id, link]));
+  const seatCards = [...assignments]
+    .filter((assignment) => {
+      const reservedLink = assignment.seating_link_id ? reservedLinkById.get(assignment.seating_link_id) ?? null : null;
+      return assignment.assignment_type === "customer" && isCompReservedSeatCategory(assignment.seat_category, reservedLink?.is_complimentary);
+    })
+    .sort((left, right) => {
+      const nameCompare = (left.customer_name ?? "").localeCompare(right.customer_name ?? "", "en-US");
+      if (nameCompare !== 0) return nameCompare;
+      return left.seat_id.localeCompare(right.seat_id, "en-US");
+    });
 
   if (seatCards.length === 0) {
     return (
@@ -786,35 +809,41 @@ function CompReservedSeatCardsPrintView({ tickets }: { tickets: DoorGuestListRow
             pageBreakAfter: pageIndex < pages.length - 1 ? "always" : "auto",
           }}
         >
-          {pageEntries.map((card) => (
-            <article
-              key={card.id}
-              className="flex min-h-[2.2in] flex-col items-center justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
-              style={{
-                breakInside: "avoid",
-                pageBreakInside: "avoid",
-              }}
-            >
-              <img
-                src="/cmms-logo.png"
-                alt="Cumberland Mountain Music Show logo"
-                className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
-              />
-              <div className="flex flex-1 flex-col items-center justify-center py-2">
-                <h2 className="text-xl font-black uppercase tracking-[0.06em] text-stone-950 print:text-[18px]">
-                  {card.purchaserName}
-                </h2>
-                {card.totalSeats > 1 ? (
-                  <p className="mt-3 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
-                    Seat {card.seatNumber} of {card.totalSeats}
+          {pageEntries.map((card) => {
+            const reservedLink = card.seating_link_id ? reservedLinkById.get(card.seating_link_id) ?? null : null;
+            const category = normalizeReservedSeatCategory(card.seat_category, reservedLink?.is_complimentary);
+            return (
+              <article
+                key={card.id}
+                className="flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+                style={{
+                  breakInside: "avoid",
+                  pageBreakInside: "avoid",
+                }}
+              >
+                <img
+                  src="/cmms-logo.png"
+                  alt="Cumberland Mountain Music Show logo"
+                  className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+                />
+                <div className="flex flex-1 flex-col items-center justify-center py-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[10px]">
+                    {getReservedSeatCategoryLabel(category)}
                   </p>
-                ) : null}
-              </div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
-                Reserved Seating
-              </p>
-            </article>
-          ))}
+                  <h2 className="mt-1 text-[1.8rem] font-black tracking-[0.01em] text-stone-950 print:text-[28px] leading-none max-w-full">
+                    {card.customer_name?.trim() || "Reserved Comp Guest"}
+                  </h2>
+                  <p className="mt-1.5 text-lg font-black tracking-[0.03em] text-stone-900 print:text-[18px]">{card.seat_id}</p>
+                  <p className="mt-1 text-sm font-semibold tracking-[0.12em] text-stone-600 print:text-[12px]">
+                    Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
+                  </p>
+                  <p className="mt-1.5 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
+                    {show.name} - {formatShowDate(show.show_date)}
+                  </p>
+                </div>
+              </article>
+            );
+          })}
         </section>
       ))}
     </div>
@@ -1137,11 +1166,11 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
       ? await safeLoad("door guest list", () => loadDoorGuestList(show.id), [])
       : [];
   const selectedReservedSeatAssignments =
-    printKind === "selected-seat-cards" || printKind === "reserved-seat-cards"
+    printKind === "selected-seat-cards" || printKind === "reserved-seat-cards" || printKind === "comp-reserved-seat-cards"
       ? await safeLoad("selected reserved seat assignments", () => loadReservedSeatAssignments(show.id), [])
       : [];
   const reservedSeatingLinks =
-    printKind === "reserved-seat-cards" || printKind === "selected-seat-cards"
+    printKind === "reserved-seat-cards" || printKind === "selected-seat-cards" || printKind === "comp-reserved-seat-cards"
       ? await safeLoad("reserved seating links", () => loadReservedSeatingLinks(show.id), [])
       : [];
 
@@ -1164,7 +1193,11 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
           />
         ) : null}
         {printKind === "comp-reserved-seat-cards" ? (
-          <CompReservedSeatCardsPrintView tickets={doorGuestList} />
+          <CompReservedSeatCardsPrintView
+            assignments={selectedReservedSeatAssignments}
+            reservedLinks={reservedSeatingLinks}
+            show={show}
+          />
         ) : null}
         {printKind === "blank-seat-cards" ? <BlankSeatCardsPrintView /> : null}
         {printKind === "selected-seat-cards" ? (
