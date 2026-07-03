@@ -28,6 +28,7 @@ import {
   PromoMaterialsView,
 } from "@/app/components/promo-materials-view";
 import { formatPromoLinkType } from "@/app/components/promo-links-view";
+import { AdminBackButton } from "@/app/components/admin-back-button";
 import { ReservedSeatingPanel } from "@/app/components/reserved-seating-panel";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "@/app/available-seats/path";
@@ -8477,12 +8478,26 @@ export function ShowPage({
           .map((assignment) => assignment.id);
         if (assignmentIds.length > 0) {
           const nextSeatCategory = category === "guest" ? "guest" : "comp";
+          const linkIds = Array.from(new Set(sponsorTicketReservedAssignments
+            .filter((assignment) => assignmentIds.includes(assignment.id) && assignment.seating_link_id)
+            .map((assignment) => assignment.seating_link_id!)
+          ));
+          const nextSourceNote = buildCompCategoryNotes(currentRow?.notes, category);
           const { error } = await supabase
             .from("show_reserved_seat_assignments")
             .update({ customer_name: name, seat_category: nextSeatCategory })
             .in("id", assignmentIds)
             .eq("show_id", show.id);
           if (error) throw error;
+          if (linkIds.length > 0) {
+            const { error: linkError } = await supabase
+              .from("show_reserved_seating_links")
+              .update({ customer_name: name, source_note: nextSourceNote, seat_category: nextSeatCategory, is_complimentary: true })
+              .in("id", linkIds)
+              .eq("show_id", show.id);
+            if (linkError) throw linkError;
+            setSponsorTicketReservedLinks((currentLinks) => currentLinks.map((link) => linkIds.includes(link.id) ? { ...link, customer_name: name, source_note: nextSourceNote, seat_category: nextSeatCategory, is_complimentary: true } : link));
+          }
           setSponsorTicketReservedAssignments((currentAssignments) => currentAssignments.map((assignment) => assignmentIds.includes(assignment.id) ? { ...assignment, customer_name: name, seat_category: nextSeatCategory } : assignment));
         }
       } else if (editingCompEntryRowId.startsWith("sponsor-")) {
@@ -8551,15 +8566,24 @@ export function ShowPage({
     return sortReservedSeatIds(matchedSeatIds).map((seatId) => formatReservedSeatLabel(seatId)).join(", ");
   }
 
+  function parseCompCategoryFromText(text: string): CompListReportRow["category"] | null {
+    const normalizedText = text.toLowerCase();
+    const markerMatch = normalizedText.match(/\[comp type:\s*(sponsor|band|guest|volunteer|media|staff|other)\]/);
+    if (markerMatch?.[1] === "sponsor" || markerMatch?.[1] === "band" || markerMatch?.[1] === "guest" || markerMatch?.[1] === "volunteer" || markerMatch?.[1] === "media" || markerMatch?.[1] === "staff" || markerMatch?.[1] === "other") {
+      return markerMatch[1] as CompListReportRow["category"];
+    }
+    if (normalizedText.includes("sponsor")) return "sponsor";
+    if (normalizedText.includes("band")) return "band";
+    if (normalizedText.includes("guest")) return "guest";
+    if (normalizedText.includes("volunteer")) return "volunteer";
+    if (normalizedText.includes("media") || normalizedText.includes("press")) return "media";
+    if (normalizedText.includes("staff")) return "staff";
+    return null;
+  }
+
   function classifyCompTicket(item: ShowCompTicket): CompListReportRow["category"] {
-    const text = `${item.guest_name} ${item.notes ?? ""} ${item.order_id ?? ""}`.toLowerCase();
-    const markerMatch = text.match(/\\[comp type:\\s*(sponsor|band|guest|volunteer|media|staff|other)\\]/);
-    if (markerMatch?.[1] === "band" || markerMatch?.[1] === "guest" || markerMatch?.[1] === "volunteer" || markerMatch?.[1] === "media" || markerMatch?.[1] === "staff" || markerMatch?.[1] === "other") return markerMatch[1] as CompListReportRow["category"];
-    if (text.includes("band")) return "band";
-    if (text.includes("guest")) return "guest";
-    if (text.includes("volunteer")) return "volunteer";
-    if (text.includes("media") || text.includes("press")) return "media";
-    if (text.includes("staff")) return "staff";
+    const parsedCategory = parseCompCategoryFromText(`${item.guest_name} ${item.notes ?? ""} ${item.order_id ?? ""}`);
+    if (parsedCategory && parsedCategory !== "sponsor") return parsedCategory;
     return normalizeGuestListTicketType(item.ticket_type) === "manual" ? "other" : "guest";
   }
 
@@ -8591,14 +8615,15 @@ export function ShowPage({
       const name = assignment.customer_name?.trim() || "Reserved Comp Guest";
       const key = name.toLowerCase();
       if (!key || existingKeys.has(key)) return;
-      const category: CompListReportRow["category"] = assignment.seat_category === "guest" ? "guest" : "other";
+      const linkedSourceNote = assignment.seating_link_id ? sponsorTicketReservedLinks.find((link) => link.id === assignment.seating_link_id)?.source_note ?? "" : "";
+      const category: CompListReportRow["category"] = parseCompCategoryFromText(linkedSourceNote) ?? (assignment.seat_category === "guest" ? "guest" : "other");
       const current = reservedOnlyRowsByName.get(key);
       const seatLabel = formatReservedSeatLabel(assignment.seat_id);
       if (current) {
         current.quantity += 1;
         current.reservedSeats = current.reservedSeats ? `${current.reservedSeats}, ${seatLabel}` : seatLabel;
       } else {
-        reservedOnlyRowsByName.set(key, { id: `reserved-comp-${assignment.id}`, name, category, categoryLabel: getCompListCategoryLabel(category), quantity: 1, reservedSeats: seatLabel, checkedIn: 0, notes: "Reserved seating comp" });
+        reservedOnlyRowsByName.set(key, { id: `reserved-comp-${assignment.id}`, name, category, categoryLabel: getCompListCategoryLabel(category), quantity: 1, reservedSeats: seatLabel, checkedIn: 0, notes: linkedSourceNote || "Reserved seating comp" });
       }
     });
     return [...sponsorRows, ...compRows, ...reservedOnlyRowsByName.values()];
@@ -20551,7 +20576,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         {shouldShowAdminCompTicketsTab ? (
           <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <AdminBackButton fallbackHref="/admin" />
+                <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
+              </div>
               <p className="text-sm text-stone-600">
                 Organize ticket imports, reserved seating, sponsor comps, and show-night check-in in the order you actually use them.
               </p>
@@ -20676,13 +20704,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   <button
                     key={section.key}
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      if (section.key === "reserved-seating") {
+                        setActiveCompSeatAssignment(null);
+                      }
                       setActiveTicketWorkflowSection((currentValue) =>
                         currentValue === section.key
                           ? null
                           : (section.key as "ticket-sales" | "reserved-seating" | "sponsor-comp" | "reports"),
-                      )
-                    }
+                      );
+                    }}
                     className={`rounded-2xl border p-4 text-left shadow-sm transition ${
                       isActive
                         ? "border-emerald-500 bg-emerald-50 text-emerald-900"
@@ -20908,13 +20939,15 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     setSponsorTicketStatusMessage(`Seats saved for ${compName}: ${seatLabels.join(", ")}`);
                     setActiveCompSeatAssignment(null);
                   }}
-                  onAssignmentsChange={() => {
-                    setSponsorTicketSeatRefreshKey((currentValue) => currentValue + 1);
-                    if (!activeCompSeatAssignment) {
+                  onCompAssignmentCancel={() => {
+                    if (activeCompSeatAssignment) {
+                      setActiveCompSeatAssignment(null);
                       setActiveTicketWorkflowSection("sponsor-comp");
                       setIsSponsorTicketPrinterOpen(true);
-                      setSponsorTicketStatusMessage("Seats assigned successfully. Return to Ticket Printing to review the selected seats.");
                     }
+                  }}
+                  onAssignmentsChange={() => {
+                    setSponsorTicketSeatRefreshKey((currentValue) => currentValue + 1);
                   }}
                 />
               </div>
@@ -21696,7 +21729,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                     >
                                       <option value="guest">Guest Comp</option>
                                       <option value="band">Band Comp</option>
-                                      <option value="other">Volunteer / Media / Other Comp</option>
+                                      <option value="volunteer">Volunteer Comp</option>
+                                      <option value="media">Media Comp</option>
+                                      <option value="staff">Staff Comp</option>
+                                      <option value="other">Other Comp</option>
                                     </select>
                                   ) : null}
                                   {(() => {
@@ -27846,6 +27882,11 @@ async function syncReservedSeatingLinksForImportedOrders(
 
   return { createdCount, updatedCount, warnings };
 }
+
+
+
+
+
 
 
 
