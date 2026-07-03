@@ -44,7 +44,8 @@ export async function POST(request: Request) {
     const showId = typeof formData.get("showId") === "string" ? String(formData.get("showId")).trim() : "";
     const slug = typeof formData.get("slug") === "string" ? String(formData.get("slug")).trim() : "";
     const templateFile = formData.get("template");
-    const templateKind = formData.get("templateKind") === "general" ? "general" : "sponsor";
+    const rawTemplateKind = String(formData.get("templateKind") ?? "sponsor");
+    const templateKind = rawTemplateKind === "general" || rawTemplateKind === "general_admission" ? rawTemplateKind : "sponsor";
     if (!showId || !slug) return NextResponse.json({ success: false, error: "showId and slug are required." }, { status: 400 });
     if (!(await verifyAdminSlug(slug))) return NextResponse.json({ success: false, error: "Admin access is required." }, { status: 401 });
     if (!(templateFile instanceof File)) return NextResponse.json({ success: false, error: "Template image is required." }, { status: 400 });
@@ -54,7 +55,8 @@ export async function POST(request: Request) {
     const { error: uploadError } = await supabase.storage.from("sponsor-ticket-templates").upload(filePath, Buffer.from(await templateFile.arrayBuffer()), { upsert: true, contentType: templateFile.type || undefined });
     if (uploadError) throw uploadError;
     const { data: publicUrlData } = supabase.storage.from("sponsor-ticket-templates").getPublicUrl(filePath);
-    const { data, error } = await supabase.from("sponsor_ticket_templates").insert({ show_id: showId, template_kind: templateKind, name: templateFile.name.replace(/\.[^.]+$/, "") || (templateKind === "general" ? "General Comp Ticket Template" : "Sponsor Ticket Template"), file_name: originalName, file_path: filePath, file_url: publicUrlData.publicUrl, file_mime_type: templateFile.type || null, file_size: templateFile.size }).select("*").single();
+    const fallbackTemplateName = templateKind === "general_admission" ? "General Admission Ticket Template" : templateKind === "general" ? "General Comp Ticket Template" : "Sponsor Ticket Template";
+    const { data, error } = await supabase.from("sponsor_ticket_templates").insert({ show_id: showId, template_kind: templateKind, name: templateFile.name.replace(/\.[^.]+$/, "") || fallbackTemplateName, file_name: originalName, file_path: filePath, file_url: publicUrlData.publicUrl, file_mime_type: templateFile.type || null, file_size: templateFile.size }).select("*").single();
     if (error) throw error;
     return NextResponse.json({ success: true, template: data });
   } catch (error) {

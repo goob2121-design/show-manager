@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -3976,8 +3976,8 @@ function getRehearsalRecordingUrl(recording: Pick<RehearsalRecording, "file_url"
   return data.publicUrl || null;
 }
 
-function escapeHtml(value: string) {
-  return value
+function escapeHtml(value: string | number | null | undefined) {
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -6441,10 +6441,13 @@ export function ShowPage({
   const [sponsorTicketTemplates, setSponsorTicketTemplates] = useState<ShowSponsorTicketTemplate[]>([]);
   const [selectedSponsorTicketTemplateId, setSelectedSponsorTicketTemplateId] = useState("");
   const [selectedGeneralTicketTemplateId, setSelectedGeneralTicketTemplateId] = useState("");
+  const [selectedGeneralAdmissionTicketTemplateId, setSelectedGeneralAdmissionTicketTemplateId] = useState("");
   const [isUploadingSponsorTicketTemplate, setIsUploadingSponsorTicketTemplate] = useState(false);
   const [activeSponsorTicketTemplateActionId, setActiveSponsorTicketTemplateActionId] = useState<string | null>(null);
   const [sponsorTicketTemplateDataUrl, setSponsorTicketTemplateDataUrl] = useState<string | null>(null);
   const [generalTicketTemplateDataUrl, setGeneralTicketTemplateDataUrl] = useState<string | null>(null);
+  const [generalAdmissionTicketTemplateDataUrl, setGeneralAdmissionTicketTemplateDataUrl] = useState<string | null>(null);
+  const [generalAdmissionTicketFormState, setGeneralAdmissionTicketFormState] = useState({ quantity: "1", showEvent: "", showDate: "", doorsTime: "", showTime: "", ticketPrefix: "", ticketStartNumber: "1" });
   const [sponsorTicketSponsorId, setSponsorTicketSponsorId] = useState("");
   const [selectedSponsorTicketSeatIds, setSelectedSponsorTicketSeatIds] = useState<string[]>([]);
   const [selectedCompTicketPrintScope, setSelectedCompTicketPrintScope] = useState("all");
@@ -6454,7 +6457,7 @@ export function ShowPage({
   const [sponsorTicketStatusMessage, setSponsorTicketStatusMessage] = useState<string | null>(null);
   const [sponsorTicketErrorMessage, setSponsorTicketErrorMessage] = useState<string | null>(null);
   const [editingCompEntryRowId, setEditingCompEntryRowId] = useState<string | null>(null);
-  const [editingCompEntryFormState, setEditingCompEntryFormState] = useState({ name: "", category: "guest", quantity: "1", notes: "" });
+  const [editingCompEntryFormState, setEditingCompEntryFormState] = useState({ name: "", category: "guest", admissionType: "reserved", quantity: "1", notes: "" });
   const [activeCompSeatAssignment, setActiveCompSeatAssignment] = useState<{ row: CompListReportRow; linkId: string } | null>(null);
   const [sponsorCompCustomAmounts, setSponsorCompCustomAmounts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -7815,11 +7818,21 @@ export function ShowPage({
     }
   }
 
-  function buildCompCategoryNotes(notes: string | null | undefined, category: CompListReportRow["category"]) {
-    const cleanedNotes = (notes ?? "").replace(/\s*\[Comp Type:\s*(sponsor|band|guest|volunteer|media|staff|other)\]\s*/gi, "").trim();
-    if (category === "sponsor") return cleanedNotes;
-    const marker = `[Comp Type: ${category}]`;
-    return cleanedNotes ? `${marker}\n${cleanedNotes}` : marker;
+  type CompAdmissionType = "reserved" | "general_admission";
+
+  function stripCompMetadataFromNotes(notes: string | null | undefined) {
+    return (notes ?? "")
+      .replace(/\s*\[Comp Type:\s*(sponsor|band|guest|volunteer|media|staff|other)\]\s*/gi, "")
+      .replace(/\s*\[Admission Type:\s*(reserved|general_admission)\]\s*/gi, "")
+      .trim();
+  }
+
+  function buildCompCategoryNotes(notes: string | null | undefined, category: CompListReportRow["category"], admissionType: CompAdmissionType = "reserved") {
+    const cleanedNotes = stripCompMetadataFromNotes(notes);
+    const markers = [category === "sponsor" ? null : `[Comp Type: ${category}]`, admissionType === "general_admission" ? "[Admission Type: general_admission]" : null].filter(Boolean);
+    const markerText = markers.join("\n");
+    if (!markerText) return cleanedNotes;
+    return cleanedNotes ? `${markerText}\n${cleanedNotes}` : markerText;
   }
 
   async function handleUpdateCompTicketCategory(item: ShowCompTicket, category: CompListReportRow["category"]) {
@@ -8151,8 +8164,9 @@ export function ShowPage({
         if (cancelled) return;
         const templates = payload.templates ?? [];
         setSponsorTicketTemplates(templates);
-        const sponsorTemplates = templates.filter((template) => template.template_kind !== "general");
+        const sponsorTemplates = templates.filter((template) => template.template_kind !== "general" && template.template_kind !== "general_admission");
         const generalTemplates = templates.filter((template) => template.template_kind === "general");
+        const generalAdmissionTemplates = templates.filter((template) => template.template_kind === "general_admission");
         setSelectedSponsorTicketTemplateId((currentId) => {
           if (currentId && sponsorTemplates.some((template) => template.id === currentId)) return currentId;
           const savedId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
@@ -8164,6 +8178,12 @@ export function ShowPage({
           const savedId = typeof window !== "undefined" ? window.localStorage.getItem(`${storageKey}_general`) : null;
           if (savedId && generalTemplates.some((template) => template.id === savedId)) return savedId;
           return generalTemplates[0]?.id ?? "";
+        });
+        setSelectedGeneralAdmissionTicketTemplateId((currentId) => {
+          if (currentId && generalAdmissionTemplates.some((template) => template.id === currentId)) return currentId;
+          const savedId = typeof window !== "undefined" ? window.localStorage.getItem(`${storageKey}_ga`) : null;
+          if (savedId && generalAdmissionTemplates.some((template) => template.id === savedId)) return savedId;
+          return generalAdmissionTemplates[0]?.id ?? "";
         });
       } catch (error) {
         if (!cancelled) setSponsorTicketErrorMessage(getErrorMessage(error));
@@ -8215,14 +8235,27 @@ export function ShowPage({
     };
   }, [activeTicketWorkflowSection, show, sponsorTicketSeatRefreshKey]);
 
-  const sponsorTicketTemplateOptions = sponsorTicketTemplates.filter((template) => template.template_kind !== "general");
+  const sponsorTicketTemplateOptions = sponsorTicketTemplates.filter((template) => template.template_kind !== "general" && template.template_kind !== "general_admission");
   const generalTicketTemplateOptions = sponsorTicketTemplates.filter((template) => template.template_kind === "general");
+  const generalAdmissionTicketTemplateOptions = sponsorTicketTemplates.filter((template) => template.template_kind === "general_admission");
   const selectedSponsorTicketTemplate = sponsorTicketTemplateOptions.find((template) => template.id === selectedSponsorTicketTemplateId) ?? null;
   const selectedGeneralTicketTemplate = generalTicketTemplateOptions.find((template) => template.id === selectedGeneralTicketTemplateId) ?? null;
+  const selectedGeneralAdmissionTicketTemplate = generalAdmissionTicketTemplateOptions.find((template) => template.id === selectedGeneralAdmissionTicketTemplateId) ?? null;
   const activeSponsorTicketTemplateUrl = selectedSponsorTicketTemplate?.file_url || sponsorTicketTemplateDataUrl;
   const activeGeneralTicketTemplateUrl = selectedGeneralTicketTemplate?.file_url || generalTicketTemplateDataUrl;
+  const activeGeneralAdmissionTicketTemplateUrl = selectedGeneralAdmissionTicketTemplate?.file_url || generalAdmissionTicketTemplateDataUrl;
 
-  async function handleSponsorTicketTemplateChange(event: ChangeEvent<HTMLInputElement>, templateKind: "sponsor" | "general" = "sponsor") {
+  useEffect(() => {
+    if (!show) return;
+    setGeneralAdmissionTicketFormState((currentState) => ({
+      ...currentState,
+      showEvent: currentState.showEvent || show.name || "Cumberland Mountain Music Show",
+      showDate: currentState.showDate || formatShowDate(show.show_date),
+      doorsTime: currentState.doorsTime || show.guest_arrival_time || "6:00 PM",
+      showTime: currentState.showTime || show.show_start_time || "TBD",
+    }));
+  }, [show]);
+  async function handleSponsorTicketTemplateChange(event: ChangeEvent<HTMLInputElement>, templateKind: "sponsor" | "general" | "general_admission" = "sponsor") {
     const file = event.target.files?.[0];
     setSponsorTicketStatusMessage(null);
     setSponsorTicketErrorMessage(null);
@@ -8233,7 +8266,8 @@ export function ShowPage({
 
     const reader = new FileReader();
     reader.onload = () => {
-      if (templateKind === "general") setGeneralTicketTemplateDataUrl(typeof reader.result === "string" ? reader.result : null);
+      if (templateKind === "general_admission") setGeneralAdmissionTicketTemplateDataUrl(typeof reader.result === "string" ? reader.result : null);
+      else if (templateKind === "general") setGeneralTicketTemplateDataUrl(typeof reader.result === "string" ? reader.result : null);
       else setSponsorTicketTemplateDataUrl(typeof reader.result === "string" ? reader.result : null);
     };
     reader.onerror = () => setSponsorTicketErrorMessage("Could not load the ticket template image.");
@@ -8254,15 +8288,19 @@ export function ShowPage({
       const payload = (await response.json()) as { success?: boolean; template?: ShowSponsorTicketTemplate; error?: string };
       if (!response.ok || !payload.success || !payload.template) throw new Error(payload.error || "Unable to save ticket template.");
       setSponsorTicketTemplates((currentTemplates) => [payload.template!, ...currentTemplates]);
-      if (templateKind === "general") {
+      if (templateKind === "general_admission") {
+        setSelectedGeneralAdmissionTicketTemplateId(payload.template.id);
+        setGeneralAdmissionTicketTemplateDataUrl(null);
+      } else if (templateKind === "general") {
         setSelectedGeneralTicketTemplateId(payload.template.id);
         setGeneralTicketTemplateDataUrl(null);
       } else {
         setSelectedSponsorTicketTemplateId(payload.template.id);
         setSponsorTicketTemplateDataUrl(null);
       }
-      if (typeof window !== "undefined") window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}${templateKind === "general" ? "_general" : ""}`, payload.template.id);
-      setSponsorTicketStatusMessage(templateKind === "general" ? "General comp ticket template saved and selected." : "Sponsor ticket template saved and selected.");
+      const templateStorageSuffix = templateKind === "general_admission" ? "_ga" : templateKind === "general" ? "_general" : "";
+      if (typeof window !== "undefined") window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}${templateStorageSuffix}`, payload.template.id);
+      setSponsorTicketStatusMessage(templateKind === "general_admission" ? "General Admission ticket template saved and selected." : templateKind === "general" ? "General comp ticket template saved and selected." : "Sponsor ticket template saved and selected.");
     } catch (error) {
       setSponsorTicketErrorMessage(getErrorMessage(error));
     } finally {
@@ -8273,7 +8311,7 @@ export function ShowPage({
 
 
   async function handleDeleteSponsorTicketTemplate() {
-    const templateToDelete = selectedSponsorTicketTemplate ?? selectedGeneralTicketTemplate;
+    const templateToDelete = selectedSponsorTicketTemplate ?? selectedGeneralTicketTemplate ?? selectedGeneralAdmissionTicketTemplate;
     if (!show || !templateToDelete) return;
     const shouldDelete = window.confirm(`Delete ticket template "${templateToDelete.name}"?`);
     if (!shouldDelete) return;
@@ -8292,10 +8330,12 @@ export function ShowPage({
         const nextTemplates = currentTemplates.filter((template) => template.id !== templateToDelete.id);
         const sameKindTemplates = nextTemplates.filter((template) => template.template_kind === templateToDelete.template_kind);
         const nextId = sameKindTemplates[0]?.id ?? "";
-        if (templateToDelete.template_kind === "general") setSelectedGeneralTicketTemplateId(nextId);
+        if (templateToDelete.template_kind === "general_admission") setSelectedGeneralAdmissionTicketTemplateId(nextId);
+        else if (templateToDelete.template_kind === "general") setSelectedGeneralTicketTemplateId(nextId);
         else setSelectedSponsorTicketTemplateId(nextId);
         if (typeof window !== "undefined") {
-          const key = `stageflow_sponsor_ticket_template_${show.id}${templateToDelete.template_kind === "general" ? "_general" : ""}`;
+          const templateStorageSuffix = templateToDelete.template_kind === "general_admission" ? "_ga" : templateToDelete.template_kind === "general" ? "_general" : "";
+          const key = `stageflow_sponsor_ticket_template_${show.id}${templateStorageSuffix}`;
           if (nextId) window.localStorage.setItem(key, nextId);
           else window.localStorage.removeItem(key);
         }
@@ -8361,14 +8401,14 @@ export function ShowPage({
 
   function startEditingCompEntry(row: CompListReportRow) {
     setEditingCompEntryRowId(row.id);
-    setEditingCompEntryFormState({ name: row.name, category: row.category, quantity: String(row.quantity), notes: row.notes ?? "" });
+    setEditingCompEntryFormState({ name: row.name, category: row.category, admissionType: row.admissionType, quantity: String(row.quantity), notes: stripCompMetadataFromNotes(row.notes) });
     setCompTicketErrorMessage(null);
     setCompTicketStatusMessage(null);
   }
 
   function closeEditingCompEntry() {
     setEditingCompEntryRowId(null);
-    setEditingCompEntryFormState({ name: "", category: "guest", quantity: "1", notes: "" });
+    setEditingCompEntryFormState({ name: "", category: "guest", admissionType: "reserved", quantity: "1", notes: "" });
   }
 
   async function handleChangeSeatsForCompRow(row: CompListReportRow) {
@@ -8404,7 +8444,7 @@ export function ShowPage({
             ticket_count: Math.max(1, row.quantity),
             selection_mode: "comp",
             is_complimentary: true,
-            source_note: row.categoryLabel,
+            source_note: buildCompCategoryNotes(row.notes, row.category, row.admissionType),
             seat_category: row.category === "guest" ? "guest" : "comp",
           })
           .select("id")
@@ -8414,7 +8454,7 @@ export function ShowPage({
       } else {
         const { error } = await supabase
           .from("show_reserved_seating_links")
-          .update({ ticket_count: Math.max(1, row.quantity), customer_name: row.name, source_note: row.categoryLabel, is_complimentary: true, seat_category: row.category === "guest" ? "guest" : "comp" })
+          .update({ ticket_count: Math.max(1, row.quantity), customer_name: row.name, source_note: buildCompCategoryNotes(row.notes, row.category, row.admissionType), is_complimentary: true, seat_category: row.category === "guest" ? "guest" : "comp" })
           .eq("id", linkId);
         if (error) throw error;
       }
@@ -8438,6 +8478,7 @@ export function ShowPage({
     const name = editingCompEntryFormState.name.trim();
     const quantity = Number.parseInt(editingCompEntryFormState.quantity.trim(), 10);
     const category = editingCompEntryFormState.category as CompListReportRow["category"];
+    const admissionType = editingCompEntryFormState.admissionType as CompAdmissionType;
     if (!name) {
       setCompTicketErrorMessage("Name is required.");
       return;
@@ -8460,7 +8501,7 @@ export function ShowPage({
             guest_name: name,
             ticket_count: Math.max(1, quantity),
             ticket_type: "complimentary",
-            notes: normalizeOptionalField(buildCompCategoryNotes(editingCompEntryFormState.notes, category)),
+            notes: normalizeOptionalField(buildCompCategoryNotes(editingCompEntryFormState.notes, category, admissionType)),
             checked_in: checkedInCount >= Math.max(1, quantity),
             checked_in_count: checkedInCount,
           })
@@ -8482,7 +8523,7 @@ export function ShowPage({
             .filter((assignment) => assignmentIds.includes(assignment.id) && assignment.seating_link_id)
             .map((assignment) => assignment.seating_link_id!)
           ));
-          const nextSourceNote = buildCompCategoryNotes(currentRow?.notes, category);
+          const nextSourceNote = buildCompCategoryNotes(currentRow?.notes, category, admissionType);
           const { error } = await supabase
             .from("show_reserved_seat_assignments")
             .update({ customer_name: name, seat_category: nextSeatCategory })
@@ -8504,11 +8545,11 @@ export function ShowPage({
         const id = editingCompEntryRowId.replace("sponsor-", "");
         const { error } = await supabase
           .from("show_sponsors")
-          .update({ custom_note: normalizeOptionalField(name), comp_ticket_allowance: Math.max(0, quantity), recognition_notes: normalizeOptionalField(editingCompEntryFormState.notes) })
+          .update({ custom_note: normalizeOptionalField(name), comp_ticket_allowance: Math.max(0, quantity), recognition_notes: normalizeOptionalField(buildCompCategoryNotes(editingCompEntryFormState.notes, category, admissionType)) })
           .eq("id", id)
           .eq("show_id", show.id);
         if (error) throw error;
-        setShowSponsors((currentSponsors) => currentSponsors.map((sponsor) => sponsor.id === id ? { ...sponsor, custom_note: normalizeOptionalField(name), comp_ticket_allowance: Math.max(0, quantity), recognition_notes: normalizeOptionalField(editingCompEntryFormState.notes) } : sponsor));
+        setShowSponsors((currentSponsors) => currentSponsors.map((sponsor) => sponsor.id === id ? { ...sponsor, custom_note: normalizeOptionalField(name), comp_ticket_allowance: Math.max(0, quantity), recognition_notes: normalizeOptionalField(buildCompCategoryNotes(editingCompEntryFormState.notes, category, admissionType)) } : sponsor));
       }
       closeEditingCompEntry();
       setCompTicketStatusMessage("Comp entry updated.");
@@ -8545,6 +8586,7 @@ export function ShowPage({
     name: string;
     category: "sponsor" | "band" | "guest" | "volunteer" | "media" | "staff" | "other";
     categoryLabel: string;
+    admissionType: CompAdmissionType;
     quantity: number;
     reservedSeats: string;
     checkedIn: number;
@@ -8581,6 +8623,12 @@ export function ShowPage({
     return null;
   }
 
+  function parseCompAdmissionTypeFromText(text: string): CompAdmissionType {
+    const normalizedText = text.toLowerCase();
+    const markerMatch = normalizedText.match(/\[admission type:\s*(reserved|general_admission)\]/);
+    return markerMatch?.[1] === "general_admission" ? "general_admission" : "reserved";
+  }
+
   function classifyCompTicket(item: ShowCompTicket): CompListReportRow["category"] {
     const parsedCategory = parseCompCategoryFromText(`${item.guest_name} ${item.notes ?? ""} ${item.order_id ?? ""}`);
     if (parsedCategory && parsedCategory !== "sponsor") return parsedCategory;
@@ -8597,17 +8645,21 @@ export function ShowPage({
     return "Other Comp";
   }
 
+  function getCompAdmissionTypeLabel(admissionType: CompAdmissionType) {
+    return admissionType === "general_admission" ? "General Admission" : "Reserved Seating";
+  }
+
   function buildCompListReportRows() {
     const sponsorRows: CompListReportRow[] = sponsorsWithCompTickets.map((sponsor) => {
       const name = getSponsorTicketSponsorName(sponsor);
-      return { id: `sponsor-${sponsor.id}`, name, category: "sponsor", categoryLabel: "Sponsor Comp", quantity: Math.max(0, sponsor.comp_ticket_allowance ?? 0), reservedSeats: getCompListReservedSeatsForName(name), checkedIn: Math.max(0, sponsor.comp_tickets_checked_in ?? 0), notes: sponsor.recognition_notes ?? "" };
+      return { id: `sponsor-${sponsor.id}`, name, category: "sponsor", categoryLabel: "Sponsor Comp", quantity: Math.max(0, sponsor.comp_ticket_allowance ?? 0), reservedSeats: getCompListReservedSeatsForName(name), checkedIn: Math.max(0, sponsor.comp_tickets_checked_in ?? 0), notes: stripCompMetadataFromNotes(sponsor.recognition_notes), admissionType: parseCompAdmissionTypeFromText(sponsor.recognition_notes ?? "") };
     });
     const compRows: CompListReportRow[] = compTickets.filter((item) => {
       const ticketType = normalizeGuestListTicketType(item.ticket_type);
       return ticketType !== "paid_online" && ticketType !== "door_paid";
     }).map((item) => {
       const category = classifyCompTicket(item);
-      return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompListReservedSeatsForName(item.guest_name), checkedIn: item.checked_in_count, notes: item.notes ?? "" };
+      return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompListReservedSeatsForName(item.guest_name), checkedIn: item.checked_in_count, notes: stripCompMetadataFromNotes(item.notes), admissionType: parseCompAdmissionTypeFromText(item.notes ?? "") };
     });
     const existingKeys = new Set([...sponsorRows, ...compRows].map((row) => row.name.trim().toLowerCase()).filter(Boolean));
     const reservedOnlyRowsByName = new Map<string, CompListReportRow>();
@@ -8623,7 +8675,7 @@ export function ShowPage({
         current.quantity += 1;
         current.reservedSeats = current.reservedSeats ? `${current.reservedSeats}, ${seatLabel}` : seatLabel;
       } else {
-        reservedOnlyRowsByName.set(key, { id: `reserved-comp-${assignment.id}`, name, category, categoryLabel: getCompListCategoryLabel(category), quantity: 1, reservedSeats: seatLabel, checkedIn: 0, notes: linkedSourceNote || "Reserved seating comp" });
+        reservedOnlyRowsByName.set(key, { id: `reserved-comp-${assignment.id}`, name, category, categoryLabel: getCompListCategoryLabel(category), admissionType: parseCompAdmissionTypeFromText(linkedSourceNote), quantity: 1, reservedSeats: seatLabel, checkedIn: 0, notes: stripCompMetadataFromNotes(linkedSourceNote) || "Reserved seating comp" });
       }
     });
     return [...sponsorRows, ...compRows, ...reservedOnlyRowsByName.values()];
@@ -8730,15 +8782,18 @@ export function ShowPage({
     if ((needsSponsorTemplate && !activeSponsorTicketTemplateUrl) || (needsGeneralTemplate && !activeGeneralTicketTemplateUrl)) return null;
 
     const tickets = rows.flatMap((row) => {
-      const seats = row.reservedSeats
-        ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean)
-        : [];
-      const count = Math.max(row.quantity, seats.length, 1);
+      const seats = row.admissionType === "general_admission"
+        ? []
+        : row.reservedSeats
+          ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean)
+          : [];
+      const count = Math.max(row.quantity, row.admissionType === "general_admission" ? 0 : seats.length, 1);
       const templateUrl = row.category === "sponsor" ? activeSponsorTicketTemplateUrl : activeGeneralTicketTemplateUrl;
       return Array.from({ length: count }, (_, index) => ({
         name: row.name,
         categoryLabel: row.categoryLabel,
-        seatLabel: seats[index] ?? "Comp",
+        seatLabel: row.admissionType === "general_admission" ? "GENERAL ADMISSION" : seats[index] ?? "Comp",
+        stubSeatLabel: row.admissionType === "general_admission" ? "GA" : seats[index] ?? "Comp",
         ticketNumber: `${index + 1} of ${count}`,
         totalForReservation: count,
         templateUrl: templateUrl!,
@@ -8786,10 +8841,82 @@ export function ShowPage({
       <div class="field count">${escapeHtml(String(ticket.totalForReservation))}</div>
       <div class="field seat-main">${escapeHtml(`${ticket.categoryLabel} - ${ticket.seatLabel}`)}</div>
       <div class="field stub-count">${escapeHtml(ticket.ticketNumber)}</div>
-      <div class="field stub-seat">${escapeHtml(ticket.seatLabel)}</div>
+      <div class="field stub-seat">${escapeHtml(ticket.stubSeatLabel)}</div>
     </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
   }
 
+  function buildGeneralAdmissionTicketPrintHtml(printMode: "print" | "pdf") {
+    if (!show || !activeGeneralAdmissionTicketTemplateUrl) return null;
+    const quantity = Math.max(1, Number.parseInt(generalAdmissionTicketFormState.quantity, 10) || 1);
+    const startNumber = Number.parseInt(generalAdmissionTicketFormState.ticketStartNumber, 10);
+    const shouldShowTicketNumber = generalAdmissionTicketFormState.ticketPrefix.trim() || Number.isFinite(startNumber);
+    const firstNumber = Number.isFinite(startNumber) ? startNumber : 1;
+    const tickets = Array.from({ length: quantity }, (_, index) => ({
+      ticketNumber: shouldShowTicketNumber ? `${generalAdmissionTicketFormState.ticketPrefix.trim()}${firstNumber + index}` : "",
+    }));
+    const ticketSheets = Array.from({ length: Math.ceil(tickets.length / 4) }, (_, sheetIndex) => tickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
+    const showEvent = generalAdmissionTicketFormState.showEvent.trim() || show.name || "Cumberland Mountain Music Show";
+    const showDate = generalAdmissionTicketFormState.showDate.trim() || formatShowDate(show.show_date);
+    const doorsTime = generalAdmissionTicketFormState.doorsTime.trim() || show.guest_arrival_time || "6:00 PM";
+    const showTime = generalAdmissionTicketFormState.showTime.trim() || show.show_start_time || "TBD";
+
+    const GA_LAYOUT = {
+      showEvent: { left: "1.28in", top: "3.00in", width: "2.86in", fontSize: ".12in", textAlign: "center" },
+      showDate: { left: "5.22in", top: "3.00in", width: "1.85in", fontSize: ".14in", textAlign: "center" },
+      doors: { left: ".80in", top: "3.45in", width: "1.18in", fontSize: ".14in", textAlign: "center" },
+      showTime: { left: "3.02in", top: "3.45in", width: "1.17in", fontSize: ".14in", textAlign: "center" },
+      numberOfTickets: { left: "5.77in", top: "3.43in", width: "1.20in", fontSize: ".18in", textAlign: "center", letterSpacing: ".04em" },
+      reservedSeats: { left: "1.50in", top: "3.96in", width: "5.55in", fontSize: ".22in", textAlign: "left", letterSpacing: ".07em" },
+      stubTicketNumber: { left: "8.63in", top: "1.34in", width: "1.92in", fontSize: ".12in", textAlign: "center", color: "#f4eadf" },
+      stubSeat: { left: "8.72in", top: "3.18in", width: "1.86in", fontSize: ".22in", textAlign: "center", letterSpacing: ".05em" },
+    };
+    const gaStyle = (field: keyof typeof GA_LAYOUT) => {
+      const layout = GA_LAYOUT[field];
+      return `left:${layout.left};top:${layout.top};width:${layout.width};font-size:${layout.fontSize};text-align:${layout.textAlign};${"letterSpacing" in layout ? `letter-spacing:${layout.letterSpacing};` : ""}${"color" in layout ? `color:${layout.color};` : ""}`;
+    };
+
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(show.name)} General Admission Tickets</title><style>
+      @page { size: 8.5in 11in portrait; margin: .18in; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #111; font-family: Arial, Helvetica, sans-serif; }
+      .ticket-sheet { width: 8.14in; height: 10.64in; display: grid; grid-template-columns: 5.26in; grid-template-rows: repeat(4, 2.34in); gap: .08in; align-content: center; justify-content: center; page-break-after: always; overflow: hidden; background: #fff; }
+      .ticket-slot { width: 5.26in; height: 2.34in; overflow: hidden; position: relative; background: #000; }
+      .ga-ticket-page { width: 11in; height: 4.885in; position: absolute; left: 0; top: 0; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; }
+      .ga-ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+      .ga-field { position: absolute; color: #14110d; font-weight: 900; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+      @media print { body { background: #fff; } .ticket-sheet { break-after: page; } .ticket-sheet:last-child { break-after: auto; } }
+    </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ga-ticket-page"><img src="${activeGeneralAdmissionTicketTemplateUrl}" alt="" />
+      <div class="ga-field" style="${gaStyle("showEvent")}">${escapeHtml(showEvent)}</div>
+      <div class="ga-field" style="${gaStyle("showDate")}">${escapeHtml(showDate)}</div>
+      <div class="ga-field" style="${gaStyle("doors")}">${escapeHtml(doorsTime)}</div>
+      <div class="ga-field" style="${gaStyle("showTime")}">${escapeHtml(showTime)}</div>
+      <div class="ga-field" style="${gaStyle("numberOfTickets")}">SINGLE</div>
+      <div class="ga-field" style="${gaStyle("reservedSeats")}">GENERAL</div>
+      ${ticket.ticketNumber ? `<div class="ga-field" style="${gaStyle("stubTicketNumber")}">${escapeHtml(ticket.ticketNumber)}</div>` : ""}
+      <div class="ga-field" style="${gaStyle("stubSeat")}">GENERAL</div>
+    </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
+  }
+
+  function openGeneralAdmissionTicketPrintWindow(printMode: "print" | "pdf" = "print") {
+    if (!activeGeneralAdmissionTicketTemplateUrl) {
+      setSponsorTicketErrorMessage("Choose or upload a General Admission ticket template before printing.");
+      return;
+    }
+    const html = buildGeneralAdmissionTicketPrintHtml(printMode);
+    if (!html) {
+      setSponsorTicketErrorMessage("General Admission tickets could not be generated.");
+      return;
+    }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setSponsorTicketErrorMessage("The print window was blocked. Please allow pop-ups and try again.");
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setSponsorTicketStatusMessage("General Admission ticket print view opened.");
+  }
   function openCompTicketPrintWindow(scope: CompTicketPrintScope, printMode: "print" | "pdf" = "print") {
     const rows = getCompTicketPrintRows(scope);
     const needsSponsorTemplate = rows.some((row) => row.category === "sponsor");
@@ -21354,7 +21481,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   const selectedPrintRows = getCompTicketPrintRows(selectedCompTicketPrintScope as CompTicketPrintScope);
                   const selectedPrintTicketCount = selectedPrintRows.reduce((sum, row) => sum + row.quantity, 0);
                   const selectedSpecificPrintRow = selectedCompTicketPrintScope.startsWith("row:") && selectedPrintRows.length === 1 ? selectedPrintRows[0] : null;
-                  const selectedAssignedSeatLabels = Array.from(new Set(selectedPrintRows.flatMap((row) => row.reservedSeats ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean) : [])));
+                  const selectedAssignedSeatLabels = Array.from(new Set(selectedPrintRows.flatMap((row) => row.admissionType === "general_admission" ? [] : row.reservedSeats ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean) : [])));
                   const hasSelectedAssignedSeats = selectedAssignedSeatLabels.length > 0;
                   return (
                     <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -21417,8 +21544,37 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           {activeGeneralTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeGeneralTicketTemplateUrl} alt="General comp ticket template preview" className="max-h-[120px] w-full object-contain" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the General Comp ticket template for guest, band, volunteer, media, and other comps.</p>}
                         </div>
 
-                        {selectedSponsorTicketTemplate || selectedGeneralTicketTemplate ? (
-                          <button type="button" onClick={() => void handleDeleteSponsorTicketTemplate()} disabled={activeSponsorTicketTemplateActionId === (selectedSponsorTicketTemplate ?? selectedGeneralTicketTemplate)?.id} className="w-fit rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60">
+
+                        <div className="grid gap-3 border-t border-stone-200 pt-4">
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                            General Admission Ticket Template
+                            <select
+                              value={selectedGeneralAdmissionTicketTemplateId}
+                              onChange={(event) => {
+                                const templateId = event.target.value;
+                                setSelectedGeneralAdmissionTicketTemplateId(templateId);
+                                setGeneralAdmissionTicketTemplateDataUrl(null);
+                                if (show && typeof window !== "undefined") {
+                                  if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}_ga`, templateId);
+                                  else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}_ga`);
+                                }
+                              }}
+                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
+                            >
+                              <option value="">Choose GA template</option>
+                              {generalAdmissionTicketTemplateOptions.map((template) => (
+                                <option key={template.id} value={template.id}>{template.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
+                            Upload General Admission Template
+                            <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => void handleSponsorTicketTemplateChange(event, "general_admission")} disabled={isUploadingSponsorTicketTemplate} className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60" />
+                          </label>
+                          {activeGeneralAdmissionTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeGeneralAdmissionTicketTemplateUrl} alt="General Admission ticket template preview" className="max-h-[120px] w-full object-contain" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the General Admission ticket template.</p>}
+                        </div>
+                        {selectedSponsorTicketTemplate || selectedGeneralTicketTemplate || selectedGeneralAdmissionTicketTemplate ? (
+                          <button type="button" onClick={() => void handleDeleteSponsorTicketTemplate()} disabled={activeSponsorTicketTemplateActionId === (selectedSponsorTicketTemplate ?? selectedGeneralTicketTemplate ?? selectedGeneralAdmissionTicketTemplate)?.id} className="w-fit rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60">
                             Delete Selected Template
                           </button>
                         ) : null}
@@ -21442,7 +21598,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
 
                         <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
-                          <p className="text-sm font-bold text-stone-900">Reserved Seats</p>
+                          <p className="text-sm font-bold text-stone-900">Admission / Seats</p>
                           {selectedSpecificPrintRow ? (
                             hasSelectedAssignedSeats ? (
                               <div className="mt-2 grid gap-2">
@@ -21466,8 +21622,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
                         <div className="rounded-xl bg-stone-50 px-3 py-3 text-sm text-stone-700">
                           <p><span className="font-semibold">Tickets ready:</span> {selectedPrintTicketCount}</p>
-                          <p><span className="font-semibold">Seats:</span> {hasSelectedAssignedSeats ? "assigned" : "not assigned"}</p>
-                          <p><span className="font-semibold">Selected seats:</span> {hasSelectedAssignedSeats ? selectedAssignedSeatLabels.join(", ") : "None"}</p>
+                          <p><span className="font-semibold">Admission:</span> {selectedSpecificPrintRow ? getCompAdmissionTypeLabel(selectedSpecificPrintRow.admissionType) : "Mixed"}</p>
+                          <p><span className="font-semibold">Seats:</span> {selectedSpecificPrintRow?.admissionType === "general_admission" ? "General Admission" : hasSelectedAssignedSeats ? "assigned" : "not assigned"}</p>
+                          <p><span className="font-semibold">Selected seats:</span> {selectedSpecificPrintRow?.admissionType === "general_admission" ? "GENERAL ADMISSION" : hasSelectedAssignedSeats ? selectedAssignedSeatLabels.join(", ") : "None"}</p>
                           <p><span className="font-semibold">Show:</span> {show?.name ?? "Show"}</p>
                           <p><span className="font-semibold">Date:</span> {formatShowDate(show?.show_date ?? null)}</p>
                         </div>
@@ -21487,6 +21644,26 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           >
                             Export / Save PDF
                           </button>
+                        </div>
+
+                        <div className="grid gap-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+                          <div>
+                            <p className="text-sm font-black uppercase tracking-[0.12em] text-stone-900">General Admission Tickets</p>
+                            <p className="text-xs text-stone-600">No sponsor, comp entry, or reserved seats required.</p>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Quantity<input type="number" min="1" value={generalAdmissionTicketFormState.quantity} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, quantity: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
+                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Show / Event<input value={generalAdmissionTicketFormState.showEvent} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, showEvent: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
+                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Show Date<input value={generalAdmissionTicketFormState.showDate} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, showDate: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
+                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Doors<input value={generalAdmissionTicketFormState.doorsTime} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, doorsTime: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
+                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Show Time<input value={generalAdmissionTicketFormState.showTime} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, showTime: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
+                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Ticket Prefix<input placeholder="GA15-" value={generalAdmissionTicketFormState.ticketPrefix} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, ticketPrefix: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
+                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Start Number<input type="number" min="1" value={generalAdmissionTicketFormState.ticketStartNumber} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, ticketStartNumber: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={() => openGeneralAdmissionTicketPrintWindow()} className="rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-stone-800">Print General Admission Tickets</button>
+                            <button type="button" onClick={() => openGeneralAdmissionTicketPrintWindow("pdf")} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-bold text-stone-800 transition hover:bg-stone-100">Export General Admission PDF</button>
+                          </div>
                         </div>
 
                         {sponsorTicketStatusMessage ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">{sponsorTicketStatusMessage}</p> : null}
@@ -21524,6 +21701,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           <option value="other">Other Comp</option>
                         </select>
                       </label>
+                      <fieldset className="flex flex-col gap-2 rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-700">
+                        <legend className="font-medium text-stone-700">Admission Type</legend>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="comp-admission-type" value="reserved" checked={editingCompEntryFormState.admissionType === "reserved"} onChange={() => setEditingCompEntryFormState((state) => ({ ...state, admissionType: "reserved" }))} />
+                          Reserved Seating
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="comp-admission-type" value="general_admission" checked={editingCompEntryFormState.admissionType === "general_admission"} onChange={() => setEditingCompEntryFormState((state) => ({ ...state, admissionType: "general_admission" }))} />
+                          General Admission
+                        </label>
+                      </fieldset>
                       <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">Quantity
                         <input type="number" min="0" value={editingCompEntryFormState.quantity} onChange={(event) => setEditingCompEntryFormState((state) => ({ ...state, quantity: event.target.value }))} className="rounded-xl border border-stone-300 px-3 py-2.5 text-sm text-stone-900" />
                       </label>
@@ -27882,6 +28070,13 @@ async function syncReservedSeatingLinksForImportedOrders(
 
   return { createdCount, updatedCount, warnings };
 }
+
+
+
+
+
+
+
 
 
 
