@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -27,7 +27,14 @@ type ReservedSeatingPanelProps = {
   showDate: string | null;
   sponsorOptions?: ReservedSeatingSponsorOption[];
   selectedSponsorId?: string;
+  selectedManualAssignLinkId?: string | null;
+  compAssignmentContext?: {
+    name: string;
+    categoryLabel: string;
+    quantity: number;
+  } | null;
   onAssignmentsChange?: () => void;
+  onCompAssignmentComplete?: (seatLabels: string[]) => void;
 };
 
 type LinkFormState = {
@@ -183,7 +190,18 @@ function buildReservedSeatingMessageBody(link: LinkWithSeats, absoluteUrl: strin
   ].join("\n");
 }
 
-export function ReservedSeatingPanel({ showId, showSlug, showName, showDate, sponsorOptions = [], selectedSponsorId = "", onAssignmentsChange }: ReservedSeatingPanelProps) {
+export function ReservedSeatingPanel({
+  showId,
+  showSlug,
+  showName,
+  showDate,
+  sponsorOptions = [],
+  selectedSponsorId = "",
+  selectedManualAssignLinkId = null,
+  compAssignmentContext = null,
+  onAssignmentsChange,
+  onCompAssignmentComplete,
+}: ReservedSeatingPanelProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -244,6 +262,12 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate, spo
       }));
     }
   }, [selectedSponsorId, sponsorOptions]);
+
+  useEffect(() => {
+    if (selectedManualAssignLinkId) {
+      setManualAssignLinkId(selectedManualAssignLinkId);
+    }
+  }, [selectedManualAssignLinkId]);
 
   const linksWithSeats = useMemo<LinkWithSeats[]>(
     () =>
@@ -622,11 +646,41 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate, spo
         </div>
       </div>
 
-      {manualAssignLink ? (
-        <div className="mt-4 rounded-2xl border border-violet-400/25 bg-violet-500/12 px-4 py-3 text-sm text-violet-100">
-          Manual assign mode is active for <span className="font-semibold">{manualAssignLink.customer_name}</span>. Click available seats on the map to assign up to {manualAssignLink.ticket_count} seats.
-        </div>
-      ) : null}
+      {manualAssignLink ? (() => {
+        const seatLabels = manualAssignLink.seatIds.map(formatReservedSeatLabel);
+        const neededSeats = compAssignmentContext?.quantity ?? manualAssignLink.ticket_count;
+        const selectedCount = manualAssignLink.seatIds.length;
+        const isExactCount = selectedCount === neededSeats;
+        return (
+          <div className="mt-4 rounded-2xl border border-violet-400/25 bg-violet-500/12 px-4 py-3 text-sm text-violet-100">
+            {compAssignmentContext ? (
+              <div className="space-y-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200">Assigning seats for:</p>
+                  <p className="mt-1 text-lg font-bold text-white">{compAssignmentContext.name}</p>
+                  <p className="text-sm text-violet-100">Comp Type: {compAssignmentContext.categoryLabel}</p>
+                  <p className="text-sm text-violet-100">Tickets: {neededSeats}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-slate-950/25 px-3 py-2">
+                  <p className="font-semibold text-white">Seats needed: {neededSeats}</p>
+                  <p className={isExactCount ? "font-semibold text-emerald-200" : "font-semibold text-amber-100"}>Selected seats: {selectedCount} of {neededSeats}</p>
+                  <p className="mt-1 text-xs text-violet-100">{seatLabels.length > 0 ? seatLabels.join(", ") : "Click available seats on the map."}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isExactCount}
+                  onClick={() => onCompAssignmentComplete?.(seatLabels)}
+                  className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Save Seats for This Comp
+                </button>
+              </div>
+            ) : (
+              <>Manual assign mode is active for <span className="font-semibold">{manualAssignLink.customer_name}</span>. Click available seats on the map to assign up to {manualAssignLink.ticket_count} seats.</>
+            )}
+          </div>
+        );
+      })() : null}
 
       {statusMessage ? <div className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{statusMessage}</div> : null}
       {errorMessage ? <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{errorMessage}</div> : null}
@@ -718,7 +772,7 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate, spo
         />
 
         <div className="grid gap-4">
-          <form onSubmit={(event) => void handleCreateLink(event)} className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+          {!compAssignmentContext ? (<form onSubmit={(event) => void handleCreateLink(event)} className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -861,6 +915,17 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate, spo
               </button>
             </div>
           </form>
+          ) : (
+            <div className="rounded-[1.5rem] border border-violet-400/25 bg-violet-500/10 p-4">
+              <h4 className="text-base font-semibold text-white">Assign Existing Comp Seats</h4>
+              <p className="mt-2 text-sm text-violet-100">Use the seat map to assign seats to the selected comp entry. The add-new-comp form is hidden so this does not create a new comp record.</p>
+              <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/30 px-3 py-2 text-sm text-violet-100">
+                <p><span className="font-semibold text-white">Name:</span> {compAssignmentContext.name}</p>
+                <p><span className="font-semibold text-white">Comp Type:</span> {compAssignmentContext.categoryLabel}</p>
+                <p><span className="font-semibold text-white">Tickets:</span> {compAssignmentContext.quantity}</p>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
             <h4 className="text-base font-semibold text-white">Unavailable Seats</h4>
@@ -1026,3 +1091,5 @@ export function ReservedSeatingPanel({ showId, showSlug, showName, showDate, spo
     </section>
   );
 }
+
+

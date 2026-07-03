@@ -6452,6 +6452,9 @@ export function ShowPage({
   const [sponsorTicketSeatRefreshKey, setSponsorTicketSeatRefreshKey] = useState(0);
   const [sponsorTicketStatusMessage, setSponsorTicketStatusMessage] = useState<string | null>(null);
   const [sponsorTicketErrorMessage, setSponsorTicketErrorMessage] = useState<string | null>(null);
+  const [editingCompEntryRowId, setEditingCompEntryRowId] = useState<string | null>(null);
+  const [editingCompEntryFormState, setEditingCompEntryFormState] = useState({ name: "", category: "guest", quantity: "1", notes: "" });
+  const [activeCompSeatAssignment, setActiveCompSeatAssignment] = useState<{ row: CompListReportRow; linkId: string } | null>(null);
   const [sponsorCompCustomAmounts, setSponsorCompCustomAmounts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -7812,7 +7815,7 @@ export function ShowPage({
   }
 
   function buildCompCategoryNotes(notes: string | null | undefined, category: CompListReportRow["category"]) {
-    const cleanedNotes = (notes ?? "").replace(/\s*\[Comp Type:\s*(sponsor|band|guest|other)\]\s*/gi, "").trim();
+    const cleanedNotes = (notes ?? "").replace(/\s*\[Comp Type:\s*(sponsor|band|guest|volunteer|media|staff|other)\]\s*/gi, "").trim();
     if (category === "sponsor") return cleanedNotes;
     const marker = `[Comp Type: ${category}]`;
     return cleanedNotes ? `${marker}\n${cleanedNotes}` : marker;
@@ -8169,7 +8172,7 @@ export function ShowPage({
     return () => { cancelled = true; };
   }, [isSponsorTicketPrinterOpen, show]);
   useEffect(() => {
-    if (!show || !isSponsorTicketPrinterOpen) {
+    if (!show || activeTicketWorkflowSection !== "sponsor-comp") {
       return;
     }
 
@@ -8209,7 +8212,7 @@ export function ShowPage({
     return () => {
       cancelled = true;
     };
-  }, [activeTicketWorkflowSection, isSponsorTicketPrinterOpen, show, sponsorTicketSeatRefreshKey]);
+  }, [activeTicketWorkflowSection, show, sponsorTicketSeatRefreshKey]);
 
   const sponsorTicketTemplateOptions = sponsorTicketTemplates.filter((template) => template.template_kind !== "general");
   const generalTicketTemplateOptions = sponsorTicketTemplates.filter((template) => template.template_kind === "general");
@@ -8344,10 +8347,188 @@ export function ShowPage({
     }, 100);
   }
 
+  function handleAssignSeatsForSelectedCompTicketScope() {
+    const selectedRows = getCompTicketPrintRows(selectedCompTicketPrintScope as CompTicketPrintScope);
+    if (selectedRows.length !== 1) {
+      setSponsorTicketErrorMessage("Choose one specific sponsor or comp entry before assigning seats.");
+      setSponsorTicketStatusMessage(null);
+      setIsSponsorTicketPrinterOpen(true);
+      return;
+    }
+    void handleChangeSeatsForCompRow(selectedRows[0]);
+  }
+
+  function startEditingCompEntry(row: CompListReportRow) {
+    setEditingCompEntryRowId(row.id);
+    setEditingCompEntryFormState({ name: row.name, category: row.category, quantity: String(row.quantity), notes: row.notes ?? "" });
+    setCompTicketErrorMessage(null);
+    setCompTicketStatusMessage(null);
+  }
+
+  function closeEditingCompEntry() {
+    setEditingCompEntryRowId(null);
+    setEditingCompEntryFormState({ name: "", category: "guest", quantity: "1", notes: "" });
+  }
+
+  async function handleChangeSeatsForCompRow(row: CompListReportRow) {
+    if (!show) return;
+    setSelectedCompTicketPrintScope(`row:${row.id}`);
+    if (row.id.startsWith("sponsor-")) setSponsorTicketSponsorId(row.id.replace("sponsor-", ""));
+    setSponsorTicketErrorMessage(null);
+
+    try {
+      const supabase = createClient();
+      let linkId: string | null = null;
+      if (row.id.startsWith("reserved-comp-")) {
+        const assignmentId = row.id.replace("reserved-comp-", "");
+        linkId = sponsorTicketReservedAssignments.find((assignment) => assignment.id === assignmentId)?.seating_link_id ?? null;
+      }
+
+      if (!linkId) {
+        const matchingLink = sponsorTicketReservedLinks.find((link) => {
+          const linkName = (link.customer_name ?? "").trim().toLowerCase();
+          const rowName = row.name.trim().toLowerCase();
+          return linkName === rowName && (link.is_complimentary || link.seat_category === "comp" || link.seat_category === "guest");
+        });
+        linkId = matchingLink?.id ?? null;
+      }
+
+      if (!linkId) {
+        const { data, error } = await supabase
+          .from("show_reserved_seating_links")
+          .insert({
+            show_id: show.id,
+            customer_name: row.name,
+            email: null,
+            ticket_count: Math.max(1, row.quantity),
+            selection_mode: "comp",
+            is_complimentary: true,
+            source_note: row.categoryLabel,
+            seat_category: row.category === "guest" ? "guest" : "comp",
+          })
+          .select("id")
+          .single();
+        if (error) throw error;
+        linkId = data?.id ?? null;
+      } else {
+        const { error } = await supabase
+          .from("show_reserved_seating_links")
+          .update({ ticket_count: Math.max(1, row.quantity), customer_name: row.name, source_note: row.categoryLabel, is_complimentary: true, seat_category: row.category === "guest" ? "guest" : "comp" })
+          .eq("id", linkId);
+        if (error) throw error;
+      }
+
+      if (!linkId) throw new Error("Unable to open reserved seats for this comp entry.");
+      setActiveCompSeatAssignment({ row, linkId });
+      setActiveTicketWorkflowSection("reserved-seating");
+      setIsReservedSeatingOpen(true);
+      setSponsorTicketStatusMessage(`Assigning seats for ${row.name}. Select exactly ${Math.max(1, row.quantity)} seat${Math.max(1, row.quantity) === 1 ? "" : "s"}.`);
+      setSponsorTicketSeatRefreshKey((currentValue) => currentValue + 1);
+      window.setTimeout(() => {
+        document.getElementById("reserved-seating-admin-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    } catch (error) {
+      setSponsorTicketErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  async function handleSaveCompEntry() {
+    if (!show || !editingCompEntryRowId) return;
+    const name = editingCompEntryFormState.name.trim();
+    const quantity = Number.parseInt(editingCompEntryFormState.quantity.trim(), 10);
+    const category = editingCompEntryFormState.category as CompListReportRow["category"];
+    if (!name) {
+      setCompTicketErrorMessage("Name is required.");
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      setCompTicketErrorMessage("Enter a valid quantity.");
+      return;
+    }
+    setActiveCompTicketActionId(`comp-entry-${editingCompEntryRowId}`);
+    setCompTicketErrorMessage(null);
+    try {
+      const supabase = createClient();
+      if (editingCompEntryRowId.startsWith("comp-")) {
+        const id = editingCompEntryRowId.replace("comp-", "");
+        const current = compTickets.find((item) => item.id === id);
+        const checkedInCount = clampCheckedInCount(current?.checked_in_count ?? 0, Math.max(1, quantity));
+        const { data, error } = await supabase
+          .from("show_comp_tickets")
+          .update({
+            guest_name: name,
+            ticket_count: Math.max(1, quantity),
+            ticket_type: "complimentary",
+            notes: normalizeOptionalField(buildCompCategoryNotes(editingCompEntryFormState.notes, category)),
+            checked_in: checkedInCount >= Math.max(1, quantity),
+            checked_in_count: checkedInCount,
+          })
+          .eq("id", id)
+          .eq("show_id", show.id)
+          .select("*")
+          .single();
+        if (error) throw error;
+        setCompTickets((currentItems) => sortShowCompTickets(currentItems.map((item) => item.id === id ? normalizeShowCompTicket(data as ShowCompTicket) : item)));
+      } else if (editingCompEntryRowId.startsWith("reserved-comp-")) {
+        const currentRow = buildCompListReportRows().find((row) => row.id === editingCompEntryRowId);
+        const originalName = currentRow?.name.trim().toLowerCase() ?? "";
+        const assignmentIds = sponsorTicketReservedAssignments
+          .filter((assignment) => (assignment.customer_name?.trim().toLowerCase() ?? "") === originalName)
+          .map((assignment) => assignment.id);
+        if (assignmentIds.length > 0) {
+          const nextSeatCategory = category === "guest" ? "guest" : "comp";
+          const { error } = await supabase
+            .from("show_reserved_seat_assignments")
+            .update({ customer_name: name, seat_category: nextSeatCategory })
+            .in("id", assignmentIds)
+            .eq("show_id", show.id);
+          if (error) throw error;
+          setSponsorTicketReservedAssignments((currentAssignments) => currentAssignments.map((assignment) => assignmentIds.includes(assignment.id) ? { ...assignment, customer_name: name, seat_category: nextSeatCategory } : assignment));
+        }
+      } else if (editingCompEntryRowId.startsWith("sponsor-")) {
+        const id = editingCompEntryRowId.replace("sponsor-", "");
+        const { error } = await supabase
+          .from("show_sponsors")
+          .update({ custom_note: normalizeOptionalField(name), comp_ticket_allowance: Math.max(0, quantity), recognition_notes: normalizeOptionalField(editingCompEntryFormState.notes) })
+          .eq("id", id)
+          .eq("show_id", show.id);
+        if (error) throw error;
+        setShowSponsors((currentSponsors) => currentSponsors.map((sponsor) => sponsor.id === id ? { ...sponsor, custom_note: normalizeOptionalField(name), comp_ticket_allowance: Math.max(0, quantity), recognition_notes: normalizeOptionalField(editingCompEntryFormState.notes) } : sponsor));
+      }
+      closeEditingCompEntry();
+      setCompTicketStatusMessage("Comp entry updated.");
+    } catch (error) {
+      setCompTicketErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCompTicketActionId(null);
+    }
+  }
+
+  async function handleDeleteCompEntry(row: CompListReportRow) {
+    if (row.id.startsWith("comp-")) {
+      const item = compTickets.find((ticket) => ticket.id === row.id.replace("comp-", ""));
+      if (item) await handleDeleteCompTicket(item);
+      return;
+    }
+    if (row.id.startsWith("sponsor-") && show) {
+      const id = row.id.replace("sponsor-", "");
+      setActiveCompTicketActionId(`delete-${row.id}`);
+      try {
+        const { error } = await createClient().from("show_sponsors").update({ comp_ticket_allowance: 0 }).eq("id", id).eq("show_id", show.id);
+        if (error) throw error;
+        setShowSponsors((currentSponsors) => currentSponsors.map((sponsor) => sponsor.id === id ? { ...sponsor, comp_ticket_allowance: 0 } : sponsor));
+        setCompTicketStatusMessage("Comp entry deleted.");
+      } catch (error) {
+        setCompTicketErrorMessage(getErrorMessage(error));
+      } finally {
+        setActiveCompTicketActionId(null);
+      }
+    }
+  }
   type CompListReportRow = {
     id: string;
     name: string;
-    category: "sponsor" | "band" | "guest" | "other";
+    category: "sponsor" | "band" | "guest" | "volunteer" | "media" | "staff" | "other";
     categoryLabel: string;
     quantity: number;
     reservedSeats: string;
@@ -8372,11 +8553,13 @@ export function ShowPage({
 
   function classifyCompTicket(item: ShowCompTicket): CompListReportRow["category"] {
     const text = `${item.guest_name} ${item.notes ?? ""} ${item.order_id ?? ""}`.toLowerCase();
-    const markerMatch = text.match(/\\[comp type:\\s*(sponsor|band|guest|other)\\]/);
-    if (markerMatch?.[1] === "band" || markerMatch?.[1] === "guest" || markerMatch?.[1] === "other") return markerMatch[1] as CompListReportRow["category"];
+    const markerMatch = text.match(/\\[comp type:\\s*(sponsor|band|guest|volunteer|media|staff|other)\\]/);
+    if (markerMatch?.[1] === "band" || markerMatch?.[1] === "guest" || markerMatch?.[1] === "volunteer" || markerMatch?.[1] === "media" || markerMatch?.[1] === "staff" || markerMatch?.[1] === "other") return markerMatch[1] as CompListReportRow["category"];
     if (text.includes("band")) return "band";
     if (text.includes("guest")) return "guest";
-    if (text.includes("volunteer") || text.includes("media") || text.includes("press")) return "other";
+    if (text.includes("volunteer")) return "volunteer";
+    if (text.includes("media") || text.includes("press")) return "media";
+    if (text.includes("staff")) return "staff";
     return normalizeGuestListTicketType(item.ticket_type) === "manual" ? "other" : "guest";
   }
 
@@ -8384,7 +8567,10 @@ export function ShowPage({
     if (category === "sponsor") return "Sponsor Comp";
     if (category === "band") return "Band Comp";
     if (category === "guest") return "Guest Comp";
-    return "Volunteer / Media / Other Comp";
+    if (category === "volunteer") return "Volunteer Comp";
+    if (category === "media") return "Media Comp";
+    if (category === "staff") return "Staff Comp";
+    return "Other Comp";
   }
 
   function buildCompListReportRows() {
@@ -8531,6 +8717,7 @@ export function ShowPage({
         ticketNumber: `${index + 1} of ${count}`,
         totalForReservation: count,
         templateUrl: templateUrl!,
+        isSponsorTicket: row.category === "sponsor",
       }));
     });
     const ticketSheets = Array.from({ length: Math.ceil(tickets.length / 4) }, (_, sheetIndex) => tickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
@@ -8556,8 +8743,16 @@ export function ShowPage({
       .seat-main { left: 1.58in; top: 4.09in; width: 5.5in; font-size: .18in; }
       .stub-count { left: 8.88in; top: 2.34in; width: 1.58in; height: .42in; display: flex; align-items: center; justify-content: center; text-align: center; color: #17120e; font-size: .34in; font-weight: 900; letter-spacing: 0; line-height: 1; white-space: nowrap; overflow: visible; text-overflow: clip; }
       .stub-seat { left: 8.72in; top: 3.39in; width: 1.87in; text-align: center; color: #2d2721; font-size: .3in; font-weight: 900; }
+      .general-ticket .sponsor,
+      .general-ticket .event,
+      .general-ticket .date,
+      .general-ticket .doors-main,
+      .general-ticket .time,
+      .general-ticket .count,
+      .general-ticket .seat-main { transform: translateY(.045in); }
+      .general-ticket .stub-seat { transform: translateY(.035in); }
       @media print { body { background: #fff; } .ticket-sheet { break-after: page; } .ticket-sheet:last-child { break-after: auto; } }
-    </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page"><img src="${ticket.templateUrl}" alt="" />
+    </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page ${ticket.isSponsorTicket ? "" : "general-ticket"}"><img src="${ticket.templateUrl}" alt="" />
       <div class="field sponsor">${escapeHtml(ticket.name)}</div>
       <div class="field event">${escapeHtml(show.name)}</div>
       <div class="field date">${escapeHtml(showDate)}</div>
@@ -20501,7 +20696,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               })}
             </div>
 
-            {activeTicketWorkflowSection ? (
+            {activeTicketWorkflowSection && activeTicketWorkflowSection !== "sponsor-comp" ? (
               <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
                 {activeTicketWorkflowSection === "ticket-sales" ? (
                   <div className="grid gap-4">
@@ -20602,37 +20797,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   </div>
                 ) : null}
 
-                {activeTicketWorkflowSection === "sponsor-comp" ? (
-                  <div className="grid gap-4">
-                    <div>
-                      <h3 className="text-base font-semibold text-stone-900">Sponsor &amp; Comp Tickets</h3>
-                      <p className="text-sm text-stone-600">Use sponsor-specific tools here instead of mixing comps into the main ticket flow.</p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Sponsor Comps Included</p>
-                        <p className="mt-2 text-2xl font-semibold text-stone-900">{sponsorCompTicketsAllowed}</p>
-                      </div>
-                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Sponsor Comps Checked In</p>
-                        <p className="mt-2 text-2xl font-semibold text-stone-900">{sponsorCompTicketsCheckedIn}</p>
-                      </div>
-                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Sponsor Comps Remaining</p>
-                        <p className="mt-2 text-2xl font-semibold text-stone-900">{sponsorCompTicketsRemaining}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => setIsSponsorCompTicketsOpen((currentValue) => !currentValue)}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        {isSponsorCompTicketsOpen ? "Hide Sponsor & Comp Tickets" : "Sponsor & Comp Tickets"}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
 
                 {activeTicketWorkflowSection === "reports" ? (
                   <div className="grid gap-4">
@@ -20730,7 +20894,28 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     compTicketAllowance: sponsor.comp_ticket_allowance,
                   }))}
                   selectedSponsorId={sponsorTicketSponsorId}
-                  onAssignmentsChange={() => setSponsorTicketSeatRefreshKey((currentValue) => currentValue + 1)}
+                  selectedManualAssignLinkId={activeCompSeatAssignment?.linkId ?? null}
+                  compAssignmentContext={activeCompSeatAssignment ? {
+                    name: activeCompSeatAssignment.row.name,
+                    categoryLabel: activeCompSeatAssignment.row.categoryLabel,
+                    quantity: Math.max(1, activeCompSeatAssignment.row.quantity),
+                  } : null}
+                  onCompAssignmentComplete={(seatLabels) => {
+                    const compName = activeCompSeatAssignment?.row.name ?? "this comp";
+                    setSponsorTicketSeatRefreshKey((currentValue) => currentValue + 1);
+                    setActiveTicketWorkflowSection("sponsor-comp");
+                    setIsSponsorTicketPrinterOpen(true);
+                    setSponsorTicketStatusMessage(`Seats saved for ${compName}: ${seatLabels.join(", ")}`);
+                    setActiveCompSeatAssignment(null);
+                  }}
+                  onAssignmentsChange={() => {
+                    setSponsorTicketSeatRefreshKey((currentValue) => currentValue + 1);
+                    if (!activeCompSeatAssignment) {
+                      setActiveTicketWorkflowSection("sponsor-comp");
+                      setIsSponsorTicketPrinterOpen(true);
+                      setSponsorTicketStatusMessage("Seats assigned successfully. Return to Ticket Printing to review the selected seats.");
+                    }
+                  }}
                 />
               </div>
             ) : null}
@@ -21036,6 +21221,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             ) : null}
 
             {activeTicketWorkflowSection === "sponsor-comp" ? (
+            <>
             <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -21044,13 +21230,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     Track sponsor comp check-ins separately from paid online and door tickets.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsSponsorCompTicketsOpen((currentValue) => !currentValue)}
-                  className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                >
-                  {isSponsorCompTicketsOpen ? "Hide Sponsor & Comp Tickets" : "Show Sponsor & Comp Tickets"}
-                </button>
               </div>
 
 
@@ -21082,12 +21261,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           <h4 className="text-sm font-black uppercase tracking-[0.14em] text-stone-900">All Sponsor & Comp Entries</h4>
                           <p className="mt-1 text-sm text-stone-600">Sponsor, guest, band, volunteer, media, other comps, and comp reserved seats assigned in Reserved Seating.</p>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => openSponsorCompListPrintWindow("print")} className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700 transition hover:bg-stone-100">Print Comp List</button>
-                          <button type="button" onClick={() => openCompTicketPrintWindow("sponsor")} className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100">Print Sponsor Tickets</button>
-                          <button type="button" onClick={() => openCompTicketPrintWindow("non_sponsor")} className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-900 transition hover:bg-sky-100">Print Non-Sponsor Comps</button>
-                          <button type="button" onClick={() => openCompTicketPrintWindow("all")} className="rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-stone-700">Print All Comp Tickets</button>
-                        </div>
                       </div>
 
                       {compRows.length === 0 ? (
@@ -21096,7 +21269,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         <div className="mt-4 overflow-x-auto rounded-xl border border-stone-200">
                           <table className="min-w-full divide-y divide-stone-200 text-sm">
                             <thead className="bg-stone-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-stone-500">
-                              <tr><th className="px-3 py-2">Name / Sponsor</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Qty</th><th className="px-3 py-2">Reserved Seat(s)</th><th className="px-3 py-2">Checked In</th><th className="px-3 py-2">Notes</th></tr>
+                              <tr><th className="px-3 py-2">Name / Sponsor</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Qty</th><th className="px-3 py-2">Reserved Seat(s)</th><th className="px-3 py-2">Checked In</th><th className="px-3 py-2">Notes</th><th className="px-3 py-2">Actions</th></tr>
                             </thead>
                             <tbody className="divide-y divide-stone-100 bg-white">
                               {compRows.map((row) => (
@@ -21107,6 +21280,13 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   <td className="px-3 py-2 text-stone-700">{row.reservedSeats || "-"}</td>
                                   <td className="px-3 py-2 text-stone-700">{row.checkedIn} of {row.quantity}</td>
                                   <td className="px-3 py-2 text-stone-600">{row.notes || "-"}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex flex-wrap gap-1.5">
+                                      <button type="button" onClick={() => startEditingCompEntry(row)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Edit</button>
+                                      <button type="button" onClick={() => void handleChangeSeatsForCompRow(row)} className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-50">Seats</button>
+                                      <button type="button" onClick={() => openCompTicketPrintWindow(`row:${row.id}` as CompTicketPrintScope)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Print</button>
+                                    </div>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -21126,13 +21306,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={handleAssignReservedSeatsFromSponsorTickets}
-                      className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
-                    >
-                      Assign Reserved Seats
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => setIsSponsorTicketPrinterOpen((currentValue) => !currentValue)}
                       className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
                     >
@@ -21145,9 +21318,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   const selectedSponsor = sponsorsWithCompTickets.find((sponsor) => sponsor.id === sponsorTicketSponsorId) ?? null;
                   const seatOptions = selectedSponsor ? getSponsorReservedSeatOptions(selectedSponsor) : [];
                   const compPrintRows = buildCompListReportRows();
+                  const selectedPrintRows = getCompTicketPrintRows(selectedCompTicketPrintScope as CompTicketPrintScope);
+                  const selectedPrintTicketCount = selectedPrintRows.reduce((sum, row) => sum + row.quantity, 0);
+                  const selectedSpecificPrintRow = selectedCompTicketPrintScope.startsWith("row:") && selectedPrintRows.length === 1 ? selectedPrintRows[0] : null;
+                  const selectedAssignedSeatLabels = Array.from(new Set(selectedPrintRows.flatMap((row) => row.reservedSeats ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean) : [])));
+                  const hasSelectedAssignedSeats = selectedAssignedSeatLabels.length > 0;
                   return (
-                    <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
-                      <div className="grid gap-4 rounded-2xl border border-amber-200 bg-white p-4">
+                    <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                      <div className="grid content-start gap-3 rounded-2xl border border-amber-200 bg-white p-4">
                         <div className="grid gap-3">
                           <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
                             Sponsor Comp Ticket Template
@@ -21174,7 +21352,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             Upload Sponsor Template
                             <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => void handleSponsorTicketTemplateChange(event, "sponsor")} disabled={isUploadingSponsorTicketTemplate} className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60" />
                           </label>
-                          {activeSponsorTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeSponsorTicketTemplateUrl} alt="Sponsor ticket template preview" className="h-auto w-full" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the Sponsor Comp ticket template.</p>}
+                          {activeSponsorTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeSponsorTicketTemplateUrl} alt="Sponsor ticket template preview" className="max-h-[120px] w-full object-contain" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the Sponsor Comp ticket template.</p>}
                         </div>
 
                         <div className="grid gap-3 border-t border-stone-200 pt-4">
@@ -21203,7 +21381,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             Upload General Comp Template
                             <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => void handleSponsorTicketTemplateChange(event, "general")} disabled={isUploadingSponsorTicketTemplate} className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60" />
                           </label>
-                          {activeGeneralTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeGeneralTicketTemplateUrl} alt="General comp ticket template preview" className="h-auto w-full" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the General Comp ticket template for guest, band, volunteer, media, and other comps.</p>}
+                          {activeGeneralTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeGeneralTicketTemplateUrl} alt="General comp ticket template preview" className="max-h-[120px] w-full object-contain" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the General Comp ticket template for guest, band, volunteer, media, and other comps.</p>}
                         </div>
 
                         {selectedSponsorTicketTemplate || selectedGeneralTicketTemplate ? (
@@ -21212,93 +21390,51 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           </button>
                         ) : null}
                       </div>
-                      <div className="grid gap-3 rounded-2xl border border-amber-200 bg-white p-4">
+                      <div className="grid content-start gap-3 rounded-2xl border border-amber-200 bg-white p-4">
                         <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                          Ticket Group to Print
+                          Ticket / Comp Entry to Print
                           <select
                             value={selectedCompTicketPrintScope}
                             onChange={(event) => setSelectedCompTicketPrintScope(event.target.value)}
                             className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
                           >
                             <option value="all">All comp tickets</option>
-                            <option value="sponsor">Sponsor Comp</option>
-                            <option value="category:guest">Guest Comp</option>
-                            <option value="category:band">Band Comp</option>
-                            <option value="category:other">Volunteer / Media / Other Comp</option>
+                            <option value="sponsor">Sponsor comps only</option>
+                            <option value="non_sponsor">General comps only</option>
                             {compPrintRows.map((row) => (
                               <option key={row.id} value={`row:${row.id}`}>{row.name} - {row.categoryLabel} - {row.quantity} ticket{row.quantity === 1 ? "" : "s"}</option>
                             ))}
                           </select>
                         </label>
 
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope)} className="rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-stone-700">Print Selected Group</button>
-                          <button type="button" onClick={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope, "pdf")} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-bold text-stone-700 transition hover:bg-stone-100">Export Selected PDF</button>
-                        </div>
 
-                        <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                          Sponsor
-                          <select
-                            value={sponsorTicketSponsorId}
-                            onChange={(event) => {
-                              setSponsorTicketSponsorId(event.target.value);
-                              setSelectedSponsorTicketSeatIds([]);
-                              setSponsorTicketStatusMessage(null);
-                              setSponsorTicketErrorMessage(null);
-                            }}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
-                          >
-                            <option value="">Choose sponsor</option>
-                            {sponsorsWithCompTickets.map((sponsor) => (
-                              <option key={sponsor.id} value={sponsor.id}>{getSponsorTicketSponsorName(sponsor)} ({sponsor.comp_ticket_allowance})</option>
-                            ))}
-                          </select>
-                        </label>
-
-                        {selectedSponsor ? (
-                          <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-sm font-bold text-stone-900">Reserved Comp Seats</p>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedSponsorTicketSeatIds(seatOptions.map((seat) => seat.seatId))}
-                                disabled={seatOptions.length === 0}
-                                className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                Select All
-                              </button>
-                            </div>
-                            {seatOptions.length === 0 ? (
-                              <div className="mt-3 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3 py-3">
-                                <p className="text-sm font-semibold text-amber-900">No reserved comp seats have been assigned to this sponsor yet. Assign seats before printing sponsor tickets.</p>
-                                <button
-                                  type="button"
-                                  onClick={handleAssignReservedSeatsFromSponsorTickets}
-                                  className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
-                                >
-                                  Assign Reserved Seats
-                                </button>
+                        <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                          <p className="text-sm font-bold text-stone-900">Reserved Seats</p>
+                          {selectedSpecificPrintRow ? (
+                            hasSelectedAssignedSeats ? (
+                              <div className="mt-2 grid gap-2">
+                                <p className="text-sm font-semibold text-emerald-800">Seats assigned</p>
+                                <p className="text-sm text-stone-700">{selectedAssignedSeatLabels.join(", ")}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  <button type="button" onClick={() => setSelectedSponsorTicketSeatIds(sortReservedSeatIds(selectedAssignedSeatLabels))} className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Use Assigned Seats</button>
+                                  <button type="button" onClick={handleAssignSeatsForSelectedCompTicketScope} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100">Assign / Change Seats</button>
+                                </div>
                               </div>
                             ) : (
-                              <div className="mt-3 grid max-h-44 gap-2 overflow-y-auto sm:grid-cols-2">
-                                {seatOptions.map((seat) => (
-                                  <label key={seat.seatId} className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedSponsorTicketSeatIds.includes(seat.seatId)}
-                                      onChange={() => toggleSponsorTicketSeat(seat.seatId)}
-                                      className="h-4 w-4 rounded border-stone-300 text-emerald-700"
-                                    />
-                                    {seat.label}
-                                  </label>
-                                ))}
+                              <div className="mt-2 grid gap-2">
+                                <p className="text-sm font-semibold text-amber-900">No seats assigned</p>
+                                <button type="button" onClick={handleAssignSeatsForSelectedCompTicketScope} className="w-fit rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100">Assign / Change Seats</button>
                               </div>
-                            )}
-                          </div>
-                        ) : null}
+                            )
+                          ) : (
+                            <p className="mt-2 text-sm font-semibold text-stone-600">Select one specific comp entry to assign seats.</p>
+                          )}
+                        </div>
 
                         <div className="rounded-xl bg-stone-50 px-3 py-3 text-sm text-stone-700">
-                          <p><span className="font-semibold">Tickets ready:</span> {selectedSponsorTicketSeatIds.length}</p>
+                          <p><span className="font-semibold">Tickets ready:</span> {selectedPrintTicketCount}</p>
+                          <p><span className="font-semibold">Seats:</span> {hasSelectedAssignedSeats ? "assigned" : "not assigned"}</p>
+                          <p><span className="font-semibold">Selected seats:</span> {hasSelectedAssignedSeats ? selectedAssignedSeatLabels.join(", ") : "None"}</p>
                           <p><span className="font-semibold">Show:</span> {show?.name ?? "Show"}</p>
                           <p><span className="font-semibold">Date:</span> {formatShowDate(show?.show_date ?? null)}</p>
                         </div>
@@ -21306,14 +21442,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            onClick={() => openSponsorTicketPrintWindow("print")}
+                            onClick={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope)}
                             className="rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-amber-800"
                           >
                             Print Tickets
                           </button>
                           <button
                             type="button"
-                            onClick={() => openSponsorTicketPrintWindow("pdf")}
+                            onClick={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope, "pdf")}
                             className="rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm font-bold text-amber-900 transition hover:bg-amber-100"
                           >
                             Export / Save PDF
@@ -21327,109 +21463,59 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   );
                 })() : null}
               </div>
-              {isSponsorCompTicketsOpen ? (
-                sponsorsWithCompTickets.length === 0 ? (
-                  <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                    No sponsor comp tickets have been assigned for this show.
-                  </div>
-                ) : (
-                  <div className="mt-4 grid gap-3">
-                    {sponsorsWithCompTickets.map((sponsor) => {
-                      const remainingComps = sponsor.comp_ticket_allowance - sponsor.comp_tickets_checked_in;
-                      const customAmountValue = sponsorCompCustomAmounts[sponsor.id] ?? "";
-
-                      return (
-                        <article
-                          key={`sponsor-comp-${sponsor.id}`}
-                          className="rounded-2xl border border-stone-200 bg-stone-50 p-4"
-                        >
-                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="flex gap-3">
-                              <SponsorLogoThumbnail
-                                logoUrl={sponsor.sponsor?.logo_url}
-                                sponsorName={sponsor.sponsor?.name ?? "Assigned sponsor"}
-                                className="h-12 w-12"
-                              />
-                              <div className="min-w-0 space-y-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <h4 className="text-base font-semibold text-stone-900">
-                                    {sponsor.sponsor?.name ?? "Assigned sponsor"}
-                                  </h4>
-                                  <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700">
-                                    Allowed {sponsor.comp_ticket_allowance}
-                                  </span>
-                                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
-                                    Checked In {sponsor.comp_tickets_checked_in}
-                                  </span>
-                                  <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-800">
-                                    {remainingComps >= 0 ? `Remaining ${remainingComps}` : `Over ${Math.abs(remainingComps)}`}
-                                  </span>
-                                </div>
-                                {sponsor.recognition_notes?.trim() ? (
-                                  <p className="text-sm text-stone-600">{sponsor.recognition_notes}</p>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div className="grid gap-3 lg:min-w-[22rem]">
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, 1, { source: "single" })}
-                                  disabled={activeSponsorActionId === `sponsor-comp-${sponsor.id}`}
-                                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400"
-                                >
-                                  Check In 1
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, -1, { source: "single" })}
-                                  disabled={
-                                    activeSponsorActionId === `sponsor-comp-${sponsor.id}` ||
-                                    sponsor.comp_tickets_checked_in <= 0
-                                  }
-                                  className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  Undo 1
-                                </button>
-                              </div>
-
-                              <div className="flex flex-col gap-2 sm:flex-row">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  value={customAmountValue}
-                                  onChange={(event) =>
-                                    setSponsorCompCustomAmounts((currentAmounts) => ({
-                                      ...currentAmounts,
-                                      [sponsor.id]: event.target.value,
-                                    }))
-                                  }
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600 sm:max-w-[8rem]"
-                                  placeholder="Custom #"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => void handleCheckInCustomSponsorCompAmount(sponsor)}
-                                  disabled={activeSponsorActionId === `sponsor-comp-${sponsor.id}`}
-                                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  Check In Custom Amount
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                )
-              ) : null}
             </div>
+            {editingCompEntryRowId ? (() => {
+              const editingRow = buildCompListReportRows().find((row) => row.id === editingCompEntryRowId) ?? null;
+              return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                  <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-xl">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-stone-900">Edit Comp Entry</h3>
+                        <p className="mt-1 text-sm text-stone-600">Update this existing comp entry.</p>
+                      </div>
+                      <button type="button" onClick={closeEditingCompEntry} className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-semibold text-stone-700">Close</button>
+                    </div>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">Name
+                        <input value={editingCompEntryFormState.name} onChange={(event) => setEditingCompEntryFormState((state) => ({ ...state, name: event.target.value }))} className="rounded-xl border border-stone-300 px-3 py-2.5 text-sm text-stone-900" />
+                      </label>
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">Comp Type
+                        <select value={editingCompEntryFormState.category} onChange={(event) => setEditingCompEntryFormState((state) => ({ ...state, category: event.target.value }))} className="rounded-xl border border-stone-300 px-3 py-2.5 text-sm text-stone-900">
+                          <option value="sponsor">Sponsor Comp</option>
+                          <option value="guest">Guest Comp</option>
+                          <option value="band">Band Comp</option>
+                          <option value="volunteer">Volunteer Comp</option>
+                          <option value="media">Media Comp</option>
+                          <option value="staff">Staff Comp</option>
+                          <option value="other">Other Comp</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">Quantity
+                        <input type="number" min="0" value={editingCompEntryFormState.quantity} onChange={(event) => setEditingCompEntryFormState((state) => ({ ...state, quantity: event.target.value }))} className="rounded-xl border border-stone-300 px-3 py-2.5 text-sm text-stone-900" />
+                      </label>
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
+                        <span className="font-semibold">Reserved seats:</span> {editingRow?.reservedSeats || "None assigned"}
+                      </div>
+                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:col-span-2">Notes
+                        <textarea value={editingCompEntryFormState.notes} onChange={(event) => setEditingCompEntryFormState((state) => ({ ...state, notes: event.target.value }))} className="min-h-24 rounded-xl border border-stone-300 px-3 py-2.5 text-sm text-stone-900" />
+                      </label>
+                    </div>
+                    <div className="mt-4 flex flex-wrap justify-between gap-2">
+                      <button type="button" onClick={() => editingRow ? handleChangeSeatsForCompRow(editingRow) : undefined} className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900">Change Seats</button>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={closeEditingCompEntry} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700">Cancel</button>
+                        <button type="button" onClick={() => void handleSaveCompEntry()} disabled={activeCompTicketActionId === `comp-entry-${editingCompEntryRowId}`} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Save</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })() : null}
+            </>
             ) : null}
 
-            {compTickets.length === 0 ? (
+            {activeTicketWorkflowSection === "ticket-sales" ? (compTickets.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
                 No tickets or check-in entries have been added for this show yet.
               </div>
@@ -21681,7 +21767,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   </article>
                 ))}
               </div>
-            )}
+            )) : null}
           </section>
         ) : null}
 
@@ -27760,3 +27846,22 @@ async function syncReservedSeatingLinksForImportedOrders(
 
   return { createdCount, updatedCount, warnings };
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
