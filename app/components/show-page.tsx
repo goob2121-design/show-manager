@@ -28,8 +28,15 @@ import {
   PromoMaterialsView,
 } from "@/app/components/promo-materials-view";
 import { formatPromoLinkType } from "@/app/components/promo-links-view";
-import { AdminBackButton } from "@/app/components/admin-back-button";
 import { ReservedSeatingPanel } from "@/app/components/reserved-seating-panel";
+import {
+  createTicketPrintBuilders,
+  type CompAdmissionType,
+  type CompListReportRow,
+  type CompTicketPrintScope,
+} from "@/app/components/tickets/ticket-print-builders";
+import { TicketPrintingPanel } from "@/app/components/tickets/ticket-printing-panel";
+import { TicketsCheckInPanel } from "@/app/components/tickets/tickets-check-in-panel";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "@/app/available-seats/path";
 import {
@@ -8581,124 +8588,35 @@ export function ShowPage({
       }
     }
   }
-  type CompListReportRow = {
-    id: string;
-    name: string;
-    category: "sponsor" | "band" | "guest" | "volunteer" | "media" | "staff" | "other";
-    categoryLabel: string;
-    admissionType: CompAdmissionType;
-    quantity: number;
-    reservedSeats: string;
-    checkedIn: number;
-    notes: string;
-  };
-
-  function getCompListReservedSeatsForName(name: string) {
-    const normalizedName = name.trim().toLowerCase();
-    if (!normalizedName) return "";
-    const matchedLinks = sponsorTicketReservedLinks.filter((link) => {
-      const customerName = link.customer_name.trim().toLowerCase();
-      return customerName.includes(normalizedName) || normalizedName.includes(customerName);
-    });
-    const matchedLinkIds = new Set(matchedLinks.map((link) => link.id));
-    const matchedSeatIds = sponsorTicketReservedAssignments.filter((assignment) => {
-      const assignmentName = assignment.customer_name?.trim().toLowerCase() ?? "";
-      return assignment.seating_link_id ? matchedLinkIds.has(assignment.seating_link_id) : assignmentName.includes(normalizedName) || normalizedName.includes(assignmentName);
-    }).map((assignment) => assignment.seat_id);
-    return sortReservedSeatIds(matchedSeatIds).map((seatId) => formatReservedSeatLabel(seatId)).join(", ");
-  }
-
-  function parseCompCategoryFromText(text: string): CompListReportRow["category"] | null {
-    const normalizedText = text.toLowerCase();
-    const markerMatch = normalizedText.match(/\[comp type:\s*(sponsor|band|guest|volunteer|media|staff|other)\]/);
-    if (markerMatch?.[1] === "sponsor" || markerMatch?.[1] === "band" || markerMatch?.[1] === "guest" || markerMatch?.[1] === "volunteer" || markerMatch?.[1] === "media" || markerMatch?.[1] === "staff" || markerMatch?.[1] === "other") {
-      return markerMatch[1] as CompListReportRow["category"];
-    }
-    if (normalizedText.includes("sponsor")) return "sponsor";
-    if (normalizedText.includes("band")) return "band";
-    if (normalizedText.includes("guest")) return "guest";
-    if (normalizedText.includes("volunteer")) return "volunteer";
-    if (normalizedText.includes("media") || normalizedText.includes("press")) return "media";
-    if (normalizedText.includes("staff")) return "staff";
-    return null;
-  }
-
-  function parseCompAdmissionTypeFromText(text: string): CompAdmissionType {
-    const normalizedText = text.toLowerCase();
-    const markerMatch = normalizedText.match(/\[admission type:\s*(reserved|general_admission)\]/);
-    return markerMatch?.[1] === "general_admission" ? "general_admission" : "reserved";
-  }
-
-  function classifyCompTicket(item: ShowCompTicket): CompListReportRow["category"] {
-    const parsedCategory = parseCompCategoryFromText(`${item.guest_name} ${item.notes ?? ""} ${item.order_id ?? ""}`);
-    if (parsedCategory && parsedCategory !== "sponsor") return parsedCategory;
-    return normalizeGuestListTicketType(item.ticket_type) === "manual" ? "other" : "guest";
-  }
-
-  function getCompListCategoryLabel(category: CompListReportRow["category"]) {
-    if (category === "sponsor") return "Sponsor Comp";
-    if (category === "band") return "Band Comp";
-    if (category === "guest") return "Guest Comp";
-    if (category === "volunteer") return "Volunteer Comp";
-    if (category === "media") return "Media Comp";
-    if (category === "staff") return "Staff Comp";
-    return "Other Comp";
-  }
-
-  function getCompAdmissionTypeLabel(admissionType: CompAdmissionType) {
-    return admissionType === "general_admission" ? "General Admission" : "Reserved Seating";
-  }
-
-  function buildCompListReportRows() {
-    const sponsorRows: CompListReportRow[] = sponsorsWithCompTickets.map((sponsor) => {
-      const name = getSponsorTicketSponsorName(sponsor);
-      return { id: `sponsor-${sponsor.id}`, name, category: "sponsor", categoryLabel: "Sponsor Comp", quantity: Math.max(0, sponsor.comp_ticket_allowance ?? 0), reservedSeats: getCompListReservedSeatsForName(name), checkedIn: Math.max(0, sponsor.comp_tickets_checked_in ?? 0), notes: stripCompMetadataFromNotes(sponsor.recognition_notes), admissionType: parseCompAdmissionTypeFromText(sponsor.recognition_notes ?? "") };
-    });
-    const compRows: CompListReportRow[] = compTickets.filter((item) => {
-      const ticketType = normalizeGuestListTicketType(item.ticket_type);
-      return ticketType !== "paid_online" && ticketType !== "door_paid";
-    }).map((item) => {
-      const category = classifyCompTicket(item);
-      return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompListReservedSeatsForName(item.guest_name), checkedIn: item.checked_in_count, notes: stripCompMetadataFromNotes(item.notes), admissionType: parseCompAdmissionTypeFromText(item.notes ?? "") };
-    });
-    const existingKeys = new Set([...sponsorRows, ...compRows].map((row) => row.name.trim().toLowerCase()).filter(Boolean));
-    const reservedOnlyRowsByName = new Map<string, CompListReportRow>();
-    sponsorTicketReservedAssignments.forEach((assignment) => {
-      const name = assignment.customer_name?.trim() || "Reserved Comp Guest";
-      const key = name.toLowerCase();
-      if (!key || existingKeys.has(key)) return;
-      const linkedSourceNote = assignment.seating_link_id ? sponsorTicketReservedLinks.find((link) => link.id === assignment.seating_link_id)?.source_note ?? "" : "";
-      const category: CompListReportRow["category"] = parseCompCategoryFromText(linkedSourceNote) ?? (assignment.seat_category === "guest" ? "guest" : "other");
-      const current = reservedOnlyRowsByName.get(key);
-      const seatLabel = formatReservedSeatLabel(assignment.seat_id);
-      if (current) {
-        current.quantity += 1;
-        current.reservedSeats = current.reservedSeats ? `${current.reservedSeats}, ${seatLabel}` : seatLabel;
-      } else {
-        reservedOnlyRowsByName.set(key, { id: `reserved-comp-${assignment.id}`, name, category, categoryLabel: getCompListCategoryLabel(category), admissionType: parseCompAdmissionTypeFromText(linkedSourceNote), quantity: 1, reservedSeats: seatLabel, checkedIn: 0, notes: stripCompMetadataFromNotes(linkedSourceNote) || "Reserved seating comp" });
-      }
-    });
-    return [...sponsorRows, ...compRows, ...reservedOnlyRowsByName.values()];
-  }
-
-  function buildSponsorCompListPrintHtml({ printMode }: { printMode: "print" | "pdf" }) {
-    const rows = buildCompListReportRows();
-    const groupedRows = [
-      { title: "Sponsor Comps", rows: rows.filter((row) => row.category === "sponsor") },
-      { title: "Band Comps", rows: rows.filter((row) => row.category === "band") },
-      { title: "Guest Comps", rows: rows.filter((row) => row.category === "guest") },
-      { title: "Volunteer / Media / Other Comps", rows: rows.filter((row) => row.category === "other") },
-    ];
-    const totalSponsorComps = groupedRows[0].rows.reduce((sum, row) => sum + row.quantity, 0);
-    const totalBandComps = groupedRows[1].rows.reduce((sum, row) => sum + row.quantity, 0);
-    const totalGuestOtherComps = [...groupedRows[2].rows, ...groupedRows[3].rows].reduce((sum, row) => sum + row.quantity, 0);
-    const totalComplimentaryTickets = rows.reduce((sum, row) => sum + row.quantity, 0);
-    const totalCheckedIn = rows.reduce((sum, row) => sum + row.checkedIn, 0);
-    const generatedAt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date());
-    const groupMarkup = groupedRows.map((group) => `<section class="group"><h2>${escapeHtml(group.title)}</h2>${group.rows.length === 0 ? '<p class="empty">No entries in this category.</p>' : `<table><thead><tr><th>Name / Sponsor</th><th>Comp Type</th><th>Qty</th><th>Reserved Seat(s)</th><th>Checked In</th><th>Notes</th></tr></thead><tbody>${group.rows.map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.categoryLabel)}</td><td class="number">${escapeHtml(String(row.quantity))}</td><td>${escapeHtml(row.reservedSeats || "-")}</td><td>${escapeHtml(`${row.checkedIn} of ${row.quantity}`)}</td><td>${escapeHtml(row.notes || "-")}</td></tr>`).join("")}</tbody></table>`}</section>`).join("");
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(show?.name ?? "Show")} Sponsor & Comp Ticket List</title><style>@page{size:letter portrait;margin:.45in}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#1c1917;background:#fff}h1{margin:0;font-size:24px}h2{margin:24px 0 8px;font-size:16px;border-bottom:2px solid #d6d3d1;padding-bottom:5px}.meta{margin-top:6px;color:#57534e;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11px}th{text-align:left;background:#f5f5f4;color:#44403c;border:1px solid #d6d3d1;padding:6px}td{border:1px solid #e7e5e4;padding:6px;vertical-align:top}.number{text-align:right;font-weight:700}.empty{margin:0;border:1px dashed #d6d3d1;padding:10px;color:#78716c;font-size:12px}.totals{margin-top:24px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px;break-inside:avoid}.total-card{border:1px solid #d6d3d1;background:#fafaf9;padding:10px}.total-label{color:#57534e;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.total-value{margin-top:4px;font-size:20px;font-weight:800}@media print{.group{break-inside:avoid}}</style></head><body><header><h1>Sponsor & Comp Ticket List</h1><p class="meta">${escapeHtml(show?.name ?? "Show")} - ${escapeHtml(formatShowDate(show?.show_date ?? null))} - Generated ${escapeHtml(generatedAt)}</p></header>${groupMarkup}<section class="totals"><div class="total-card"><div class="total-label">Sponsor Comps</div><div class="total-value">${totalSponsorComps}</div></div><div class="total-card"><div class="total-label">Band Comps</div><div class="total-value">${totalBandComps}</div></div><div class="total-card"><div class="total-label">Guest / Other</div><div class="total-value">${totalGuestOtherComps}</div></div><div class="total-card"><div class="total-label">Total Comps</div><div class="total-value">${totalComplimentaryTickets}</div></div><div class="total-card"><div class="total-label">Checked In</div><div class="total-value">${totalCheckedIn}</div></div></section><script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
-  }
-
+  const {
+    buildCompListReportRows,
+    buildSponsorCompListPrintHtml,
+    buildSponsorTicketPrintHtml,
+    buildCompTicketPrintHtml,
+    buildGeneralAdmissionTicketPrintHtml,
+    getCompTicketPrintRows,
+    getCompAdmissionTypeLabel,
+    classifyCompTicket,
+  } = createTicketPrintBuilders({
+    show,
+    sponsorsWithCompTickets,
+    compTickets,
+    sponsorTicketReservedLinks,
+    sponsorTicketReservedAssignments,
+    sponsorTicketSponsorId,
+    selectedSponsorTicketSeatIds,
+    activeSponsorTicketTemplateUrl,
+    activeGeneralTicketTemplateUrl,
+    activeGeneralAdmissionTicketTemplateUrl,
+    generalAdmissionTicketFormState,
+    getSponsorTicketSponsorName,
+    normalizeGuestListTicketType,
+    stripCompMetadataFromNotes,
+    sortReservedSeatIds,
+    formatReservedSeatLabel,
+    formatShowDate,
+    escapeHtml,
+  });
   function openSponsorCompListPrintWindow(printMode: "print" | "pdf") {
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -8710,193 +8628,6 @@ export function ShowPage({
     printWindow.document.close();
     setCompTicketStatusMessage(printMode === "pdf" ? "Use Save as PDF in the print dialog to export the comp list." : "Sponsor & comp ticket list opened.");
   }
-  function buildSponsorTicketPrintHtml({ printMode }: { printMode: "print" | "pdf" }) {
-    const sponsor = sponsorsWithCompTickets.find((item) => item.id === sponsorTicketSponsorId) ?? null;
-    const selectedSeatIds = sortReservedSeatIds(selectedSponsorTicketSeatIds);
-
-    if (!show || !sponsor || !activeSponsorTicketTemplateUrl || selectedSeatIds.length === 0) {
-      return null;
-    }
-
-    const sponsorName = getSponsorTicketSponsorName(sponsor);
-    const showDate = formatShowDate(show.show_date);
-    const doorsTime = show.guest_arrival_time || "6:00 PM";
-    const showTime = show.show_start_time || "TBD";
-    const totalTickets = selectedSeatIds.length;
-    const tickets = selectedSeatIds.map((seatId, index) => ({
-      seatLabel: formatReservedSeatLabel(seatId),
-      ticketNumber: `${index + 1} of ${totalTickets}`,
-    }));
-    const ticketSheets = Array.from({ length: Math.ceil(tickets.length / 4) }, (_, sheetIndex) => tickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
-
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(sponsorName)} Sponsor Tickets</title><style>
-      @page { size: 8.5in 11in portrait; margin: .18in; }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #111; font-family: Arial, Helvetica, sans-serif; }
-      .ticket-sheet { width: 8.14in; height: 10.64in; display: grid; grid-template-columns: 5.26in; grid-template-rows: repeat(4, 2.55in); gap: .08in; align-content: center; justify-content: center; page-break-after: always; overflow: hidden; background: #fff; }
-      .ticket-slot { width: 5.26in; height: 2.55in; overflow: hidden; position: relative; background: #000; }
-      .ticket-page { width: 11in; height: 5.33in; position: absolute; left: 0; top: 0; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; }
-      .ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-      .field { position: absolute; color: #14110d; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .sponsor { left: 1.15in; top: 2.69in; width: 3.05in; font-size: .18in; }
-      .date { left: 5.25in; top: 3.15in; width: 1.82in; font-size: .15in; }
-      .time { left: 3.06in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
-      .event { left: 1.34in; top: 3.15in; width: 2.9in; font-size: .125in; letter-spacing: 0; text-overflow: clip; }
-      .count { left: 5.78in; top: 3.62in; width: 1.18in; text-align: center; font-size: .17in; }
-      .seat-main { left: 1.58in; top: 4.09in; width: 5.5in; font-size: .18in; }
-      .doors-main { left: .88in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
-      .stub-count { left: 8.88in; top: 2.34in; width: 1.58in; height: .42in; display: flex; align-items: center; justify-content: center; text-align: center; color: #17120e; font-size: .34in; font-weight: 900; letter-spacing: 0; line-height: 1; white-space: nowrap; overflow: visible; text-overflow: clip; }
-      .stub-seat { left: 8.72in; top: 3.39in; width: 1.87in; text-align: center; color: #2d2721; font-size: .3in; font-weight: 900; }
-      @media print { body { background: #fff; } .ticket-sheet { break-after: page; } .ticket-sheet:last-child { break-after: auto; } }
-    </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page"><img src="${activeSponsorTicketTemplateUrl}" alt="" />
-      <div class="field sponsor">${escapeHtml(sponsorName)}</div>
-      <div class="field event">${escapeHtml(show.name)}</div>
-      <div class="field date">${escapeHtml(showDate)}</div>
-      <div class="field doors-main">${escapeHtml(doorsTime)}</div>
-      <div class="field time">${escapeHtml(showTime)}</div>
-      <div class="field count">${escapeHtml(String(totalTickets))}</div>
-      <div class="field seat-main">${escapeHtml(ticket.seatLabel)}</div>
-      <div class="field stub-count">${escapeHtml(ticket.ticketNumber)}</div>
-      <div class="field stub-seat">${escapeHtml(ticket.seatLabel)}</div>
-    </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
-  }
-
-  type CompTicketPrintScope = "sponsor" | "non_sponsor" | "all" | `category:${CompListReportRow["category"]}` | `row:${string}`;
-
-  function getCompTicketPrintRows(scope: CompTicketPrintScope) {
-    return buildCompListReportRows().filter((row) => {
-      if (scope === "sponsor") return row.category === "sponsor";
-      if (scope === "non_sponsor") return row.category !== "sponsor";
-      if (scope.startsWith("category:")) return row.category === scope.slice("category:".length);
-      if (scope.startsWith("row:")) return row.id === scope.slice("row:".length);
-      return true;
-    });
-  }
-
-  function buildCompTicketPrintHtml({ printMode, scope }: { printMode: "print" | "pdf"; scope: CompTicketPrintScope }) {
-    const rows = getCompTicketPrintRows(scope);
-    if (!show || rows.length === 0) return null;
-
-    const needsSponsorTemplate = rows.some((row) => row.category === "sponsor");
-    const needsGeneralTemplate = rows.some((row) => row.category !== "sponsor");
-    if ((needsSponsorTemplate && !activeSponsorTicketTemplateUrl) || (needsGeneralTemplate && !activeGeneralTicketTemplateUrl)) return null;
-
-    const tickets = rows.flatMap((row) => {
-      const seats = row.admissionType === "general_admission"
-        ? []
-        : row.reservedSeats
-          ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean)
-          : [];
-      const count = Math.max(row.quantity, row.admissionType === "general_admission" ? 0 : seats.length, 1);
-      const templateUrl = row.category === "sponsor" ? activeSponsorTicketTemplateUrl : activeGeneralTicketTemplateUrl;
-      return Array.from({ length: count }, (_, index) => ({
-        name: row.name,
-        categoryLabel: row.categoryLabel,
-        seatLabel: row.admissionType === "general_admission" ? "GENERAL ADMISSION" : seats[index] ?? "Comp",
-        stubSeatLabel: row.admissionType === "general_admission" ? "GA" : seats[index] ?? "Comp",
-        ticketNumber: `${index + 1} of ${count}`,
-        totalForReservation: count,
-        templateUrl: templateUrl!,
-        isSponsorTicket: row.category === "sponsor",
-      }));
-    });
-    const ticketSheets = Array.from({ length: Math.ceil(tickets.length / 4) }, (_, sheetIndex) => tickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
-    const showDate = formatShowDate(show.show_date);
-    const doorsTime = show.guest_arrival_time || "6:00 PM";
-    const showTime = show.show_start_time || "TBD";
-
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(show.name)} Comp Tickets</title><style>
-      @page { size: 8.5in 11in portrait; margin: .18in; }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #111; font-family: Arial, Helvetica, sans-serif; }
-      .ticket-sheet { width: 8.14in; height: 10.64in; display: grid; grid-template-columns: 5.26in; grid-template-rows: repeat(4, 2.55in); gap: .08in; align-content: center; justify-content: center; page-break-after: always; overflow: hidden; background: #fff; }
-      .ticket-slot { width: 5.26in; height: 2.55in; overflow: hidden; position: relative; background: #000; }
-      .ticket-page { width: 11in; height: 5.33in; position: absolute; left: 0; top: 0; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; }
-      .ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-      .field { position: absolute; color: #14110d; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .sponsor { left: 1.15in; top: 2.69in; width: 3.05in; font-size: .17in; }
-      .event { left: 1.34in; top: 3.15in; width: 2.9in; font-size: .125in; letter-spacing: 0; text-overflow: clip; }
-      .date { left: 5.25in; top: 3.15in; width: 1.82in; font-size: .15in; }
-      .doors-main { left: .88in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
-      .time { left: 3.06in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
-      .count { left: 5.78in; top: 3.62in; width: 1.18in; text-align: center; font-size: .17in; }
-      .seat-main { left: 1.58in; top: 4.09in; width: 5.5in; font-size: .18in; }
-      .stub-count { left: 8.88in; top: 2.34in; width: 1.58in; height: .42in; display: flex; align-items: center; justify-content: center; text-align: center; color: #17120e; font-size: .34in; font-weight: 900; letter-spacing: 0; line-height: 1; white-space: nowrap; overflow: visible; text-overflow: clip; }
-      .stub-seat { left: 8.72in; top: 3.39in; width: 1.87in; text-align: center; color: #2d2721; font-size: .3in; font-weight: 900; }
-      .general-ticket .sponsor,
-      .general-ticket .event,
-      .general-ticket .date,
-      .general-ticket .doors-main,
-      .general-ticket .time,
-      .general-ticket .count,
-      .general-ticket .seat-main { transform: translateY(.045in); }
-      .general-ticket .stub-seat { transform: translateY(.035in); }
-      @media print { body { background: #fff; } .ticket-sheet { break-after: page; } .ticket-sheet:last-child { break-after: auto; } }
-    </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page ${ticket.isSponsorTicket ? "" : "general-ticket"}"><img src="${ticket.templateUrl}" alt="" />
-      <div class="field sponsor">${escapeHtml(ticket.name)}</div>
-      <div class="field event">${escapeHtml(show.name)}</div>
-      <div class="field date">${escapeHtml(showDate)}</div>
-      <div class="field doors-main">${escapeHtml(doorsTime)}</div>
-      <div class="field time">${escapeHtml(showTime)}</div>
-      <div class="field count">${escapeHtml(String(ticket.totalForReservation))}</div>
-      <div class="field seat-main">${escapeHtml(`${ticket.categoryLabel} - ${ticket.seatLabel}`)}</div>
-      <div class="field stub-count">${escapeHtml(ticket.ticketNumber)}</div>
-      <div class="field stub-seat">${escapeHtml(ticket.stubSeatLabel)}</div>
-    </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
-  }
-
-  function buildGeneralAdmissionTicketPrintHtml(printMode: "print" | "pdf") {
-    if (!show || !activeGeneralAdmissionTicketTemplateUrl) return null;
-    const quantity = Math.max(1, Number.parseInt(generalAdmissionTicketFormState.quantity, 10) || 1);
-    const startNumber = Number.parseInt(generalAdmissionTicketFormState.ticketStartNumber, 10);
-    const shouldShowTicketNumber = generalAdmissionTicketFormState.ticketPrefix.trim() || Number.isFinite(startNumber);
-    const firstNumber = Number.isFinite(startNumber) ? startNumber : 1;
-    const tickets = Array.from({ length: quantity }, (_, index) => ({
-      ticketNumber: shouldShowTicketNumber ? `${generalAdmissionTicketFormState.ticketPrefix.trim()}${firstNumber + index}` : "",
-    }));
-    const ticketSheets = Array.from({ length: Math.ceil(tickets.length / 4) }, (_, sheetIndex) => tickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
-    const showEvent = generalAdmissionTicketFormState.showEvent.trim() || show.name || "Cumberland Mountain Music Show";
-    const showDate = generalAdmissionTicketFormState.showDate.trim() || formatShowDate(show.show_date);
-    const doorsTime = generalAdmissionTicketFormState.doorsTime.trim() || show.guest_arrival_time || "6:00 PM";
-    const showTime = generalAdmissionTicketFormState.showTime.trim() || show.show_start_time || "TBD";
-
-    const GA_LAYOUT = {
-      showEvent: { left: "1.28in", top: "3.00in", width: "2.86in", fontSize: ".12in", textAlign: "center" },
-      showDate: { left: "5.22in", top: "3.00in", width: "1.85in", fontSize: ".14in", textAlign: "center" },
-      doors: { left: ".80in", top: "3.45in", width: "1.18in", fontSize: ".14in", textAlign: "center" },
-      showTime: { left: "3.02in", top: "3.45in", width: "1.17in", fontSize: ".14in", textAlign: "center" },
-      numberOfTickets: { left: "5.77in", top: "3.43in", width: "1.20in", fontSize: ".18in", textAlign: "center", letterSpacing: ".04em" },
-      reservedSeats: { left: "1.50in", top: "3.96in", width: "5.55in", fontSize: ".22in", textAlign: "left", letterSpacing: ".07em" },
-      stubTicketNumber: { left: "8.63in", top: "1.34in", width: "1.92in", fontSize: ".12in", textAlign: "center", color: "#f4eadf" },
-      stubSeat: { left: "8.72in", top: "3.18in", width: "1.86in", fontSize: ".22in", textAlign: "center", letterSpacing: ".05em" },
-    };
-    const gaStyle = (field: keyof typeof GA_LAYOUT) => {
-      const layout = GA_LAYOUT[field];
-      return `left:${layout.left};top:${layout.top};width:${layout.width};font-size:${layout.fontSize};text-align:${layout.textAlign};${"letterSpacing" in layout ? `letter-spacing:${layout.letterSpacing};` : ""}${"color" in layout ? `color:${layout.color};` : ""}`;
-    };
-
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(show.name)} General Admission Tickets</title><style>
-      @page { size: 8.5in 11in portrait; margin: .18in; }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #111; font-family: Arial, Helvetica, sans-serif; }
-      .ticket-sheet { width: 8.14in; height: 10.64in; display: grid; grid-template-columns: 5.26in; grid-template-rows: repeat(4, 2.34in); gap: .08in; align-content: center; justify-content: center; page-break-after: always; overflow: hidden; background: #fff; }
-      .ticket-slot { width: 5.26in; height: 2.34in; overflow: hidden; position: relative; background: #000; }
-      .ga-ticket-page { width: 11in; height: 4.885in; position: absolute; left: 0; top: 0; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; }
-      .ga-ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-      .ga-field { position: absolute; color: #14110d; font-weight: 900; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: clip; }
-      @media print { body { background: #fff; } .ticket-sheet { break-after: page; } .ticket-sheet:last-child { break-after: auto; } }
-    </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ga-ticket-page"><img src="${activeGeneralAdmissionTicketTemplateUrl}" alt="" />
-      <div class="ga-field" style="${gaStyle("showEvent")}">${escapeHtml(showEvent)}</div>
-      <div class="ga-field" style="${gaStyle("showDate")}">${escapeHtml(showDate)}</div>
-      <div class="ga-field" style="${gaStyle("doors")}">${escapeHtml(doorsTime)}</div>
-      <div class="ga-field" style="${gaStyle("showTime")}">${escapeHtml(showTime)}</div>
-      <div class="ga-field" style="${gaStyle("numberOfTickets")}">SINGLE</div>
-      <div class="ga-field" style="${gaStyle("reservedSeats")}">GENERAL</div>
-      ${ticket.ticketNumber ? `<div class="ga-field" style="${gaStyle("stubTicketNumber")}">${escapeHtml(ticket.ticketNumber)}</div>` : ""}
-      <div class="ga-field" style="${gaStyle("stubSeat")}">GENERAL</div>
-    </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
-  }
-
   function openGeneralAdmissionTicketPrintWindow(printMode: "print" | "pdf" = "print") {
     if (!activeGeneralAdmissionTicketTemplateUrl) {
       setSponsorTicketErrorMessage("Choose or upload a General Admission ticket template before printing.");
@@ -20701,33 +20432,52 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         ) : null}
 
         {shouldShowAdminCompTicketsTab ? (
-          <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <AdminBackButton fallbackHref="/admin" />
-                <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
-              </div>
-              <p className="text-sm text-stone-600">
-                Organize ticket imports, reserved seating, sponsor comps, and show-night check-in in the order you actually use them.
-              </p>
-            </div>
-
-            <div className="grid gap-4">
-              <div className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                <div>
-                  <h3 className="text-base font-semibold text-stone-900">Summary / Totals</h3>
-                  <p className="text-sm text-stone-600">Reference numbers for online sales, complimentary tickets, attendance, and sponsor comps.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsTicketTotalsOpen((currentValue) => !currentValue)}
-                  className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                >
-                  {isTicketTotalsOpen ? "Hide Totals" : "Show Totals"}
-                </button>
-              </div>
-
-              {isTicketTotalsOpen ? (
+          <TicketsCheckInPanel
+            activeSection={activeTicketWorkflowSection}
+            isTotalsOpen={isTicketTotalsOpen}
+            onToggleTotals={() => setIsTicketTotalsOpen((currentValue) => !currentValue)}
+            ticketSalesPanelProps={{
+              showSlug,
+              isTicketImportOpen,
+              isManualTicketFormOpen,
+              onToggleTicketImport: () => setIsTicketImportOpen((currentValue) => !currentValue),
+              onToggleManualTicketForm: () => setIsManualTicketFormOpen((currentValue) => !currentValue),
+            }}
+            reservedSeatingPanelProps={{
+              showSlug,
+              isReservedSeatingOpen,
+              copiedPublicSeatAvailabilityLink,
+              publicSeatAvailabilityUrl: buildPublicSeatAvailabilityUrl(),
+              genericPublicSeatAvailabilityUrl: buildGenericPublicSeatAvailabilityUrl(),
+              onToggleReservedSeating: () => setIsReservedSeatingOpen((currentValue) => !currentValue),
+              onOpenPublicSeatAvailabilityPage: handleOpenPublicSeatAvailabilityPage,
+              onCopyPublicSeatAvailabilityLink: () => void handleCopyPublicSeatAvailabilityLink(),
+              onPrintCompList: () => openSponsorCompListPrintWindow("print"),
+              onExportCompListPdf: () => openSponsorCompListPrintWindow("pdf"),
+            }}
+            sponsorCompPanelProps={{
+              compRows: buildCompListReportRows(),
+              onEditCompEntry: (row) => startEditingCompEntry(row as CompListReportRow),
+              onChangeSeatsForCompEntry: (row) => void handleChangeSeatsForCompRow(row as CompListReportRow),
+              onPrintCompEntry: (row) => openCompTicketPrintWindow(`row:${row.id}` as CompTicketPrintScope),
+            }}
+            ticketReportsPanelProps={{
+              showSlug,
+              onPrintCompList: () => openSponsorCompListPrintWindow("print"),
+              onExportCompListPdf: () => openSponsorCompListPrintWindow("pdf"),
+            }}
+            onSectionSelect={(sectionKey) => {
+              if (sectionKey === "reserved-seating") {
+                setActiveCompSeatAssignment(null);
+              }
+              setActiveTicketWorkflowSection((currentValue) =>
+                currentValue === sectionKey
+                  ? null
+                  : sectionKey,
+              );
+            }}
+            totalsContent={
+              isTicketTotalsOpen ? (
                 <div className="grid gap-4">
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
@@ -20799,246 +20549,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     </article>
                   </div>
                 </div>
-              ) : null}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {[
-                {
-                  key: "ticket-sales",
-                  title: "Ticket Sales & Check-In",
-                  subtitle: "Import orders, add tickets, and open door mode",
-                },
-                {
-                  key: "reserved-seating",
-                  title: "Reserved Seating",
-                  subtitle: "Manage seat assignments and seat cards",
-                },
-                {
-                  key: "sponsor-comp",
-                  title: "Sponsor & Comp Tickets",
-                  subtitle: "Manage sponsor comps and guest tickets",
-                },
-                {
-                  key: "reports",
-                  title: "Reports & Printouts",
-                  subtitle: "Print lists and backup sheets",
-                },
-              ].map((section) => {
-                const isActive = activeTicketWorkflowSection === section.key;
-
-                return (
-                  <button
-                    key={section.key}
-                    type="button"
-                    onClick={() => {
-                      if (section.key === "reserved-seating") {
-                        setActiveCompSeatAssignment(null);
-                      }
-                      setActiveTicketWorkflowSection((currentValue) =>
-                        currentValue === section.key
-                          ? null
-                          : (section.key as "ticket-sales" | "reserved-seating" | "sponsor-comp" | "reports"),
-                      );
-                    }}
-                    className={`rounded-2xl border p-4 text-left shadow-sm transition ${
-                      isActive
-                        ? "border-emerald-500 bg-emerald-50 text-emerald-900"
-                        : "border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-50"
-                    }`}
-                  >
-                    <p className="text-base font-semibold">{section.title}</p>
-                    <p className={`mt-1 text-sm ${isActive ? "text-emerald-800" : "text-stone-600"}`}>{section.subtitle}</p>
-                  </button>
-                );
-              })}
-            </div>
-
-            {activeTicketWorkflowSection && activeTicketWorkflowSection !== "sponsor-comp" ? (
-              <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
-                {activeTicketWorkflowSection === "ticket-sales" ? (
-                  <div className="grid gap-4">
-                    <div>
-                      <h3 className="text-base font-semibold text-stone-900">Ticket Sales &amp; Check-In</h3>
-                      <p className="text-sm text-stone-600">Import paid online orders, add manual tickets, or jump straight into door mode.</p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      <button
-                        type="button"
-                        onClick={() => setIsTicketImportOpen((currentValue) => !currentValue)}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        {isTicketImportOpen ? "Hide Import Paid Online Orders" : "Import Paid Online Orders"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsManualTicketFormOpen((currentValue) => !currentValue)}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        {isManualTicketFormOpen ? "Hide Manual / Complimentary Ticket" : "Add Manual / Complimentary Ticket"}
-                      </button>
-                      <Link
-                        href={`/admin/${showSlug}/door`}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                      >
-                        Open Door Mode / Door Check-In
-                      </Link>
-                    </div>
-                  </div>
-                ) : null}
-
-                {activeTicketWorkflowSection === "reserved-seating" ? (
-                  <div className="grid gap-4">
-                    <div>
-                      <h3 className="text-base font-semibold text-stone-900">Reserved Seating</h3>
-                      <p className="text-sm text-stone-600">Manage reserved seating, public availability, and seat card printing from one place.</p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      <button
-                        type="button"
-                        onClick={() => setIsReservedSeatingOpen((currentValue) => !currentValue)}
-                        className={`inline-flex min-h-12 items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                          isReservedSeatingOpen
-                            ? "border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
-                            : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
-                        }`}
-                      >
-                        {isReservedSeatingOpen ? "Hide Reserved Seating" : "Open Reserved Seating"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleOpenPublicSeatAvailabilityPage}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Public Seat Availability
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleCopyPublicSeatAvailabilityLink()}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                      >
-                        {copiedPublicSeatAvailabilityLink ? "Copied Public Link" : "Copy Public Seat Availability Link"}
-                      </button>
-                      <Link
-                        href={`/admin/${showSlug}/print/reserved-seat-cards`}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Print Reserved Seat Cards
-                      </Link>
-                      <Link
-                        href={`/admin/${showSlug}/print/comp-reserved-seat-cards`}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Print Comp Reserved Seat Cards
-                      </Link>
-                      <Link
-                        href={`/admin/${showSlug}/print/blank-seat-cards`}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Print Back-Up / Blank Seat Cards
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => openSponsorCompListPrintWindow("print")}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Print Comp List
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openSponsorCompListPrintWindow("pdf")}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                      >
-                        Export Comp List PDF
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-
-                {activeTicketWorkflowSection === "reports" ? (
-                  <div className="grid gap-4">
-                    <div>
-                      <h3 className="text-base font-semibold text-stone-900">Reports &amp; Printouts</h3>
-                      <p className="text-sm text-stone-600">Print front-door lists and backup sheets without digging through operational controls.</p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      <Link
-                        href={`/admin/${showSlug}/print/door-guest-list`}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Print Door Count List
-                      </Link>
-                      <Link
-                        href={`/admin/${showSlug}/print/blank-seat-cards`}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Print Back-Up / Guest List Cards
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => openSponsorCompListPrintWindow("print")}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                      >
-                        Print Comp List
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openSponsorCompListPrintWindow("pdf")}
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                      >
-                        Export Comp List PDF
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {activeTicketWorkflowSection === "reserved-seating" ? (
-              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-                Online orders are automatically added to Reserved Seating. Print assigned seat cards from Reserved Seating after seats are selected. Use the paid online fallback print option only for orders that still need generic reserved cards.
-              </div>
-            ) : null}
-
-            {activeTicketWorkflowSection === "reserved-seating" ? (
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <h3 className="text-base font-semibold text-stone-900">Public Seat Availability</h3>
-                  <p className="mt-1 text-sm text-stone-600">
-                    Allow customers to view current seat availability before purchasing tickets.
-                  </p>
-                  <p className="mt-3 break-all rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700">
-                    {buildPublicSeatAvailabilityUrl()}
-                  </p>
-                  <p className="mt-2 text-xs text-stone-500">
-                    Generic fallback: {buildGenericPublicSeatAvailabilityUrl()}
-                  </p>
-                  {copiedPublicSeatAvailabilityLink ? (
-                    <p className="mt-2 text-sm font-medium text-emerald-700">Link copied.</p>
-                  ) : null}
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row lg:shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleOpenPublicSeatAvailabilityPage}
-                    className="inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                  >
-                    Open Availability Page
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleCopyPublicSeatAvailabilityLink()}
-                    className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                  >
-                    {copiedPublicSeatAvailabilityLink ? "Copied!" : "Copy Link"}
-                  </button>
-                </div>
-              </div>
-            </div>
-            ) : null}
-
+              ) : null
+            }
+          >
             {activeTicketWorkflowSection === "reserved-seating" && isReservedSeatingOpen && show ? (
               <div id="reserved-seating-admin-section">
                 <ReservedSeatingPanel
@@ -21382,298 +20895,82 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
             {activeTicketWorkflowSection === "sponsor-comp" ? (
             <>
-            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-stone-900">Sponsor & Comp Tickets</h3>
-                  <p className="text-sm text-stone-600">
-                    Track sponsor comp check-ins separately from paid online and door tickets.
-                  </p>
-                </div>
-              </div>
-
-
               {(() => {
-                const compRows = buildCompListReportRows();
-                const sponsorCompTotal = compRows.filter((row) => row.category === "sponsor").reduce((sum, row) => sum + row.quantity, 0);
-                const nonSponsorCompTotal = compRows.filter((row) => row.category !== "sponsor").reduce((sum, row) => sum + row.quantity, 0);
-                const checkedInTotal = compRows.reduce((sum, row) => sum + row.checkedIn, 0);
-                const remainingTotal = Math.max(0, compRows.reduce((sum, row) => sum + row.quantity, 0) - checkedInTotal);
+                const compPrintRows = buildCompListReportRows();
+                const selectedPrintRows = getCompTicketPrintRows(selectedCompTicketPrintScope as CompTicketPrintScope);
+                const selectedPrintTicketCount = selectedPrintRows.reduce((sum, row) => sum + row.quantity, 0);
+                const selectedSpecificPrintRow = selectedCompTicketPrintScope.startsWith("row:") && selectedPrintRows.length === 1 ? selectedPrintRows[0] : null;
+                const selectedAssignedSeatLabels = Array.from(new Set(selectedPrintRows.flatMap((row) => row.admissionType === "general_admission" ? [] : row.reservedSeats ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean) : [])));
+                const hasSelectedAssignedSeats = selectedAssignedSeatLabels.length > 0;
+                const selectedTemplateId = (selectedSponsorTicketTemplate ?? selectedGeneralTicketTemplate ?? selectedGeneralAdmissionTicketTemplate)?.id ?? null;
+
                 return (
-                  <div className="mt-4 grid gap-4">
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      {[
-                        ["Sponsor Comps", sponsorCompTotal],
-                        ["General / Guest / Band / Other", nonSponsorCompTotal],
-                        ["Comps Checked In", checkedInTotal],
-                        ["Comps Remaining", remainingTotal],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-stone-500">{label}</p>
-                          <p className="mt-1 text-2xl font-black text-stone-950">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <h4 className="text-sm font-black uppercase tracking-[0.14em] text-stone-900">All Sponsor & Comp Entries</h4>
-                          <p className="mt-1 text-sm text-stone-600">Sponsor, guest, band, volunteer, media, other comps, and comp reserved seats assigned in Reserved Seating.</p>
-                        </div>
-                      </div>
-
-                      {compRows.length === 0 ? (
-                        <p className="mt-4 rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">No sponsor or comp ticket entries are available yet.</p>
-                      ) : (
-                        <div className="mt-4 overflow-x-auto rounded-xl border border-stone-200">
-                          <table className="min-w-full divide-y divide-stone-200 text-sm">
-                            <thead className="bg-stone-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-stone-500">
-                              <tr><th className="px-3 py-2">Name / Sponsor</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Qty</th><th className="px-3 py-2">Reserved Seat(s)</th><th className="px-3 py-2">Checked In</th><th className="px-3 py-2">Notes</th><th className="px-3 py-2">Actions</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-stone-100 bg-white">
-                              {compRows.map((row) => (
-                                <tr key={row.id}>
-                                  <td className="px-3 py-2 font-semibold text-stone-900">{row.name}</td>
-                                  <td className="px-3 py-2 text-stone-700">{row.categoryLabel}</td>
-                                  <td className="px-3 py-2 text-stone-700">{row.quantity}</td>
-                                  <td className="px-3 py-2 text-stone-700">{row.reservedSeats || "-"}</td>
-                                  <td className="px-3 py-2 text-stone-700">{row.checkedIn} of {row.quantity}</td>
-                                  <td className="px-3 py-2 text-stone-600">{row.notes || "-"}</td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex flex-wrap gap-1.5">
-                                      <button type="button" onClick={() => startEditingCompEntry(row)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Edit</button>
-                                      <button type="button" onClick={() => void handleChangeSeatsForCompRow(row)} className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-50">Seats</button>
-                                      <button type="button" onClick={() => openCompTicketPrintWindow(`row:${row.id}` as CompTicketPrintScope)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Print</button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <TicketPrintingPanel
+                    isOpen={isSponsorTicketPrinterOpen}
+                    onToggleOpen={() => setIsSponsorTicketPrinterOpen((currentValue) => !currentValue)}
+                    sponsorTemplateId={selectedSponsorTicketTemplateId}
+                    generalTemplateId={selectedGeneralTicketTemplateId}
+                    generalAdmissionTemplateId={selectedGeneralAdmissionTicketTemplateId}
+                    sponsorTemplates={sponsorTicketTemplateOptions}
+                    generalTemplates={generalTicketTemplateOptions}
+                    generalAdmissionTemplates={generalAdmissionTicketTemplateOptions}
+                    activeSponsorTemplateUrl={activeSponsorTicketTemplateUrl}
+                    activeGeneralTemplateUrl={activeGeneralTicketTemplateUrl}
+                    activeGeneralAdmissionTemplateUrl={activeGeneralAdmissionTicketTemplateUrl}
+                    isUploadingTemplate={isUploadingSponsorTicketTemplate}
+                    hasSelectedTemplate={Boolean(selectedSponsorTicketTemplate || selectedGeneralTicketTemplate || selectedGeneralAdmissionTicketTemplate)}
+                    isDeletingSelectedTemplate={selectedTemplateId ? activeSponsorTicketTemplateActionId === selectedTemplateId : false}
+                    onSponsorTemplateSelect={(templateId) => {
+                      setSelectedSponsorTicketTemplateId(templateId);
+                      setSponsorTicketTemplateDataUrl(null);
+                      if (show && typeof window !== "undefined") {
+                        if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, templateId);
+                        else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}`);
+                      }
+                    }}
+                    onGeneralTemplateSelect={(templateId) => {
+                      setSelectedGeneralTicketTemplateId(templateId);
+                      setGeneralTicketTemplateDataUrl(null);
+                      if (show && typeof window !== "undefined") {
+                        if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}_general`, templateId);
+                        else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}_general`);
+                      }
+                    }}
+                    onGeneralAdmissionTemplateSelect={(templateId) => {
+                      setSelectedGeneralAdmissionTicketTemplateId(templateId);
+                      setGeneralAdmissionTicketTemplateDataUrl(null);
+                      if (show && typeof window !== "undefined") {
+                        if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}_ga`, templateId);
+                        else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}_ga`);
+                      }
+                    }}
+                    onUploadSponsorTemplate={(event) => void handleSponsorTicketTemplateChange(event, "sponsor")}
+                    onUploadGeneralTemplate={(event) => void handleSponsorTicketTemplateChange(event, "general")}
+                    onUploadGeneralAdmissionTemplate={(event) => void handleSponsorTicketTemplateChange(event, "general_admission")}
+                    onDeleteSelectedTemplate={() => void handleDeleteSponsorTicketTemplate()}
+                    selectedPrintScope={selectedCompTicketPrintScope}
+                    compPrintRows={compPrintRows}
+                    selectedPrintTicketCount={selectedPrintTicketCount}
+                    selectedSpecificPrintAdmissionType={selectedSpecificPrintRow?.admissionType ?? null}
+                    selectedAssignedSeatLabels={selectedAssignedSeatLabels}
+                    hasSelectedAssignedSeats={hasSelectedAssignedSeats}
+                    selectedAdmissionLabel={selectedSpecificPrintRow ? getCompAdmissionTypeLabel(selectedSpecificPrintRow.admissionType) : "Mixed"}
+                    showName={show?.name ?? "Show"}
+                    showDate={formatShowDate(show?.show_date ?? null)}
+                    onPrintScopeChange={setSelectedCompTicketPrintScope}
+                    onUseAssignedSeats={() => setSelectedSponsorTicketSeatIds(sortReservedSeatIds(selectedAssignedSeatLabels))}
+                    onAssignSeats={handleAssignSeatsForSelectedCompTicketScope}
+                    onPrintTickets={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope)}
+                    onExportTicketsPdf={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope, "pdf")}
+                    generalAdmissionFormState={generalAdmissionTicketFormState}
+                    onGeneralAdmissionFormChange={(field, value) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, [field]: value }))}
+                    onPrintGeneralAdmissionTickets={() => openGeneralAdmissionTicketPrintWindow()}
+                    onExportGeneralAdmissionPdf={() => openGeneralAdmissionTicketPrintWindow("pdf")}
+                    statusMessage={sponsorTicketStatusMessage}
+                    errorMessage={sponsorTicketErrorMessage}
+                  />
                 );
               })()}
-              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h4 className="text-sm font-black uppercase tracking-[0.14em] text-amber-900">Ticket Printing</h4>
-                    <p className="mt-1 text-sm text-amber-900/80">Choose ticket templates, select a sponsor or comp group, then print or save as PDF.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsSponsorTicketPrinterOpen((currentValue) => !currentValue)}
-                      className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
-                    >
-                      {isSponsorTicketPrinterOpen ? "Hide Ticket Printer" : "Open Ticket Printer"}
-                    </button>
-                  </div>
-                </div>
-
-                {isSponsorTicketPrinterOpen ? (() => {
-                  const selectedSponsor = sponsorsWithCompTickets.find((sponsor) => sponsor.id === sponsorTicketSponsorId) ?? null;
-                  const seatOptions = selectedSponsor ? getSponsorReservedSeatOptions(selectedSponsor) : [];
-                  const compPrintRows = buildCompListReportRows();
-                  const selectedPrintRows = getCompTicketPrintRows(selectedCompTicketPrintScope as CompTicketPrintScope);
-                  const selectedPrintTicketCount = selectedPrintRows.reduce((sum, row) => sum + row.quantity, 0);
-                  const selectedSpecificPrintRow = selectedCompTicketPrintScope.startsWith("row:") && selectedPrintRows.length === 1 ? selectedPrintRows[0] : null;
-                  const selectedAssignedSeatLabels = Array.from(new Set(selectedPrintRows.flatMap((row) => row.admissionType === "general_admission" ? [] : row.reservedSeats ? row.reservedSeats.split(",").map((seat) => seat.trim()).filter(Boolean) : [])));
-                  const hasSelectedAssignedSeats = selectedAssignedSeatLabels.length > 0;
-                  return (
-                    <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                      <div className="grid content-start gap-3 rounded-2xl border border-amber-200 bg-white p-4">
-                        <div className="grid gap-3">
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                            Sponsor Comp Ticket Template
-                            <select
-                              value={selectedSponsorTicketTemplateId}
-                              onChange={(event) => {
-                                const templateId = event.target.value;
-                                setSelectedSponsorTicketTemplateId(templateId);
-                                setSponsorTicketTemplateDataUrl(null);
-                                if (show && typeof window !== "undefined") {
-                                  if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}`, templateId);
-                                  else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}`);
-                                }
-                              }}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
-                            >
-                              <option value="">Choose sponsor template</option>
-                              {sponsorTicketTemplateOptions.map((template) => (
-                                <option key={template.id} value={template.id}>{template.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                            Upload Sponsor Template
-                            <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => void handleSponsorTicketTemplateChange(event, "sponsor")} disabled={isUploadingSponsorTicketTemplate} className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60" />
-                          </label>
-                          {activeSponsorTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeSponsorTicketTemplateUrl} alt="Sponsor ticket template preview" className="max-h-[120px] w-full object-contain" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the Sponsor Comp ticket template.</p>}
-                        </div>
-
-                        <div className="grid gap-3 border-t border-stone-200 pt-4">
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                            General Comp Ticket Template
-                            <select
-                              value={selectedGeneralTicketTemplateId}
-                              onChange={(event) => {
-                                const templateId = event.target.value;
-                                setSelectedGeneralTicketTemplateId(templateId);
-                                setGeneralTicketTemplateDataUrl(null);
-                                if (show && typeof window !== "undefined") {
-                                  if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}_general`, templateId);
-                                  else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}_general`);
-                                }
-                              }}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
-                            >
-                              <option value="">Choose general comp template</option>
-                              {generalTicketTemplateOptions.map((template) => (
-                                <option key={template.id} value={template.id}>{template.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                            Upload General Comp Template
-                            <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => void handleSponsorTicketTemplateChange(event, "general")} disabled={isUploadingSponsorTicketTemplate} className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60" />
-                          </label>
-                          {activeGeneralTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeGeneralTicketTemplateUrl} alt="General comp ticket template preview" className="max-h-[120px] w-full object-contain" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the General Comp ticket template for guest, band, volunteer, media, and other comps.</p>}
-                        </div>
-
-
-                        <div className="grid gap-3 border-t border-stone-200 pt-4">
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                            General Admission Ticket Template
-                            <select
-                              value={selectedGeneralAdmissionTicketTemplateId}
-                              onChange={(event) => {
-                                const templateId = event.target.value;
-                                setSelectedGeneralAdmissionTicketTemplateId(templateId);
-                                setGeneralAdmissionTicketTemplateDataUrl(null);
-                                if (show && typeof window !== "undefined") {
-                                  if (templateId) window.localStorage.setItem(`stageflow_sponsor_ticket_template_${show.id}_ga`, templateId);
-                                  else window.localStorage.removeItem(`stageflow_sponsor_ticket_template_${show.id}_ga`);
-                                }
-                              }}
-                              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
-                            >
-                              <option value="">Choose GA template</option>
-                              {generalAdmissionTicketTemplateOptions.map((template) => (
-                                <option key={template.id} value={template.id}>{template.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                            Upload General Admission Template
-                            <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => void handleSponsorTicketTemplateChange(event, "general_admission")} disabled={isUploadingSponsorTicketTemplate} className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-stone-700 disabled:cursor-not-allowed disabled:opacity-60" />
-                          </label>
-                          {activeGeneralAdmissionTicketTemplateUrl ? <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-100"><img src={activeGeneralAdmissionTicketTemplateUrl} alt="General Admission ticket template preview" className="max-h-[120px] w-full object-contain" /></div> : <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">Choose or upload the General Admission ticket template.</p>}
-                        </div>
-                        {selectedSponsorTicketTemplate || selectedGeneralTicketTemplate || selectedGeneralAdmissionTicketTemplate ? (
-                          <button type="button" onClick={() => void handleDeleteSponsorTicketTemplate()} disabled={activeSponsorTicketTemplateActionId === (selectedSponsorTicketTemplate ?? selectedGeneralTicketTemplate ?? selectedGeneralAdmissionTicketTemplate)?.id} className="w-fit rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60">
-                            Delete Selected Template
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="grid content-start gap-3 rounded-2xl border border-amber-200 bg-white p-4">
-                        <label className="flex flex-col gap-2 text-sm font-semibold text-stone-700">
-                          Ticket / Comp Entry to Print
-                          <select
-                            value={selectedCompTicketPrintScope}
-                            onChange={(event) => setSelectedCompTicketPrintScope(event.target.value)}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900"
-                          >
-                            <option value="all">All comp tickets</option>
-                            <option value="sponsor">Sponsor comps only</option>
-                            <option value="non_sponsor">General comps only</option>
-                            {compPrintRows.map((row) => (
-                              <option key={row.id} value={`row:${row.id}`}>{row.name} - {row.categoryLabel} - {row.quantity} ticket{row.quantity === 1 ? "" : "s"}</option>
-                            ))}
-                          </select>
-                        </label>
-
-
-                        <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
-                          <p className="text-sm font-bold text-stone-900">Admission / Seats</p>
-                          {selectedSpecificPrintRow ? (
-                            hasSelectedAssignedSeats ? (
-                              <div className="mt-2 grid gap-2">
-                                <p className="text-sm font-semibold text-emerald-800">Seats assigned</p>
-                                <p className="text-sm text-stone-700">{selectedAssignedSeatLabels.join(", ")}</p>
-                                <div className="flex flex-wrap gap-2">
-                                  <button type="button" onClick={() => setSelectedSponsorTicketSeatIds(sortReservedSeatIds(selectedAssignedSeatLabels))} className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Use Assigned Seats</button>
-                                  <button type="button" onClick={handleAssignSeatsForSelectedCompTicketScope} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100">Assign / Change Seats</button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="mt-2 grid gap-2">
-                                <p className="text-sm font-semibold text-amber-900">No seats assigned</p>
-                                <button type="button" onClick={handleAssignSeatsForSelectedCompTicketScope} className="w-fit rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100">Assign / Change Seats</button>
-                              </div>
-                            )
-                          ) : (
-                            <p className="mt-2 text-sm font-semibold text-stone-600">Select one specific comp entry to assign seats.</p>
-                          )}
-                        </div>
-
-                        <div className="rounded-xl bg-stone-50 px-3 py-3 text-sm text-stone-700">
-                          <p><span className="font-semibold">Tickets ready:</span> {selectedPrintTicketCount}</p>
-                          <p><span className="font-semibold">Admission:</span> {selectedSpecificPrintRow ? getCompAdmissionTypeLabel(selectedSpecificPrintRow.admissionType) : "Mixed"}</p>
-                          <p><span className="font-semibold">Seats:</span> {selectedSpecificPrintRow?.admissionType === "general_admission" ? "General Admission" : hasSelectedAssignedSeats ? "assigned" : "not assigned"}</p>
-                          <p><span className="font-semibold">Selected seats:</span> {selectedSpecificPrintRow?.admissionType === "general_admission" ? "GENERAL ADMISSION" : hasSelectedAssignedSeats ? selectedAssignedSeatLabels.join(", ") : "None"}</p>
-                          <p><span className="font-semibold">Show:</span> {show?.name ?? "Show"}</p>
-                          <p><span className="font-semibold">Date:</span> {formatShowDate(show?.show_date ?? null)}</p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope)}
-                            className="rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-amber-800"
-                          >
-                            Print Tickets
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openCompTicketPrintWindow(selectedCompTicketPrintScope as CompTicketPrintScope, "pdf")}
-                            className="rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm font-bold text-amber-900 transition hover:bg-amber-100"
-                          >
-                            Export / Save PDF
-                          </button>
-                        </div>
-
-                        <div className="grid gap-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
-                          <div>
-                            <p className="text-sm font-black uppercase tracking-[0.12em] text-stone-900">General Admission Tickets</p>
-                            <p className="text-xs text-stone-600">No sponsor, comp entry, or reserved seats required.</p>
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Quantity<input type="number" min="1" value={generalAdmissionTicketFormState.quantity} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, quantity: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
-                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Show / Event<input value={generalAdmissionTicketFormState.showEvent} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, showEvent: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
-                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Show Date<input value={generalAdmissionTicketFormState.showDate} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, showDate: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
-                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Doors<input value={generalAdmissionTicketFormState.doorsTime} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, doorsTime: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
-                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Show Time<input value={generalAdmissionTicketFormState.showTime} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, showTime: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
-                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Ticket Prefix<input placeholder="GA15-" value={generalAdmissionTicketFormState.ticketPrefix} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, ticketPrefix: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
-                            <label className="flex flex-col gap-1 text-xs font-semibold text-stone-700">Start Number<input type="number" min="1" value={generalAdmissionTicketFormState.ticketStartNumber} onChange={(event) => setGeneralAdmissionTicketFormState((currentState) => ({ ...currentState, ticketStartNumber: event.target.value }))} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" /></label>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <button type="button" onClick={() => openGeneralAdmissionTicketPrintWindow()} className="rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-stone-800">Print General Admission Tickets</button>
-                            <button type="button" onClick={() => openGeneralAdmissionTicketPrintWindow("pdf")} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-bold text-stone-800 transition hover:bg-stone-100">Export General Admission PDF</button>
-                          </div>
-                        </div>
-
-                        {sponsorTicketStatusMessage ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">{sponsorTicketStatusMessage}</p> : null}
-                        {sponsorTicketErrorMessage ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{sponsorTicketErrorMessage}</p> : null}
-                      </div>
-                    </div>
-                  );
-                })() : null}
-              </div>
-            </div>
             {editingCompEntryRowId ? (() => {
               const editingRow = buildCompListReportRows().find((row) => row.id === editingCompEntryRowId) ?? null;
               return (
@@ -21992,7 +21289,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 ))}
               </div>
             )) : null}
-          </section>
+          </TicketsCheckInPanel>
         ) : null}
 
         {shouldShowAdminFinanceTab ? (
