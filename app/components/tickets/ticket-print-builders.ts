@@ -330,18 +330,19 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
     const showTime = generalAdmissionTicketFormState.showTime.trim() || show.show_start_time || "TBD";
 
     const GA_LAYOUT = {
-      showEvent: { left: "1.28in", top: "3.00in", width: "2.86in", fontSize: ".12in", textAlign: "center" },
-      showDate: { left: "5.22in", top: "3.00in", width: "1.85in", fontSize: ".14in", textAlign: "center" },
-      doors: { left: ".80in", top: "3.45in", width: "1.18in", fontSize: ".14in", textAlign: "center" },
-      showTime: { left: "3.02in", top: "3.45in", width: "1.17in", fontSize: ".14in", textAlign: "center" },
-      numberOfTickets: { left: "5.77in", top: "3.43in", width: "1.20in", fontSize: ".18in", textAlign: "center", letterSpacing: ".04em" },
-      reservedSeats: { left: "1.50in", top: "3.96in", width: "5.55in", fontSize: ".22in", textAlign: "left", letterSpacing: ".07em" },
-      stubTicketNumber: { left: "8.63in", top: "1.34in", width: "1.92in", fontSize: ".12in", textAlign: "center", color: "#f4eadf" },
-      stubSeat: { left: "8.72in", top: "3.18in", width: "1.86in", fontSize: ".22in", textAlign: "center", letterSpacing: ".05em" },
+      showEvent: { left: "1.28in", top: "2.91in", width: "2.86in", height: ".32in", fontSize: ".138in", textAlign: "center" },
+      showDate: { left: "5.22in", top: "2.91in", width: "1.85in", height: ".32in", fontSize: ".175in", textAlign: "center" },
+      doors: { left: ".80in", top: "3.36in", width: "1.18in", height: ".30in", fontSize: ".175in", textAlign: "center" },
+      showTime: { left: "3.02in", top: "3.36in", width: "1.17in", height: ".30in", fontSize: ".175in", textAlign: "center" },
+      numberOfTickets: { left: "5.77in", top: "3.39in", width: "1.20in", height: ".33in", fontSize: ".21in", textAlign: "center", letterSpacing: ".04em" },
+      reservedSeats: { left: "1.50in", top: "3.79in", width: "5.55in", height: ".36in", fontSize: ".29in", textAlign: "left", letterSpacing: ".07em" },
+      stubTicketNumber: { left: "8.63in", top: "1.29in", width: "1.92in", height: ".26in", fontSize: ".19in", textAlign: "center", color: "#f4eadf" },
+      stubSeat: { left: "8.72in", top: "3.08in", width: "1.86in", height: ".56in", fontSize: ".26in", textAlign: "center", letterSpacing: ".05em" },
     };
     const gaStyle = (field: keyof typeof GA_LAYOUT) => {
       const layout = GA_LAYOUT[field];
-      return `left:${layout.left};top:${layout.top};width:${layout.width};font-size:${layout.fontSize};text-align:${layout.textAlign};${"letterSpacing" in layout ? `letter-spacing:${layout.letterSpacing};` : ""}${"color" in layout ? `color:${layout.color};` : ""}`;
+      const justifyContent = layout.textAlign === "center" ? "center" : layout.textAlign === "right" ? "flex-end" : "flex-start";
+      return `left:${layout.left};top:${layout.top};width:${layout.width};height:${layout.height};font-size:${layout.fontSize};text-align:${layout.textAlign};display:flex;align-items:center;justify-content:${justifyContent};${"letterSpacing" in layout ? `letter-spacing:${layout.letterSpacing};` : ""}${"color" in layout ? `color:${layout.color};` : ""}`;
     };
 
     return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(show.name)} General Admission Tickets</title><style>
