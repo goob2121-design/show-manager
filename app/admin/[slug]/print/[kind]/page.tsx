@@ -340,6 +340,7 @@ function PrintShell({
 
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-8 text-stone-900 sm:px-6 print:bg-white print:px-0 print:py-0">
+      <style>{`img[src=/cmms-logo.png] { filter: none !important; -webkit-filter: none !important; }`}</style>
       <section className="mx-auto max-w-4xl rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-8 print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <Link
@@ -744,7 +745,7 @@ function ReservedSeatCardsPrintView({
               <img
                 src="/cmms-logo.png"
                 alt="Cumberland Mountain Music Show logo"
-                className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+                className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[42px] print:max-w-[124px]"
               />
               <div className="flex flex-1 flex-col items-center justify-center py-2">
                 <h2 className="text-xl font-black uppercase tracking-[0.06em] text-stone-950 print:text-[18px]">
@@ -824,7 +825,7 @@ function CompReservedSeatCardsPrintView({
                 <img
                   src="/cmms-logo.png"
                   alt="Cumberland Mountain Music Show logo"
-                  className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+                  className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[42px] print:max-w-[124px]"
                 />
                 <div className="flex flex-1 flex-col items-center justify-center py-1.5">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[10px]">
@@ -870,7 +871,7 @@ function BlankSeatCardsPrintView() {
             <img
               src="/cmms-logo.png"
               alt="Cumberland Mountain Music Show logo"
-              className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+              className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[42px] print:max-w-[124px]"
             />
             <div className="flex w-full flex-1 flex-col items-center justify-center py-2">
               <div className="w-full max-w-[14rem] text-left text-sm font-medium text-stone-800 print:text-[12px]">
@@ -945,7 +946,7 @@ function SelectedReservedSeatCardsPrintView({
                 <img
                   src="/cmms-logo.png"
                   alt="Cumberland Mountain Music Show logo"
-                  className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain grayscale print:max-h-[42px] print:max-w-[124px]"
+                  className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[42px] print:max-w-[124px]"
                 />
                 <div className="flex flex-1 flex-col items-center justify-center py-1.5">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[11px]">
