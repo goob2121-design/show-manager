@@ -80,11 +80,13 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
       * { box-sizing: border-box; }
       html, body { width: 8.5in; margin: 0; }
       body { background: #fff; font-family: Arial, Helvetica, sans-serif; }
-      .ticket-sheet { width: 8.14in; height: 10.64in; display: grid; grid-template-columns: 5.26in; grid-template-rows: repeat(4, 2.55in); gap: .08in; align-content: center; justify-content: center; break-after: page; page-break-after: always; overflow: hidden; background: #fff; }
-      .ticket-slot { width: 5.26in; height: 2.55in; overflow: hidden; position: relative; background: #000; }
-      .ticket-page { width: 11in; height: 5.33in; position: absolute; left: 0; top: 0; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; }
-      .ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-      .field { position: absolute; color: #14110d; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ticket-sheet-page { width: 8.5in; height: 10.64in; break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid; overflow: visible; background: #fff; }
+      .ticket-sheet-page:last-child { break-after: auto; page-break-after: auto; }
+      .ticket-sheet { width: 8.14in; height: 10.64in; display: grid; grid-template-columns: 5.26in; grid-template-rows: repeat(4, 2.55in); gap: .08in; align-content: center; justify-content: center; break-inside: avoid; page-break-inside: avoid; overflow: visible; background: #fff; }
+      .ticket-slot { width: 5.26in; height: 2.55in; overflow: hidden; position: relative; background: #000; break-inside: avoid; page-break-inside: avoid; }
+      .ticket-page { width: 11in; height: 5.33in; position: relative; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; break-inside: avoid; page-break-inside: avoid; isolation: isolate; }
+      .ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+      .field { position: absolute; z-index: 1; color: #14110d; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sponsor { left: 1.15in; top: 2.69in; width: 3.05in; font-size: .18in; }
       .date { left: 5.25in; top: 3.15in; width: 1.82in; font-size: .15in; }
       .time { left: 3.06in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
@@ -94,7 +96,6 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
       .doors-main { left: .88in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
       .stub-count { left: 8.88in; top: 2.34in; width: 1.58in; height: .42in; display: flex; align-items: center; justify-content: center; text-align: center; color: #17120e; font-size: .34in; font-weight: 900; letter-spacing: 0; line-height: 1; white-space: nowrap; overflow: visible; text-overflow: clip; }
       .stub-seat { left: 8.72in; top: 3.39in; width: 1.87in; text-align: center; color: #2d2721; font-size: .3in; font-weight: 900; }
-      .ticket-sheet:last-child { break-after: auto; page-break-after: auto; }
       @media print { html, body { width: 8.5in; margin: 0; } }
     `;
 
@@ -112,7 +113,7 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
   };
 
   function renderSharedCompTicketPrintHtml({ title, ticketSheets, printMode }: { title: string; ticketSheets: SharedTicketPrintItem[][]; printMode: "print" | "pdf" }) {
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>${sharedCompTicketPrintCss}</style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page"><img src="${ticket.templateUrl}" alt="" />
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>${sharedCompTicketPrintCss}</style></head><body>${ticketSheets.map((sheet) => `<div class="ticket-sheet-page"><section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page"><img src="${ticket.templateUrl}" alt="" />
       <div class="field sponsor">${escapeHtml(ticket.sponsorName)}</div>
       <div class="field event">${escapeHtml(ticket.showName)}</div>
       <div class="field date">${escapeHtml(ticket.showDate)}</div>
@@ -122,7 +123,7 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
       <div class="field seat-main">${escapeHtml(ticket.seatMainLabel)}</div>
       <div class="field stub-count">${escapeHtml(ticket.ticketNumber)}</div>
       <div class="field stub-seat">${escapeHtml(ticket.stubSeatLabel)}</div>
-    </div></div>`).join("")}</section>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
+    </div></div>`).join("")}</section></div>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
   }
 
   function getCompListReservedSeatsForName(name: string) {
@@ -366,7 +367,6 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
       .ga-ticket-page { width: 11in; height: 4.885in; position: absolute; left: 0; top: 0; overflow: hidden; background: #000; transform: scale(.478); transform-origin: top left; }
       .ga-ticket-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
       .ga-field { position: absolute; color: #14110d; font-weight: 900; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: clip; }
-      .ticket-sheet:last-child { break-after: auto; page-break-after: auto; }
       @media print { html, body { width: 8.5in; margin: 0; } }
     </style></head><body>${ticketSheets.map((sheet) => `<section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ga-ticket-page"><img src="${activeGeneralAdmissionTicketTemplateUrl}" alt="" />
       <div class="ga-field" style="${gaStyle("showEvent")}">${escapeHtml(showEvent)}</div>
