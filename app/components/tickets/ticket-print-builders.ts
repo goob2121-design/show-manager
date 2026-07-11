@@ -96,6 +96,15 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
       .doors-main { left: .88in; top: 3.62in; width: 1.15in; text-align: center; font-size: .15in; }
       .stub-count { left: 8.88in; top: 2.34in; width: 1.58in; height: .42in; display: flex; align-items: center; justify-content: center; text-align: center; color: #17120e; font-size: .34in; font-weight: 900; letter-spacing: 0; line-height: 1; white-space: nowrap; overflow: visible; text-overflow: clip; }
       .stub-seat { left: 8.72in; top: 3.39in; width: 1.87in; text-align: center; color: #2d2721; font-size: .3in; font-weight: 900; }
+      .ticket-page.general .sponsor { left: 1.20in; top: 2.78in; width: 3.00in; font-size: .17in; }
+      .ticket-page.general .event { left: 1.33in; top: 3.19in; width: 2.86in; font-size: .12in; text-align: center; }
+      .ticket-page.general .date { left: 5.30in; top: 3.20in; width: 1.72in; font-size: .145in; text-align: center; }
+      .ticket-page.general .doors-main { left: .90in; top: 3.67in; width: 1.05in; font-size: .145in; }
+      .ticket-page.general .time { left: 3.13in; top: 3.67in; width: 1.02in; font-size: .145in; }
+      .ticket-page.general .count { left: 5.82in; top: 3.67in; width: 1.08in; font-size: .16in; }
+      .ticket-page.general .seat-main { left: 1.58in; top: 4.14in; width: 5.36in; font-size: .17in; text-align: center; }
+      .ticket-page.general .stub-count { left: 8.88in; top: 2.38in; width: 1.58in; height: .40in; font-size: .32in; }
+      .ticket-page.general .stub-seat { left: 8.75in; top: 3.44in; width: 1.80in; font-size: .28in; }
       @media print { html, body { width: 8.5in; margin: 0; } }
     `;
 
@@ -110,10 +119,11 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
     seatMainLabel: string;
     stubSeatLabel: string;
     ticketNumber: string;
+    templateKind: "sponsor" | "general";
   };
 
   function renderSharedCompTicketPrintHtml({ title, ticketSheets, printMode }: { title: string; ticketSheets: SharedTicketPrintItem[][]; printMode: "print" | "pdf" }) {
-  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>${sharedCompTicketPrintCss}</style></head><body>${ticketSheets.map((sheet) => `<div class="ticket-sheet-page"><section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page"><img src="${ticket.templateUrl}" alt="" />
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title><style>${sharedCompTicketPrintCss}</style></head><body>${ticketSheets.map((sheet) => `<div class="ticket-sheet-page"><section class="ticket-sheet">${sheet.map((ticket) => `<div class="ticket-slot"><div class="ticket-page ${ticket.templateKind === "general" ? "general" : "sponsor-template"}"><img src="${ticket.templateUrl}" alt="" />
       <div class="field sponsor">${escapeHtml(ticket.sponsorName)}</div>
       <div class="field event">${escapeHtml(ticket.showName)}</div>
       <div class="field date">${escapeHtml(ticket.showDate)}</div>
@@ -262,6 +272,7 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
       seatMainLabel: ticket.seatLabel,
       stubSeatLabel: ticket.seatLabel,
       ticketNumber: ticket.ticketNumber,
+      templateKind: "sponsor" as const,
     }));
     const printableTicketSheets = Array.from({ length: Math.ceil(printableTickets.length / 4) }, (_, sheetIndex) => printableTickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
     return renderSharedCompTicketPrintHtml({ title: `${sponsorName} Sponsor Tickets`, ticketSheets: printableTicketSheets, printMode });
@@ -321,6 +332,7 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
       seatMainLabel: `${ticket.categoryLabel} - ${ticket.seatLabel}`,
       stubSeatLabel: ticket.stubSeatLabel,
       ticketNumber: ticket.ticketNumber,
+      templateKind: ticket.isSponsorTicket ? "sponsor" as const : "general" as const,
     }));
     const printableTicketSheets = Array.from({ length: Math.ceil(printableTickets.length / 4) }, (_, sheetIndex) => printableTickets.slice(sheetIndex * 4, sheetIndex * 4 + 4));
     return renderSharedCompTicketPrintHtml({ title: `${show.name} Comp Tickets`, ticketSheets: printableTicketSheets, printMode });
