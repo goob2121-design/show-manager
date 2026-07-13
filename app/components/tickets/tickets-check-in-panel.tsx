@@ -18,6 +18,14 @@ type TicketsCheckInPanelProps = {
   ticketReportsPanelProps: TicketReportsPanelProps;
   sponsorCompPanelProps: {
     compRows: SponsorCompPanelRow[];
+    printStudioExportContext?: {
+      showId?: string;
+      showSlug?: string;
+      showName?: string;
+      showDate?: string;
+      showTime?: string | null;
+      venue?: string | null;
+    };
     onEditCompEntry: (row: SponsorCompPanelRow) => void;
     onChangeSeatsForCompEntry: (row: SponsorCompPanelRow) => void;
     onPrintCompEntry: (row: SponsorCompPanelRow) => void;

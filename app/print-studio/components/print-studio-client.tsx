@@ -7,6 +7,7 @@ import CloudTemplateControls from "./cloud-template-controls";
 import CollapsibleSection from "./collapsible-section";
 import { calculateBatchPageLayout, getBatchPaperDimensions } from "./batch-page-layout";
 import { generateBatchRecords } from "./batch-record-generator";
+import { parseImportedPrintRecords } from "./imported-record-parser";
 import BatchPrintPreview from "./batch-print-preview";
 import DesignerCanvas from "./designer-canvas";
 import FieldPropertiesPanel from "./field-properties-panel";
@@ -14,8 +15,8 @@ import FieldToolbar from "./field-toolbar";
 import PrintPreview from "./print-preview";
 import TicketRenderer from "./ticket-renderer";
 import { createDefaultBatchSettings, createDefaultTemplate, fieldLabels, PRINT_STUDIO_STORAGE_KEY, sampleTicketData } from "./sample-data";
-import { isPrintStudioVariableKey } from "./variable-contract";
-import type { BatchSettings, BatchVariableFieldType, PrintField, PrintFieldType, PrintOrientation, PrintStudioSavedState, PrintTemplate } from "./types";
+import { isPrintStudioVariableKey, PRINT_STUDIO_VARIABLE_KEYS } from "./variable-contract";
+import type { BatchSettings, BatchVariableFieldType, PrintField, PrintFieldType, PrintOrientation, PrintRecord, PrintStudioSavedState, PrintTemplate } from "./types";
 
 type PrintMode = "none" | "single" | "batch";
 
@@ -108,7 +109,7 @@ function normalizeBatchSettings(settings?: Partial<BatchSettings>): BatchSetting
   return {
     ...defaults,
     ...settings,
-    mode: settings?.mode === "custom_list" ? "custom_list" : "sequential",
+    mode: settings?.mode === "custom_list" || settings?.mode === "imported_json" ? settings.mode : "sequential",
     startingNumber: Math.floor(Number(settings?.startingNumber ?? defaults.startingNumber)) || defaults.startingNumber,
     quantity: clamp(Math.floor(Number(settings?.quantity ?? defaults.quantity)) || defaults.quantity, 1, 1000),
     increment: Math.max(1, Math.floor(Number(settings?.increment ?? defaults.increment)) || defaults.increment),
@@ -145,8 +146,28 @@ export default function PrintStudioClient() {
   const [cloudTemplateId, setCloudTemplateId] = useState<string>();
   const [cloudTemplateName, setCloudTemplateName] = useState<string>();
   const [cloudBackgroundPath, setCloudBackgroundPath] = useState<string | null>(null);
+  const [importedJsonRecords, setImportedJsonRecords] = useState<PrintRecord[]>([]);
+  const [importedJsonWarnings, setImportedJsonWarnings] = useState<string[]>([]);
+  const [importedJsonErrors, setImportedJsonErrors] = useState<string[]>([]);
+  const [importedJsonSource, setImportedJsonSource] = useState<string>();
 
-  const batchResult = useMemo(() => generateBatchRecords(batchSettings), [batchSettings]);
+  const generatedBatchResult = useMemo(() => generateBatchRecords(batchSettings), [batchSettings]);
+  const importedBatchResult = useMemo(() => {
+    const records = importedJsonRecords.map((record, index) => {
+      const merged: PrintRecord = {
+        id: record.id || `imported-json-${index + 1}`,
+        displayName: record.displayName,
+      };
+      PRINT_STUDIO_VARIABLE_KEYS.forEach((key) => {
+        const value = record[key] || batchSettings.sharedValues[key];
+        if (value) merged[key] = value;
+      });
+      merged.displayName = merged.displayName || merged.purchaser_name || merged.guest_name || merged.sponsor_name || merged.ticket_number || `Imported ${index + 1}`;
+      return merged;
+    });
+    return { records, warnings: [...importedJsonWarnings, ...importedJsonErrors] };
+  }, [batchSettings.sharedValues, importedJsonErrors, importedJsonRecords, importedJsonWarnings]);
+  const batchResult = batchSettings.mode === "imported_json" ? importedBatchResult : generatedBatchResult;
   const batchPaper = getBatchPaperDimensions(batchSettings);
   const batchLayout = calculateBatchPageLayout(template, batchSettings);
   const batchRecords = batchResult.records;
@@ -242,6 +263,37 @@ export default function PrintStudioClient() {
     reader.readAsDataURL(file);
   }
 
+  async function handleImportedJsonFile(file?: File) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      setImportedJsonRecords([]);
+      setImportedJsonWarnings([]);
+      setImportedJsonErrors(["Please choose a .json file."]);
+      setImportedJsonSource(file.name);
+      return;
+    }
+
+    try {
+      const result = parseImportedPrintRecords(await file.text());
+      setImportedJsonRecords(result.records);
+      setImportedJsonWarnings(result.warnings);
+      setImportedJsonErrors(result.errors);
+      setImportedJsonSource(result.source || file.name);
+    } catch {
+      setImportedJsonRecords([]);
+      setImportedJsonWarnings([]);
+      setImportedJsonErrors(["The selected JSON file could not be read."]);
+      setImportedJsonSource(file.name);
+    }
+  }
+
+  function clearImportedJsonRecords() {
+    setImportedJsonRecords([]);
+    setImportedJsonWarnings([]);
+    setImportedJsonErrors([]);
+    setImportedJsonSource(undefined);
+  }
+
   function saveTemplate() {
     if (typeof window === "undefined") return;
     const savedState: PrintStudioSavedState = { template, batchSettings, cloudTemplateId, cloudTemplateName, cloudBackgroundPath };
@@ -286,6 +338,7 @@ export default function PrintStudioClient() {
     setCloudTemplateId(undefined);
     setCloudTemplateName(undefined);
     setCloudBackgroundPath(null);
+    clearImportedJsonRecords();
     setSaveMessage("Template and batch data reset to prototype defaults.");
   }
 
@@ -566,6 +619,12 @@ export default function PrintStudioClient() {
                 settings={batchSettings}
                 records={batchRecords}
                 warnings={batchResult.warnings}
+                importedRecords={importedJsonRecords}
+                importedSource={importedJsonSource}
+                importedWarnings={importedJsonWarnings}
+                importedErrors={importedJsonErrors}
+                onImportedJsonFile={handleImportedJsonFile}
+                onClearImportedRecords={clearImportedJsonRecords}
                 onChange={updateBatchSettings}
                 onSharedValueChange={updateSharedBatchValue}
               />

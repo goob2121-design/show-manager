@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { PrintButton } from "@/app/components/print-button";
+import { PrintStudioExportButton } from "./print-studio-export-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { GuestProfile, ShowCompTicket, ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
@@ -36,6 +37,16 @@ type GuestSongRow = {
 type DoorGuestListRow = ShowCompTicket;
 type SelectedReservedSeatRow = ShowReservedSeatAssignment;
 type ReservedSeatingLinkRow = ShowReservedSeatingLink;
+
+type PrintStudioExportRecord = Partial<Record<"event_name" | "show_date" | "show_time" | "venue" | "purchaser_name" | "guest_name" | "sponsor_name" | "ticket_type" | "seat" | "section" | "ticket_number", string>>;
+
+type PrintStudioExportFile = {
+  schemaVersion: 1;
+  exportedAt: string;
+  source: string;
+  showSlug?: string;
+  records: PrintStudioExportRecord[];
+};
 
 type ReservedSeatCategoryValue = "paid_reserved" | "comp" | "guest";
 
@@ -327,10 +338,14 @@ function PrintShell({
   show,
   kind,
   children,
+  printStudioExport,
+  printStudioExportFileName,
 }: {
   show: ShowRecord;
   kind: PrintKind;
   children: ReactNode;
+  printStudioExport?: PrintStudioExportFile | null;
+  printStudioExportFileName?: string;
 }) {
   const title = getPrintTitle(kind);
   const isDoorGuestList = kind === "door-guest-list";
@@ -349,7 +364,10 @@ function PrintShell({
           >
             Back to Admin
           </Link>
-          <PrintButton />
+          <div className="flex flex-wrap gap-2">
+            {printStudioExport && printStudioExportFileName ? <PrintStudioExportButton fileName={printStudioExportFileName} exportFile={printStudioExport} /> : null}
+            <PrintButton />
+          </div>
 
         </div>
 
@@ -983,6 +1001,90 @@ function SelectedReservedSeatCardsPrintView({
   );
 }
 
+function cleanPrintStudioRecord(record: PrintStudioExportRecord) {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => typeof value === "string" && value.trim())) as PrintStudioExportRecord;
+}
+
+function getShowExportBase(show: ShowRecord) {
+  return {
+    event_name: show.name,
+    show_date: formatShowDate(show.show_date),
+    show_time: show.show_start_time || undefined,
+    venue: show.venue || undefined,
+  } satisfies PrintStudioExportRecord;
+}
+
+function buildPrintStudioExportFileName(showSlug: string, kind: PrintKind) {
+  return `print-studio-${showSlug}-${kind}-${new Date().toISOString().slice(0, 10)}.json`;
+}
+
+function buildPrintStudioExport(show: ShowRecord, kind: PrintKind, records: PrintStudioExportRecord[]): PrintStudioExportFile | null {
+  if (records.length === 0) return null;
+  return {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    source: `stageflow-admin-print-${kind}`,
+    showSlug: show.slug,
+    records: records.map(cleanPrintStudioRecord),
+  };
+}
+
+function buildDoorGuestListPrintStudioRecords(show: ShowRecord, tickets: DoorGuestListRow[]) {
+  const base = getShowExportBase(show);
+  return sortDoorGuestList(tickets).flatMap((ticket) => {
+    const count = Math.max(1, ticket.ticket_count || 1);
+    return Array.from({ length: count }, () => cleanPrintStudioRecord({
+      ...base,
+      purchaser_name: ticket.guest_name?.trim() || undefined,
+      guest_name: ticket.guest_name?.trim() || undefined,
+      ticket_type: formatDoorGuestListType(ticket.ticket_type),
+    }));
+  });
+}
+
+function buildReservedSeatFallbackPrintStudioRecords(show: ShowRecord, tickets: DoorGuestListRow[], reservedLinks: ReservedSeatingLinkRow[], assignments: SelectedReservedSeatRow[]) {
+  const base = getShowExportBase(show);
+  const reservedEntries = sortReservedSeatCards(tickets.filter((ticket) => isReservedSeatEntry(ticket) && !hasSelectedReservedSeatsForTicket(ticket, reservedLinks, assignments)));
+  return reservedEntries.flatMap((ticket) => {
+    const seatCount = Math.max(1, ticket.ticket_count);
+    return Array.from({ length: seatCount }, (_, index) => cleanPrintStudioRecord({
+      ...base,
+      purchaser_name: ticket.guest_name?.trim() || undefined,
+      guest_name: ticket.guest_name?.trim() || undefined,
+      ticket_type: "Reserved Seating",
+      seat: seatCount > 1 ? `Seat ${index + 1} of ${seatCount}` : undefined,
+    }));
+  });
+}
+
+function buildAssignmentPrintStudioRecords(show: ShowRecord, assignments: SelectedReservedSeatRow[], reservedLinks: ReservedSeatingLinkRow[], mode: "selected" | "comp") {
+  const base = getShowExportBase(show);
+  const reservedLinkById = new Map(reservedLinks.map((link) => [link.id, link]));
+  return [...assignments]
+    .filter((assignment) => {
+      if (assignment.assignment_type !== "customer") return false;
+      if (mode === "selected") return true;
+      const reservedLink = assignment.seating_link_id ? reservedLinkById.get(assignment.seating_link_id) ?? null : null;
+      return isCompReservedSeatCategory(assignment.seat_category, reservedLink?.is_complimentary);
+    })
+    .sort((left, right) => {
+      const nameCompare = (left.customer_name ?? "").localeCompare(right.customer_name ?? "", "en-US");
+      if (nameCompare !== 0) return nameCompare;
+      return left.seat_id.localeCompare(right.seat_id, "en-US");
+    })
+    .map((assignment) => {
+      const reservedLink = assignment.seating_link_id ? reservedLinkById.get(assignment.seating_link_id) ?? null : null;
+      const category = normalizeReservedSeatCategory(assignment.seat_category, reservedLink?.is_complimentary);
+      return cleanPrintStudioRecord({
+        ...base,
+        purchaser_name: assignment.customer_name?.trim() || undefined,
+        guest_name: assignment.customer_name?.trim() || undefined,
+        ticket_type: mode === "comp" ? getReservedSeatCategoryLabel(category) : reservedLink?.is_complimentary ? "Complimentary Reserved Seat" : "Reserved Seat",
+        seat: assignment.seat_id,
+        section: assignment.section,
+      });
+    });
+}
 async function loadShow(slug: string) {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase.from("shows").select("*").eq("slug", slug).maybeSingle();
@@ -1176,9 +1278,21 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
       ? await safeLoad("reserved seating links", () => loadReservedSeatingLinks(show.id), [])
       : [];
 
+  const printStudioExportRecords =
+    printKind === "door-guest-list"
+      ? buildDoorGuestListPrintStudioRecords(show, doorGuestList)
+      : printKind === "reserved-seat-cards"
+        ? buildReservedSeatFallbackPrintStudioRecords(show, doorGuestList, reservedSeatingLinks, selectedReservedSeatAssignments)
+        : printKind === "comp-reserved-seat-cards"
+          ? buildAssignmentPrintStudioRecords(show, selectedReservedSeatAssignments, reservedSeatingLinks, "comp")
+          : printKind === "selected-seat-cards"
+            ? buildAssignmentPrintStudioRecords(show, selectedReservedSeatAssignments, reservedSeatingLinks, "selected")
+            : [];
+  const printStudioExport = buildPrintStudioExport(show, printKind, printStudioExportRecords);
+  const printStudioExportFileName = printStudioExport ? buildPrintStudioExportFileName(show.slug, printKind) : undefined;
   return (
     <AdminGate slug={slug} resourceLabel={`print pages for ${show.name}`} continueLabel="Continue to Print View">
-      <PrintShell show={show} kind={printKind}>
+      <PrintShell show={show} kind={printKind} printStudioExport={printStudioExport} printStudioExportFileName={printStudioExportFileName}>
         {printKind === "itinerary" ? <ItineraryPrintView show={show} /> : null}
         {printKind === "sponsors" ? (
           <SponsorRundownPrintView sponsors={sponsors} anchorTitles={anchorTitles} />

@@ -71,7 +71,7 @@ export type PrintRecord = Partial<Record<PrintFieldType, string>> & {
   displayName?: string;
 };
 
-export type BatchMode = "sequential" | "custom_list";
+export type BatchMode = "sequential" | "custom_list" | "imported_json";
 export type BatchPaperSize = "letter" | "legal" | "a4" | "custom";
 export type BatchPageOrientation = "portrait" | "landscape";
 

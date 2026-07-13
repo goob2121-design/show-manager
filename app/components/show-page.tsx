@@ -20585,6 +20585,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             }}
             sponsorCompPanelProps={{
               compRows: buildCompListReportRows(),
+              printStudioExportContext: {
+                showId: show.id,
+                showSlug,
+                showName: show.name,
+                showDate: formatShowDate(show.show_date),
+                showTime: show.show_start_time,
+                venue: show.venue,
+              },
               onEditCompEntry: (row) => startEditingCompEntry(row as CompListReportRow),
               onChangeSeatsForCompEntry: (row) => void handleChangeSeatsForCompRow(row as CompListReportRow),
               onPrintCompEntry: (row) => openCompTicketPrintWindow(`row:${row.id}` as CompTicketPrintScope),
