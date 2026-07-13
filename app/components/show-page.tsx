@@ -6282,6 +6282,10 @@ export function ShowPage({
   const [manualRehearsalTitle, setManualRehearsalTitle] = useState("");
   const [songLibrarySearchQuery, setSongLibrarySearchQuery] = useState("");
   const [rehearsalLibrarySearchQuery, setRehearsalLibrarySearchQuery] = useState("");
+  const [activeRehearsalAddSongType, setActiveRehearsalAddSongType] = useState<"library" | "guest" | "manual">("library");
+  const [activeRehearsalMode, setActiveRehearsalMode] = useState<"practice" | "edit">("practice");
+  const [hasLoadedRehearsalModePreference, setHasLoadedRehearsalModePreference] = useState(false);
+  const rehearsalModeSaveSkipRef = useRef(false);
   const [rehearsalTitleDrafts, setRehearsalTitleDrafts] = useState<Record<string, string>>({});
   const [rehearsalKeyDrafts, setRehearsalKeyDrafts] = useState<Record<string, string>>({});
   const [rehearsalSungByDrafts, setRehearsalSungByDrafts] = useState<Record<string, string>>({});
@@ -6607,6 +6611,8 @@ export function ShowPage({
   const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
   const shouldShowBandRehearsalTab = isBandView && activeBandTab === "rehearsal";
   const canEditBandRehearsal = isBandView && hasAdminPortalAccess;
+  const rehearsalModeStorageKey = show?.slug ? `stageflow-rehearsal-mode-${show.slug}` : null;
+  const canManageBandRehearsal = canEditBandRehearsal && activeRehearsalMode === "edit";
   const isBandRehearsalReadOnly = isBandView && !isBandAdminUnlocked;
   const shouldShowGuestWelcomeTab = isGuestView && activeGuestTab === "welcome";
   const shouldShowGuestSongsTab = isGuestView && activeGuestTab === "songs";
@@ -6622,6 +6628,45 @@ export function ShowPage({
     shouldShowAdminFinanceTab && activeFinanceAdminSubTab === "payouts";
   const shouldShowSongSubmissionForm = shouldShowAdminSongSubmission;
   const visiblePromoMaterials = promoMaterials.filter((material) => material.is_visible);
+
+  useEffect(() => {
+    setHasLoadedRehearsalModePreference(false);
+    rehearsalModeSaveSkipRef.current = true;
+
+    if (!canEditBandRehearsal) {
+      setActiveRehearsalMode("practice");
+      setHasLoadedRehearsalModePreference(true);
+      return;
+    }
+
+    if (!rehearsalModeStorageKey || typeof window === "undefined") {
+      setActiveRehearsalMode("edit");
+      setHasLoadedRehearsalModePreference(true);
+      return;
+    }
+
+    const storedMode = window.localStorage.getItem(rehearsalModeStorageKey);
+    setActiveRehearsalMode(storedMode === "practice" || storedMode === "edit" ? storedMode : "edit");
+    setHasLoadedRehearsalModePreference(true);
+  }, [canEditBandRehearsal, rehearsalModeStorageKey]);
+
+  useEffect(() => {
+    if (rehearsalModeSaveSkipRef.current) {
+      rehearsalModeSaveSkipRef.current = false;
+      return;
+    }
+
+    if (
+      !hasLoadedRehearsalModePreference ||
+      !canEditBandRehearsal ||
+      !rehearsalModeStorageKey ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    window.localStorage.setItem(rehearsalModeStorageKey, activeRehearsalMode);
+  }, [activeRehearsalMode, canEditBandRehearsal, hasLoadedRehearsalModePreference, rehearsalModeStorageKey]);
   const filteredPromoMaterials = useMemo(
     () =>
       promoMaterialFilter === "all"
@@ -16799,8 +16844,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
   const activeAdminTabLabel =
     adminTabItems.find((tab) => tab.key === activeAdminTab)?.label ?? "Overview";
-  const activeBandTabLabel =
-    bandTabItems.find((tab) => tab.key === activeBandTab)?.label ?? "Setlist";
   const activeGuestTabLabel =
     guestTabItems.find((tab) => tab.key === activeGuestTab)?.label ?? "Welcome";
 
@@ -16857,12 +16900,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               />
             </>
           ) : null}
-          <div className={`relative ${shouldUsePortalHero ? "px-4 py-6 text-white sm:px-6 sm:py-8 lg:px-8" : "flex flex-col gap-3"}`}>
+          <div className={`relative ${shouldUsePortalHero ? "px-4 py-4 text-white sm:px-5 sm:py-5 lg:px-6 lg:py-6" : "flex flex-col gap-3"}`}>
             {shouldUsePortalHero ? (
-              <div className="grid items-center gap-5 sm:gap-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-10 xl:grid-cols-[320px_minmax(0,1fr)]">
-                <div className="flex flex-col gap-3">
+              <div className="grid items-center gap-4 sm:gap-5 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-7 xl:grid-cols-[260px_minmax(0,1fr)]">
+                <div className="flex flex-col gap-2">
                   {shouldShowPortalLogo ? (
-                    <div className="w-full max-w-[220px] sm:max-w-[260px] lg:max-w-[320px]">
+                    <div className="w-full max-w-[180px] sm:max-w-[220px] lg:max-w-[260px]">
                       <Image
                         src="/stageflow-logo-v2.png"
                         alt="StageFlow logo"
@@ -16885,17 +16928,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   </div>
                 </div>
 
-                <div className="flex min-w-0 flex-col justify-center gap-3 lg:min-h-[180px]">
+                <div className="flex min-w-0 flex-col justify-center gap-2 lg:min-h-[120px]">
                   {show.show_logo_url ? (
                     <div>
                       <img
                         src={show.show_logo_url}
                         alt={`${show.name} logo`}
-                        className="h-auto max-h-[56px] w-full max-w-[140px] object-contain sm:max-h-[64px] sm:max-w-[160px] lg:max-h-[70px] lg:max-w-[180px]"
+                        className="h-auto max-h-[44px] w-full max-w-[120px] object-contain sm:max-h-[52px] sm:max-w-[140px] lg:max-h-[56px] lg:max-w-[160px]"
                       />
                     </div>
                   ) : null}
-                  <h1 className="max-w-[720px] text-[1.75rem] font-bold tracking-tight text-white sm:text-[2.2rem] lg:text-[2.7rem]">
+                  <h1 className="max-w-[720px] text-[1.55rem] font-bold tracking-tight text-white sm:text-[1.95rem] lg:text-[2.35rem]">
                     {show.name}
                   </h1>
                   <p className="text-sm text-slate-200 sm:text-base">
@@ -17391,16 +17434,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         ) : null}
 
         {isBandView ? (
-          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
+          <section className="print-hidden flex flex-col gap-3 border-t border-stone-200 pt-4">
             <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Band Sections</h2>
+              <h2 className="text-lg font-semibold">Band Sections</h2>
               <p className="text-sm text-stone-600">
                 Jump between the show-day setlist, song collaboration tools, rehearsal prep, and itinerary details.
               </p>
             </div>
 
             <div
-              className="flex gap-2 overflow-x-auto rounded-2xl bg-stone-100 p-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-2 sm:gap-2 xl:grid-cols-5"
+              className="flex gap-2 overflow-x-auto rounded-2xl bg-stone-100 p-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-2 sm:gap-2 xl:grid-cols-5"
               role="tablist"
               aria-label="Band portal sections"
             >
@@ -17411,7 +17454,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   role="tab"
                   aria-selected={activeBandTab === tab.key}
                   onClick={() => setActiveBandTab(tab.key)}
-                  className={`min-h-11 shrink-0 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                  className={`min-h-10 shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                     activeBandTab === tab.key
                       ? "bg-emerald-700 text-white shadow-sm"
                       : "bg-white text-stone-700 hover:bg-stone-50"
@@ -17422,9 +17465,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               ))}
             </div>
 
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-              Active section: <span className="font-semibold text-emerald-700">{activeBandTabLabel}</span>
-            </div>
           </section>
         ) : null}
 
@@ -17557,73 +17597,114 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
         {shouldShowBandRehearsalTab ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex flex-col gap-1">
-                <h2 className="text-xl font-semibold">Rehearsal</h2>
-                <p className="text-sm text-stone-600">
-                  Build a small rehearsal list for this show and attach MP3 reference recordings for the band.
-                </p>
+            <div className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex min-w-0 flex-col gap-3 lg:max-w-xl">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-xl font-semibold">Rehearsal</h2>
+                  <p className="text-sm text-stone-600">
+                    Build a small rehearsal list for this show and attach MP3 reference recordings for the band.
+                  </p>
+                </div>
+
+                {canEditBandRehearsal ? (
+                  <div className="flex w-full max-w-sm rounded-xl bg-white p-1" role="tablist" aria-label="Rehearsal mode">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeRehearsalMode === "practice"}
+                      onClick={() => setActiveRehearsalMode("practice")}
+                      className={`min-h-10 flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                        activeRehearsalMode === "practice"
+                          ? "bg-emerald-700 text-white shadow-sm"
+                          : "text-stone-700 hover:bg-stone-100"
+                      }`}
+                    >
+                      Practice Mode
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeRehearsalMode === "edit"}
+                      onClick={() => setActiveRehearsalMode("edit")}
+                      className={`min-h-10 flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                        activeRehearsalMode === "edit"
+                          ? "bg-emerald-700 text-white shadow-sm"
+                          : "text-stone-700 hover:bg-stone-100"
+                      }`}
+                    >
+                      Edit Mode
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-fit rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-600">
+                    Practice Mode
+                  </div>
+                )}
               </div>
 
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                {canEditBandRehearsal ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleSyncRehearsalToSetlist()}
-                    disabled={Boolean(activeRehearsalActionId)}
-                    className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
-                  >
-                    {activeRehearsalActionId === "sync-setlist"
-                      ? "Syncing..."
-                      : "Sync Rehearsal to Setlist"}
-                  </button>
-                ) : null}
-                <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={() => handlePrintRehearsalSheet("all")}
-                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                  >
-                    Print All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePrintRehearsalSheet("set1")}
-                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                  >
-                    Print Set 1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePrintRehearsalSheet("set2")}
-                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                  >
-                    Print Set 2
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCopyRehearsalLink}
-                  className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                >
-                  {copiedRehearsalLink ? "Rehearsal link copied!" : "Copy Rehearsal Link"}
-                </button>
-                {show?.slug ? (
-                  <>
-                    <Link
-                      href={`/admin/${encodeURIComponent(show.slug)}/performance-setup`}
-                      className="inline-flex w-full items-center justify-center rounded-xl border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 sm:w-auto"
+              <div className="flex w-full flex-col gap-2 lg:w-auto lg:items-end">
+                <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
+                  {canManageBandRehearsal ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleSyncRehearsalToSetlist()}
+                      disabled={Boolean(activeRehearsalActionId)}
+                      className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
                     >
-                      Performance Setup
-                    </Link>
+                      {activeRehearsalActionId === "sync-setlist"
+                        ? "Syncing..."
+                        : "Sync Rehearsal to Setlist"}
+                    </button>
+                  ) : null}
+                  {show?.slug ? (
                     <Link
                       href={`/band/${encodeURIComponent(show.slug)}/live`}
                       className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 sm:w-auto"
                     >
                       Live Mode
                     </Link>
-                  </>
-                ) : null}
+                  ) : null}
+                </div>
+                <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintRehearsalSheet("all")}
+                    className="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                  >
+                    Print All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintRehearsalSheet("set1")}
+                    className="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                  >
+                    Print Set 1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintRehearsalSheet("set2")}
+                    className="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                  >
+                    Print Set 2
+                  </button>
+                </div>
+                <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
+                  <button
+                    type="button"
+                    onClick={handleCopyRehearsalLink}
+                    className="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                  >
+                    {copiedRehearsalLink ? "Rehearsal link copied!" : "Copy Rehearsal Link"}
+                  </button>
+                  {canManageBandRehearsal && show?.slug ? (
+                    <Link
+                      href={`/admin/${encodeURIComponent(show.slug)}/performance-setup`}
+                      className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                    >
+                      Performance Setup
+                    </Link>
+                  ) : null}
+                </div>
               </div>
             </div>
 
@@ -17643,14 +17724,61 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               </div>
             ) : null}
 
-            {canEditBandRehearsal ? (
+            {canManageBandRehearsal ? (
               <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-                <div className="grid gap-4 xl:grid-cols-3">
-                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-base font-semibold text-stone-900">Add Song</h3>
+                    <p className="text-sm text-stone-600">Choose a library song, guest song, or rehearsal-only manual title.</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2" role="tablist" aria-label="Add song type">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeRehearsalAddSongType === "library"}
+                      onClick={() => setActiveRehearsalAddSongType("library")}
+                      className={`min-h-10 flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition sm:flex-none ${
+                        activeRehearsalAddSongType === "library"
+                          ? "bg-emerald-700 text-white shadow-sm"
+                          : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
+                      }`}
+                    >
+                      Library
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeRehearsalAddSongType === "guest"}
+                      onClick={() => setActiveRehearsalAddSongType("guest")}
+                      className={`min-h-10 flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition sm:flex-none ${
+                        activeRehearsalAddSongType === "guest"
+                          ? "bg-emerald-700 text-white shadow-sm"
+                          : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
+                      }`}
+                    >
+                      Guest
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeRehearsalAddSongType === "manual"}
+                      onClick={() => setActiveRehearsalAddSongType("manual")}
+                      className={`min-h-10 flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition sm:flex-none ${
+                        activeRehearsalAddSongType === "manual"
+                          ? "bg-emerald-700 text-white shadow-sm"
+                          : "border border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
+                      }`}
+                    >
+                      Manual
+                    </button>
+                  </div>
+
+                  {activeRehearsalAddSongType === "library" ? (
                     <div className="flex flex-col gap-3">
                       <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Search Songs
-                        <div className="flex gap-2">
+                        Search song library
+                        <div className="flex flex-col gap-2 sm:flex-row">
                           <input
                             type="text"
                             value={rehearsalLibrarySearchQuery}
@@ -17670,41 +17798,43 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         </div>
                       </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Add Song from Library
-                        <select
-                          value={selectedRehearsalSongId}
-                          onChange={(event) => setSelectedRehearsalSongId(event.target.value)}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                        <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-stone-700">
+                          Add Song from Library
+                          <select
+                            value={selectedRehearsalSongId}
+                            onChange={(event) => setSelectedRehearsalSongId(event.target.value)}
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          >
+                            <option value="">Select a song...</option>
+                            {filteredRehearsalLibrarySongs.map((song) => (
+                              <option key={song.id} value={song.id}>
+                                {sanitizeSongTitle(song.title)}
+                                {song.artist ? ` - ${song.artist}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => void handleAddRehearsalSong()}
+                          disabled={activeRehearsalActionId === "create"}
+                          className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 lg:w-auto"
                         >
-                          <option value="">Select a song...</option>
-                          {filteredRehearsalLibrarySongs.map((song) => (
-                            <option key={song.id} value={song.id}>
-                              {sanitizeSongTitle(song.title)}
-                              {song.artist ? ` - ${song.artist}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                          {activeRehearsalActionId === "create" ? "Adding..." : "Add Library Song"}
+                        </button>
+                      </div>
 
                       {filteredRehearsalLibrarySongs.length === 0 ? (
                         <p className="text-sm text-stone-500">No songs found.</p>
                       ) : null}
-
-                      <button
-                        type="button"
-                        onClick={() => void handleAddRehearsalSong()}
-                        disabled={activeRehearsalActionId === "create"}
-                        className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
-                      >
-                        {activeRehearsalActionId === "create" ? "Adding..." : "Add Library Song"}
-                      </button>
                     </div>
-                  </div>
+                  ) : null}
 
-                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                    <div className="flex flex-col gap-3">
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  {activeRehearsalAddSongType === "guest" ? (
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                      <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-stone-700">
                         Add Guest Song
                         <select
                           value={selectedRehearsalGuestSongId}
@@ -17725,38 +17855,36 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         type="button"
                         onClick={() => void handleAddGuestRehearsalSong()}
                         disabled={activeRehearsalActionId === "create-guest"}
-                        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
                       >
                         {activeRehearsalActionId === "create-guest" ? "Adding..." : "Add Guest Song"}
                       </button>
                     </div>
-                  </div>
+                  ) : null}
 
-                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                    <div className="flex flex-col gap-3">
-                      <div className="grid gap-3">
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          Add Manual Song Title
-                          <input
-                            type="text"
-                            value={manualRehearsalTitle}
-                            onChange={(event) => setManualRehearsalTitle(event.target.value)}
-                            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                            placeholder="Enter a rehearsal-only song title"
-                          />
-                        </label>
-                      </div>
+                  {activeRehearsalAddSongType === "manual" ? (
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                      <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-stone-700">
+                        Add Manual Song Title
+                        <input
+                          type="text"
+                          value={manualRehearsalTitle}
+                          onChange={(event) => setManualRehearsalTitle(event.target.value)}
+                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                          placeholder="Enter a rehearsal-only song title"
+                        />
+                      </label>
 
                       <button
                         type="button"
                         onClick={() => void handleAddManualRehearsalSong()}
                         disabled={activeRehearsalActionId === "create-manual"}
-                        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
                       >
                         {activeRehearsalActionId === "create-manual" ? "Adding..." : "Add Manual Song"}
                       </button>
                     </div>
-                  </div>
+                  ) : null}
                 </div>
               </div>
             ) : isBandRehearsalReadOnly ? (
@@ -17914,7 +18042,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         {shouldShowRehearsalEntryDetails ? (
                         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                           <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                            {canEditBandRehearsal && !entry.is_library_linked ? (
+                            {canManageBandRehearsal && !entry.is_library_linked ? (
                               <div className="mb-4 grid gap-4 md:grid-cols-2">
                                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                                   Manual Song Title
@@ -17966,7 +18094,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               </div>
                             ) : null}
 
-                            {canEditBandRehearsal ? (
+                            {canManageBandRehearsal ? (
                               <>
                                 <label className="mb-4 flex flex-col gap-2 text-sm font-medium text-stone-700">
                                   Section
@@ -18094,13 +18222,13 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   Rehearsal Recording
                                 </h4>
                                 <p className="mt-1 text-sm text-stone-600">
-                                  {canEditBandRehearsal
+                                  {canManageBandRehearsal
                                     ? "Upload MP3 reference recordings for this rehearsal song."
                                     : "MP3 reference recordings attached to this rehearsal song."}
                                 </p>
                               </div>
 
-                              {canEditBandRehearsal ? (
+                              {canManageBandRehearsal ? (
                                 <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                                   Rehearsal Recording
                                   <input
@@ -18116,7 +18244,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                 </label>
                               ) : null}
 
-                              {canEditBandRehearsal ? (
+                              {canManageBandRehearsal ? (
                                 <div className="flex flex-wrap items-center gap-2">
                                   <button
                                     type="button"
@@ -18155,7 +18283,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                                 Uploaded {formatPromoUploadDate(recording.created_at)}
                                               </p>
                                             </div>
-                                            {canEditBandRehearsal ? (
+                                            {canManageBandRehearsal ? (
                                               <button
                                                 type="button"
                                                 onClick={() => void handleDeleteRehearsalRecording(recording)}

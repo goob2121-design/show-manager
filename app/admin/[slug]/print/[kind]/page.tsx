@@ -349,7 +349,15 @@ function PrintShell({
           >
             Back to Admin
           </Link>
-          <PrintButton />
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/print-studio"
+              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+            >
+              Print Studio
+            </Link>
+            <PrintButton />
+          </div>
         </div>
 
         <header className={`mb-6 border-b border-stone-300 pb-5 ${isReservedSeatCards || isCompReservedSeatCards || isBlankSeatCards ? "print:hidden" : ""}`}>
