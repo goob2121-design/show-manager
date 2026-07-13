@@ -6,7 +6,7 @@ import BatchDataPanel from "./batch-data-panel";
 import CloudTemplateControls from "./cloud-template-controls";
 import CollapsibleSection from "./collapsible-section";
 import { calculateBatchPageLayout, getBatchPaperDimensions } from "./batch-page-layout";
-import { generateBatchRecords } from "./batch-record-generator";
+import { applyMissingTicketNumbers, generateBatchRecords } from "./batch-record-generator";
 import { parseImportedPrintRecords } from "./imported-record-parser";
 import BatchPrintPreview from "./batch-print-preview";
 import DesignerCanvas from "./designer-canvas";
@@ -153,7 +153,8 @@ export default function PrintStudioClient() {
 
   const generatedBatchResult = useMemo(() => generateBatchRecords(batchSettings), [batchSettings]);
   const importedBatchResult = useMemo(() => {
-    const records = importedJsonRecords.map((record, index) => {
+    const resolvedImportedRecords = applyMissingTicketNumbers(importedJsonRecords, batchSettings);
+    const records = resolvedImportedRecords.map((record, index) => {
       const merged: PrintRecord = {
         id: record.id || `imported-json-${index + 1}`,
         displayName: record.displayName,
@@ -166,7 +167,7 @@ export default function PrintStudioClient() {
       return merged;
     });
     return { records, warnings: [...importedJsonWarnings, ...importedJsonErrors] };
-  }, [batchSettings.sharedValues, importedJsonErrors, importedJsonRecords, importedJsonWarnings]);
+  }, [batchSettings, importedJsonErrors, importedJsonRecords, importedJsonWarnings]);
   const batchResult = batchSettings.mode === "imported_json" ? importedBatchResult : generatedBatchResult;
   const batchPaper = getBatchPaperDimensions(batchSettings);
   const batchLayout = calculateBatchPageLayout(template, batchSettings);

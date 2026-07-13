@@ -73,6 +73,30 @@ export default function BatchDataPanel({
   const seatEndNumber = settings.seatStart + Math.max(0, settings.quantity - 1) * settings.seatIncrement;
   const seatEnd = `${settings.seatPrefix}${String(seatEndNumber).padStart(settings.seatPadding, "0")}`;
   const modeBadge = settings.mode === "custom_list" ? "Custom List" : settings.mode === "imported_json" ? "Imported JSON" : "Sequential Batch";
+  const renderSequentialTicketNumbering = () => (
+    <CollapsibleSection title="Sequential Ticket Numbering" defaultOpen badge={`${firstTicket}-${lastTicket}`}>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label className={labelClass}>Starting ticket number<input className={inputClass} type="number" value={settings.startingNumber} onChange={(event) => onChange({ startingNumber: integerValue(event.target.value, settings.startingNumber) })} /></label>
+        <label className={labelClass}>Quantity<input className={inputClass} type="number" min="1" max="1000" value={settings.quantity} onChange={(event) => onChange({ quantity: positiveInteger(event.target.value, settings.quantity) })} /></label>
+        <label className={labelClass}>Increment<input className={inputClass} type="number" min="1" value={settings.increment} onChange={(event) => onChange({ increment: positiveInteger(event.target.value, settings.increment) })} /></label>
+        <label className={labelClass}>Number padding<input className={inputClass} type="number" min="0" max="12" value={settings.padding} onChange={(event) => onChange({ padding: Math.max(0, integerValue(event.target.value, settings.padding)) })} /></label>
+        <label className={labelClass}>Prefix<input className={inputClass} value={settings.prefix} onChange={(event) => onChange({ prefix: event.target.value })} /></label>
+        <label className={labelClass}>Suffix<input className={inputClass} value={settings.suffix} onChange={(event) => onChange({ suffix: event.target.value })} /></label>
+      </div>
+      <div className="mt-4 rounded-md border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-slate-300">
+        <p><span className="font-bold text-slate-100">Calculated ending number:</span> {endingNumber}</p>
+        <p><span className="font-bold text-slate-100">First ticket:</span> {firstTicket}</p>
+        <p><span className="font-bold text-slate-100">Last ticket:</span> {lastTicket}</p>
+        <p className="mt-2 font-bold text-slate-100">Generated range preview</p>
+        <p>{numberPreviewIndexes.map((index) => formatSequentialTicketNumber(settings, index)).join(", ")}</p>
+        {settings.mode === "imported_json" ? (
+          <p className="mt-2 text-slate-400">
+            Imported ticket numbers are preserved. Missing numbers are generated from these settings.
+          </p>
+        ) : null}
+      </div>
+    </CollapsibleSection>
+  );
 
   return (
     <>
@@ -97,23 +121,7 @@ export default function BatchDataPanel({
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Sequential Ticket Numbering" defaultOpen badge={`${firstTicket}-${lastTicket}`}>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <label className={labelClass}>Starting ticket number<input className={inputClass} type="number" value={settings.startingNumber} onChange={(event) => onChange({ startingNumber: integerValue(event.target.value, settings.startingNumber) })} /></label>
-                <label className={labelClass}>Quantity<input className={inputClass} type="number" min="1" max="1000" value={settings.quantity} onChange={(event) => onChange({ quantity: positiveInteger(event.target.value, settings.quantity) })} /></label>
-                <label className={labelClass}>Increment<input className={inputClass} type="number" min="1" value={settings.increment} onChange={(event) => onChange({ increment: positiveInteger(event.target.value, settings.increment) })} /></label>
-                <label className={labelClass}>Number padding<input className={inputClass} type="number" min="0" max="12" value={settings.padding} onChange={(event) => onChange({ padding: Math.max(0, integerValue(event.target.value, settings.padding)) })} /></label>
-                <label className={labelClass}>Prefix<input className={inputClass} value={settings.prefix} onChange={(event) => onChange({ prefix: event.target.value })} /></label>
-                <label className={labelClass}>Suffix<input className={inputClass} value={settings.suffix} onChange={(event) => onChange({ suffix: event.target.value })} /></label>
-              </div>
-              <div className="mt-4 rounded-md border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-slate-300">
-                <p><span className="font-bold text-slate-100">Calculated ending number:</span> {endingNumber}</p>
-                <p><span className="font-bold text-slate-100">First ticket:</span> {firstTicket}</p>
-                <p><span className="font-bold text-slate-100">Last ticket:</span> {lastTicket}</p>
-                <p className="mt-2 font-bold text-slate-100">Generated range preview</p>
-                <p>{numberPreviewIndexes.map((index) => formatSequentialTicketNumber(settings, index)).join(", ")}</p>
-              </div>
-            </CollapsibleSection>
+            {renderSequentialTicketNumbering()}
 
             <CollapsibleSection title="Sequential Seat Sequence" description="Optional generated seats override the default Seat value." defaultOpen={false} badge={settings.seatSequenceEnabled ? `${seatStart}-${seatEnd}` : "Off"}>
               <label className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-200"><input type="checkbox" checked={settings.seatSequenceEnabled} onChange={(event) => onChange({ seatSequenceEnabled: event.target.checked })} />Generate seat sequence</label>
@@ -133,22 +141,25 @@ export default function BatchDataPanel({
             <p className="mt-2 text-xs text-slate-500">If a custom row omits ticket_number, Print Studio generates one from the row index and ticket numbering settings.</p>
           </CollapsibleSection>
         ) : (
-          <CollapsibleSection title="Imported JSON" description="Import Print Studio-compatible records from a versioned JSON file." defaultOpen badge={`${importedRecords.length} imported`}>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="inline-flex cursor-pointer rounded-md bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-600">
-                Import JSON File
-                <input className="sr-only" type="file" accept=".json,application/json" onChange={(event) => onImportedJsonFile(event.target.files?.[0])} />
-              </label>
-              <button type="button" onClick={onClearImportedRecords} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-900">Clear Imported Records</button>
-            </div>
-            <div className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
-              <p><span className="font-bold text-slate-100">Imported source:</span> {importedSource || "None"}</p>
-              <p><span className="font-bold text-slate-100">Imported record count:</span> {importedRecords.length}</p>
-            </div>
-            {importedErrors.length > 0 ? <div className="mt-3 rounded-md border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">{importedErrors.map((error) => <p key={error}>{error}</p>)}</div> : null}
-            {importedWarnings.length > 0 ? <div className="mt-3 rounded-md border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">{importedWarnings.slice(0, 8).map((warning) => <p key={warning}>{warning}</p>)}</div> : null}
-            <RecordCards records={importedRecords} limit={5} />
-          </CollapsibleSection>
+          <div className="grid gap-4">
+            {renderSequentialTicketNumbering()}
+            <CollapsibleSection title="Imported JSON" description="Import Print Studio-compatible records from a versioned JSON file." defaultOpen badge={`${importedRecords.length} imported`}>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex cursor-pointer rounded-md bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-600">
+                  Import JSON File
+                  <input className="sr-only" type="file" accept=".json,application/json" onChange={(event) => onImportedJsonFile(event.target.files?.[0])} />
+                </label>
+                <button type="button" onClick={onClearImportedRecords} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-900">Clear Imported Records</button>
+              </div>
+              <div className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+                <p><span className="font-bold text-slate-100">Imported source:</span> {importedSource || "None"}</p>
+                <p><span className="font-bold text-slate-100">Imported record count:</span> {importedRecords.length}</p>
+              </div>
+              {importedErrors.length > 0 ? <div className="mt-3 rounded-md border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">{importedErrors.map((error) => <p key={error}>{error}</p>)}</div> : null}
+              {importedWarnings.length > 0 ? <div className="mt-3 rounded-md border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">{importedWarnings.slice(0, 8).map((warning) => <p key={warning}>{warning}</p>)}</div> : null}
+              <RecordCards records={importedRecords} limit={5} />
+            </CollapsibleSection>
+          </div>
         )}
       </CollapsibleSection>
 

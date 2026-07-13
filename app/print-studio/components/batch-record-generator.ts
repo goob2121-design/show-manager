@@ -9,6 +9,10 @@ export type ParsedCustomRecords = {
   warnings: string[];
 };
 
+function isMissingImportedValue(value?: string | null) {
+  return value === undefined || value === null || value.trim() === "";
+}
+
 function parseCsvLine(line: string) {
   const values: string[] = [];
   let current = "";
@@ -89,6 +93,10 @@ export function formatSequentialTicketNumber(settings: BatchSettings, index: num
   return `${settings.prefix}${String(numericValue).padStart(settings.padding, "0")}${settings.suffix}`;
 }
 
+export function generateTicketNumber(settings: BatchSettings, index: number) {
+  return formatSequentialTicketNumber(settings, index);
+}
+
 export function getEndingTicketNumber(settings: BatchSettings) {
   return settings.startingNumber + (settings.quantity - 1) * settings.increment;
 }
@@ -98,8 +106,25 @@ function formatSeatSequence(settings: BatchSettings, index: number) {
   return `${settings.seatPrefix}${String(numericValue).padStart(settings.seatPadding, "0")}`;
 }
 
+export function applyMissingTicketNumbers<T extends Partial<Record<BatchVariableFieldType, string>>>(
+  records: T[],
+  settings: BatchSettings,
+) : Array<T & { ticket_number: string }> {
+  return records.map((record, index) => {
+    const importedTicketNumber = record.ticket_number?.trim();
+    const resolvedTicketNumber = isMissingImportedValue(importedTicketNumber)
+      ? generateTicketNumber(settings, index)
+      : importedTicketNumber;
+
+    return {
+      ...record,
+      ticket_number: resolvedTicketNumber,
+    } as T & { ticket_number: string };
+  });
+}
+
 function withSharedValues(settings: BatchSettings, record: Partial<Record<BatchVariableFieldType, string>>, index: number): PrintRecord {
-  const ticketNumber = record.ticket_number || formatSequentialTicketNumber(settings, index);
+  const ticketNumber = applyMissingTicketNumbers([record], settings)[0]?.ticket_number || generateTicketNumber(settings, index);
   const seat = record.seat || (settings.seatSequenceEnabled ? formatSeatSequence(settings, index) : settings.sharedValues.seat);
   const merged: PrintRecord = {
     id: `batch-ticket-${index + 1}-${ticketNumber || index}`,
