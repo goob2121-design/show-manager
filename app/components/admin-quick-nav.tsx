@@ -10,9 +10,10 @@ import {
 
 type AdminQuickNavProps = {
   slug: string;
-  currentView: "dashboard" | "admin" | "band" | "guest" | "mc";
+  currentView: "dashboard" | "admin" | "band" | "guest" | "mc" | "print-studio";
   accessSlug?: string;
   timelineMessages?: string[];
+  staticLinksOnly?: boolean;
 };
 
 function NavIcon({
@@ -60,6 +61,15 @@ function FileChartIcon() {
   );
 }
 
+function PrinterIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M6 7V3.75h8V7M6.25 14.25H4.5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v4.25a1 1 0 0 1-1 1h-1.75" />
+      <path d="M6.25 12.25h7.5v4h-7.5v-4ZM13.75 10.25h.01" />
+    </svg>
+  );
+}
+
 function LogoutIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
@@ -70,7 +80,8 @@ function LogoutIcon() {
 
 const quickNavLinks = [
   { key: "dashboard", label: "Dashboard", href: "/shows", icon: <HomeIcon /> },
-  { key: "band", label: "Band", href: (slug: string) => `/band/${slug}`, icon: <MusicIcon /> },
+  { key: "band", label: "Band", href: (slug: string) => `/band/${slug}`, icon: <MusicIcon />, requiresShow: true },
+  { key: "print-studio", label: "Print Studio", href: "/print-studio", icon: <PrinterIcon /> },
 ] as const;
 const chartBuilderUrl = "https://charts.pinnaclestudiotn.com";
 type ScannerConnectionState = "checking" | "online" | "offline";
@@ -80,6 +91,7 @@ export function AdminQuickNav({
   currentView,
   accessSlug = slug,
   timelineMessages = [],
+  staticLinksOnly = false,
 }: AdminQuickNavProps) {
   const isVisible = useSyncExternalStore(
     subscribeToAdminAccess,
@@ -164,7 +176,7 @@ export function AdminQuickNav({
           <span className="pr-1 uppercase tracking-[0.14em] text-stone-400 dark:text-stone-500">
             Quick Nav
           </span>
-          {quickNavLinks.map((link) => {
+          {quickNavLinks.filter((link) => !staticLinksOnly || !("requiresShow" in link && link.requiresShow)).map((link) => {
             const isActive = link.key === currentView;
             const href = typeof link.href === "string" ? link.href : link.href(slug);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import BatchDataPanel from "./batch-data-panel";
 import CloudTemplateControls from "./cloud-template-controls";
 import CollapsibleSection from "./collapsible-section";
@@ -446,6 +447,9 @@ export default function PrintStudioClient() {
       </div>
 
       <div className="print-studio-screen mx-auto max-w-7xl">
+        <div className="print-hidden sticky top-3 z-30 mb-5">
+          <AdminQuickNav slug="shows-dashboard" accessSlug="shows-dashboard" currentView="print-studio" staticLinksOnly />
+        </div>
         <header className="print-hidden mb-5 rounded-lg border border-slate-700 bg-slate-900/90 p-5 shadow-xl shadow-black/20">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
