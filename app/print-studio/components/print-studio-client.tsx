@@ -14,9 +14,9 @@ import FieldPropertiesPanel from "./field-properties-panel";
 import FieldToolbar from "./field-toolbar";
 import PrintPreview from "./print-preview";
 import TicketRenderer from "./ticket-renderer";
-import { createDefaultBatchSettings, createDefaultTemplate, fieldLabels, PRINT_STUDIO_STORAGE_KEY, sampleTicketData } from "./sample-data";
+import { createDefaultBatchSettings, createDefaultTemplate, fieldLabels, sampleTicketData } from "./sample-data";
 import { isPrintStudioVariableKey, PRINT_STUDIO_VARIABLE_KEYS } from "./variable-contract";
-import type { BatchSettings, BatchVariableFieldType, PrintField, PrintFieldType, PrintOrientation, PrintRecord, PrintStudioSavedState, PrintTemplate } from "./types";
+import type { BatchSettings, BatchVariableFieldType, PrintField, PrintFieldType, PrintOrientation, PrintRecord, PrintTemplate } from "./types";
 
 type PrintMode = "none" | "single" | "batch";
 
@@ -132,16 +132,12 @@ function normalizeBatchSettings(settings?: Partial<BatchSettings>): BatchSetting
   };
 }
 
-function isSavedState(value: unknown): value is PrintStudioSavedState {
-  return Boolean(value && typeof value === "object" && "template" in value);
-}
-
 export default function PrintStudioClient() {
   const [template, setTemplate] = useState<PrintTemplate>(() => normalizeTemplate(createDefaultTemplate()));
   const [batchSettings, setBatchSettings] = useState<BatchSettings>(() => createDefaultBatchSettings());
   const [selectedFieldId, setSelectedFieldId] = useState<string>();
   const [zoom, setZoom] = useState(100);
-  const [saveMessage, setSaveMessage] = useState("Local save is browser-only for this prototype.");
+  const [saveMessage, setSaveMessage] = useState("Cloud templates are the primary named save and load system for Print Studio.");
   const [printMode, setPrintMode] = useState<PrintMode>("none");
   const [cloudTemplateId, setCloudTemplateId] = useState<string>();
   const [cloudTemplateName, setCloudTemplateName] = useState<string>();
@@ -293,42 +289,6 @@ export default function PrintStudioClient() {
     setImportedJsonWarnings([]);
     setImportedJsonErrors([]);
     setImportedJsonSource(undefined);
-  }
-
-  function saveTemplate() {
-    if (typeof window === "undefined") return;
-    const savedState: PrintStudioSavedState = { template, batchSettings, cloudTemplateId, cloudTemplateName, cloudBackgroundPath };
-    try {
-      window.localStorage.setItem(PRINT_STUDIO_STORAGE_KEY, JSON.stringify(savedState));
-      setSaveMessage("Template and batch data saved locally in this browser.");
-    } catch {
-      const withoutImage: PrintStudioSavedState = { template: { ...template, backgroundImage: undefined }, batchSettings, cloudTemplateId, cloudTemplateName, cloudBackgroundPath };
-      window.localStorage.setItem(PRINT_STUDIO_STORAGE_KEY, JSON.stringify(withoutImage));
-      setSaveMessage("Layout and batch data saved locally. The background image was too large and must be selected again.");
-    }
-  }
-
-  function loadTemplate() {
-    if (typeof window === "undefined") return;
-    const saved = window.localStorage.getItem(PRINT_STUDIO_STORAGE_KEY);
-    if (!saved) {
-      setSaveMessage("No locally saved Print Studio template was found.");
-      return;
-    }
-    try {
-      const parsed = JSON.parse(saved) as unknown;
-      if (isSavedState(parsed)) {
-        setTemplate(normalizeTemplate(parsed.template));
-        setBatchSettings(normalizeBatchSettings(parsed.batchSettings));
-      } else {
-        setTemplate(normalizeTemplate(parsed as PrintTemplate));
-        setBatchSettings(createDefaultBatchSettings());
-      }
-      setSelectedFieldId(undefined);
-      setSaveMessage("Loaded the locally saved template and compatible batch settings.");
-    } catch {
-      setSaveMessage("The saved template could not be loaded.");
-    }
   }
 
   function resetTemplate() {
@@ -523,12 +483,6 @@ export default function PrintStudioClient() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={saveTemplate} className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-black text-white">
-                Save Template Locally
-              </button>
-              <button type="button" onClick={loadTemplate} className="rounded-md bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100">
-                Load Saved Template
-              </button>
               <button type="button" onClick={resetTemplate} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-bold text-slate-100">
                 Reset Template
               </button>
