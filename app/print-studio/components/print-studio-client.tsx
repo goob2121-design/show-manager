@@ -363,6 +363,15 @@ export default function PrintStudioClient() {
     if (record.backgroundUrl && !template.backgroundImage?.startsWith("data:")) updateTemplate({ backgroundImage: record.backgroundUrl });
     setSaveMessage(`Cloud template "${record.name}" saved. Local Save is still available.`);
   }
+
+  function clearCloudTemplateSelection(deletedTemplateId: string) {
+    if (cloudTemplateId !== deletedTemplateId) return;
+    setCloudTemplateId(undefined);
+    setCloudTemplateName(undefined);
+    setCloudBackgroundPath(null);
+    setSaveMessage("No cloud template loaded.");
+  }
+
   function printSingleTicket() {
     setPrintMode("single");
     window.requestAnimationFrame(() => window.print());
@@ -534,6 +543,7 @@ export default function PrintStudioClient() {
             cloudBackgroundPath={cloudBackgroundPath}
             onCloudTemplateLoaded={applyCloudTemplate}
             onCloudTemplateSaved={rememberCloudTemplate}
+            onCloudTemplateDeleted={clearCloudTemplateSelection}
           />
         </header>
 

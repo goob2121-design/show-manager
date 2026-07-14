@@ -46,6 +46,7 @@ export type CloudPrintTemplateResponse = {
   success: boolean;
   template?: CloudPrintTemplateRecord;
   error?: string;
+  deletedTemplateId?: string;
 };
 
 export type CloudBackgroundUploadResponse = {

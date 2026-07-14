@@ -67,3 +67,48 @@ export async function PATCH(request: Request, context: RouteContext) {
     return jsonError(error instanceof Error ? error.message : "Failed to update Print Studio template.", 500);
   }
 }
+
+export async function DELETE(request: Request, context: RouteContext) {
+  try {
+    const editorError = requireEditorKey(request);
+    if (editorError) return jsonError(editorError, editorError.includes("configured") ? 503 : 401);
+
+    const { id } = await context.params;
+    if (!id?.trim()) return jsonError("Cloud template id is required.", 400);
+
+    const supabase = createServiceRoleSupabaseClient();
+    const { data: existing, error: loadError } = await supabase
+      .from("print_studio_templates")
+      .select("id, background_path")
+      .eq("id", id)
+      .single();
+
+    if (loadError) {
+      if (loadError.code === "PGRST116") return jsonError("Cloud template not found.", 404);
+      throw loadError;
+    }
+
+    const backgroundPath = existing.background_path ?? null;
+
+    if (backgroundPath) {
+      const { error: storageError } = await supabase.storage
+        .from(PRINT_STUDIO_BACKGROUND_BUCKET)
+        .remove([backgroundPath]);
+      if (storageError) {
+        throw new Error(`Failed to delete associated background image: ${storageError.message}`);
+      }
+    }
+
+    const { error: deleteError } = await supabase
+      .from("print_studio_templates")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) throw deleteError;
+
+    return NextResponse.json({ success: true, deletedTemplateId: id });
+  } catch (error) {
+    console.error("Print Studio template delete failed.", error);
+    return jsonError(error instanceof Error ? error.message : "Failed to delete Print Studio template.", 500);
+  }
+}

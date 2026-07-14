@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { createCloudTemplate, getCloudTemplate, listCloudTemplates, updateCloudTemplate, uploadCloudBackground } from "../cloud/client";
+import { createCloudTemplate, deleteCloudTemplate, getCloudTemplate, listCloudTemplates, updateCloudTemplate, uploadCloudBackground } from "../cloud/client";
 import { createCloudPayload, dataUrlToFile, isDataUrl } from "../cloud/serialization";
 import type { CloudPrintTemplateRecord, CloudPrintTemplateSummary } from "../cloud/types";
 import type { BatchSettings, PrintTemplate } from "./types";
@@ -14,6 +14,7 @@ type CloudTemplateControlsProps = {
   cloudBackgroundPath?: string | null;
   onCloudTemplateLoaded: (record: CloudPrintTemplateRecord) => void;
   onCloudTemplateSaved: (record: CloudPrintTemplateRecord) => void;
+  onCloudTemplateDeleted: (templateId: string) => void;
 };
 
 function formatDate(value: string) {
@@ -28,6 +29,7 @@ export default function CloudTemplateControls({
   cloudBackgroundPath,
   onCloudTemplateLoaded,
   onCloudTemplateSaved,
+  onCloudTemplateDeleted,
 }: CloudTemplateControlsProps) {
   const [editorKey, setEditorKey] = useState("");
   const [templates, setTemplates] = useState<CloudPrintTemplateSummary[]>([]);
@@ -47,8 +49,6 @@ export default function CloudTemplateControls({
       setIsLoading(false);
     }
   }, [includeArchived]);
-
-
 
   async function uploadBackgroundIfNeeded(templateId: string) {
     if (!isDataUrl(template.backgroundImage)) return { backgroundPath: cloudBackgroundPath ?? null, backgroundUrl: template.backgroundImage ?? null };
@@ -146,6 +146,28 @@ export default function CloudTemplateControls({
     }
   }
 
+  async function permanentlyDeleteTemplate(summary: CloudPrintTemplateSummary) {
+    if (!editorKey.trim()) {
+      setMessage("Print Studio editor key is invalid.");
+      return;
+    }
+    if (!window.confirm(`Permanently delete "${summary.name}"?\n\nThis cannot be undone. Use Archive instead if the template may be needed later.`)) return;
+    if (!window.confirm("Permanently Delete")) return;
+
+    setIsLoading(true);
+    try {
+      await deleteCloudTemplate(summary.id, editorKey);
+      onCloudTemplateDeleted(summary.id);
+      setTemplates((currentTemplates) => currentTemplates.filter((item) => item.id !== summary.id));
+      setMessage("Cloud template permanently deleted.");
+      await refreshTemplates();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Cloud template delete failed.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <section className="mt-4 rounded-lg border border-slate-700 bg-slate-950/60 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -192,6 +214,14 @@ export default function CloudTemplateControls({
               <button type="button" disabled={isLoading} onClick={() => void loadTemplate(item.id)} className="rounded-md bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:opacity-50">Load</button>
               <button type="button" disabled={isLoading} onClick={() => void renameTemplate(item)} className="rounded-md bg-slate-800 px-3 py-2 text-xs font-bold text-slate-100 disabled:opacity-50">Rename</button>
               <button type="button" disabled={isLoading} onClick={() => void setArchived(item, !item.isArchived)} className="rounded-md border border-slate-700 px-3 py-2 text-xs font-bold text-slate-100 disabled:opacity-50">{item.isArchived ? "Restore" : "Archive"}</button>
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={() => void permanentlyDeleteTemplate(item)}
+                className="rounded-md border border-rose-500/60 px-3 py-2 text-xs font-bold text-rose-200 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-rose-500/10"
+              >
+                Delete
+              </button>
             </div>
           </article>
         ))}

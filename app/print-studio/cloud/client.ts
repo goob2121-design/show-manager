@@ -44,6 +44,14 @@ export async function updateCloudTemplate(id: string, input: UpdateCloudPrintTem
   return parseJson<CloudPrintTemplateResponse>(response);
 }
 
+export async function deleteCloudTemplate(id: string, editorKey: string): Promise<CloudPrintTemplateResponse> {
+  const response = await fetch(`/api/print-studio/templates/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: editorHeaders(editorKey),
+  });
+  return parseJson<CloudPrintTemplateResponse>(response);
+}
+
 export async function uploadCloudBackground(id: string, file: File, editorKey: string): Promise<CloudBackgroundUploadResponse> {
   const formData = new FormData();
   formData.set("background", file);
