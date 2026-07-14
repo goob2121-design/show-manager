@@ -10,7 +10,7 @@ type FieldToolbarProps = {
 
 export default function FieldToolbar({ onAddField }: FieldToolbarProps) {
   return (
-    <CollapsibleSection title="Add Fields" description="Add variable-backed and custom text fields to the ticket." defaultOpen badge={`${fieldTypes.length} fields`}>
+    <CollapsibleSection title="Add Fields" description="Add variable-backed and custom text fields to the ticket." defaultOpen={false} badge={`${fieldTypes.length} fields`}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {fieldTypes.map((type) => (
           <button

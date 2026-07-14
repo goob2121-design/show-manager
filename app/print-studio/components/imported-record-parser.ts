@@ -10,6 +10,21 @@ export type ImportedRecordParseResult = {
 
 const MAX_IMPORTED_RECORDS = 1000;
 const allowedKeys = new Set<string>(PRINT_STUDIO_VARIABLE_KEYS);
+const emptyRecordDefaults = Object.fromEntries(
+  PRINT_STUDIO_VARIABLE_KEYS.map((key) => [key, ""]),
+) as Record<BatchVariableFieldType, string>;
+const importKeyAliases: Partial<Record<string, BatchVariableFieldType>> = {
+  name: "purchaser_name",
+  customer_name: "purchaser_name",
+  purchaser: "purchaser_name",
+  guest: "guest_name",
+  sponsor: "sponsor_name",
+  admission_label: "ticket_type",
+  admission_type: "ticket_type",
+  type: "ticket_type",
+  seat_label: "seat",
+  seat_id: "seat",
+};
 
 type JsonRecord = Record<string, unknown>;
 
@@ -18,10 +33,34 @@ function isPlainObject(value: unknown): value is JsonRecord {
 }
 
 function normalizeFieldValue(value: unknown) {
-  if (value === null || value === undefined) return undefined;
+  if (value === null || value === undefined) return { value: "" };
   if (Array.isArray(value) || typeof value === "object") return { error: "Nested objects and arrays are not supported as field values." };
-  const text = String(value).trim();
-  return text ? { value: text } : undefined;
+  return { value: typeof value === "string" ? value.trim() : String(value) };
+}
+
+function getCanonicalImportKey(key: string) {
+  if (allowedKeys.has(key)) return key as BatchVariableFieldType;
+  return importKeyAliases[key] ?? null;
+}
+
+function normalizeImportedRecord(record: Partial<Record<BatchVariableFieldType, string>>, rowNumber: number): PrintRecord {
+  const normalizedRecord = {
+    ...emptyRecordDefaults,
+    ...record,
+  };
+
+  const displayName =
+    normalizedRecord.purchaser_name ||
+    normalizedRecord.guest_name ||
+    normalizedRecord.sponsor_name ||
+    normalizedRecord.ticket_number ||
+    `Imported ${rowNumber}`;
+
+  return {
+    id: `imported-json-${rowNumber}-${normalizedRecord.ticket_number || rowNumber}`,
+    displayName,
+    ...normalizedRecord,
+  };
 }
 
 export function parseImportedPrintRecords(text: string): ImportedRecordParseResult {
@@ -52,6 +91,10 @@ export function parseImportedPrintRecords(text: string): ImportedRecordParseResu
   const errors: string[] = [];
   const records: PrintRecord[] = [];
 
+  if (parsed.records.length === 0) {
+    warnings.push("Imported JSON records array is empty.");
+  }
+
   parsed.records.forEach((item, index) => {
     const rowNumber = index + 1;
     if (!isPlainObject(item)) {
@@ -61,31 +104,27 @@ export function parseImportedPrintRecords(text: string): ImportedRecordParseResu
 
     const record: Partial<Record<BatchVariableFieldType, string>> = {};
     Object.entries(item).forEach(([key, value]) => {
-      if (!allowedKeys.has(key)) {
+      const canonicalKey = getCanonicalImportKey(key);
+      if (!canonicalKey) {
         warnings.push(`Record ${rowNumber}: Unknown key ignored: ${key}`);
         return;
       }
 
       const normalized = normalizeFieldValue(value);
-      if (!normalized) return;
       if ("error" in normalized) {
-        errors.push(`Record ${rowNumber}, ${key}: ${normalized.error}`);
+        errors.push(`Record ${rowNumber}, ${canonicalKey}: ${normalized.error}`);
         return;
       }
-      record[key as BatchVariableFieldType] = normalized.value;
+      record[canonicalKey] = normalized.value;
     });
 
-    records.push({
-      id: `imported-json-${rowNumber}-${record.ticket_number || rowNumber}`,
-      displayName: record.purchaser_name || record.guest_name || record.sponsor_name || record.ticket_number || `Imported ${rowNumber}`,
-      ...record,
-    });
+    records.push(normalizeImportedRecord(record, rowNumber));
   });
 
   return {
     records: errors.length ? [] : records,
     warnings,
     errors,
-    source: typeof parsed.source === "string" ? parsed.source.trim() : undefined,
+    source: typeof parsed.source === "string" ? parsed.source.trim() : "",
   };
 }

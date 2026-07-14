@@ -16,7 +16,7 @@ import PrintPreview from "./print-preview";
 import TicketRenderer from "./ticket-renderer";
 import { createDefaultBatchSettings, createDefaultTemplate, fieldLabels, sampleTicketData } from "./sample-data";
 import { isPrintStudioVariableKey, PRINT_STUDIO_VARIABLE_KEYS } from "./variable-contract";
-import type { BatchSettings, BatchVariableFieldType, PrintField, PrintFieldType, PrintOrientation, PrintRecord, PrintTemplate } from "./types";
+import type { BatchSettings, BatchVariableFieldType, PrintField, PrintFieldType, PrintRecord, PrintTemplate } from "./types";
 
 type PrintMode = "none" | "single" | "batch";
 
@@ -114,11 +114,15 @@ function normalizeBatchSettings(settings?: Partial<BatchSettings>): BatchSetting
     quantity: clamp(Math.floor(Number(settings?.quantity ?? defaults.quantity)) || defaults.quantity, 1, 1000),
     increment: Math.max(1, Math.floor(Number(settings?.increment ?? defaults.increment)) || defaults.increment),
     padding: clamp(Math.floor(Number(settings?.padding ?? defaults.padding)) || 0, 0, 12),
+    prefix: settings?.prefix ?? defaults.prefix,
+    suffix: settings?.suffix ?? defaults.suffix,
     sharedValues: mergedSharedValues,
     seatSequenceEnabled: Boolean(settings?.seatSequenceEnabled),
+    seatPrefix: settings?.seatPrefix ?? defaults.seatPrefix,
     seatStart: Math.floor(Number(settings?.seatStart ?? defaults.seatStart)) || defaults.seatStart,
     seatIncrement: Math.max(1, Math.floor(Number(settings?.seatIncrement ?? defaults.seatIncrement)) || defaults.seatIncrement),
     seatPadding: clamp(Math.floor(Number(settings?.seatPadding ?? defaults.seatPadding)) || 0, 0, 12),
+    customListText: settings?.customListText ?? defaults.customListText,
     paperSize: settings?.paperSize === "legal" || settings?.paperSize === "a4" || settings?.paperSize === "custom" ? settings.paperSize : defaults.paperSize,
     pageOrientation: settings?.pageOrientation === "landscape" ? "landscape" : defaults.pageOrientation,
     customPageWidthInches: clamp(Number(settings?.customPageWidthInches ?? defaults.customPageWidthInches) || defaults.customPageWidthInches, 1, 30),
@@ -145,7 +149,7 @@ export default function PrintStudioClient() {
   const [importedJsonRecords, setImportedJsonRecords] = useState<PrintRecord[]>([]);
   const [importedJsonWarnings, setImportedJsonWarnings] = useState<string[]>([]);
   const [importedJsonErrors, setImportedJsonErrors] = useState<string[]>([]);
-  const [importedJsonSource, setImportedJsonSource] = useState<string>();
+  const [importedJsonSource, setImportedJsonSource] = useState("");
 
   const generatedBatchResult = useMemo(() => generateBatchRecords(batchSettings), [batchSettings]);
   const importedBatchResult = useMemo(() => {
@@ -156,8 +160,8 @@ export default function PrintStudioClient() {
         displayName: record.displayName,
       };
       PRINT_STUDIO_VARIABLE_KEYS.forEach((key) => {
-        const value = record[key] || batchSettings.sharedValues[key];
-        if (value) merged[key] = value;
+        const value = record[key] ?? batchSettings.sharedValues[key] ?? "";
+        merged[key] = value;
       });
       merged.displayName = merged.displayName || merged.purchaser_name || merged.guest_name || merged.sponsor_name || merged.ticket_number || `Imported ${index + 1}`;
       return merged;
@@ -266,7 +270,7 @@ export default function PrintStudioClient() {
       setImportedJsonRecords([]);
       setImportedJsonWarnings([]);
       setImportedJsonErrors(["Please choose a .json file."]);
-      setImportedJsonSource(file.name);
+      setImportedJsonSource(file.name ?? "");
       return;
     }
 
@@ -275,12 +279,12 @@ export default function PrintStudioClient() {
       setImportedJsonRecords(result.records);
       setImportedJsonWarnings(result.warnings);
       setImportedJsonErrors(result.errors);
-      setImportedJsonSource(result.source || file.name);
+      setImportedJsonSource(result.source ?? file.name ?? "");
     } catch {
       setImportedJsonRecords([]);
       setImportedJsonWarnings([]);
       setImportedJsonErrors(["The selected JSON file could not be read."]);
-      setImportedJsonSource(file.name);
+      setImportedJsonSource(file.name ?? "");
     }
   }
 
@@ -288,7 +292,7 @@ export default function PrintStudioClient() {
     setImportedJsonRecords([]);
     setImportedJsonWarnings([]);
     setImportedJsonErrors([]);
-    setImportedJsonSource(undefined);
+    setImportedJsonSource("");
   }
 
   function resetTemplate() {
@@ -473,14 +477,10 @@ export default function PrintStudioClient() {
         <div className="print-hidden sticky top-3 z-30 mb-5">
           <AdminQuickNav slug="shows-dashboard" accessSlug="shows-dashboard" currentView="print-studio" staticLinksOnly />
         </div>
-        <header className="print-hidden mb-5 rounded-lg border border-slate-700 bg-slate-900/90 p-5 shadow-xl shadow-black/20">
+        <header className="print-hidden mb-4 rounded-lg border border-slate-700 bg-slate-900/90 p-5 shadow-xl shadow-black/20">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-emerald-300">StageFlow Prototype</p>
-              <h1 className="mt-1 text-3xl font-black tracking-normal text-white">Print Studio</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-                Standalone visual ticket-template designer using sample data only. Nothing here is connected to existing ticket printers or live StageFlow data.
-              </p>
+              <h1 className="text-3xl font-black tracking-normal text-white">Print Studio</h1>
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={resetTemplate} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-bold text-slate-100">
@@ -488,7 +488,7 @@ export default function PrintStudioClient() {
               </button>
             </div>
           </div>
-          <p className="mt-3 text-sm text-slate-400">{saveMessage}</p>
+          <p className="mt-2 text-sm text-slate-400">{saveMessage}</p>
           <CloudTemplateControls
             template={template}
             batchSettings={batchSettings}
@@ -498,74 +498,43 @@ export default function PrintStudioClient() {
             onCloudTemplateLoaded={applyCloudTemplate}
             onCloudTemplateSaved={rememberCloudTemplate}
             onCloudTemplateDeleted={clearCloudTemplateSelection}
+            onUpdateTemplate={updateTemplate}
+            onBackgroundUpload={handleBackgroundUpload}
+            onResetTemplate={resetTemplate}
           />
         </header>
 
-        <div className="print-hidden mb-5">
-          <CollapsibleSection title="Template Setup" defaultOpen badge={`${template.widthInches} x ${template.heightInches} in - ${template.orientation}`}>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-400 lg:col-span-2">
-              Template name
-              <input className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" value={template.name} onChange={(event) => updateTemplate({ name: event.target.value })} />
-            </label>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-400">
-              Width
-              <input className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" type="number" min="1" max="24" step="0.125" value={template.widthInches} onChange={(event) => updateTemplate({ widthInches: Number(event.target.value) })} />
-            </label>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-400">
-              Height
-              <input className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" type="number" min="1" max="24" step="0.125" value={template.heightInches} onChange={(event) => updateTemplate({ heightInches: Number(event.target.value) })} />
-            </label>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-400">
-              Orientation
-              <select className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" value={template.orientation} onChange={(event) => updateTemplate({ orientation: event.target.value as PrintOrientation })}>
-                <option value="landscape">Landscape</option>
-                <option value="portrait">Portrait</option>
-              </select>
-            </label>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-400">
-              Zoom {zoom}%
-              <input className="mt-3 w-full accent-emerald-500" type="range" min="50" max="200" step="5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />
-            </label>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-400">
-              Background
-              <input className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" type="file" accept="image/*" onChange={(event) => handleBackgroundUpload(event.target.files?.[0])} />
-            </label>
-          </div>
-          <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-slate-300">
-            <input type="checkbox" checked={template.backgroundVisible} onChange={(event) => updateTemplate({ backgroundVisible: event.target.checked })} />
-            Show background image
-          </label>
-          </CollapsibleSection>
-        </div>
-
-        <div className="print-hidden mb-5">
-          <FieldToolbar onAddField={addField} />
-        </div>
-
         <div className="mb-5 print-hidden">
           <CollapsibleSection title="Designer Workspace" description="Edit placement and field properties." defaultOpen badge={`${template.widthInches} x ${template.heightInches} in - ${zoom}%`}>
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
-              <DesignerCanvas
-                template={template}
-                record={singlePreviewRecord}
-                selectedFieldId={selectedFieldId}
-                zoom={zoom}
-                onSelectField={(fieldId) => setSelectedFieldId(fieldId || undefined)}
-                onMoveField={(fieldId, x, y) => updateField(fieldId, { x, y })}
-              />
-              <FieldPropertiesPanel
-                field={selectedField}
-                previewRecord={singlePreviewRecord}
-                sharedValues={batchSettings.sharedValues}
-                onUpdateField={updateField}
-                onDeleteField={deleteField}
-                onDuplicateField={duplicateField}
-                onBringForward={(fieldId) => moveStack(fieldId, "forward")}
-                onSendBackward={(fieldId) => moveStack(fieldId, "backward")}
-                onCopyFieldValueToShared={copyFieldValueToShared}
-                onUseSharedValueAsOverride={useSharedValueAsOverride}
-              />
+            <div className="grid gap-4">
+              <FieldToolbar onAddField={addField} />
+              <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-800 bg-slate-950 px-4 py-3">
+                <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Workspace Zoom</span>
+                <input className="w-full max-w-xs accent-emerald-500" type="range" min="50" max="200" step="5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />
+                <span className="text-sm font-semibold text-slate-300">{zoom}%</span>
+              </div>
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+                <DesignerCanvas
+                  template={template}
+                  record={singlePreviewRecord}
+                  selectedFieldId={selectedFieldId}
+                  zoom={zoom}
+                  onSelectField={(fieldId) => setSelectedFieldId(fieldId || undefined)}
+                  onMoveField={(fieldId, x, y) => updateField(fieldId, { x, y })}
+                />
+                <FieldPropertiesPanel
+                  field={selectedField}
+                  previewRecord={singlePreviewRecord}
+                  sharedValues={batchSettings.sharedValues}
+                  onUpdateField={updateField}
+                  onDeleteField={deleteField}
+                  onDuplicateField={duplicateField}
+                  onBringForward={(fieldId) => moveStack(fieldId, "forward")}
+                  onSendBackward={(fieldId) => moveStack(fieldId, "backward")}
+                  onCopyFieldValueToShared={copyFieldValueToShared}
+                  onUseSharedValueAsOverride={useSharedValueAsOverride}
+                />
+              </div>
             </div>
           </CollapsibleSection>
         </div>
@@ -580,7 +549,6 @@ export default function PrintStudioClient() {
           <CollapsibleSection title="Batch Printing" description="Configure records and preview the printable batch." defaultOpen={false} badge={`${batchRecords.length} tickets - ${batchSheetCount} sheets`}>
             <div className="grid gap-5">
               <BatchDataPanel
-                template={template}
                 settings={batchSettings}
                 records={batchRecords}
                 warnings={batchResult.warnings}
