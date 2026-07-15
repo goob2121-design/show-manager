@@ -37,6 +37,7 @@ import {
 } from "@/app/components/tickets/ticket-print-builders";
 import { TicketPrintingPanel } from "@/app/components/tickets/ticket-printing-panel";
 import { TicketsCheckInPanel } from "@/app/components/tickets/tickets-check-in-panel";
+import { getGreetingName } from "@/lib/getGreetingName";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "@/app/available-seats/path";
 import {
@@ -3633,16 +3634,6 @@ function normalizeGuestProfileName(name: string) {
   return name.trim().toLowerCase();
 }
 
-function getGuestFirstName(name: string | null | undefined) {
-  const trimmedName = name?.trim() ?? "";
-
-  if (!trimmedName) {
-    return null;
-  }
-
-  const [firstName] = trimmedName.split(/\s+/);
-  return firstName || null;
-}
 
 function buildGuestProfileRecord(
   profilePayload: {
@@ -4031,8 +4022,8 @@ function buildBandRehearsalUrl(showSlug: string) {
 function buildGuestReminderEmailText(profile: GuestProfile) {
   const guestIdentifier = profile.guest_token ?? profile.id;
   const guestLink = buildGuestPrivatePortalUrl(guestIdentifier);
-  const guestFirstName = getGuestFirstName(profile.name);
-  const greeting = guestFirstName ? `Hello ${guestFirstName},` : "Hello,";
+  const greetingName = getGreetingName(profile.name, profile.greeting_name);
+  const greeting = `Hello ${greetingName},`;
 
   return `Subject: Cumberland Mountain Music Show Guest Portal Reminder
 
@@ -4057,8 +4048,8 @@ Cumberland Mountain Music Show`;
 function buildGuestReminderTextMessage(profile: GuestProfile) {
   const guestIdentifier = profile.guest_token ?? profile.id;
   const guestLink = buildGuestPrivatePortalUrl(guestIdentifier);
-  const guestFirstName = getGuestFirstName(profile.name);
-  const greeting = guestFirstName ? `Hey ${guestFirstName},` : "Hey,";
+  const greetingName = getGreetingName(profile.name, profile.greeting_name);
+  const greeting = `Hey ${greetingName},`;
 
   return `${greeting} here's your private Cumberland Mountain Music Show guest portal link: ${guestLink}
 
@@ -16732,11 +16723,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         portalGuestProfiles.find((profile) => profile.id === selectedGuestProfileId) ??
         autoSelectedGuestProfile
       : null;
-  const guestFirstName = getGuestFirstName(selectedGuestProfile?.name);
   const privateGuestGreeting = isPrivateGuestPortal
-    ? guestFirstName
-      ? `Hello ${guestFirstName},`
-      : "Hello,"
+    ? `Hello ${getGreetingName(selectedGuestProfile?.name, selectedGuestProfile?.greeting_name)},`
     : null;
   const privateGuestAppearanceDetails = isPrivateGuestPortal && selectedGuestProfile
     ? [

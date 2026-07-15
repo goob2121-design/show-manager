@@ -139,6 +139,7 @@ export type GuestProfile = {
   id: string;
   show_id: string;
   name: string | null;
+  greeting_name?: string | null;
   short_bio: string | null;
   full_bio: string | null;
   hometown: string | null;
