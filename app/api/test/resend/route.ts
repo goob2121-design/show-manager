@@ -58,6 +58,7 @@ export async function GET(request: Request) {
     const resend = new Resend(apiKey);
     const { data, error } = await resend.emails.send({
       from: FROM_ADDRESS,
+      replyTo: "info@cumberlandmountainmusic.com",
       to: TO_ADDRESS,
       subject: "StageFlow Resend Test",
       html: [
