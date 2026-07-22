@@ -242,7 +242,9 @@ export type SquareCatalogVariation = {
   is_deleted?: boolean;
   present_at_all_locations?: boolean;
   present_at_location_ids?: string[];
+  absent_at_location_ids?: string[];
   item_variation_data?: {
+    item_id?: string;
     name?: string;
     price_money?: SquareCatalogMoney;
     pricing_type?: string;
@@ -255,6 +257,7 @@ export type SquareCatalogItem = {
   is_deleted?: boolean;
   present_at_all_locations?: boolean;
   present_at_location_ids?: string[];
+  absent_at_location_ids?: string[];
   item_data?: {
     name?: string;
     variations?: SquareCatalogVariation[];
@@ -275,6 +278,12 @@ export async function listSquareCatalogItems(config: SquarePhase1Config) {
 
   return items;
 }
+export async function retrieveSquareCatalogObject(config: SquarePhase1Config, objectId: string) {
+  const query = new URLSearchParams({ include_related_objects: "true" });
+  const payload = await squareFetch<{ object?: SquareCatalogVariation | SquareCatalogItem; related_objects?: Array<SquareCatalogVariation | SquareCatalogItem> }>(config, `/v2/catalog/object/${encodeURIComponent(objectId)}?${query.toString()}`);
+  return payload;
+}
+
 export type SquareLocation = {
   id?: string;
   name?: string;
@@ -312,6 +321,35 @@ export async function createSquareCatalogPaymentLink(config: SquarePhase1Config,
           {
             catalog_object_id: input.catalogVariationId,
             quantity: String(Math.max(1, Math.floor(input.quantity) || 1)),
+          },
+        ],
+      },
+      payment_note: input.description,
+    }),
+  });
+  return payload.payment_link ?? null;
+}
+
+export async function createSquareAdHocPaymentLink(config: SquarePhase1Config, input: {
+  idempotencyKey: string;
+  locationId: string;
+  name: string;
+  quantity: number;
+  priceMoney: SquareCatalogMoney;
+  description: string;
+}) {
+  const payload = await squareFetch<{ payment_link?: SquarePaymentLink }>(config, "/v2/online-checkout/payment-links", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: input.idempotencyKey,
+      description: input.description,
+      order: {
+        location_id: input.locationId,
+        line_items: [
+          {
+            name: input.name,
+            quantity: String(Math.max(1, Math.floor(input.quantity) || 1)),
+            base_price_money: input.priceMoney,
           },
         ],
       },
