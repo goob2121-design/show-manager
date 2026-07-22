@@ -60,6 +60,7 @@ export type ShowRecord = {
   promo_short: string | null;
   promo_long: string | null;
   ticket_link: string | null;
+  square_catalog_variation_id?: string | null;
   opening_script: string | null;
   intermission_script: string | null;
   closing_script: string | null;
@@ -309,6 +310,15 @@ export type ShowCompTicket = {
   notes: string | null;
   checked_in: boolean;
   checked_in_count: number;
+  external_source?: string | null;
+  external_event_id?: string | null;
+  external_payment_id?: string | null;
+  external_order_id?: string | null;
+  external_line_item_uid?: string | null;
+  external_catalog_variation_id?: string | null;
+  external_status?: string | null;
+  external_payload_summary?: Record<string, unknown> | null;
+  imported_at?: string | null;
   created_at: string;
 };
 
