@@ -1,4 +1,4 @@
-import { resolveSquarePurchaserDetails, getSquareOrderCustomerId } from "@/app/api/integrations/square/customer-details";
+import { getSquareOrderCustomerId, getSquareOrderRecipientMatches, resolveSquarePurchaserDetails } from "@/app/api/integrations/square/customer-details";
 import type { SquareCustomer, SquareOrder, SquarePayment } from "@/app/api/integrations/square/_lib";
 
 function expectEqual<T>(actual: T, expected: T, label: string) {
@@ -8,15 +8,46 @@ function expectEqual<T>(actual: T, expected: T, label: string) {
 function runCustomerDetailResolverTests() {
   const payment: SquarePayment = { id: "pay_1", status: "COMPLETED", order_id: "order_1", buyer_email_address: "payment@example.com" };
 
-  const fulfillmentOrder: SquareOrder = {
+  const pickupOrder: SquareOrder = {
     id: "order_1",
     line_items: [{ uid: "line_1", catalog_object_id: "var_1", quantity: "3" }],
     fulfillments: [{ pickup_details: { recipient: { display_name: "Jane Doe", email_address: "jane.doe@example.com", phone_number: "555-111-2222" } } }],
   };
-  const fulfillmentResult = resolveSquarePurchaserDetails({ payment, order: fulfillmentOrder, customer: null });
-  expectEqual(fulfillmentResult.purchaserName, "Jane Doe", "fulfillment name");
-  expectEqual(fulfillmentResult.purchaserEmail, "jane.doe@example.com", "fulfillment email");
-  expectEqual(fulfillmentResult.customerSource, "order_fulfillment", "fulfillment source");
+  const pickupResult = resolveSquarePurchaserDetails({ payment, order: pickupOrder, customer: null });
+  expectEqual(pickupResult.purchaserName, "Jane Doe", "pickup fulfillment name");
+  expectEqual(pickupResult.purchaserEmail, "jane.doe@example.com", "pickup fulfillment email");
+  expectEqual(pickupResult.customerSource, "order_fulfillment", "pickup fulfillment source");
+
+  const shipmentOrder: SquareOrder = {
+    id: "order_ship",
+    fulfillments: [{ shipment_details: { recipient: { display_name: "Ship Person", email_address: "ship@example.com", phone_number: "555-222-3333" } } }],
+  };
+  const shipmentResult = resolveSquarePurchaserDetails({ payment: null, order: shipmentOrder, customer: null });
+  expectEqual(shipmentResult.purchaserName, "Ship Person", "shipment fulfillment name");
+  expectEqual(shipmentResult.purchaserEmail, "ship@example.com", "shipment fulfillment email");
+  expectEqual(shipmentResult.customerSource, "order_fulfillment", "shipment fulfillment source");
+
+  const deliveryOrder: SquareOrder = {
+    id: "order_delivery",
+    fulfillments: [{ delivery_details: { recipient: { display_name: "Delivery Person", email_address: "delivery@example.com", phone_number: "555-444-5555" } } }],
+  };
+  const deliveryResult = resolveSquarePurchaserDetails({ payment: null, order: deliveryOrder, customer: null });
+  expectEqual(deliveryResult.purchaserName, "Delivery Person", "delivery fulfillment name");
+  expectEqual(deliveryResult.purchaserEmail, "delivery@example.com", "delivery fulfillment email");
+  expectEqual(deliveryResult.customerSource, "order_fulfillment", "delivery fulfillment source");
+
+  const multipleOrder: SquareOrder = {
+    id: "order_multi",
+    fulfillments: [
+      { pickup_details: {} },
+      { shipment_details: { recipient: { display_name: "Second Fulfillment", email_address: "second@example.com" } } },
+    ],
+  };
+  const multipleMatches = getSquareOrderRecipientMatches(multipleOrder);
+  const multipleResult = resolveSquarePurchaserDetails({ payment: null, order: multipleOrder, customer: null });
+  expectEqual(multipleMatches.length, 1, "multiple fulfillment match count");
+  expectEqual(multipleResult.purchaserName, "Second Fulfillment", "multiple fulfillment name");
+  expectEqual(multipleResult.purchaserEmail, "second@example.com", "multiple fulfillment email");
 
   const customer: SquareCustomer = { id: "cus_1", given_name: "Bryan", family_name: "Turner", email_address: "bryan@example.com", phone_number: "555-333-4444" };
   const customerOrder: SquareOrder = { id: "order_2", customer_id: "cus_1", line_items: [{ uid: "line_2", catalog_object_id: "var_1", quantity: "5" }] };
@@ -31,6 +62,12 @@ function runCustomerDetailResolverTests() {
   expectEqual(mixedResult.purchaserName, "Will Call Name", "mixed fulfillment name");
   expectEqual(mixedResult.purchaserEmail, "bryan@example.com", "mixed customer email");
   expectEqual(mixedResult.customerSource, "order_fulfillment", "mixed source");
+
+  const noRecipientOrder: SquareOrder = { id: "order_no_recipient", fulfillments: [{ pickup_details: {} }] };
+  const noRecipientResult = resolveSquarePurchaserDetails({ payment: { id: "pay_5", status: "COMPLETED", order_id: "order_no_recipient", buyer_email_address: "fallback@example.com" }, order: noRecipientOrder, customer: null });
+  expectEqual(noRecipientResult.purchaserName, "Square Customer", "no recipient fallback name");
+  expectEqual(noRecipientResult.purchaserEmail, "fallback@example.com", "no recipient payment email fallback");
+  expectEqual(noRecipientResult.customerSource, "payment_or_order", "no recipient fallback source");
 
   const incompleteResult = resolveSquarePurchaserDetails({ payment: { id: "pay_4", status: "COMPLETED", order_id: "order_4" }, order: { id: "order_4" }, customer: null });
   expectEqual(incompleteResult.purchaserName, "Square Customer", "incomplete fallback name");

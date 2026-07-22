@@ -208,6 +208,7 @@ export type SquareOrder = {
   fulfillments?: Array<{
     pickup_details?: { recipient?: SquareOrderRecipient };
     shipment_details?: { recipient?: SquareOrderRecipient };
+    delivery_details?: { recipient?: SquareOrderRecipient };
   }>;
   tenders?: Array<{ customer_id?: string }>;
 };

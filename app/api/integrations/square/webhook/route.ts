@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSquareOrderCustomerId, resolveSquarePurchaserDetails } from "@/app/api/integrations/square/customer-details";
+import { getSquareOrderCustomerId, getSquareOrderRecipientMatches, resolveSquarePurchaserDetails } from "@/app/api/integrations/square/customer-details";
 import {
   createServiceRoleSupabaseClient,
   getSquarePhase1Config,
@@ -54,11 +54,6 @@ function hasText(value: unknown) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function getOrderRecipients(order: { fulfillments?: Array<{ pickup_details?: { recipient?: unknown }; shipment_details?: { recipient?: unknown } }> } | null) {
-  return (order?.fulfillments ?? [])
-    .flatMap((fulfillment) => [fulfillment.pickup_details?.recipient, fulfillment.shipment_details?.recipient])
-    .filter((recipient): recipient is Record<string, unknown> => Boolean(recipient && typeof recipient === "object"));
-}
 async function recordImportEvent(input: {
   eventId: string | null;
   eventType: string | null;
@@ -175,7 +170,12 @@ export async function POST(request: Request) {
     }
 
     if (config.environment === "sandbox") {
-      const recipients = getOrderRecipients(order);
+      const recipientMatches = getSquareOrderRecipientMatches(order);
+      const fulfillmentTypesFound = Array.from(new Set((order?.fulfillments ?? []).flatMap((fulfillment) => [
+        fulfillment.pickup_details ? "pickup" : null,
+        fulfillment.shipment_details ? "shipment" : null,
+        fulfillment.delivery_details ? "delivery" : null,
+      ].filter(Boolean))));
       console.info("Square Sandbox customer detail diagnostics", {
         payment: {
           propertyNames: getPropertyNames(payment),
@@ -187,9 +187,13 @@ export async function POST(request: Request) {
           propertyNames: getPropertyNames(order),
           customerIdExists: hasText(order?.customer_id) || Boolean(order?.tenders?.some((tender) => hasText(tender.customer_id))),
           fulfillmentsExists: Array.isArray(order?.fulfillments) && order.fulfillments.length > 0,
-          recipientsExist: recipients.length > 0,
-          recipientEmailAddressExists: recipients.some((recipient) => hasText(recipient.email_address)),
-          recipientDisplayNameExists: recipients.some((recipient) => hasText(recipient.display_name)),
+          fulfillmentTypesFound,
+          pickupRecipientExists: recipientMatches.some((match) => match.type === "pickup"),
+          shipmentRecipientExists: recipientMatches.some((match) => match.type === "shipment"),
+          deliveryRecipientExists: recipientMatches.some((match) => match.type === "delivery"),
+          recipientsExist: recipientMatches.length > 0,
+          recipientEmailAddressExists: recipientMatches.some((match) => hasText(match.recipient.email_address)),
+          recipientDisplayNameExists: recipientMatches.some((match) => hasText(match.recipient.display_name)),
           lineItemsExist: Array.isArray(order?.line_items) && order.line_items.length > 0,
         },
         customer: {

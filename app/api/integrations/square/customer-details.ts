@@ -1,6 +1,12 @@
-import type { SquareCustomer, SquareOrder, SquarePayment } from "@/app/api/integrations/square/_lib";
+import type { SquareCustomer, SquareOrder, SquareOrderRecipient, SquarePayment } from "@/app/api/integrations/square/_lib";
 
 export type SquareCustomerSource = "order_fulfillment" | "square_customer" | "payment_or_order" | "unavailable";
+export type SquareFulfillmentRecipientType = "pickup" | "shipment" | "delivery";
+
+export type SquareFulfillmentRecipientMatch = {
+  type: SquareFulfillmentRecipientType;
+  recipient: SquareOrderRecipient;
+};
 
 export type ResolvedSquarePurchaserDetails = {
   purchaserName: string;
@@ -28,9 +34,18 @@ function joinName(givenName: string | null | undefined, familyName: string | nul
   return [normalizeText(givenName), normalizeText(familyName)].filter(Boolean).join(" ") || null;
 }
 
+export function getSquareOrderRecipientMatches(order: SquareOrder | null): SquareFulfillmentRecipientMatch[] {
+  return (order?.fulfillments ?? []).flatMap((fulfillment) => {
+    const matches: SquareFulfillmentRecipientMatch[] = [];
+    if (fulfillment.pickup_details?.recipient) matches.push({ type: "pickup", recipient: fulfillment.pickup_details.recipient });
+    if (fulfillment.shipment_details?.recipient) matches.push({ type: "shipment", recipient: fulfillment.shipment_details.recipient });
+    if (fulfillment.delivery_details?.recipient) matches.push({ type: "delivery", recipient: fulfillment.delivery_details.recipient });
+    return matches;
+  });
+}
+
 export function getSquareOrderRecipient(order: SquareOrder | null) {
-  const fulfillment = order?.fulfillments?.find((item) => item.pickup_details?.recipient || item.shipment_details?.recipient);
-  return fulfillment?.pickup_details?.recipient ?? fulfillment?.shipment_details?.recipient ?? null;
+  return getSquareOrderRecipientMatches(order)[0]?.recipient ?? null;
 }
 
 export function getSquareOrderCustomerId(order: SquareOrder | null, payment: SquarePayment | null) {
