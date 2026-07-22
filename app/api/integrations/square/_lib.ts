@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 export type SquarePhase1Config = {
@@ -231,6 +231,10 @@ export function maskIdentifier(value: string | null | undefined) {
   if (trimmed.length <= 8) return trimmed;
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
 }
+
+export function getSquareTokenFingerprint(config: SquarePhase1Config) {
+  return createHash("sha256").update(config.accessToken).digest("hex").slice(0, 8);
+}
 export type SquareCatalogMoney = {
   amount?: number;
   currency?: string;
@@ -282,6 +286,11 @@ export async function retrieveSquareCatalogObject(config: SquarePhase1Config, ob
   const query = new URLSearchParams({ include_related_objects: "true" });
   const payload = await squareFetch<{ object?: SquareCatalogVariation | SquareCatalogItem; related_objects?: Array<SquareCatalogVariation | SquareCatalogItem> }>(config, `/v2/catalog/object/${encodeURIComponent(objectId)}?${query.toString()}`);
   return payload;
+}
+
+export async function retrieveSquareMerchant(config: SquarePhase1Config) {
+  const payload = await squareFetch<{ merchant?: { id?: string; business_name?: string; country?: string; currency?: string } }>(config, "/v2/merchants/me");
+  return payload.merchant ?? null;
 }
 
 export type SquareLocation = {

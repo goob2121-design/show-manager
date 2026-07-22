@@ -2,12 +2,14 @@ import Link from "next/link";
 import { AdminGate } from "@/app/components/admin-gate";
 import {
   getSquareSandboxCatalogConfig,
+  getSquareTokenFingerprint,
   listSquareCatalogItems,
+  listSquareLocations,
+  retrieveSquareMerchant,
   type SquareCatalogItem,
   type SquareCatalogVariation,
 } from "@/app/api/integrations/square/_lib";
 import { CopyVariationIdButton } from "./copy-variation-id-button";
-
 export const runtime = "nodejs";
 
 type PageProps = {
@@ -78,7 +80,18 @@ export default async function SquareCatalogPage({ params }: PageProps) {
 
   if (config) {
     try {
-      rows = buildRows(await listSquareCatalogItems(config));
+      const [items, locations, merchant] = await Promise.all([listSquareCatalogItems(config), listSquareLocations(config), retrieveSquareMerchant(config)]);
+      rows = buildRows(items);
+      console.info("Square catalog page diagnostics", {
+        environment: config.environment,
+        apiBaseUrl: config.apiBaseUrl,
+        squareVersion: "2026-07-15",
+        tokenFingerprint: getSquareTokenFingerprint(config),
+        merchantId: merchant?.id ?? null,
+        locationIds: locations.map((location) => location.id).filter(Boolean),
+        catalogItemIds: items.map((item) => item.id).filter(Boolean),
+        catalogVariationIds: rows.map((row) => row.variationId).filter(Boolean),
+      });
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : "Unable to load Square Sandbox catalog.";
     }

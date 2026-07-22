@@ -7,9 +7,11 @@ import {
   createSquareAdHocPaymentLink,
   createSquareCatalogPaymentLink,
   getSquareSandboxCatalogConfig,
+  getSquareTokenFingerprint,
   listSquareLocations,
   maskIdentifier,
   retrieveSquareCatalogObject,
+  retrieveSquareMerchant,
   SquareApiError,
   type SanitizedSquareApiError,
   type SquareCatalogItem,
@@ -17,7 +19,6 @@ import {
   type SquareCatalogVariation,
   type SquarePaymentLink,
 } from "@/app/api/integrations/square/_lib";
-
 export const runtime = "nodejs";
 
 type CreateCheckoutLinkRequest = {
@@ -133,6 +134,17 @@ export async function POST(request: Request) {
     if (!typedShow) return NextResponse.json({ success: false, error: "Show not found.", diagnostics }, { status: 404 });
     if (!catalogVariationId) return NextResponse.json({ success: false, error: "This show does not have a mapped Square catalog variation ID.", diagnostics }, { status: 400 });
 
+    const [merchant, locations] = await Promise.all([retrieveSquareMerchant(config), listSquareLocations(config)]);
+    console.info("Square checkout route diagnostics", {
+      environment: config.environment,
+      apiBaseUrl: config.apiBaseUrl,
+      squareVersion: "2026-07-15",
+      tokenFingerprint: getSquareTokenFingerprint(config),
+      merchantId: merchant?.id ?? null,
+      locationIds: locations.map((location) => location.id).filter(Boolean),
+      mappedVariationId: catalogVariationId,
+    });
+
     const catalogPayload = await retrieveSquareCatalogObject(config, catalogVariationId);
     diagnostics.variationRetrievalSucceeded = Boolean(catalogPayload.object);
     diagnostics.variationType = catalogPayload.object?.type ?? null;
@@ -155,7 +167,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Mapped Square catalog variation is archived/deleted.", diagnostics }, { status: 400 });
     }
 
-    const locations = await listSquareLocations(config);
+    console.info("Square checkout retrieved catalog object", {
+      retrievedObjectId: variation.id ?? null,
+      retrievedObjectType: variation.type ?? null,
+      parentItemId: variation.item_variation_data?.item_id ?? null,
+      presentAtAllLocations: Boolean(variation.present_at_all_locations),
+      presentAtLocationIds: variation.present_at_location_ids ?? [],
+      absentAtLocationIds: variation.absent_at_location_ids ?? [],
+    });
+
     const activeLocationIds = locations.filter((location) => location.id && location.status !== "INACTIVE").map((location) => location.id as string);
     const selectedLocationId = chooseLocationForVariation(variation, activeLocationIds);
     diagnostics.selectedLocationIdMasked = maskIdentifier(selectedLocationId);
