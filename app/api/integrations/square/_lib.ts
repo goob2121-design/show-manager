@@ -200,3 +200,48 @@ export async function listSquareCatalogItems(config: SquarePhase1Config) {
 
   return items;
 }
+export type SquareLocation = {
+  id?: string;
+  name?: string;
+  status?: string;
+};
+
+export type SquarePaymentLink = {
+  id?: string;
+  url?: string;
+  long_url?: string;
+  order_id?: string;
+  created_at?: string;
+};
+
+export async function listSquareLocations(config: SquarePhase1Config) {
+  const payload = await squareFetch<{ locations?: SquareLocation[] }>(config, "/v2/locations");
+  return payload.locations ?? [];
+}
+
+export async function createSquareCatalogPaymentLink(config: SquarePhase1Config, input: {
+  idempotencyKey: string;
+  locationId: string;
+  catalogVariationId: string;
+  quantity: number;
+  description: string;
+}) {
+  const payload = await squareFetch<{ payment_link?: SquarePaymentLink }>(config, "/v2/online-checkout/payment-links", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: input.idempotencyKey,
+      description: input.description,
+      order: {
+        location_id: input.locationId,
+        line_items: [
+          {
+            catalog_object_id: input.catalogVariationId,
+            quantity: String(Math.max(1, Math.floor(input.quantity) || 1)),
+          },
+        ],
+      },
+      payment_note: input.description,
+    }),
+  });
+  return payload.payment_link ?? null;
+}

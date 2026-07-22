@@ -1,0 +1,78 @@
+"use client";
+
+import { useState } from "react";
+
+type CheckoutLinkResult = {
+  id: string;
+  url: string;
+  longUrl: string | null;
+  orderId: string | null;
+  createdAt: string;
+};
+
+type CreateSandboxCheckoutLinkButtonProps = {
+  slug: string;
+};
+
+function formatCreatedAt(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+}
+
+export function CreateSandboxCheckoutLinkButton({ slug }: CreateSandboxCheckoutLinkButtonProps) {
+  const [isCreating, setIsCreating] = useState(false);
+  const [checkout, setCheckout] = useState<CheckoutLinkResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  async function handleCreate() {
+    setIsCreating(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch("/api/integrations/square/checkout-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, quantity: 1 }),
+      });
+      const payload = (await response.json()) as { success?: boolean; checkout?: CheckoutLinkResult; error?: string };
+      if (!response.ok || !payload.success || !payload.checkout) {
+        throw new Error(payload.error || "Unable to create Sandbox checkout link.");
+      }
+      setCheckout(payload.checkout);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to create Sandbox checkout link.");
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-bold text-stone-900">Sandbox Checkout Link</h2>
+          <p className="text-sm text-stone-600">Creates a temporary Square-hosted checkout link for the mapped catalog variation. Nothing is saved in StageFlow.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleCreate()}
+          disabled={isCreating}
+          className="inline-flex rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isCreating ? "Creating..." : "Create Sandbox Checkout Link"}
+        </button>
+      </div>
+
+      {errorMessage ? <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{errorMessage}</p> : null}
+
+      {checkout ? (
+        <div className="mt-4 grid gap-2 rounded-xl border border-emerald-200 bg-white p-3 text-sm">
+          <p><span className="font-semibold text-stone-600">Checkout URL:</span> <a href={checkout.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-emerald-700 underline">{checkout.url}</a></p>
+          <p><span className="font-semibold text-stone-600">Checkout ID:</span> <span className="font-mono text-xs">{checkout.id}</span></p>
+          <p><span className="font-semibold text-stone-600">Created:</span> {formatCreatedAt(checkout.createdAt)}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
