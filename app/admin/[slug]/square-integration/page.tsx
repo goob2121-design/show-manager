@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AdminGate } from "@/app/components/admin-gate";
 import { createServiceRoleSupabaseClient, getSquarePhase1Config, maskIdentifier } from "@/app/api/integrations/square/_lib";
 import { CreateSandboxCheckoutLinkButton } from "./create-sandbox-checkout-link-button";
+import { DebugLatestImportButton } from "./debug-latest-import-button";
 
 export const runtime = "nodejs";
 
@@ -63,6 +64,7 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
   const typedEvents = (events ?? []) as SquareImportEventRow[];
   const lastWebhookAt = typedEvents[0]?.received_at ?? null;
   const lastSuccessfulImportAt = typedEvents.find((event) => ["imported", "duplicate", "incomplete_customer"].includes(event.result))?.imported_at ?? null;
+  const latestImportEvent = typedEvents[0] ?? null;
 
   return (
     <AdminGate slug={slug} resourceLabel="Square integration status" continueLabel="Continue to Square Integration">
@@ -81,6 +83,7 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
           </div>
 
           <CreateSandboxCheckoutLinkButton slug={slug} />
+          {config?.environment === "sandbox" ? <DebugLatestImportButton paymentId={latestImportEvent?.payment_id ?? null} orderId={latestImportEvent?.order_id ?? null} /> : null}
 
           <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm md:grid-cols-2 xl:grid-cols-4">
             <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-stone-500">Mode</p><p className="mt-1 text-lg font-semibold">{config?.environment ?? "Not configured"}</p></div>
