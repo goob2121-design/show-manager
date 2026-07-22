@@ -10,6 +10,19 @@ type CheckoutLinkResult = {
   createdAt: string;
 };
 
+type SquareErrorDetail = {
+  category?: string;
+  code?: string;
+  detail?: string;
+  field?: string;
+};
+
+type SquareErrorResponse = {
+  httpStatus: number;
+  statusText: string;
+  errors: SquareErrorDetail[];
+};
+
 type CreateSandboxCheckoutLinkButtonProps = {
   slug: string;
 };
@@ -24,10 +37,12 @@ export function CreateSandboxCheckoutLinkButton({ slug }: CreateSandboxCheckoutL
   const [isCreating, setIsCreating] = useState(false);
   const [checkout, setCheckout] = useState<CheckoutLinkResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [squareError, setSquareError] = useState<SquareErrorResponse | null>(null);
 
   async function handleCreate() {
     setIsCreating(true);
     setErrorMessage(null);
+    setSquareError(null);
 
     try {
       const response = await fetch("/api/integrations/square/checkout-link", {
@@ -35,8 +50,9 @@ export function CreateSandboxCheckoutLinkButton({ slug }: CreateSandboxCheckoutL
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slug, quantity: 1 }),
       });
-      const payload = (await response.json()) as { success?: boolean; checkout?: CheckoutLinkResult; error?: string };
+      const payload = (await response.json()) as { success?: boolean; checkout?: CheckoutLinkResult; error?: string; squareError?: SquareErrorResponse };
       if (!response.ok || !payload.success || !payload.checkout) {
+        setSquareError(payload.squareError ?? null);
         throw new Error(payload.error || "Unable to create Sandbox checkout link.");
       }
       setCheckout(payload.checkout);
@@ -64,7 +80,25 @@ export function CreateSandboxCheckoutLinkButton({ slug }: CreateSandboxCheckoutL
         </button>
       </div>
 
-      {errorMessage ? <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{errorMessage}</p> : null}
+      {errorMessage ? (
+        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          <p className="font-bold">{squareError ? "Square Error:" : "Error:"}</p>
+          <p className="font-semibold">{errorMessage}</p>
+          {squareError ? (
+            <div className="mt-2 grid gap-1">
+              <p><span className="font-semibold">HTTP status:</span> {squareError.httpStatus} {squareError.statusText}</p>
+              {squareError.errors.length > 0 ? squareError.errors.map((item, index) => (
+                <div key={`${item.code ?? "square-error"}-${index}`} className="rounded-lg bg-white/70 px-2 py-1">
+                  {item.category ? <p><span className="font-semibold">Category:</span> {item.category}</p> : null}
+                  {item.code ? <p><span className="font-semibold">Code:</span> {item.code}</p> : null}
+                  {item.detail ? <p><span className="font-semibold">Detail:</span> {item.detail}</p> : null}
+                  {item.field ? <p><span className="font-semibold">Field:</span> {item.field}</p> : null}
+                </div>
+              )) : <p>No Square error detail was returned.</p>}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {checkout ? (
         <div className="mt-4 grid gap-2 rounded-xl border border-emerald-200 bg-white p-3 text-sm">

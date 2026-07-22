@@ -7,6 +7,7 @@ import {
   createSquareCatalogPaymentLink,
   getSquareSandboxCatalogConfig,
   listSquareLocations,
+  SquareApiError,
 } from "@/app/api/integrations/square/_lib";
 
 export const runtime = "nodejs";
@@ -88,6 +89,18 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof SquareApiError) {
+      console.error("Square Sandbox checkout link creation failed with Square API error.", error.toServerLogObject());
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Square API rejected the Sandbox checkout link request.",
+          squareError: error.toSanitizedResponse(),
+        },
+        { status: 502 },
+      );
+    }
+
     console.error("Square Sandbox checkout link creation failed.", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json({ success: false, error: "Unable to create Square Sandbox checkout link." }, { status: 500 });
   }

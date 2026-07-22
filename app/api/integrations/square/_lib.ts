@@ -86,18 +86,93 @@ export function verifySquareWebhookSignature(rawBody: string, signatureHeader: s
   return timingSafeEqual(expectedBuffer, actualBuffer);
 }
 
+export type SquareApiErrorDetail = {
+  category?: string;
+  code?: string;
+  detail?: string;
+  field?: string;
+};
+
+export type SanitizedSquareApiError = {
+  httpStatus: number;
+  statusText: string;
+  errors: SquareApiErrorDetail[];
+};
+
+export class SquareApiError extends Error {
+  readonly httpStatus: number;
+  readonly statusText: string;
+  readonly errors: SquareApiErrorDetail[];
+  readonly responseBody: unknown;
+  readonly path: string;
+
+  constructor(input: { httpStatus: number; statusText: string; errors: SquareApiErrorDetail[]; responseBody: unknown; path: string }) {
+    const firstError = input.errors[0];
+    super(firstError?.detail || firstError?.code || `Square API request failed with status ${input.httpStatus}.`);
+    this.name = "SquareApiError";
+    this.httpStatus = input.httpStatus;
+    this.statusText = input.statusText;
+    this.errors = input.errors;
+    this.responseBody = input.responseBody;
+    this.path = input.path;
+  }
+
+  toSanitizedResponse(): SanitizedSquareApiError {
+    return {
+      httpStatus: this.httpStatus,
+      statusText: this.statusText,
+      errors: this.errors,
+    };
+  }
+
+  toServerLogObject() {
+    return {
+      httpStatus: this.httpStatus,
+      statusText: this.statusText,
+      path: this.path,
+      errors: this.errors,
+      responseBody: this.responseBody,
+    };
+  }
+}
+
+function isSquareApiErrorDetail(value: unknown): value is SquareApiErrorDetail {
+  return Boolean(value && typeof value === "object");
+}
+
 async function squareFetch<T>(config: SquarePhase1Config, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${config.apiBaseUrl}${path}`, {
     ...init,
     headers: {
-      "Square-Version": "2026-07-16",
+      "Square-Version": "2026-07-15",
       "Authorization": `Bearer ${config.accessToken}`,
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },
   });
-  if (!response.ok) throw new Error(`Square API request failed with status ${response.status}.`);
-  return (await response.json()) as T;
+  const responseText = await response.text();
+  const responseBody = responseText ? JSON.parse(responseText) as unknown : null;
+
+  if (!response.ok) {
+    const errors = responseBody && typeof responseBody === "object" && "errors" in responseBody && Array.isArray(responseBody.errors)
+      ? responseBody.errors.filter(isSquareApiErrorDetail).map((error) => ({
+          category: typeof error.category === "string" ? error.category : undefined,
+          code: typeof error.code === "string" ? error.code : undefined,
+          detail: typeof error.detail === "string" ? error.detail : undefined,
+          field: typeof error.field === "string" ? error.field : undefined,
+        }))
+      : [];
+
+    throw new SquareApiError({
+      httpStatus: response.status,
+      statusText: response.statusText,
+      errors,
+      responseBody,
+      path,
+    });
+  }
+
+  return responseBody as T;
 }
 
 export type SquarePayment = {
