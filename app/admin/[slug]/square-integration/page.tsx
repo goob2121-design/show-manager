@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { getAdminSessionCookieName, verifyAdminSessionCookieValue } from "@/lib/admin-session";
+import { AdminGate } from "@/app/components/admin-gate";
 import { createServiceRoleSupabaseClient, getSquarePhase1Config, maskIdentifier } from "@/app/api/integrations/square/_lib";
 
 export const runtime = "nodejs";
@@ -38,21 +37,6 @@ function formatDateTime(value: string | null) {
 
 export default async function SquareIntegrationStatusPage({ params }: PageProps) {
   const { slug } = await params;
-  const cookieStore = await cookies();
-  const hasAdminAccess = verifyAdminSessionCookieValue(slug, cookieStore.get(getAdminSessionCookieName(slug))?.value);
-
-  if (!hasAdminAccess) {
-    return (
-      <main className="min-h-screen bg-stone-50 px-6 py-10 text-stone-900">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-bold">Square Integration Status</h1>
-          <p className="mt-2 text-sm text-stone-600">Admin access is required for this page.</p>
-          <Link href={`/admin/${encodeURIComponent(slug)}`} className="mt-4 inline-flex rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100">Back to Admin</Link>
-        </div>
-      </main>
-    );
-  }
-
   const { config, missing, invalid } = getSquarePhase1Config();
   const supabase = createServiceRoleSupabaseClient();
   const [{ data: show }, { data: events }] = await Promise.all([
@@ -70,6 +54,7 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
   const lastSuccessfulImportAt = typedEvents.find((event) => ["imported", "duplicate", "incomplete_customer"].includes(event.result))?.imported_at ?? null;
 
   return (
+    <AdminGate slug={slug} resourceLabel="Square integration status" continueLabel="Continue to Square Integration">
     <main className="min-h-screen bg-stone-50 px-6 py-10 text-stone-900">
       <div className="mx-auto grid max-w-6xl gap-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -133,5 +118,6 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
         </section>
       </div>
     </main>
+    </AdminGate>
   );
 }
