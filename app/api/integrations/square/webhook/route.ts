@@ -46,6 +46,19 @@ function summarizeCustomerLookupError(error: unknown) {
   return error.toSanitizedResponse().errors.map((item) => item.code ?? item.detail ?? item.category).filter(Boolean).join(", ") || `Square API ${error.httpStatus}`;
 }
 
+function getPropertyNames(value: unknown) {
+  return value && typeof value === "object" ? Object.keys(value).sort() : [];
+}
+
+function hasText(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function getOrderRecipients(order: { fulfillments?: Array<{ pickup_details?: { recipient?: unknown }; shipment_details?: { recipient?: unknown } }> } | null) {
+  return (order?.fulfillments ?? [])
+    .flatMap((fulfillment) => [fulfillment.pickup_details?.recipient, fulfillment.shipment_details?.recipient])
+    .filter((recipient): recipient is Record<string, unknown> => Boolean(recipient && typeof recipient === "object"));
+}
 async function recordImportEvent(input: {
   eventId: string | null;
   eventType: string | null;
@@ -141,11 +154,16 @@ export async function POST(request: Request) {
     const squareCustomerId = getSquareOrderCustomerId(order, payment);
     let customer = null;
     let customerLookupError: string | null = null;
+    let customerRetrievalAttempted = false;
+    let customerRetrievalHttpStatus: number | null = null;
 
     if (squareCustomerId) {
+      customerRetrievalAttempted = true;
       try {
         customer = await retrieveSquareCustomer(config, squareCustomerId);
+        customerRetrievalHttpStatus = 200;
       } catch (error) {
+        customerRetrievalHttpStatus = error instanceof SquareApiError ? error.httpStatus : null;
         customerLookupError = summarizeCustomerLookupError(error);
         console.warn("Square customer retrieval failed; importing paid order with available details.", {
           paymentId,
@@ -154,6 +172,35 @@ export async function POST(request: Request) {
           squareError: sanitizeSquareError(error),
         });
       }
+    }
+
+    if (config.environment === "sandbox") {
+      const recipients = getOrderRecipients(order);
+      console.info("Square Sandbox customer detail diagnostics", {
+        payment: {
+          propertyNames: getPropertyNames(payment),
+          buyerEmailAddressExists: hasText(payment?.buyer_email_address),
+          orderIdExists: hasText(payment?.order_id),
+          customerIdExists: hasText(payment?.customer_id),
+        },
+        order: {
+          propertyNames: getPropertyNames(order),
+          customerIdExists: hasText(order?.customer_id) || Boolean(order?.tenders?.some((tender) => hasText(tender.customer_id))),
+          fulfillmentsExists: Array.isArray(order?.fulfillments) && order.fulfillments.length > 0,
+          recipientsExist: recipients.length > 0,
+          recipientEmailAddressExists: recipients.some((recipient) => hasText(recipient.email_address)),
+          recipientDisplayNameExists: recipients.some((recipient) => hasText(recipient.display_name)),
+          lineItemsExist: Array.isArray(order?.line_items) && order.line_items.length > 0,
+        },
+        customer: {
+          retrievalAttempted: customerRetrievalAttempted,
+          httpStatus: customerRetrievalHttpStatus,
+          givenNameExists: hasText(customer?.given_name),
+          familyNameExists: hasText(customer?.family_name),
+          emailAddressExists: hasText(customer?.email_address),
+          phoneNumberExists: hasText(customer?.phone_number),
+        },
+      });
     }
 
     const purchaserDetails = resolveSquarePurchaserDetails({ payment, order, customer });
