@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import { ingestExternalTicketSale } from "@/lib/ticket-ingestion";
+import { getSquareOrderCustomerId, resolveSquarePurchaserDetails } from "@/app/api/integrations/square/customer-details";
 import {
   createServiceRoleSupabaseClient,
-  getOrderRecipient,
   getSquarePhase1Config,
+  retrieveSquareCustomer,
   retrieveSquareOrder,
   retrieveSquarePayment,
+  SquareApiError,
   verifySquareWebhookSignature,
   type SquareOrderLineItem,
 } from "@/app/api/integrations/square/_lib";
+import { ingestExternalTicketSale } from "@/lib/ticket-ingestion";
 
 export const runtime = "nodejs";
 
@@ -32,6 +34,16 @@ type SquareWebhookEvent = {
 function getLineItemQuantity(lineItem: SquareOrderLineItem) {
   const parsed = Number.parseInt(lineItem.quantity ?? "1", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function sanitizeSquareError(error: unknown) {
+  if (!(error instanceof SquareApiError)) return null;
+  return error.toSanitizedResponse();
+}
+
+function summarizeCustomerLookupError(error: unknown) {
+  if (!(error instanceof SquareApiError)) return "customer_lookup_failed";
+  return error.toSanitizedResponse().errors.map((item) => item.code ?? item.detail ?? item.category).filter(Boolean).join(", ") || `Square API ${error.httpStatus}`;
 }
 
 async function recordImportEvent(input: {
@@ -126,15 +138,43 @@ export async function POST(request: Request) {
     }
 
     const order = await retrieveSquareOrder(config, orderId);
-    const recipient = getOrderRecipient(order, payment);
+    const squareCustomerId = getSquareOrderCustomerId(order, payment);
+    let customer = null;
+    let customerLookupError: string | null = null;
+
+    if (squareCustomerId) {
+      try {
+        customer = await retrieveSquareCustomer(config, squareCustomerId);
+      } catch (error) {
+        customerLookupError = summarizeCustomerLookupError(error);
+        console.warn("Square customer retrieval failed; importing paid order with available details.", {
+          paymentId,
+          orderId,
+          customerIdPresent: true,
+          squareError: sanitizeSquareError(error),
+        });
+      }
+    }
+
+    const purchaserDetails = resolveSquarePurchaserDetails({ payment, order, customer });
+    const customerSummary = {
+      nameFound: purchaserDetails.nameFound,
+      emailFound: purchaserDetails.emailFound,
+      phoneFound: purchaserDetails.phoneFound,
+      customerSource: purchaserDetails.customerSource,
+      customerIdPresent: Boolean(purchaserDetails.customerId),
+      customerLookupError,
+    };
     const supabase = createServiceRoleSupabaseClient();
     const results = [];
 
     for (const lineItem of order?.line_items ?? []) {
       const catalogVariationId = lineItem.catalog_object_id?.trim() ?? "";
       const lineItemUid = lineItem.uid?.trim() ?? "";
+      const quantity = getLineItemQuantity(lineItem);
+
       if (!catalogVariationId || !lineItemUid) {
-        await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: lineItemUid || null, catalogVariationId: catalogVariationId || null, showId: null, showName: null, result: "unmapped_item", ticketCount: null, emailPresent: Boolean(recipient.email?.trim()), seatLinkCreated: false });
+        await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: lineItemUid || null, catalogVariationId: catalogVariationId || null, showId: null, showName: null, result: "unmapped_item", ticketCount: null, emailPresent: purchaserDetails.emailFound, seatLinkCreated: false, payloadSummary: customerSummary });
         results.push({ status: "unmapped_item", lineItemUid: lineItemUid || null });
         continue;
       }
@@ -146,9 +186,9 @@ export async function POST(request: Request) {
         orderId,
         lineItemUid,
         catalogVariationId,
-        purchaserName: recipient.name,
-        purchaserEmail: recipient.email,
-        quantity: getLineItemQuantity(lineItem),
+        purchaserName: purchaserDetails.purchaserName,
+        purchaserEmail: purchaserDetails.purchaserEmail,
+        quantity,
         amountPaid: typeof lineItem.total_money?.amount === "number" ? lineItem.total_money.amount / 100 : null,
         currency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null,
         paymentStatus,
@@ -159,8 +199,9 @@ export async function POST(request: Request) {
           lineItemUid,
           catalogVariationId,
           lineItemName: lineItem.name ?? null,
-          quantity: getLineItemQuantity(lineItem),
+          quantity,
           amountCurrency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null,
+          ...customerSummary,
         },
       });
 
@@ -178,7 +219,7 @@ export async function POST(request: Request) {
         emailPresent: result.emailPresent,
         seatLinkCreated: result.seatLinkCreated,
         errorMessage: result.errorMessage ?? null,
-        payloadSummary: { lineItemName: lineItem.name ?? null, paymentStatus },
+        payloadSummary: { lineItemName: lineItem.name ?? null, paymentStatus, ...customerSummary },
         importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null,
       });
       results.push(result);

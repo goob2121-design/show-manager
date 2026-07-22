@@ -194,25 +194,46 @@ export type SquareOrderLineItem = {
   total_money?: { amount?: number; currency?: string };
 };
 
+export type SquareOrderRecipient = {
+  display_name?: string;
+  email_address?: string;
+  phone_number?: string;
+};
+
 export type SquareOrder = {
   id?: string;
   location_id?: string;
+  customer_id?: string;
   line_items?: SquareOrderLineItem[];
   fulfillments?: Array<{
-    pickup_details?: { recipient?: { display_name?: string; email_address?: string } };
-    shipment_details?: { recipient?: { display_name?: string; email_address?: string } };
+    pickup_details?: { recipient?: SquareOrderRecipient };
+    shipment_details?: { recipient?: SquareOrderRecipient };
   }>;
   tenders?: Array<{ customer_id?: string }>;
+};
+
+export type SquareCustomer = {
+  id?: string;
+  given_name?: string;
+  family_name?: string;
+  company_name?: string;
+  email_address?: string;
+  phone_number?: string;
 };
 
 export async function retrieveSquarePayment(config: SquarePhase1Config, paymentId: string) {
   const payload = await squareFetch<{ payment?: SquarePayment }>(config, `/v2/payments/${encodeURIComponent(paymentId)}`);
   return payload.payment ?? null;
-}
+};
 
 export async function retrieveSquareOrder(config: SquarePhase1Config, orderId: string) {
   const payload = await squareFetch<{ order?: SquareOrder }>(config, `/v2/orders/${encodeURIComponent(orderId)}`);
   return payload.order ?? null;
+}
+
+export async function retrieveSquareCustomer(config: SquarePhase1Config, customerId: string) {
+  const payload = await squareFetch<{ customer?: SquareCustomer }>(config, `/v2/customers/${encodeURIComponent(customerId)}`);
+  return payload.customer ?? null;
 }
 
 export function getOrderRecipient(order: SquareOrder | null, payment: SquarePayment | null) {
@@ -222,6 +243,7 @@ export function getOrderRecipient(order: SquareOrder | null, payment: SquarePaym
   return {
     name: pickupRecipient?.display_name ?? shipmentRecipient?.display_name ?? null,
     email: pickupRecipient?.email_address ?? shipmentRecipient?.email_address ?? payment?.buyer_email_address ?? null,
+    phone: pickupRecipient?.phone_number ?? shipmentRecipient?.phone_number ?? null,
   };
 }
 
@@ -367,3 +389,4 @@ export async function createSquareAdHocPaymentLink(config: SquarePhase1Config, i
   });
   return payload.payment_link ?? null;
 }
+
