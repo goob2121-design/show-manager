@@ -41,6 +41,32 @@ export function getSquarePhase1Config(): { config: SquarePhase1Config | null; mi
     invalid,
   };
 }
+export function getSquareSandboxCatalogConfig(): { config: SquarePhase1Config | null; missing: string[]; invalid: string[] } {
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  const environment = process.env.SQUARE_ENVIRONMENT;
+  const accessToken = process.env.SQUARE_SANDBOX_ACCESS_TOKEN;
+
+  if (!environment) missing.push("SQUARE_ENVIRONMENT");
+  if (!accessToken) missing.push("SQUARE_SANDBOX_ACCESS_TOKEN");
+  if (environment && environment !== "sandbox") invalid.push("SQUARE_ENVIRONMENT must be sandbox for Phase 1");
+
+  if (missing.length > 0 || invalid.length > 0 || environment !== "sandbox" || !accessToken) {
+    return { config: null, missing, invalid };
+  }
+
+  return {
+    config: {
+      environment: "sandbox",
+      accessToken,
+      webhookSignatureKey: "",
+      webhookNotificationUrl: "",
+      apiBaseUrl: "https://connect.squareupsandbox.com",
+    },
+    missing,
+    invalid,
+  };
+}
 
 export function createServiceRoleSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -129,4 +155,48 @@ export function maskIdentifier(value: string | null | undefined) {
   if (!trimmed) return null;
   if (trimmed.length <= 8) return trimmed;
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
+}
+export type SquareCatalogMoney = {
+  amount?: number;
+  currency?: string;
+};
+
+export type SquareCatalogVariation = {
+  type?: "ITEM_VARIATION";
+  id?: string;
+  is_deleted?: boolean;
+  present_at_all_locations?: boolean;
+  present_at_location_ids?: string[];
+  item_variation_data?: {
+    name?: string;
+    price_money?: SquareCatalogMoney;
+    pricing_type?: string;
+  };
+};
+
+export type SquareCatalogItem = {
+  type?: "ITEM";
+  id?: string;
+  is_deleted?: boolean;
+  present_at_all_locations?: boolean;
+  present_at_location_ids?: string[];
+  item_data?: {
+    name?: string;
+    variations?: SquareCatalogVariation[];
+  };
+};
+
+export async function listSquareCatalogItems(config: SquarePhase1Config) {
+  const items: SquareCatalogItem[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const query = new URLSearchParams({ types: "ITEM" });
+    if (cursor) query.set("cursor", cursor);
+    const payload = await squareFetch<{ objects?: SquareCatalogItem[]; cursor?: string }>(config, `/v2/catalog/list?${query.toString()}`);
+    items.push(...(payload.objects ?? []).filter((item) => item.type === "ITEM"));
+    cursor = payload.cursor;
+  } while (cursor);
+
+  return items;
 }

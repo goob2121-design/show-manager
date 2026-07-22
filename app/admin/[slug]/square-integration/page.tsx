@@ -63,7 +63,10 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
             <h1 className="text-3xl font-black">Square Integration Status</h1>
             <p className="mt-1 text-sm text-stone-600">Sanitized Phase 1 webhook/import visibility. Purchaser emails are not sent.</p>
           </div>
-          <Link href={`/admin/${encodeURIComponent(slug)}`} className="inline-flex rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100">Back to Admin</Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/admin/${encodeURIComponent(slug)}/square-catalog`} className="inline-flex rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">View Square Catalog</Link>
+            <Link href={`/admin/${encodeURIComponent(slug)}`} className="inline-flex rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100">Back to Admin</Link>
+          </div>
         </div>
 
         <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm md:grid-cols-2 xl:grid-cols-4">
