@@ -7,11 +7,9 @@ import {
   createSquareAdHocPaymentLink,
   createSquareCatalogPaymentLink,
   getSquareSandboxCatalogConfig,
-  getSquareTokenFingerprint,
   listSquareLocations,
   maskIdentifier,
   retrieveSquareCatalogObject,
-  retrieveSquareMerchant,
   SquareApiError,
   type SanitizedSquareApiError,
   type SquareCatalogItem,
@@ -19,10 +17,21 @@ import {
   type SquareCatalogVariation,
   type SquarePaymentLink,
 } from "@/app/api/integrations/square/_lib";
+import {
+  attachSquarePaymentLinkToPendingCheckout,
+  buildSquarePendingReference,
+  createSquarePendingCheckout,
+  markSquarePendingCheckoutError,
+  normalizePendingCheckoutInput,
+} from "@/app/api/integrations/square/pending-checkouts";
+
 export const runtime = "nodejs";
 
 type CreateCheckoutLinkRequest = {
   slug?: unknown;
+  purchaserName?: unknown;
+  purchaserEmail?: unknown;
+  ticketCount?: unknown;
   quantity?: unknown;
 };
 
@@ -32,24 +41,17 @@ type CheckoutDiagnostics = {
   variationRetrievalSucceeded: boolean;
   variationType: string | null;
   variationId: string | null;
-  parentItemId: string | null;
-  parentItemName: string | null;
-  variationName: string | null;
-  variationIsDeleted: boolean | null;
   selectedLocationIdMasked: string | null;
-  presentAtAllLocations: boolean | null;
-  presentAtLocationIds: string[];
-  absentAtLocationIds: string[];
+  pendingCheckoutCreated: boolean;
+  pendingCheckoutId: string | null;
+  requestedQuantity: number | null;
+  namePresent: boolean;
+  emailPresent: boolean;
   catalogBackedAttempted: boolean;
   adHocFallbackUsed: boolean;
-  lineItem: { catalog_object_id?: string; quantity: "1" } | { name: string; quantity: "1"; base_price_money: SquareCatalogMoney } | null;
+  lineItem: { catalog_object_id?: string; quantity: string } | { name: string; quantity: string; base_price_money: SquareCatalogMoney } | null;
   squareError?: SanitizedSquareApiError;
 };
-
-function getQuantity(value: unknown) {
-  const requestedQuantity = typeof value === "number" ? value : Number.parseInt(String(value ?? "1"), 10);
-  return Number.isFinite(requestedQuantity) && requestedQuantity > 0 ? Math.floor(requestedQuantity) : 1;
-}
 
 function isCatalogVariation(value: SquareCatalogItem | SquareCatalogVariation | undefined): value is SquareCatalogVariation {
   return value?.type === "ITEM_VARIATION";
@@ -91,25 +93,30 @@ export async function POST(request: Request) {
     variationRetrievalSucceeded: false,
     variationType: null,
     variationId: null,
-    parentItemId: null,
-    parentItemName: null,
-    variationName: null,
-    variationIsDeleted: null,
     selectedLocationIdMasked: null,
-    presentAtAllLocations: null,
-    presentAtLocationIds: [],
-    absentAtLocationIds: [],
+    pendingCheckoutCreated: false,
+    pendingCheckoutId: null,
+    requestedQuantity: null,
+    namePresent: false,
+    emailPresent: false,
     catalogBackedAttempted: false,
     adHocFallbackUsed: false,
     lineItem: null,
   };
 
+  let pendingId: string | null = null;
+
   try {
     const body = (await request.json()) as CreateCheckoutLinkRequest;
     const slug = typeof body.slug === "string" ? body.slug.trim() : "";
-    const quantity = getQuantity(body.quantity);
+    const pendingInput = normalizePendingCheckoutInput({ purchaserName: body.purchaserName, purchaserEmail: body.purchaserEmail, ticketCount: body.ticketCount ?? body.quantity });
 
     if (!slug) return NextResponse.json({ success: false, error: "Show slug is required.", diagnostics }, { status: 400 });
+    if ("error" in pendingInput) return NextResponse.json({ success: false, error: pendingInput.error, diagnostics }, { status: 400 });
+
+    diagnostics.requestedQuantity = pendingInput.ticketCount;
+    diagnostics.namePresent = Boolean(pendingInput.purchaserName);
+    diagnostics.emailPresent = Boolean(pendingInput.purchaserEmail);
 
     const cookieStore = await cookies();
     const hasAdminAccess = verifyAdminSessionCookieValue(slug, cookieStore.get(getAdminSessionCookieName(slug))?.value);
@@ -134,17 +141,6 @@ export async function POST(request: Request) {
     if (!typedShow) return NextResponse.json({ success: false, error: "Show not found.", diagnostics }, { status: 404 });
     if (!catalogVariationId) return NextResponse.json({ success: false, error: "This show does not have a mapped Square catalog variation ID.", diagnostics }, { status: 400 });
 
-    const [merchant, locations] = await Promise.all([retrieveSquareMerchant(config), listSquareLocations(config)]);
-    console.info("Square checkout route diagnostics", {
-      environment: config.environment,
-      apiBaseUrl: config.apiBaseUrl,
-      squareVersion: "2026-07-15",
-      tokenFingerprint: getSquareTokenFingerprint(config),
-      merchantId: merchant?.id ?? null,
-      locationIds: locations.map((location) => location.id).filter(Boolean),
-      mappedVariationId: catalogVariationId,
-    });
-
     const catalogPayload = await retrieveSquareCatalogObject(config, catalogVariationId);
     diagnostics.variationRetrievalSucceeded = Boolean(catalogPayload.object);
     diagnostics.variationType = catalogPayload.object?.type ?? null;
@@ -155,48 +151,42 @@ export async function POST(request: Request) {
 
     const variation = catalogPayload.object;
     const parentItem = catalogPayload.related_objects?.find((item) => isCatalogItem(item) && item.id === variation.item_variation_data?.item_id) as SquareCatalogItem | undefined;
-    diagnostics.parentItemId = variation.item_variation_data?.item_id ?? null;
-    diagnostics.parentItemName = parentItem?.item_data?.name ?? null;
-    diagnostics.variationName = variation.item_variation_data?.name ?? null;
-    diagnostics.variationIsDeleted = Boolean(variation.is_deleted);
-    diagnostics.presentAtAllLocations = Boolean(variation.present_at_all_locations);
-    diagnostics.presentAtLocationIds = variation.present_at_location_ids ?? [];
-    diagnostics.absentAtLocationIds = variation.absent_at_location_ids ?? [];
+    if (variation.is_deleted) return NextResponse.json({ success: false, error: "Mapped Square catalog variation is archived/deleted.", diagnostics }, { status: 400 });
 
-    if (variation.is_deleted) {
-      return NextResponse.json({ success: false, error: "Mapped Square catalog variation is archived/deleted.", diagnostics }, { status: 400 });
-    }
-
-    console.info("Square checkout retrieved catalog object", {
-      retrievedObjectId: variation.id ?? null,
-      retrievedObjectType: variation.type ?? null,
-      parentItemId: variation.item_variation_data?.item_id ?? null,
-      presentAtAllLocations: Boolean(variation.present_at_all_locations),
-      presentAtLocationIds: variation.present_at_location_ids ?? [],
-      absentAtLocationIds: variation.absent_at_location_ids ?? [],
-    });
-
+    const locations = await listSquareLocations(config);
     const activeLocationIds = locations.filter((location) => location.id && location.status !== "INACTIVE").map((location) => location.id as string);
     const selectedLocationId = chooseLocationForVariation(variation, activeLocationIds);
     diagnostics.selectedLocationIdMasked = maskIdentifier(selectedLocationId);
+    if (!selectedLocationId) return NextResponse.json({ success: false, error: "No active Square Sandbox location has this variation present.", diagnostics }, { status: 400 });
 
-    if (!selectedLocationId) {
-      return NextResponse.json({ success: false, error: "No active Square Sandbox location has this variation present.", diagnostics }, { status: 400 });
-    }
+    const pending = await createSquarePendingCheckout(supabase, {
+      showId: typedShow.id,
+      purchaserName: pendingInput.purchaserName,
+      purchaserEmail: pendingInput.purchaserEmail,
+      ticketCount: pendingInput.ticketCount,
+      catalogVariationId,
+    });
+    pendingId = pending.id;
+    diagnostics.pendingCheckoutCreated = true;
+    diagnostics.pendingCheckoutId = pending.id;
+    const referenceId = buildSquarePendingReference(pending.id);
 
     diagnostics.catalogBackedAttempted = true;
-    diagnostics.lineItem = { catalog_object_id: catalogVariationId, quantity: "1" };
+    diagnostics.lineItem = { catalog_object_id: catalogVariationId, quantity: String(pendingInput.ticketCount) };
 
     try {
       const paymentLink = await createSquareCatalogPaymentLink(config, {
         idempotencyKey: randomUUID(),
         locationId: selectedLocationId,
         catalogVariationId,
-        quantity,
+        quantity: pendingInput.ticketCount,
+        buyerEmail: pendingInput.purchaserEmail,
+        referenceId,
         description: `StageFlow Sandbox checkout for ${typedShow.name}`,
       });
 
-      if (!paymentLink?.url || !paymentLink.id) return NextResponse.json({ success: false, error: "Square did not return a checkout link.", diagnostics }, { status: 502 });
+      if (!paymentLink?.url || !paymentLink.id) throw new Error("Square did not return a checkout link.");
+      await attachSquarePaymentLinkToPendingCheckout(supabase, pending.id, { paymentLinkId: paymentLink.id, orderId: paymentLink.order_id ?? null });
       return paymentLinkResponse(paymentLink, diagnostics);
     } catch (error) {
       if (!(error instanceof SquareApiError)) throw error;
@@ -206,13 +196,14 @@ export async function POST(request: Request) {
 
     const priceMoney = variation.item_variation_data?.price_money;
     if (!priceMoney?.currency || typeof priceMoney.amount !== "number") {
+      await markSquarePendingCheckoutError(supabase, pending.id, "Catalog-backed checkout failed and variation has no fixed price for ad hoc fallback.");
       return NextResponse.json({ success: false, error: "Catalog-backed checkout failed and variation has no fixed price for ad hoc fallback.", diagnostics }, { status: 502 });
     }
 
     diagnostics.adHocFallbackUsed = true;
     diagnostics.lineItem = {
       name: [parentItem?.item_data?.name, variation.item_variation_data?.name].filter(Boolean).join(" - ") || typedShow.name,
-      quantity: "1",
+      quantity: String(pendingInput.ticketCount),
       base_price_money: priceMoney,
     };
 
@@ -220,14 +211,25 @@ export async function POST(request: Request) {
       idempotencyKey: randomUUID(),
       locationId: selectedLocationId,
       name: diagnostics.lineItem.name,
-      quantity,
+      quantity: pendingInput.ticketCount,
       priceMoney,
+      buyerEmail: pendingInput.purchaserEmail,
+      referenceId,
       description: `StageFlow Sandbox ad hoc checkout fallback for ${typedShow.name}`,
     });
 
-    if (!fallbackPaymentLink?.url || !fallbackPaymentLink.id) return NextResponse.json({ success: false, error: "Square did not return an ad hoc checkout link.", diagnostics }, { status: 502 });
+    if (!fallbackPaymentLink?.url || !fallbackPaymentLink.id) throw new Error("Square did not return an ad hoc checkout link.");
+    await attachSquarePaymentLinkToPendingCheckout(supabase, pending.id, { paymentLinkId: fallbackPaymentLink.id, orderId: fallbackPaymentLink.order_id ?? null });
     return paymentLinkResponse(fallbackPaymentLink, diagnostics);
   } catch (error) {
+    if (pendingId) {
+      try {
+        await markSquarePendingCheckoutError(createServiceRoleSupabaseClient(), pendingId, error instanceof Error ? error.message : "checkout_link_error");
+      } catch {
+        // Best effort only; the original error response below is more useful to the admin.
+      }
+    }
+
     if (error instanceof SquareApiError) {
       diagnostics.squareError = error.toSanitizedResponse();
       console.error("Square Sandbox checkout link creation failed with Square API error.", error.toServerLogObject());

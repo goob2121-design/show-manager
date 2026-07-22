@@ -203,6 +203,8 @@ export type SquareOrderRecipient = {
 export type SquareOrder = {
   id?: string;
   location_id?: string;
+  reference_id?: string;
+  source?: { name?: string };
   customer_id?: string;
   line_items?: SquareOrderLineItem[];
   fulfillments?: Array<{
@@ -341,6 +343,8 @@ export async function createSquareCatalogPaymentLink(config: SquarePhase1Config,
   catalogVariationId: string;
   quantity: number;
   description: string;
+  buyerEmail?: string | null;
+  referenceId?: string | null;
 }) {
   const payload = await squareFetch<{ payment_link?: SquarePaymentLink }>(config, "/v2/online-checkout/payment-links", {
     method: "POST",
@@ -349,6 +353,7 @@ export async function createSquareCatalogPaymentLink(config: SquarePhase1Config,
       description: input.description,
       order: {
         location_id: input.locationId,
+        reference_id: input.referenceId ?? undefined,
         line_items: [
           {
             catalog_object_id: input.catalogVariationId,
@@ -356,6 +361,7 @@ export async function createSquareCatalogPaymentLink(config: SquarePhase1Config,
           },
         ],
       },
+      pre_populated_data: input.buyerEmail ? { buyer_email: input.buyerEmail } : undefined,
       payment_note: input.description,
     }),
   });
@@ -369,6 +375,8 @@ export async function createSquareAdHocPaymentLink(config: SquarePhase1Config, i
   quantity: number;
   priceMoney: SquareCatalogMoney;
   description: string;
+  buyerEmail?: string | null;
+  referenceId?: string | null;
 }) {
   const payload = await squareFetch<{ payment_link?: SquarePaymentLink }>(config, "/v2/online-checkout/payment-links", {
     method: "POST",
@@ -377,6 +385,7 @@ export async function createSquareAdHocPaymentLink(config: SquarePhase1Config, i
       description: input.description,
       order: {
         location_id: input.locationId,
+        reference_id: input.referenceId ?? undefined,
         line_items: [
           {
             name: input.name,
@@ -385,9 +394,9 @@ export async function createSquareAdHocPaymentLink(config: SquarePhase1Config, i
           },
         ],
       },
+      pre_populated_data: input.buyerEmail ? { buyer_email: input.buyerEmail } : undefined,
       payment_note: input.description,
     }),
   });
   return payload.payment_link ?? null;
 }
-

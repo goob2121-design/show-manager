@@ -10,6 +10,13 @@ import {
   verifySquareWebhookSignature,
   type SquareOrderLineItem,
 } from "@/app/api/integrations/square/_lib";
+import {
+  findSquarePendingCheckout,
+  getMatchingSquareLineItem,
+  getSquareLineItemQuantity,
+  markSquarePendingCheckoutCompleted,
+  markSquarePendingCheckoutError,
+} from "@/app/api/integrations/square/pending-checkouts";
 import { ingestExternalTicketSale } from "@/lib/ticket-ingestion";
 
 export const runtime = "nodejs";
@@ -18,17 +25,7 @@ type SquareWebhookEvent = {
   merchant_id?: string;
   type?: string;
   event_id?: string;
-  data?: {
-    id?: string;
-    type?: string;
-    object?: {
-      payment?: {
-        id?: string;
-        status?: string;
-        order_id?: string;
-      };
-    };
-  };
+  data?: { id?: string; type?: string; object?: { payment?: { id?: string; status?: string; order_id?: string } } };
 };
 
 function getLineItemQuantity(lineItem: SquareOrderLineItem) {
@@ -146,6 +143,49 @@ export async function POST(request: Request) {
     }
 
     const order = await retrieveSquareOrder(config, orderId);
+    const supabase = createServiceRoleSupabaseClient();
+    const pendingCheckout = await findSquarePendingCheckout(supabase, { orderId, paymentId, referenceId: order?.reference_id ?? null });
+
+    if (pendingCheckout) {
+      const matchingLineItem = getMatchingSquareLineItem(order, pendingCheckout.catalog_variation_id);
+      const actualQuantity = getSquareLineItemQuantity(matchingLineItem);
+      const pendingSummary = {
+        pendingCheckoutCreated: true,
+        nameFound: true,
+        emailFound: true,
+        requestedQuantity: pendingCheckout.ticket_count,
+        squareOrderMatched: true,
+        customerSource: "stageflow_pending_checkout",
+      };
+
+      if (!matchingLineItem || actualQuantity !== pendingCheckout.ticket_count) {
+        const mismatch = !matchingLineItem ? "variation_mismatch" : "quantity_mismatch";
+        await markSquarePendingCheckoutError(supabase, pendingCheckout.id, mismatch);
+        await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: matchingLineItem?.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, showId: pendingCheckout.show_id, showName: null, result: `pending_checkout_${mismatch}`, ticketCount: actualQuantity || null, emailPresent: true, seatLinkCreated: false, errorMessage: mismatch, payloadSummary: { ...pendingSummary, actualQuantity } });
+        return NextResponse.json({ success: true, results: [{ status: `pending_checkout_${mismatch}`, pendingCheckoutId: pendingCheckout.id }] });
+      }
+
+      const result = await ingestExternalTicketSale(supabase, {
+        source: "square",
+        eventId: eventId ?? "unknown-event",
+        paymentId,
+        orderId,
+        lineItemUid: matchingLineItem.uid ?? pendingCheckout.id,
+        catalogVariationId: pendingCheckout.catalog_variation_id,
+        purchaserName: pendingCheckout.purchaser_name,
+        purchaserEmail: pendingCheckout.purchaser_email,
+        quantity: pendingCheckout.ticket_count,
+        amountPaid: typeof matchingLineItem.total_money?.amount === "number" ? matchingLineItem.total_money.amount / 100 : null,
+        currency: matchingLineItem.total_money?.currency ?? payment.amount_money?.currency ?? null,
+        paymentStatus,
+        payloadSummary: { eventType, paymentStatus, orderId, lineItemUid: matchingLineItem.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, quantity: pendingCheckout.ticket_count, ...pendingSummary },
+      });
+
+      await markSquarePendingCheckoutCompleted(supabase, pendingCheckout.id, { paymentId, orderId, importedTicketId: result.ticketId });
+      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: matchingLineItem.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, errorMessage: result.errorMessage ?? null, payloadSummary: { importResult: result.status, seatLinkCreated: result.seatLinkCreated, emailSent: false, ...pendingSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
+      return NextResponse.json({ success: true, results: [result] });
+    }
+
     const squareCustomerId = getSquareOrderCustomerId(order, payment);
     let customer = null;
     let customerLookupError: string | null = null;
@@ -160,63 +200,22 @@ export async function POST(request: Request) {
       } catch (error) {
         customerRetrievalHttpStatus = error instanceof SquareApiError ? error.httpStatus : null;
         customerLookupError = summarizeCustomerLookupError(error);
-        console.warn("Square customer retrieval failed; importing paid order with available details.", {
-          paymentId,
-          orderId,
-          customerIdPresent: true,
-          squareError: sanitizeSquareError(error),
-        });
+        console.warn("Square customer retrieval failed; importing paid order with available details.", { paymentId, orderId, customerIdPresent: true, squareError: sanitizeSquareError(error) });
       }
     }
 
     if (config.environment === "sandbox") {
       const recipientMatches = getSquareOrderRecipientMatches(order);
-      const fulfillmentTypesFound = Array.from(new Set((order?.fulfillments ?? []).flatMap((fulfillment) => [
-        fulfillment.pickup_details ? "pickup" : null,
-        fulfillment.shipment_details ? "shipment" : null,
-        fulfillment.delivery_details ? "delivery" : null,
-      ].filter(Boolean))));
+      const fulfillmentTypesFound = Array.from(new Set((order?.fulfillments ?? []).flatMap((fulfillment) => [fulfillment.pickup_details ? "pickup" : null, fulfillment.shipment_details ? "shipment" : null, fulfillment.delivery_details ? "delivery" : null].filter(Boolean))));
       console.info("Square Sandbox customer detail diagnostics", {
-        payment: {
-          propertyNames: getPropertyNames(payment),
-          buyerEmailAddressExists: hasText(payment?.buyer_email_address),
-          orderIdExists: hasText(payment?.order_id),
-          customerIdExists: hasText(payment?.customer_id),
-        },
-        order: {
-          propertyNames: getPropertyNames(order),
-          customerIdExists: hasText(order?.customer_id) || Boolean(order?.tenders?.some((tender) => hasText(tender.customer_id))),
-          fulfillmentsExists: Array.isArray(order?.fulfillments) && order.fulfillments.length > 0,
-          fulfillmentTypesFound,
-          pickupRecipientExists: recipientMatches.some((match) => match.type === "pickup"),
-          shipmentRecipientExists: recipientMatches.some((match) => match.type === "shipment"),
-          deliveryRecipientExists: recipientMatches.some((match) => match.type === "delivery"),
-          recipientsExist: recipientMatches.length > 0,
-          recipientEmailAddressExists: recipientMatches.some((match) => hasText(match.recipient.email_address)),
-          recipientDisplayNameExists: recipientMatches.some((match) => hasText(match.recipient.display_name)),
-          lineItemsExist: Array.isArray(order?.line_items) && order.line_items.length > 0,
-        },
-        customer: {
-          retrievalAttempted: customerRetrievalAttempted,
-          httpStatus: customerRetrievalHttpStatus,
-          givenNameExists: hasText(customer?.given_name),
-          familyNameExists: hasText(customer?.family_name),
-          emailAddressExists: hasText(customer?.email_address),
-          phoneNumberExists: hasText(customer?.phone_number),
-        },
+        payment: { propertyNames: getPropertyNames(payment), buyerEmailAddressExists: hasText(payment?.buyer_email_address), orderIdExists: hasText(payment?.order_id), customerIdExists: hasText(payment?.customer_id) },
+        order: { propertyNames: getPropertyNames(order), customerIdExists: hasText(order?.customer_id) || Boolean(order?.tenders?.some((tender) => hasText(tender.customer_id))), fulfillmentsExists: Array.isArray(order?.fulfillments) && order.fulfillments.length > 0, fulfillmentTypesFound, pickupRecipientExists: recipientMatches.some((match) => match.type === "pickup"), shipmentRecipientExists: recipientMatches.some((match) => match.type === "shipment"), deliveryRecipientExists: recipientMatches.some((match) => match.type === "delivery"), recipientsExist: recipientMatches.length > 0, recipientEmailAddressExists: recipientMatches.some((match) => hasText(match.recipient.email_address)), recipientDisplayNameExists: recipientMatches.some((match) => hasText(match.recipient.display_name)), lineItemsExist: Array.isArray(order?.line_items) && order.line_items.length > 0 },
+        customer: { retrievalAttempted: customerRetrievalAttempted, httpStatus: customerRetrievalHttpStatus, givenNameExists: hasText(customer?.given_name), familyNameExists: hasText(customer?.family_name), emailAddressExists: hasText(customer?.email_address), phoneNumberExists: hasText(customer?.phone_number) },
       });
     }
 
     const purchaserDetails = resolveSquarePurchaserDetails({ payment, order, customer });
-    const customerSummary = {
-      nameFound: purchaserDetails.nameFound,
-      emailFound: purchaserDetails.emailFound,
-      phoneFound: purchaserDetails.phoneFound,
-      customerSource: purchaserDetails.customerSource,
-      customerIdPresent: Boolean(purchaserDetails.customerId),
-      customerLookupError,
-    };
-    const supabase = createServiceRoleSupabaseClient();
+    const customerSummary = { nameFound: purchaserDetails.nameFound, emailFound: purchaserDetails.emailFound, phoneFound: purchaserDetails.phoneFound, customerSource: purchaserDetails.customerSource, customerIdPresent: Boolean(purchaserDetails.customerId), customerLookupError, squareOrderMatched: false };
     const results = [];
 
     for (const lineItem of order?.line_items ?? []) {
@@ -230,49 +229,8 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const result = await ingestExternalTicketSale(supabase, {
-        source: "square",
-        eventId: eventId ?? "unknown-event",
-        paymentId,
-        orderId,
-        lineItemUid,
-        catalogVariationId,
-        purchaserName: purchaserDetails.purchaserName,
-        purchaserEmail: purchaserDetails.purchaserEmail,
-        quantity,
-        amountPaid: typeof lineItem.total_money?.amount === "number" ? lineItem.total_money.amount / 100 : null,
-        currency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null,
-        paymentStatus,
-        payloadSummary: {
-          eventType,
-          paymentStatus,
-          orderId,
-          lineItemUid,
-          catalogVariationId,
-          lineItemName: lineItem.name ?? null,
-          quantity,
-          amountCurrency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null,
-          ...customerSummary,
-        },
-      });
-
-      await recordImportEvent({
-        eventId,
-        eventType,
-        paymentId,
-        orderId,
-        lineItemUid,
-        catalogVariationId,
-        showId: result.showId,
-        showName: result.showName,
-        result: result.status,
-        ticketCount: result.ticketCount,
-        emailPresent: result.emailPresent,
-        seatLinkCreated: result.seatLinkCreated,
-        errorMessage: result.errorMessage ?? null,
-        payloadSummary: { lineItemName: lineItem.name ?? null, paymentStatus, ...customerSummary },
-        importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null,
-      });
+      const result = await ingestExternalTicketSale(supabase, { source: "square", eventId: eventId ?? "unknown-event", paymentId, orderId, lineItemUid, catalogVariationId, purchaserName: purchaserDetails.purchaserName, purchaserEmail: purchaserDetails.purchaserEmail, quantity, amountPaid: typeof lineItem.total_money?.amount === "number" ? lineItem.total_money.amount / 100 : null, currency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null, paymentStatus, payloadSummary: { eventType, paymentStatus, orderId, lineItemUid, catalogVariationId, lineItemName: lineItem.name ?? null, quantity, amountCurrency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null, ...customerSummary } });
+      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid, catalogVariationId, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, errorMessage: result.errorMessage ?? null, payloadSummary: { lineItemName: lineItem.name ?? null, paymentStatus, ...customerSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
       results.push(result);
     }
 

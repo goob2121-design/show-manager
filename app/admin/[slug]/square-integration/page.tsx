@@ -10,6 +10,19 @@ type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
+type SquarePendingCheckoutRow = {
+  id: string;
+  status: string;
+  purchaser_name: string;
+  purchaser_email: string;
+  ticket_count: number;
+  square_order_id: string | null;
+  imported_ticket_id: string | null;
+  sanitized_error: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
 type SquareImportEventRow = {
   id: string;
   event_id: string | null;
@@ -51,17 +64,23 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
   const { slug } = await params;
   const { config, missing, invalid } = getSquarePhase1Config();
   const supabase = createServiceRoleSupabaseClient();
-  const [{ data: show }, { data: events }] = await Promise.all([
+  const [{ data: show }, { data: events }, { data: pendingCheckouts }] = await Promise.all([
     supabase.from("shows").select("id, name, slug, square_catalog_variation_id").eq("slug", slug).maybeSingle(),
     supabase
       .from("square_ticket_import_events")
       .select("id, event_id, event_type, payment_id, order_id, line_item_uid, catalog_variation_id, show_id, show_name, result, ticket_count, email_present, seat_link_created, email_sent, error_message, payload_summary, received_at, imported_at")
       .order("received_at", { ascending: false })
       .limit(25),
+    supabase
+      .from("square_pending_checkouts")
+      .select("id, status, purchaser_name, purchaser_email, ticket_count, square_order_id, imported_ticket_id, sanitized_error, created_at, completed_at")
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
 
   const typedShow = show as { id: string; name: string; slug: string; square_catalog_variation_id: string | null } | null;
   const typedEvents = (events ?? []) as SquareImportEventRow[];
+  const typedPendingCheckouts = (pendingCheckouts ?? []) as SquarePendingCheckoutRow[];
   const lastWebhookAt = typedEvents[0]?.received_at ?? null;
   const lastSuccessfulImportAt = typedEvents.find((event) => ["imported", "duplicate", "incomplete_customer"].includes(event.result))?.imported_at ?? null;
   const latestImportEvent = typedEvents[0] ?? null;
@@ -109,6 +128,34 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
             </div>
           </section>
 
+
+          <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-bold">Recent Pending Checkouts</h2>
+            <div className="mt-4 overflow-x-auto rounded-xl border border-stone-200">
+              <table className="min-w-full divide-y divide-stone-200 text-sm">
+                <thead className="bg-stone-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-stone-500">
+                  <tr><th className="px-3 py-2">Created</th><th className="px-3 py-2">Pending checkout created</th><th className="px-3 py-2">Name present</th><th className="px-3 py-2">Email present</th><th className="px-3 py-2">Requested quantity</th><th className="px-3 py-2">Square order matched</th><th className="px-3 py-2">Import result</th><th className="px-3 py-2">Seat link created</th><th className="px-3 py-2">Email sent</th></tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {typedPendingCheckouts.length > 0 ? typedPendingCheckouts.map((checkout) => (
+                    <tr key={checkout.id}>
+                      <td className="px-3 py-2">{formatDateTime(checkout.created_at)}</td>
+                      <td className="px-3 py-2">Yes</td>
+                      <td className="px-3 py-2">{checkout.purchaser_name.trim() ? "Yes" : "No"}</td>
+                      <td className="px-3 py-2">{checkout.purchaser_email.trim() ? "Yes" : "No"}</td>
+                      <td className="px-3 py-2">{checkout.ticket_count}</td>
+                      <td className="px-3 py-2">{checkout.square_order_id ? "Yes" : "No"}</td>
+                      <td className="px-3 py-2">{checkout.status}{checkout.sanitized_error ? ` (${checkout.sanitized_error})` : ""}</td>
+                      <td className="px-3 py-2">{checkout.imported_ticket_id ? "Yes" : "No"}</td>
+                      <td className="px-3 py-2">No</td>
+                    </tr>
+                  )) : (
+                    <tr><td className="px-3 py-5 text-stone-500" colSpan={9}>No pending Sandbox checkouts recorded yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
           <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-bold">Recent Square Webhook Results</h2>
             <div className="mt-4 overflow-x-auto rounded-xl border border-stone-200">
