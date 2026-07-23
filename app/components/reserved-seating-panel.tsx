@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { AdminBackButton } from "@/app/components/admin-back-button";
@@ -104,6 +104,10 @@ function getLinkStatus(link: LinkWithSeats) {
 
   if (link.selection_mode === "imported" && !link.sent_at) {
     return { label: "Imported / Not Sent", classes: "bg-amber-500/15 text-amber-200 border-amber-400/25" };
+  }
+
+  if (link.resend_email_id) {
+    return { label: "Seat Link Sent", classes: "bg-sky-500/15 text-sky-200 border-sky-400/25" };
   }
 
   if (link.sent_at) {
@@ -380,6 +384,30 @@ export function ReservedSeatingPanel({
     }
   }
 
+  async function handleSendSeatEmail(link: LinkWithSeats) {
+    const isResend = Boolean(link.resend_email_id);
+    if (isResend && !window.confirm("This seat email was already sent. Send it again?")) return;
+
+    setActiveActionId(`email-${link.id}`);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const response = await fetch("/api/reserved-seating/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: showSlug, linkId: link.id, resend: isResend }),
+      });
+      const result = (await response.json()) as { success?: boolean; error?: string | null };
+      if (!response.ok || !result.success) throw new Error(result.error || "Unable to send reserved-seat email.");
+      setStatusMessage(isResend ? "Reserved-seat email resent." : "Reserved-seat email sent.");
+      await loadReservedSeating();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to send reserved-seat email."));
+      await loadReservedSeating();
+    } finally {
+      setActiveActionId(null);
+    }
+  }
   async function copyReservedSeatingMessageText(value: string, target: Exclude<CopyFeedbackTarget, null>) {
     try {
       if (!navigator.clipboard?.writeText) {
@@ -1013,6 +1041,9 @@ export function ReservedSeatingPanel({
                       </div>
                       {link.email?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.email}</p> : null}
                       {link.source_note?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.source_note}</p> : null}
+                      {link.resend_email_id && link.sent_at ? <p className="mt-2 text-xs text-emerald-200">Email sent: {new Date(link.sent_at).toLocaleString()}</p> : <p className="mt-2 text-xs text-amber-200">Email sent: No</p>}
+                      <p className="mt-1 text-xs text-slate-400">Delivery attempts: {link.email_attempt_count ?? 0}</p>
+                      {link.last_email_error ? <p className="mt-1 text-xs text-rose-200">Last email error: {link.last_email_error}</p> : null}
                       <p className="mt-2 break-all text-sm text-slate-400">{getCustomerLinkUrl(link.selection_token)}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {link.seatIds.length > 0 ? (
@@ -1050,7 +1081,16 @@ export function ReservedSeatingPanel({
                       >
                         Generate Message
                       </button>
-                      <button
+                      {link.email?.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleSendSeatEmail(link)}
+                          disabled={activeActionId === `email-${link.id}`}
+                          className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {activeActionId === `email-${link.id}` ? "Sending..." : link.resend_email_id ? "Resend Seat Email" : link.last_email_error ? "Retry Email" : "Send Seat Email"}
+                        </button>
+                      ) : null}                      <button
                         type="button"
                         onClick={() => void handleCopyLink(link)}
                         className="rounded-xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"

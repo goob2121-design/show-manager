@@ -17,7 +17,8 @@ import {
   markSquarePendingCheckoutCompleted,
   markSquarePendingCheckoutError,
 } from "@/app/api/integrations/square/pending-checkouts";
-import { ingestExternalTicketSale } from "@/lib/ticket-ingestion";
+import { ingestExternalTicketSale, type IngestExternalTicketSaleResult } from "@/lib/ticket-ingestion";
+import { sendTrackedReservedSeatEmail } from "@/lib/email/send-reserved-seat-link-email";
 
 export const runtime = "nodejs";
 
@@ -67,6 +68,7 @@ async function recordImportEvent(input: {
   errorMessage?: string | null;
   payloadSummary?: Record<string, unknown> | null;
   importedAt?: string | null;
+  emailSent?: boolean;
 }) {
   try {
     const supabase = createServiceRoleSupabaseClient();
@@ -83,7 +85,7 @@ async function recordImportEvent(input: {
       ticket_count: input.ticketCount,
       email_present: input.emailPresent,
       seat_link_created: input.seatLinkCreated,
-      email_sent: false,
+      email_sent: input.emailSent ?? false,
       error_message: input.errorMessage ?? null,
       payload_summary: input.payloadSummary ?? null,
       imported_at: input.importedAt ?? null,
@@ -93,6 +95,21 @@ async function recordImportEvent(input: {
   }
 }
 
+async function maybeSendImportedSeatEmail(
+  supabase: ReturnType<typeof createServiceRoleSupabaseClient>,
+  result: IngestExternalTicketSaleResult,
+  environment: "sandbox" | "production",
+) {
+  if (environment === "sandbox" && process.env.SQUARE_SANDBOX_SEND_EMAILS !== "true") return { emailSent: false, error: null };
+  if (!result.ticketId || !result.emailPresent || !result.seatLinkCreated) return { emailSent: false, error: null };
+
+  const { data: link, error: linkError } = await supabase.from("show_reserved_seating_links").select("id").eq("source_ticket_id", result.ticketId).maybeSingle();
+  if (linkError) return { emailSent: false, error: "seat_link_lookup_failed" };
+  if (!link) return { emailSent: false, error: "seat_link_not_found" };
+
+  const emailResult = await sendTrackedReservedSeatEmail(supabase, link.id);
+  return { emailSent: emailResult.success, error: emailResult.success ? null : emailResult.error };
+}
 export async function POST(request: Request) {
   const { config, missing, invalid } = getSquarePhase1Config();
   if (!config) {
@@ -182,7 +199,8 @@ export async function POST(request: Request) {
       });
 
       await markSquarePendingCheckoutCompleted(supabase, pendingCheckout.id, { paymentId, orderId, importedTicketId: result.ticketId });
-      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: matchingLineItem.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, errorMessage: result.errorMessage ?? null, payloadSummary: { importResult: result.status, seatLinkCreated: result.seatLinkCreated, emailSent: false, ...pendingSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
+      const emailDelivery = await maybeSendImportedSeatEmail(supabase, result, config.environment);
+      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: matchingLineItem.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, errorMessage: result.errorMessage ?? emailDelivery.error, payloadSummary: { importResult: result.status, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, ...pendingSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
       return NextResponse.json({ success: true, results: [result] });
     }
 
@@ -230,7 +248,8 @@ export async function POST(request: Request) {
       }
 
       const result = await ingestExternalTicketSale(supabase, { source: "square", eventId: eventId ?? "unknown-event", paymentId, orderId, lineItemUid, catalogVariationId, purchaserName: purchaserDetails.purchaserName, purchaserEmail: purchaserDetails.purchaserEmail, quantity, amountPaid: typeof lineItem.total_money?.amount === "number" ? lineItem.total_money.amount / 100 : null, currency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null, paymentStatus, payloadSummary: { eventType, paymentStatus, orderId, lineItemUid, catalogVariationId, lineItemName: lineItem.name ?? null, quantity, amountCurrency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null, ...customerSummary } });
-      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid, catalogVariationId, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, errorMessage: result.errorMessage ?? null, payloadSummary: { lineItemName: lineItem.name ?? null, paymentStatus, ...customerSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
+      const emailDelivery = await maybeSendImportedSeatEmail(supabase, result, config.environment);
+      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid, catalogVariationId, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, errorMessage: result.errorMessage ?? emailDelivery.error, payloadSummary: { lineItemName: lineItem.name ?? null, paymentStatus, emailSent: emailDelivery.emailSent, ...customerSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
       results.push(result);
     }
 

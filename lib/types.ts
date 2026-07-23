@@ -1,4 +1,4 @@
-﻿export type ViewMode = "guest" | "band" | "admin";
+export type ViewMode = "guest" | "band" | "admin";
 export type SubmittedByRole = "guest" | "band" | "admin";
 export type SetSection = "set1" | "set2" | "encore";
 export type SongTempo = "fast" | "medium" | "slow";
@@ -452,6 +452,10 @@ export type ShowReservedSeatingLink = {
   selection_token: string;
   submitted_at: string | null;
   sent_at: string | null;
+  resend_email_id: string | null;
+  last_email_error: string | null;
+  email_attempt_count: number;
+  last_email_attempt_at: string | null;
   selection_mode: ReservedSeatingLinkMode | string;
   is_complimentary: boolean;
   source_note: string | null;
