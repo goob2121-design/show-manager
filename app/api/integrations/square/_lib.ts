@@ -181,14 +181,28 @@ export function createServiceRoleSupabaseClient() {
   return createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
+export function getSquareHmacSha256SignatureHeader(headers: Pick<Headers, "get">) {
+  return headers.get("x-square-hmacsha256-signature");
+}
+
 export function verifySquareWebhookSignature(rawBody: string, signatureHeader: string | null, config: SquarePhase1Config) {
-  if (!signatureHeader) return false;
-  const expected = createHmac("sha256", config.webhookSignatureKey)
+  const expectedSignature = createHmac("sha256", config.webhookSignatureKey)
     .update(config.webhookNotificationUrl + rawBody, "utf8")
     .digest("base64");
-  const expectedBuffer = Buffer.from(expected, "base64");
+
+
+  if (!signatureHeader) return false;
+  const expectedBuffer = Buffer.from(expectedSignature, "base64");
   const actualBuffer = Buffer.from(signatureHeader, "base64");
   if (expectedBuffer.length !== actualBuffer.length) return false;
+  console.info("Square webhook signature validation diagnostics.", {
+    webhookNotificationUrl: config.webhookNotificationUrl,
+    webhookNotificationUrlLength: config.webhookNotificationUrl.length,
+    rawBodyLength: rawBody.length,
+    expectedSignatureLength: expectedSignature.length,
+    receivedSignatureLength: signatureHeader.length,
+    signaturesMatch: expectedSignature === signatureHeader,
+  });
   return timingSafeEqual(expectedBuffer, actualBuffer);
 }
 

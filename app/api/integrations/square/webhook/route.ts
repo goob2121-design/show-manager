@@ -3,6 +3,7 @@ import { getSquareOrderCustomerId, getSquareOrderRecipientMatches, resolveSquare
 import {
   createServiceRoleSupabaseClient,
   getSquarePhase1Config,
+  getSquareHmacSha256SignatureHeader,
   retrieveSquareCustomer,
   retrieveSquareOrder,
   retrieveSquarePayment,
@@ -118,7 +119,13 @@ export async function POST(request: Request) {
   }
 
   const rawBody = await request.text();
-  const signature = request.headers.get("x-square-hmacsha256-signature");
+  const signature = getSquareHmacSha256SignatureHeader(request.headers);
+  const legacySignatureExists = request.headers.has("x-square-signature");
+  console.info("Square webhook signature headers received.", {
+    hmacSha256SignatureExists: signature !== null,
+    legacySignatureExists,
+    selectedHeader: signature !== null ? "x-square-hmacsha256-signature" : "none",
+  });
   if (!verifySquareWebhookSignature(rawBody, signature, config)) {
     return NextResponse.json({ success: false, error: "Invalid Square signature." }, { status: 403 });
   }
