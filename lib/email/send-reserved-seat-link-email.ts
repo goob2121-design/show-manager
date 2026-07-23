@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendReservedSeatEmail, type ReservedSeatEmailResult } from "@/lib/email/reserved-seat-email";
 import { RESERVED_SEATING_VENUE } from "@/lib/reserved-seating";
+import { buildReservedSeatSelectionUrl, getStageFlowEmailLogoUrl } from "@/lib/server/stageflow-public-url";
 
 type EmailLinkRow = {
   id: string; show_id: string; customer_name: string; email: string | null; ticket_count: number;
@@ -9,13 +10,6 @@ type EmailLinkRow = {
 };
 
 type EmailShowRow = { name: string; show_date: string | null; show_start_time: string | null; venue: string | null; venue_address: string | null };
-
-function siteUrl() {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
-  if (configured) return configured;
-  const vercel = process.env.VERCEL_URL?.trim().replace(/\/$/, "");
-  return vercel ? `https://${vercel}` : "http://localhost:3000";
-}
 
 function formatShowDate(value: string | null) {
   if (!value) return "Date TBD";
@@ -47,7 +41,17 @@ export async function sendTrackedReservedSeatEmail(
   const { error: attemptError } = await supabase.from("show_reserved_seating_links").update({ email_attempt_count: attemptCount, last_email_attempt_at: attemptAt }).eq("id", link.id);
   if (attemptError) throw attemptError;
 
-  const baseUrl = siteUrl();
+
+  let seatSelectionUrl: string;
+  let logoUrl: string;
+  try {
+    seatSelectionUrl = buildReservedSeatSelectionUrl(link.selection_token);
+    logoUrl = getStageFlowEmailLogoUrl();
+  } catch (error) {
+    const message = safeError(error instanceof Error ? error.message : "StageFlow public URL is not configured.");
+    await supabase.from("show_reserved_seating_links").update({ last_email_error: message }).eq("id", link.id);
+    return { success: false, resendId: null, error: message, sentAt: link.sent_at };
+  }
   const result = await sendReservedSeatEmail({
     customerName: link.customer_name,
     customerEmail: link.email ?? "",
@@ -57,8 +61,8 @@ export async function sendTrackedReservedSeatEmail(
     venueName: show.venue?.trim() || RESERVED_SEATING_VENUE.venueName,
     venueAddress: show.venue_address?.trim() || RESERVED_SEATING_VENUE.venueAddress,
     ticketCount: link.ticket_count,
-    seatSelectionUrl: `${baseUrl}/reserved-seating/${link.selection_token}`,
-    logoUrl: `${baseUrl}/cmms-logo.png`,
+    seatSelectionUrl,
+    logoUrl,
     categoryLabel: link.seat_category,
   });
 

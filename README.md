@@ -2,6 +2,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Server-side reserved-seat emails require this Vercel environment variable:
+
+```text
+STAGEFLOW_PUBLIC_URL=https://stageflow.cumberlandmountainmusic.com
+```
+
+It is intentionally server-only and is used to build private seat-selection links and the absolute email logo URL.
+
 First, run the development server:
 
 ```bash
