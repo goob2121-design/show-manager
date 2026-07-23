@@ -29,6 +29,8 @@ export function SquareTicketMappingControl({
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
+  const [pendingReplacement, setPendingReplacement] =
+    useState<SquareCatalogMappingOption | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const filteredOptions = useMemo(() => {
@@ -42,7 +44,10 @@ export function SquareTicketMappingControl({
     );
   }, [options, search]);
 
-  async function updateMapping(input: { action: "connect" | "disconnect"; variationId?: string; replaceConfirmed?: boolean }) {
+  async function updateMapping(
+    input: { action: "connect" | "disconnect"; variationId?: string; replaceConfirmed?: boolean },
+    successMessage?: string,
+  ) {
     setActiveVariationId(input.variationId ?? "disconnect");
     setMessage(null);
     setError(null);
@@ -59,7 +64,8 @@ export function SquareTicketMappingControl({
       });
       const result = (await response.json()) as { success?: boolean; message?: string; error?: string };
       if (!response.ok || !result.success) throw new Error(result.error || "Unable to update the Square ticket mapping.");
-      setMessage(result.message ?? "Square ticket mapping updated.");
+      setMessage(successMessage ?? result.message ?? "Square ticket mapping updated.");
+      setPendingReplacement(null);
       router.refresh();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to update the Square ticket mapping.");
@@ -71,12 +77,24 @@ export function SquareTicketMappingControl({
   function connect(option: SquareCatalogMappingOption) {
     const replacing = Boolean(currentMapping && currentMapping.variationId !== option.variationId);
     if (replacing) {
-      const confirmed = window.confirm(
-        `This show is currently connected to:\n${currentMapping?.itemName} - ${currentMapping?.variationName}\n\nReplace it with:\n${option.itemName} - ${option.variationName}?`,
-      );
-      if (!confirmed) return;
+      setMessage(null);
+      setError(null);
+      setPendingReplacement(option);
+      return;
     }
-    void updateMapping({ action: "connect", variationId: option.variationId, replaceConfirmed: replacing });
+    void updateMapping({ action: "connect", variationId: option.variationId });
+  }
+
+  function replaceMapping() {
+    if (!pendingReplacement) return;
+    void updateMapping(
+      {
+        action: "connect",
+        variationId: pendingReplacement.variationId,
+        replaceConfirmed: true,
+      },
+      "Square ticket mapping replaced successfully.",
+    );
   }
 
   function disconnect() {
@@ -153,6 +171,65 @@ export function SquareTicketMappingControl({
         {filteredOptions.length === 0 ? <p className="rounded-xl border border-dashed border-stone-300 p-5 text-sm text-stone-500">No eligible Square Item Variations match this search.</p> : null}
       </div>
 
+      {pendingReplacement && currentMapping ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="replace-square-mapping-title"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl sm:p-6">
+            <h2 id="replace-square-mapping-title" className="text-xl font-black text-stone-900">
+              Replace Square Ticket Mapping?
+            </h2>
+
+            <div className="mt-5 grid gap-4">
+              <div className="rounded-xl border border-stone-200 bg-stone-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-stone-500">Current mapping</p>
+                <p className="mt-2 font-semibold text-stone-900">
+                  {currentMapping.itemName} - {currentMapping.variationName}
+                </p>
+                <p className="mt-1 font-mono text-xs text-stone-500">{maskIdentifier(currentMapping.variationId)}</p>
+              </div>
+
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-700">New mapping</p>
+                <p className="mt-2 font-semibold text-stone-900">
+                  {pendingReplacement.itemName} - {pendingReplacement.variationName}
+                </p>
+                <p className="mt-1 font-mono text-xs text-stone-500">{maskIdentifier(pendingReplacement.variationId)}</p>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-bold">Warning</p>
+                <p className="mt-1 leading-6">
+                  Replacing this mapping affects only future Square purchases. Existing imported tickets,
+                  reserved-seat links, seat assignments, pending checkouts, and event logs will not be deleted.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPendingReplacement(null)}
+                disabled={activeVariationId !== null}
+                className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 hover:bg-stone-100 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={replaceMapping}
+                disabled={activeVariationId !== null}
+                className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60"
+              >
+                {activeVariationId === pendingReplacement.variationId ? "Replacing..." : "Replace Mapping"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {message ? <p className="mt-4 text-sm font-semibold text-emerald-700">{message}</p> : null}
       {error ? <p className="mt-4 text-sm font-semibold text-rose-700">{error}</p> : null}
     </section>
