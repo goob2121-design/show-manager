@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildGoogleMapsDirectionsUrl,
   buildReservedSeatEmail,
+  RESERVED_SEAT_EMAIL_EVENT_NAME,
   RESERVED_SEAT_EMAIL_FROM,
   RESERVED_SEAT_EMAIL_REPLY_TO,
   sendReservedSeatEmail,
@@ -22,24 +24,76 @@ const input: ReservedSeatEmailInput = {
   showDate: "August 15, 2026",
   showTime: "7:00 PM",
   venueName: "Cumberland Gap Convention Center",
-  venueAddress: "601 Colwyn Street, Cumberland Gap, TN",
+  venueAddress: "601 Colwyn St, Cumberland Gap, TN 37724",
   ticketCount: 2,
   seatSelectionUrl: "https://stageflow.cumberlandmountainmusic.com/reserved-seating/private-token",
   logoUrl: "https://stageflow.cumberlandmountainmusic.com/cmms-logo.png",
 };
 
-test("builds the reserved-seat subject and absolute StageFlow assets", () => {
+test("builds the revised plural reserved-seat message", () => {
   const email = buildReservedSeatEmail(input);
-  assert.equal(email.subject, "Select Your Reserved Seats - Cumberland Mountain Music Show");
+  assert.equal(email.subject, "Select Your Reserved Seats - The Cumberland Mountain Music Show");
   assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
   assert.match(email.text, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
   assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/cmms-logo\.png/);
-  assert.match(email.html, /Please choose your 2 reserved seats\./);
-  assert.match(email.text, /Please choose your 2 reserved seats\./);
+  assert.match(email.html, /Tickets Purchased/);
+  assert.match(email.html, /2 Reserved Seats/);
+  assert.match(email.text, /Tickets Purchased: 2 Reserved Seats/);
+  assert.match(email.html, /Thank You for Your Purchase!/);
+  assert.match(email.html, /Big-Time Show &bull; Small-Town Hospitality/);
+  assert.match(email.text, /Thank You for Your Purchase!/);
+  assert.match(email.html, /Thank you for purchasing 2 reserved seats for The Cumberland Mountain Music Show\./);
+  assert.match(email.text, /Thank you for purchasing 2 reserved seats for The Cumberland Mountain Music Show\./);
+  assert.match(email.html, /looking forward to welcoming you on Saturday, August 15, 2026!/);
+  assert.match(email.text, /looking forward to welcoming you on Saturday, August 15, 2026!/);
+  assert.match(email.html, /The Cumberland Mountain Music Show/);
+  assert.match(email.text, /Show: The Cumberland Mountain Music Show/);
+  assert.match(email.html, /Your payment has been received successfully\./);
+  assert.match(email.text, /Your payment has been received successfully\./);
+  assert.match(email.html, /Your private seat-selection link will remain available until the day of the show\./);
+  assert.match(email.text, /Your private seat-selection link will remain available until the day of the show\./);
+  assert.match(email.html, /Please choose your 2 reserved seats using the button above\./);
+  assert.match(email.text, /Please choose your 2 reserved seats using the button above\./);
+});
+
+test("includes encoded HTTPS directions, parking, and questions while preserving seat links", () => {
+  const directionsUrl = buildGoogleMapsDirectionsUrl(input.venueName, input.venueAddress);
+  assert.equal(
+    directionsUrl,
+    "https://www.google.com/maps/search/?api=1&query=Cumberland%20Gap%20Convention%20Center%2C%20601%20Colwyn%20St%2C%20Cumberland%20Gap%2C%20TN%2037724",
+  );
+  assert.equal(new URL(directionsUrl ?? "").protocol, "https:");
+
+  const email = buildReservedSeatEmail(input);
+  assert.match(email.html, /Directions/);
+  assert.match(email.html, /Get Directions/);
+  assert.ok(email.html.includes((directionsUrl ?? "").replace("&", "&amp;")));
+  assert.match(email.text, /Directions/);
+  assert.ok(email.text.includes(directionsUrl ?? ""));
+  assert.match(email.html, /Free parking is available on-site at the Cumberland Gap Convention Center\./);
+  assert.match(email.text, /Free parking is available on-site at the Cumberland Gap Convention Center\./);
+  assert.match(email.html, /Questions\?/);
+  assert.match(email.text, /Questions\?/);
+  assert.match(email.html, /mailto:info@cumberlandmountainmusic\.com/);
+  assert.match(email.html, /info@cumberlandmountainmusic\.com/);
+  assert.match(email.text, /info@cumberlandmountainmusic\.com/);
+  assert.match(email.html, />Select Your Reserved Seats<\/a>/);
+  assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
+  assert.match(email.text, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
+});
+test("uses singular ticket and seat-selection wording", () => {
+  const email = buildReservedSeatEmail({ ...input, ticketCount: 1 });
+  assert.match(email.html, /1 Reserved Seat/);
+  assert.doesNotMatch(email.html, /1 Reserved Seats/);
+  assert.match(email.text, /Tickets Purchased: 1 Reserved Seat/);
+  assert.match(email.text, /Thank you for purchasing 1 reserved seat for The Cumberland Mountain Music Show\./);
+  assert.match(email.html, /Please choose your reserved seat using the button above\./);
+  assert.match(email.text, /Please choose your reserved seat using the button above\./);
 });
 
 test("uses the production sender and reply-to addresses", () => {
-  assert.equal(RESERVED_SEAT_EMAIL_FROM, "Cumberland Mountain Music Show <tickets@cumberlandmountainmusic.com>");
+  assert.equal(RESERVED_SEAT_EMAIL_EVENT_NAME, "The Cumberland Mountain Music Show");
+  assert.equal(RESERVED_SEAT_EMAIL_FROM, "The Cumberland Mountain Music Show <tickets@cumberlandmountainmusic.com>");
   assert.equal(RESERVED_SEAT_EMAIL_REPLY_TO, "info@cumberlandmountainmusic.com");
 });
 
