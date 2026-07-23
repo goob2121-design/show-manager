@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AdminGate } from "@/app/components/admin-gate";
-import { createServiceRoleSupabaseClient, getSquarePhase1Config, maskIdentifier } from "@/app/api/integrations/square/_lib";
+import { createServiceRoleSupabaseClient, getSquareConfig, maskIdentifier } from "@/app/api/integrations/square/_lib";
 import { CreateSandboxCheckoutLinkButton } from "./create-sandbox-checkout-link-button";
 import { DebugLatestImportButton } from "./debug-latest-import-button";
 
@@ -62,7 +62,9 @@ function formatDateTime(value: string | null) {
 
 export default async function SquareIntegrationStatusPage({ params }: PageProps) {
   const { slug } = await params;
-  const { config, missing, invalid } = getSquarePhase1Config();
+  const { config, missing, invalid } = getSquareConfig();
+  const selectedEnvironment = config?.environment ?? (process.env.SQUARE_ENVIRONMENT?.trim().toLowerCase() === "production" ? "production" : "sandbox");
+  const environmentLabel = selectedEnvironment === "production" ? "Square Production" : "Square Sandbox";
   const supabase = createServiceRoleSupabaseClient();
   const [{ data: show }, { data: events }, { data: pendingCheckouts }] = await Promise.all([
     supabase.from("shows").select("id, name, slug, square_catalog_variation_id").eq("slug", slug).maybeSingle(),
@@ -91,9 +93,9 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
         <div className="mx-auto grid max-w-6xl gap-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Sandbox Only</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">{environmentLabel}</p>
               <h1 className="text-3xl font-black">Square Integration Status</h1>
-              <p className="mt-1 text-sm text-stone-600">Sanitized Phase 1 webhook/import visibility. Purchaser emails are not sent.</p>
+              <p className="mt-1 text-sm text-stone-600">Sanitized Square webhook and ticket-import visibility.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Link href={`/admin/${encodeURIComponent(slug)}/square-catalog`} className="inline-flex rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">View Square Catalog</Link>
@@ -101,7 +103,7 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
             </div>
           </div>
 
-          <CreateSandboxCheckoutLinkButton slug={slug} />
+          {selectedEnvironment === "sandbox" ? <CreateSandboxCheckoutLinkButton slug={slug} /> : null}
           {config?.environment === "sandbox" ? <DebugLatestImportButton paymentId={latestImportEvent?.payment_id ?? null} orderId={latestImportEvent?.order_id ?? null} /> : null}
 
           <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm md:grid-cols-2 xl:grid-cols-4">

@@ -1,73 +1,144 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
+export type SquareEnvironment = "sandbox" | "production";
+
 export type SquarePhase1Config = {
-  environment: "sandbox";
+  environment: SquareEnvironment;
   accessToken: string;
+  applicationId: string;
   webhookSignatureKey: string;
   webhookNotificationUrl: string;
   apiBaseUrl: string;
 };
 
-export function getSquarePhase1Config(): { config: SquarePhase1Config | null; missing: string[]; invalid: string[] } {
+type SquareConfigResult = { config: SquarePhase1Config | null; missing: string[]; invalid: string[] };
+
+function resolveSquareEnvironment() {
+  const value = process.env.SQUARE_ENVIRONMENT?.trim().toLowerCase();
+  return value === "sandbox" || value === "production" ? value : null;
+}
+
+function environmentVariableName(environment: SquareEnvironment, suffix: string) {
+  return `SQUARE_${environment.toUpperCase()}_${suffix}`;
+}
+
+function resolveSquareCredentials(environment: SquareEnvironment) {
+  const prefix = environment === "sandbox" ? "SQUARE_SANDBOX" : "SQUARE_PRODUCTION";
+  return {
+    accessToken: process.env[`${prefix}_ACCESS_TOKEN`]?.trim() ?? "",
+    applicationId: process.env[`${prefix}_APPLICATION_ID`]?.trim() ?? "",
+    webhookSignatureKey:
+      process.env[`${prefix}_SIGNATURE_KEY`]?.trim() ||
+      process.env[`${prefix}_WEBHOOK_SIGNATURE_KEY`]?.trim() ||
+      "",
+    webhookNotificationUrl:
+      process.env[`${prefix}_WEBHOOK_NOTIFICATION_URL`]?.trim() ||
+      process.env.SQUARE_WEBHOOK_NOTIFICATION_URL?.trim() ||
+      "",
+  };
+}
+
+function apiBaseUrl(environment: SquareEnvironment) {
+  return environment === "sandbox" ? "https://connect.squareupsandbox.com" : "https://connect.squareup.com";
+}
+
+export function getSquareConfig(): SquareConfigResult {
   const missing: string[] = [];
   const invalid: string[] = [];
-  const environment = process.env.SQUARE_ENVIRONMENT;
-  const accessToken = process.env.SQUARE_SANDBOX_ACCESS_TOKEN;
-  const webhookSignatureKey = process.env.SQUARE_SANDBOX_WEBHOOK_SIGNATURE_KEY;
-  const webhookNotificationUrl = process.env.SQUARE_SANDBOX_WEBHOOK_NOTIFICATION_URL;
+  const rawEnvironment = process.env.SQUARE_ENVIRONMENT?.trim();
+  const environment = resolveSquareEnvironment();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE;
 
-  if (!environment) missing.push("SQUARE_ENVIRONMENT");
-  if (!accessToken) missing.push("SQUARE_SANDBOX_ACCESS_TOKEN");
-  if (!webhookSignatureKey) missing.push("SQUARE_SANDBOX_WEBHOOK_SIGNATURE_KEY");
-  if (!webhookNotificationUrl) missing.push("SQUARE_SANDBOX_WEBHOOK_NOTIFICATION_URL");
+  if (!rawEnvironment) missing.push("SQUARE_ENVIRONMENT");
+  else if (!environment) invalid.push("SQUARE_ENVIRONMENT must be sandbox or production");
   if (!serviceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (environment && environment !== "sandbox") invalid.push("SQUARE_ENVIRONMENT must be sandbox for Phase 1");
+  if (!environment) return { config: null, missing, invalid };
 
-  if (missing.length > 0 || invalid.length > 0 || environment !== "sandbox" || !accessToken || !webhookSignatureKey || !webhookNotificationUrl) {
-    return { config: null, missing, invalid };
-  }
+  const credentials = resolveSquareCredentials(environment);
+  if (!credentials.accessToken) missing.push(environmentVariableName(environment, "ACCESS_TOKEN"));
+  if (!credentials.applicationId) missing.push(environmentVariableName(environment, "APPLICATION_ID"));
+  if (!credentials.webhookSignatureKey) missing.push(environmentVariableName(environment, "SIGNATURE_KEY"));
+  if (!credentials.webhookNotificationUrl) missing.push(environmentVariableName(environment, "WEBHOOK_NOTIFICATION_URL"));
+  if (missing.length > 0 || invalid.length > 0) return { config: null, missing, invalid };
 
   return {
     config: {
-      environment: "sandbox",
-      accessToken,
-      webhookSignatureKey,
-      webhookNotificationUrl,
-      apiBaseUrl: "https://connect.squareupsandbox.com",
+      environment,
+      accessToken: credentials.accessToken,
+      applicationId: credentials.applicationId,
+      webhookSignatureKey: credentials.webhookSignatureKey,
+      webhookNotificationUrl: credentials.webhookNotificationUrl,
+      apiBaseUrl: apiBaseUrl(environment),
     },
     missing,
     invalid,
   };
 }
-export function getSquareSandboxCatalogConfig(): { config: SquarePhase1Config | null; missing: string[]; invalid: string[] } {
+
+// Kept as a compatibility alias for existing webhook/status callers.
+export const getSquarePhase1Config = getSquareConfig;
+
+export function getSquareCatalogConfig(): SquareConfigResult {
   const missing: string[] = [];
   const invalid: string[] = [];
-  const environment = process.env.SQUARE_ENVIRONMENT;
-  const accessToken = process.env.SQUARE_SANDBOX_ACCESS_TOKEN;
+  const rawEnvironment = process.env.SQUARE_ENVIRONMENT?.trim();
+  const environment = resolveSquareEnvironment();
 
-  if (!environment) missing.push("SQUARE_ENVIRONMENT");
-  if (!accessToken) missing.push("SQUARE_SANDBOX_ACCESS_TOKEN");
-  if (environment && environment !== "sandbox") invalid.push("SQUARE_ENVIRONMENT must be sandbox for Phase 1");
+  if (!rawEnvironment) missing.push("SQUARE_ENVIRONMENT");
+  else if (!environment) invalid.push("SQUARE_ENVIRONMENT must be sandbox or production");
+  if (!environment) return { config: null, missing, invalid };
 
-  if (missing.length > 0 || invalid.length > 0 || environment !== "sandbox" || !accessToken) {
-    return { config: null, missing, invalid };
-  }
+  const credentials = resolveSquareCredentials(environment);
+  if (!credentials.accessToken) missing.push(environmentVariableName(environment, "ACCESS_TOKEN"));
+  if (!credentials.applicationId) missing.push(environmentVariableName(environment, "APPLICATION_ID"));
+  if (!credentials.webhookSignatureKey) missing.push(environmentVariableName(environment, "SIGNATURE_KEY"));
+  if (missing.length > 0 || invalid.length > 0) return { config: null, missing, invalid };
 
   return {
     config: {
-      environment: "sandbox",
-      accessToken,
-      webhookSignatureKey: "",
-      webhookNotificationUrl: "",
-      apiBaseUrl: "https://connect.squareupsandbox.com",
+      environment,
+      accessToken: credentials.accessToken,
+      applicationId: credentials.applicationId,
+      webhookSignatureKey: credentials.webhookSignatureKey,
+      webhookNotificationUrl: credentials.webhookNotificationUrl,
+      apiBaseUrl: apiBaseUrl(environment),
     },
     missing,
     invalid,
   };
 }
 
+export function getSquareSandboxCatalogConfig(): SquareConfigResult {
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  const environment = process.env.SQUARE_ENVIRONMENT?.trim().toLowerCase();
+  const accessToken = process.env.SQUARE_SANDBOX_ACCESS_TOKEN?.trim() ?? "";
+
+  if (!environment) missing.push("SQUARE_ENVIRONMENT");
+  if (!accessToken) missing.push("SQUARE_SANDBOX_ACCESS_TOKEN");
+  if (environment && environment !== "sandbox") invalid.push("SQUARE_ENVIRONMENT must be sandbox for this temporary Sandbox utility");
+  if (missing.length > 0 || invalid.length > 0 || environment !== "sandbox" || !accessToken) return { config: null, missing, invalid };
+
+  return {
+    config: {
+      environment: "sandbox",
+      accessToken,
+      applicationId: process.env.SQUARE_SANDBOX_APPLICATION_ID?.trim() ?? "",
+      webhookSignatureKey:
+        process.env.SQUARE_SANDBOX_SIGNATURE_KEY?.trim() ||
+        process.env.SQUARE_SANDBOX_WEBHOOK_SIGNATURE_KEY?.trim() ||
+        "",
+      webhookNotificationUrl:
+        process.env.SQUARE_SANDBOX_WEBHOOK_NOTIFICATION_URL?.trim() ||
+        process.env.SQUARE_WEBHOOK_NOTIFICATION_URL?.trim() ||
+        "",
+      apiBaseUrl: "https://connect.squareupsandbox.com",
+    },
+    missing,
+    invalid,
+  };
+}
 export function createServiceRoleSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE;

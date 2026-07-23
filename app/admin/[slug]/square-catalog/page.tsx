@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminGate } from "@/app/components/admin-gate";
 import {
-  getSquareSandboxCatalogConfig,
+  getSquareCatalogConfig,
   getSquareTokenFingerprint,
   listSquareCatalogItems,
   listSquareLocations,
@@ -74,7 +74,9 @@ function buildRows(items: SquareCatalogItem[]) {
 
 export default async function SquareCatalogPage({ params }: PageProps) {
   const { slug } = await params;
-  const { config, missing, invalid } = getSquareSandboxCatalogConfig();
+  const { config, missing, invalid } = getSquareCatalogConfig();
+  const selectedEnvironment = config?.environment ?? (process.env.SQUARE_ENVIRONMENT?.trim().toLowerCase() === "production" ? "production" : "sandbox");
+  const environmentLabel = selectedEnvironment === "production" ? "Square Production" : "Square Sandbox";
   let rows: CatalogVariationRow[] = [];
   let errorMessage: string | null = null;
 
@@ -93,17 +95,17 @@ export default async function SquareCatalogPage({ params }: PageProps) {
         catalogVariationIds: rows.map((row) => row.variationId).filter(Boolean),
       });
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : "Unable to load Square Sandbox catalog.";
+      errorMessage = error instanceof Error ? error.message : "Unable to load Square catalog.";
     }
   }
 
   return (
-    <AdminGate slug={slug} resourceLabel="Square Sandbox catalog" continueLabel="Continue to Square Catalog">
+    <AdminGate slug={slug} resourceLabel={`${environmentLabel} catalog`} continueLabel="Continue to Square Catalog">
       <main className="min-h-screen bg-stone-50 px-6 py-10 text-stone-900">
         <div className="mx-auto grid max-w-7xl gap-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Square Sandbox</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">{environmentLabel}</p>
               <h1 className="text-3xl font-black">Square Catalog</h1>
               <p className="mt-1 text-sm text-stone-600">View items and copy the Catalog Variation ID used for StageFlow show mapping.</p>
             </div>
@@ -115,7 +117,7 @@ export default async function SquareCatalogPage({ params }: PageProps) {
 
           {missing.length > 0 || invalid.length > 0 ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
-              <p className="font-bold">Square Sandbox catalog is not configured.</p>
+              <p className="font-bold">{environmentLabel} catalog is not configured.</p>
               {missing.length > 0 ? <p className="mt-2">Missing: {missing.join(", ")}</p> : null}
               {invalid.length > 0 ? <p className="mt-2">Invalid: {invalid.join(", ")}</p> : null}
             </section>
@@ -126,7 +128,7 @@ export default async function SquareCatalogPage({ params }: PageProps) {
           ) : null}
 
           {!config || errorMessage ? null : rows.length === 0 ? (
-            <section className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-600 shadow-sm">No Square Sandbox catalog items found.</section>
+            <section className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-600 shadow-sm">No Square catalog items found.</section>
           ) : (
             <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-bold">Catalog Items And Variations</h2>
