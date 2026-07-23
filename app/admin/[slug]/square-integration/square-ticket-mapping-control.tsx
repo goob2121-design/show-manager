@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import type { MouseEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SquareCatalogMappingOption } from "@/app/api/integrations/square/catalog-mapping";
 
 type Props = {
@@ -12,6 +13,11 @@ type Props = {
   environment: "sandbox" | "production";
   options: SquareCatalogMappingOption[];
   currentMapping: SquareCatalogMappingOption | null;
+};
+
+type PendingReplacement = {
+  current: SquareCatalogMappingOption;
+  selected: SquareCatalogMappingOption;
 };
 
 function maskIdentifier(value: string) {
@@ -29,8 +35,7 @@ export function SquareTicketMappingControl({
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
-  const [pendingReplacement, setPendingReplacement] =
-    useState<SquareCatalogMappingOption | null>(null);
+  const [pendingReplacement, setPendingReplacement] = useState<PendingReplacement | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const filteredOptions = useMemo(() => {
@@ -44,10 +49,33 @@ export function SquareTicketMappingControl({
     );
   }, [options, search]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" && pendingReplacement) {
+      console.debug("Square mapping modal state opened.", {
+        currentVariationId: maskIdentifier(pendingReplacement.current.variationId),
+        selectedVariationId: maskIdentifier(pendingReplacement.selected.variationId),
+      });
+    }
+  }, [pendingReplacement]);
+
   async function updateMapping(
     input: { action: "connect" | "disconnect"; variationId?: string; replaceConfirmed?: boolean },
     successMessage?: string,
   ) {
+    if (
+      input.action === "connect" &&
+      input.variationId &&
+      input.replaceConfirmed !== true &&
+      currentMapping &&
+      currentMapping.variationId !== input.variationId
+    ) {
+      const selected = options.find((option) => option.variationId === input.variationId);
+      if (selected) {
+        setPendingReplacement({ current: currentMapping, selected });
+      }
+      return;
+    }
+
     setActiveVariationId(input.variationId ?? "disconnect");
     setMessage(null);
     setError(null);
@@ -74,23 +102,42 @@ export function SquareTicketMappingControl({
     }
   }
 
-  function connect(option: SquareCatalogMappingOption) {
+  function handleConnectClick(
+    event: MouseEvent<HTMLButtonElement>,
+    option: SquareCatalogMappingOption,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
     const replacing = Boolean(currentMapping && currentMapping.variationId !== option.variationId);
-    if (replacing) {
+    if (replacing && currentMapping) {
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("Square mapping replacement candidate selected.", {
+          currentVariationId: maskIdentifier(currentMapping.variationId),
+          selectedVariationId: maskIdentifier(option.variationId),
+        });
+      }
       setMessage(null);
       setError(null);
-      setPendingReplacement(option);
+      setPendingReplacement({ current: currentMapping, selected: option });
       return;
     }
+
     void updateMapping({ action: "connect", variationId: option.variationId });
   }
 
   function replaceMapping() {
     if (!pendingReplacement) return;
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("Square mapping replacement confirmed.", {
+        currentVariationId: maskIdentifier(pendingReplacement.current.variationId),
+        selectedVariationId: maskIdentifier(pendingReplacement.selected.variationId),
+      });
+    }
     void updateMapping(
       {
         action: "connect",
-        variationId: pendingReplacement.variationId,
+        variationId: pendingReplacement.selected.variationId,
         replaceConfirmed: true,
       },
       "Square ticket mapping replaced successfully.",
@@ -162,7 +209,7 @@ export function SquareTicketMappingControl({
                 <p className="mt-1 text-stone-600">{option.price} {option.currency} · {option.status} · {option.locationAvailability}</p>
                 <p className="mt-1 font-mono text-xs text-stone-500">{maskIdentifier(option.variationId)}</p>
               </div>
-              <button type="button" onClick={() => connect(option)} disabled={isCurrent || activeVariationId !== null} className="inline-flex shrink-0 justify-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={(event) => handleConnectClick(event, option)} disabled={isCurrent || activeVariationId !== null} className="inline-flex shrink-0 justify-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
                 {activeVariationId === option.variationId ? "Connecting..." : isCurrent ? "Connected" : "Connect to This Show"}
               </button>
             </div>
@@ -171,7 +218,7 @@ export function SquareTicketMappingControl({
         {filteredOptions.length === 0 ? <p className="rounded-xl border border-dashed border-stone-300 p-5 text-sm text-stone-500">No eligible Square Item Variations match this search.</p> : null}
       </div>
 
-      {pendingReplacement && currentMapping ? (
+      {pendingReplacement ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
           role="dialog"
@@ -187,17 +234,17 @@ export function SquareTicketMappingControl({
               <div className="rounded-xl border border-stone-200 bg-stone-50 p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-stone-500">Current mapping</p>
                 <p className="mt-2 font-semibold text-stone-900">
-                  {currentMapping.itemName} - {currentMapping.variationName}
+                  {pendingReplacement.current.itemName} - {pendingReplacement.current.variationName}
                 </p>
-                <p className="mt-1 font-mono text-xs text-stone-500">{maskIdentifier(currentMapping.variationId)}</p>
+                <p className="mt-1 font-mono text-xs text-stone-500">{maskIdentifier(pendingReplacement.current.variationId)}</p>
               </div>
 
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-700">New mapping</p>
                 <p className="mt-2 font-semibold text-stone-900">
-                  {pendingReplacement.itemName} - {pendingReplacement.variationName}
+                  {pendingReplacement.selected.itemName} - {pendingReplacement.selected.variationName}
                 </p>
-                <p className="mt-1 font-mono text-xs text-stone-500">{maskIdentifier(pendingReplacement.variationId)}</p>
+                <p className="mt-1 font-mono text-xs text-stone-500">{maskIdentifier(pendingReplacement.selected.variationId)}</p>
               </div>
 
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -224,7 +271,7 @@ export function SquareTicketMappingControl({
                 disabled={activeVariationId !== null}
                 className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60"
               >
-                {activeVariationId === pendingReplacement.variationId ? "Replacing..." : "Replace Mapping"}
+                {activeVariationId === pendingReplacement.selected.variationId ? "Replacing..." : "Replace Mapping"}
               </button>
             </div>
           </div>
