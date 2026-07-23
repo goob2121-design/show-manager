@@ -25,18 +25,41 @@ function environmentVariableName(environment: SquareEnvironment, suffix: string)
 
 function resolveSquareCredentials(environment: SquareEnvironment) {
   const prefix = environment === "sandbox" ? "SQUARE_SANDBOX" : "SQUARE_PRODUCTION";
+  const signatureKeyVariable = process.env[`${prefix}_SIGNATURE_KEY`]?.trim()
+    ? `${prefix}_SIGNATURE_KEY`
+    : process.env[`${prefix}_WEBHOOK_SIGNATURE_KEY`]?.trim()
+      ? `${prefix}_WEBHOOK_SIGNATURE_KEY`
+      : null;
+  const notificationUrlVariable = process.env[`${prefix}_WEBHOOK_NOTIFICATION_URL`]?.trim()
+    ? `${prefix}_WEBHOOK_NOTIFICATION_URL`
+    : process.env.SQUARE_WEBHOOK_NOTIFICATION_URL?.trim()
+      ? "SQUARE_WEBHOOK_NOTIFICATION_URL"
+      : null;
+
   return {
     accessToken: process.env[`${prefix}_ACCESS_TOKEN`]?.trim() ?? "",
     applicationId: process.env[`${prefix}_APPLICATION_ID`]?.trim() ?? "",
-    webhookSignatureKey:
-      process.env[`${prefix}_SIGNATURE_KEY`]?.trim() ||
-      process.env[`${prefix}_WEBHOOK_SIGNATURE_KEY`]?.trim() ||
-      "",
-    webhookNotificationUrl:
-      process.env[`${prefix}_WEBHOOK_NOTIFICATION_URL`]?.trim() ||
-      process.env.SQUARE_WEBHOOK_NOTIFICATION_URL?.trim() ||
-      "",
+    webhookSignatureKey: signatureKeyVariable ? process.env[signatureKeyVariable]?.trim() ?? "" : "",
+    webhookNotificationUrl: notificationUrlVariable
+      ? process.env[notificationUrlVariable]?.trim() ?? ""
+      : "",
+    signatureKeyVariable,
+    notificationUrlVariable,
   };
+}
+
+function logSquareWebhookConfigSelection(input: {
+  environmentValue: string | null;
+  signatureKeyVariable: string | null;
+  notificationUrlVariable: string | null;
+}) {
+  console.info("Square webhook configuration selected.", {
+    environment: input.environmentValue ?? "missing",
+    signatureKeyVariable: input.signatureKeyVariable ?? "missing",
+    notificationUrlVariable: input.notificationUrlVariable ?? "missing",
+    signatureKeyMissing: input.signatureKeyVariable === null,
+    notificationUrlMissing: input.notificationUrlVariable === null,
+  });
 }
 
 function apiBaseUrl(environment: SquareEnvironment) {
@@ -53,9 +76,21 @@ export function getSquareConfig(): SquareConfigResult {
   if (!rawEnvironment) missing.push("SQUARE_ENVIRONMENT");
   else if (!environment) invalid.push("SQUARE_ENVIRONMENT must be sandbox or production");
   if (!serviceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (!environment) return { config: null, missing, invalid };
+  if (!environment) {
+    logSquareWebhookConfigSelection({
+      environmentValue: rawEnvironment || null,
+      signatureKeyVariable: null,
+      notificationUrlVariable: null,
+    });
+    return { config: null, missing, invalid };
+  }
 
   const credentials = resolveSquareCredentials(environment);
+  logSquareWebhookConfigSelection({
+    environmentValue: rawEnvironment || null,
+    signatureKeyVariable: credentials.signatureKeyVariable,
+    notificationUrlVariable: credentials.notificationUrlVariable,
+  });
   if (!credentials.accessToken) missing.push(environmentVariableName(environment, "ACCESS_TOKEN"));
   if (!credentials.applicationId) missing.push(environmentVariableName(environment, "APPLICATION_ID"));
   if (!credentials.webhookSignatureKey) missing.push(environmentVariableName(environment, "SIGNATURE_KEY"));
