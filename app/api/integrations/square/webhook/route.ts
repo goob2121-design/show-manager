@@ -27,7 +27,7 @@ type SquareWebhookEvent = {
   merchant_id?: string;
   type?: string;
   event_id?: string;
-  data?: { id?: string; type?: string; object?: { payment?: { id?: string; status?: string; order_id?: string } } };
+  data?: { id?: string; type?: string; object?: { payment?: { id?: string; status?: string; order_id?: string; statement_description?: string } } };
 };
 
 function getLineItemQuantity(lineItem: SquareOrderLineItem) {
@@ -66,11 +66,20 @@ type WebhookProcessingStage =
   | "record_event"
   | "complete";
 
-function isSquareDeveloperDashboardTestEvent(event: SquareWebhookEvent) {
-  const payment = event.data?.object?.payment;
-  return [event.data?.id, payment?.id, payment?.order_id].some(
-    (value) => typeof value === "string" && /(test|sample|example|fake)/i.test(value),
-  );
+export function getSquareDeveloperDashboardTestAcknowledgement(
+  event: SquareWebhookEvent,
+  headers: Pick<Headers, "has">,
+) {
+  const statementDescription = event.data?.object?.payment?.statement_description?.trim();
+  const hasInitialDeliveryTimestamp = headers.has("square-initial-delivery-timestamp");
+  const isOfficialSample =
+    event.type === "payment.updated" &&
+    hasInitialDeliveryTimestamp &&
+    statementDescription === "SQ *DEFAULT TEST ACCOUNT";
+
+  return isOfficialSample
+    ? { status: 200 as const, result: "test_event_acknowledged" as const }
+    : null;
 }
 
 function sanitizeWebhookProcessingText(value: string) {
@@ -186,12 +195,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, result: "missing_payment_id" });
     }
 
-    if (isSquareDeveloperDashboardTestEvent(event)) {
+    const testAcknowledgement = getSquareDeveloperDashboardTestAcknowledgement(event, request.headers);
+    if (testAcknowledgement) {
       processingStage = "record_event";
       await recordImportEvent({ eventId, eventType, paymentId: null, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "test_event_acknowledged", ticketCount: null, emailPresent: false, seatLinkCreated: false });
       processingStage = "complete";
       console.info("Square Developer Dashboard test event acknowledged.", { result: "test_event_acknowledged" });
-      return NextResponse.json({ success: true, result: "test_event_acknowledged" });
+      return NextResponse.json(
+        { success: true, result: testAcknowledgement.result },
+        { status: testAcknowledgement.status },
+      );
     }
 
     processingStage = "retrieve_payment";
