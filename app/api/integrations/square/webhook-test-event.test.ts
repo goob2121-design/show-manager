@@ -32,7 +32,9 @@ const dashboardPayload = {
         id: "hYy9pRFVxpDsO1FB05SunFWUe9JZY",
         status: "COMPLETED",
         order_id: "sample-order-id",
-        statement_description: "SQ *DEFAULT TEST ACCOUNT",
+        card_details: {
+          statement_description: "SQ *DEFAULT TEST ACCOUNT",
+        },
       },
     },
   },
@@ -77,7 +79,9 @@ test("does not classify a real production-like payment as a dashboard test", () 
           ...dashboardPayload.data.object.payment,
           id: "REAL_PAYMENT_ID",
           order_id: "REAL_ORDER_ID",
-          statement_description: "SQ *CUMBERLAND MOUNTAIN",
+          card_details: {
+            statement_description: "SQ *CUMBERLAND MOUNTAIN",
+          },
         },
       },
     },

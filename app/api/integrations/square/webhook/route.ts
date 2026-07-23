@@ -27,7 +27,7 @@ type SquareWebhookEvent = {
   merchant_id?: string;
   type?: string;
   event_id?: string;
-  data?: { id?: string; type?: string; object?: { payment?: { id?: string; status?: string; order_id?: string; statement_description?: string } } };
+  data?: { id?: string; type?: string; object?: { payment?: { id?: string; status?: string; order_id?: string; card_details?: { statement_description?: string } } } };
 };
 
 function getLineItemQuantity(lineItem: SquareOrderLineItem) {
@@ -70,7 +70,7 @@ export function getSquareDeveloperDashboardTestAcknowledgement(
   event: SquareWebhookEvent,
   headers: Pick<Headers, "has">,
 ) {
-  const statementDescription = event.data?.object?.payment?.statement_description?.trim();
+  const statementDescription = event.data?.object?.payment?.card_details?.statement_description?.trim();
   const hasInitialDeliveryTimestamp = headers.has("square-initial-delivery-timestamp");
   const isOfficialSample =
     event.type === "payment.updated" &&
