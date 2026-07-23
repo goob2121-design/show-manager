@@ -1,8 +1,23 @@
 import Link from "next/link";
 import { AdminGate } from "@/app/components/admin-gate";
-import { createServiceRoleSupabaseClient, getSquareConfig, maskIdentifier } from "@/app/api/integrations/square/_lib";
+import {
+  createServiceRoleSupabaseClient,
+  getSquareConfig,
+  listSquareCatalogItems,
+  listSquareLocations,
+  maskIdentifier,
+  retrieveSquareCatalogObject,
+  type SquareCatalogItem,
+  type SquareCatalogVariation,
+} from "@/app/api/integrations/square/_lib";
+import {
+  buildSquareCatalogDisplayOption,
+  buildSquareCatalogMappingOption,
+  type SquareCatalogMappingOption,
+} from "@/app/api/integrations/square/catalog-mapping";
 import { CreateSandboxCheckoutLinkButton } from "./create-sandbox-checkout-link-button";
 import { DebugLatestImportButton } from "./debug-latest-import-button";
+import { SquareTicketMappingControl } from "./square-ticket-mapping-control";
 
 export const runtime = "nodejs";
 
@@ -86,6 +101,36 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
   const lastWebhookAt = typedEvents[0]?.received_at ?? null;
   const lastSuccessfulImportAt = typedEvents.find((event) => ["imported", "duplicate", "incomplete_customer"].includes(event.result))?.imported_at ?? null;
   const latestImportEvent = typedEvents[0] ?? null;
+  let catalogOptions: SquareCatalogMappingOption[] = [];
+  let currentMapping: SquareCatalogMappingOption | null = null;
+
+  if (config && typedShow) {
+    try {
+      const [catalogItems, locations] = await Promise.all([
+        listSquareCatalogItems(config),
+        listSquareLocations(config),
+      ]);
+      catalogOptions = catalogItems.flatMap((item) =>
+        (item.item_data?.variations ?? [])
+          .map((variation) => buildSquareCatalogMappingOption(item, variation, locations))
+          .filter((option): option is SquareCatalogMappingOption => Boolean(option)),
+      );
+
+      const mappedVariationId = typedShow.square_catalog_variation_id?.trim() ?? "";
+      currentMapping = catalogOptions.find((option) => option.variationId === mappedVariationId) ?? null;
+      if (mappedVariationId && !currentMapping) {
+        const payload = await retrieveSquareCatalogObject(config, mappedVariationId);
+        const variation = payload.object?.type === "ITEM_VARIATION" ? payload.object as SquareCatalogVariation : null;
+        const parentItemId = variation?.item_variation_data?.item_id;
+        const parentItem = payload.related_objects?.find(
+          (candidate): candidate is SquareCatalogItem => candidate.type === "ITEM" && candidate.id === parentItemId,
+        );
+        if (variation && parentItem) currentMapping = buildSquareCatalogDisplayOption(parentItem, variation, locations);
+      }
+    } catch (error) {
+      console.error("Square ticket mapping catalog load failed.", error instanceof Error ? error.message : "Unknown error");
+    }
+  }
 
   return (
     <AdminGate slug={slug} resourceLabel="Square integration status" continueLabel="Continue to Square Integration">
@@ -98,7 +143,7 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
               <p className="mt-1 text-sm text-stone-600">Sanitized Square webhook and ticket-import visibility.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href={`/admin/${encodeURIComponent(slug)}/square-catalog`} className="inline-flex rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">View Square Catalog</Link>
+              <Link href={`/admin/${encodeURIComponent(slug)}/square-catalog`} className="inline-flex rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">Browse Square Catalog</Link>
               <Link href={`/admin/${encodeURIComponent(slug)}`} className="inline-flex rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100">Back to Admin</Link>
             </div>
           </div>
@@ -121,14 +166,20 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
             </section>
           ) : null}
 
-          <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-bold">Show Mapping</h2>
-            <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-              <div><p className="font-semibold text-stone-500">Show</p><p>{typedShow?.name ?? slug}</p></div>
-              <div><p className="font-semibold text-stone-500">Slug</p><p>{slug}</p></div>
-              <div><p className="font-semibold text-stone-500">Square Catalog Variation</p><p>{typedShow?.square_catalog_variation_id ? maskIdentifier(typedShow.square_catalog_variation_id) : "Not assigned"}</p></div>
-            </div>
-          </section>
+          {config && typedShow ? (
+            <SquareTicketMappingControl
+              slug={slug}
+              showId={typedShow.id}
+              showName={typedShow.name}
+              environment={config.environment}
+              options={catalogOptions}
+              currentMapping={currentMapping}
+            />
+          ) : (
+            <section className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-600 shadow-sm">
+              Square ticket mapping is unavailable until the Square configuration and show are available.
+            </section>
+          )}
 
 
           <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">

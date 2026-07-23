@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { AdminBackButton } from "@/app/components/admin-back-button";
 import { TicketSalesPanel, type TicketSalesPanelProps } from "@/app/components/tickets/ticket-sales-panel";
 import { TicketReservedSeatingPanel, type TicketReservedSeatingPanelProps } from "@/app/components/tickets/reserved-seating-panel";
@@ -8,6 +9,7 @@ import { TicketReportsPanel, type TicketReportsPanelProps } from "@/app/componen
 export type TicketWorkflowSection = "ticket-sales" | "reserved-seating" | "sponsor-comp" | "reports";
 
 type TicketsCheckInPanelProps = {
+  showSlug: string;
   activeSection: TicketWorkflowSection | null;
   isTotalsOpen: boolean;
   totalsContent: ReactNode;
@@ -41,6 +43,7 @@ const ticketWorkflowSections: Array<{ key: TicketWorkflowSection; title: string;
 ];
 
 export function TicketsCheckInPanel({
+  showSlug,
   activeSection,
   isTotalsOpen,
   totalsContent,
@@ -54,14 +57,24 @@ export function TicketsCheckInPanel({
 }: TicketsCheckInPanelProps) {
   return (
     <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <AdminBackButton fallbackHref="/admin" />
-          <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <AdminBackButton fallbackHref="/admin" />
+            <h2 className="text-xl font-semibold">Tickets / Check-In</h2>
+          </div>
+          <p className="text-sm text-stone-600">
+            Organize ticket imports, reserved seating, sponsor comps, and show-night check-in in the order you actually use them.
+          </p>
         </div>
-        <p className="text-sm text-stone-600">
-          Organize ticket imports, reserved seating, sponsor comps, and show-night check-in in the order you actually use them.
-        </p>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/print-studio" className="inline-flex rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">
+            Print Studio
+          </Link>
+          <Link href={`/admin/${encodeURIComponent(showSlug)}/square-integration`} className="inline-flex rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
+            Square Integration
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4">

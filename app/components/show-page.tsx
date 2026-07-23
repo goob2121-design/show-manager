@@ -6103,6 +6103,11 @@ type ShowPageProps = {
   showRoleToggle?: boolean;
   lockedGuestProfileId?: string | null;
   isPrivateGuestPortal?: boolean;
+  squareAdminStatus?: {
+    environment: "sandbox" | "production" | null;
+    webhookConfigured: boolean;
+    configurationValid: boolean;
+  };
 };
 
 type GuestPortalStatus = {
@@ -6225,6 +6230,7 @@ export function ShowPage({
   showRoleToggle = true,
   lockedGuestProfileId = null,
   isPrivateGuestPortal = false,
+  squareAdminStatus,
 }: ShowPageProps) {
   const requestedAdminTab = normalizeAdminTab(initialAdminTab);
   const shouldOpenPayoutsInsideFinance = initialAdminTab === "payouts";
@@ -17255,6 +17261,55 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               </section>
             </div>
 
+            <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Square Ticketing</p>
+                  <h3 className="mt-1 text-lg font-semibold text-stone-900">Square Ticketing</h3>
+                  <p className="mt-1 text-sm text-stone-600">
+                    Manage Square integration, ticket mapping, catalog items, and webhook status.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link href={`/admin/${encodeURIComponent(showSlug)}/square-integration`} className="inline-flex rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                    Square Integration Status
+                  </Link>
+                  <Link href={`/admin/${encodeURIComponent(showSlug)}/square-catalog`} className="inline-flex rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">
+                    Square Catalog
+                  </Link>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${squareAdminStatus?.configurationValid ? "bg-emerald-500" : "bg-rose-500"}`} />
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Environment</p>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-stone-800">
+                    {squareAdminStatus?.environment === "production" ? "Production" : squareAdminStatus?.environment === "sandbox" ? "Sandbox" : "Missing"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${squareAdminStatus?.webhookConfigured ? "bg-emerald-500" : "bg-rose-500"}`} />
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Webhook</p>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-stone-800">
+                    {squareAdminStatus?.webhookConfigured ? "Configured" : "Missing"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${show.square_catalog_variation_id ? "bg-emerald-500" : "bg-amber-400"}`} />
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Ticket Mapping</p>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-stone-800">
+                    {show.square_catalog_variation_id ? "Connected" : "Not Connected"}
+                  </p>
+                </div>
+              </div>
+            </section>
             {isShowChecklistOpen ? (
               <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/60 px-4 py-6 backdrop-blur-sm sm:px-6 sm:py-10">
                 <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-stone-200 bg-stone-50 p-4 shadow-2xl sm:p-5">
@@ -20549,6 +20604,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
         {shouldShowAdminCompTicketsTab ? (
           <TicketsCheckInPanel
+            showSlug={showSlug}
             activeSection={activeTicketWorkflowSection}
             isTotalsOpen={isTicketTotalsOpen}
             onToggleTotals={() => setIsTicketTotalsOpen((currentValue) => !currentValue)}
