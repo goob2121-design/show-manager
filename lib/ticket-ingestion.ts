@@ -19,7 +19,10 @@ export type ReservedSeatingSyncResult = {
   updatedCount: number;
   warnings: string[];
   linkIds: string[];
+  actions: ReservedSeatLinkAction[];
 };
+
+export type ReservedSeatLinkAction = "created" | "existing_current_ticket" | "claimed_legacy" | "failed";
 
 export type IngestExternalTicketSaleInput = {
   source: "square";
@@ -48,6 +51,7 @@ export type IngestExternalTicketSaleResult = {
   ticketCount: number | null;
   emailPresent: boolean;
   seatLinkCreated: boolean;
+  seatLinkAction?: ReservedSeatLinkAction;
   errorMessage?: string;
 };
 
@@ -62,6 +66,38 @@ function normalizeLookupValue(value: string | null | undefined) {
 
 function buildReservedSeatingCustomerMatchKey(name: string, email: string | null | undefined) {
   return [normalizeLookupValue(name) || "unknown-buyer", normalizeLookupValue(email) || "no-email"].join("::");
+}
+
+function isUnclaimedReservedSeatingLink(link: ShowReservedSeatingLink) {
+  return !normalizeOptionalField(link.source_ticket_id)
+    && !normalizeOptionalField(link.source_order_id)
+    && !normalizeOptionalField(link.source_import_key);
+}
+
+export function findOwnedOrClaimableReservedSeatingLink(
+  links: ShowReservedSeatingLink[],
+  ticket: TicketLike,
+) {
+  const sourceOrderId = normalizeOptionalField(ticket.order_id);
+  const sourceImportKey = normalizeOptionalField(ticket.import_key);
+  const exactTicketLink = links.find((link) => link.source_ticket_id === ticket.id);
+  if (exactTicketLink) return { link: exactTicketLink, action: "existing_current_ticket" as const };
+
+  if (sourceOrderId && sourceImportKey) {
+    const exactImportLink = links.find(
+      (link) => (!normalizeOptionalField(link.source_ticket_id) || link.source_ticket_id === ticket.id)
+        && normalizeOptionalField(link.source_order_id) === sourceOrderId
+        && normalizeOptionalField(link.source_import_key) === sourceImportKey,
+    );
+    if (exactImportLink) return { link: exactImportLink, action: "existing_current_ticket" as const };
+  }
+
+  const customerMatchKey = buildReservedSeatingCustomerMatchKey(ticket.guest_name, ticket.email);
+  const legacyLink = links.find(
+    (link) => isUnclaimedReservedSeatingLink(link)
+      && buildReservedSeatingCustomerMatchKey(link.customer_name, link.email) === customerMatchKey,
+  );
+  return legacyLink ? { link: legacyLink, action: "claimed_legacy" as const } : null;
 }
 
 export function buildExternalImportKey(input: Pick<IngestExternalTicketSaleInput, "source" | "orderId" | "lineItemUid">) {
@@ -96,20 +132,15 @@ export async function syncReservedSeatingLinksForImportedOrders(
   const updatedRows: Array<{ id: string; updates: Record<string, string | number | null> }> = [];
   const warnings: string[] = [];
   const linkIds: string[] = [];
+  const actions: ReservedSeatLinkAction[] = [];
   let createdCount = 0;
   let updatedCount = 0;
 
   for (const ticket of importedTickets) {
     const sourceOrderId = normalizeOptionalField(ticket.order_id);
     const sourceImportKey = normalizeOptionalField(ticket.import_key);
-    const customerMatchKey = buildReservedSeatingCustomerMatchKey(ticket.guest_name, ticket.email);
-
-    let matchedLink = links.find((link) => link.source_ticket_id === ticket.id);
-    if (!matchedLink && sourceOrderId) matchedLink = links.find((link) => (link.source_order_id?.trim() ?? "") === sourceOrderId);
-    if (!matchedLink && sourceImportKey) matchedLink = links.find((link) => (link.source_import_key?.trim() ?? "") === sourceImportKey);
-    if (!matchedLink) {
-      matchedLink = links.find((link) => link.selection_mode === "imported" && buildReservedSeatingCustomerMatchKey(link.customer_name, link.email) === customerMatchKey);
-    }
+    const match = findOwnedOrClaimableReservedSeatingLink(links, ticket);
+    const matchedLink = match?.link;
 
     const baseUpdates: Record<string, string | number | null> = {
       customer_name: ticket.guest_name,
@@ -134,10 +165,12 @@ export async function syncReservedSeatingLinksForImportedOrders(
         source_import_key: sourceImportKey,
       });
       createdCount += 1;
+      actions.push("created");
       continue;
     }
 
     linkIds.push(matchedLink.id);
+    actions.push(match.action);
     const hasSelectedSeats = selectedLinkIds.has(matchedLink.id) || Boolean(matchedLink.submitted_at);
     const shouldUpdateTicketCount = !hasSelectedSeats && matchedLink.ticket_count !== ticket.ticket_count;
     if (hasSelectedSeats && matchedLink.ticket_count !== ticket.ticket_count) {
@@ -163,7 +196,7 @@ export async function syncReservedSeatingLinksForImportedOrders(
     if (error) throw error;
   }
 
-  return { createdCount, updatedCount, warnings, linkIds };
+  return { createdCount, updatedCount, warnings, linkIds, actions };
 }
 
 export async function ingestExternalTicketSale(
@@ -239,7 +272,8 @@ export async function ingestExternalTicketSale(
       catalogVariationId: input.catalogVariationId,
       ticketCount: existingTicket.ticket_count,
       emailPresent: Boolean(existingTicket.email?.trim()),
-      seatLinkCreated: sync.createdCount > 0 || sync.updatedCount > 0 || sync.linkIds.length > 0,
+      seatLinkCreated: sync.linkIds.length > 0,
+    seatLinkAction: sync.actions[0] ?? "failed",
     };
   }
 
@@ -281,6 +315,7 @@ export async function ingestExternalTicketSale(
     catalogVariationId: input.catalogVariationId,
     ticketCount: quantity,
     emailPresent: Boolean(purchaserEmail),
-    seatLinkCreated: sync.createdCount > 0 || sync.updatedCount > 0 || sync.linkIds.length > 0,
+    seatLinkCreated: sync.linkIds.length > 0,
+      seatLinkAction: sync.actions[0] ?? "failed",
   };
 }

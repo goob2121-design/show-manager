@@ -21,22 +21,54 @@ function safeError(value: string | null) {
 }
 
 const EMAIL_SEND_CLAIM_PREFIX = "sending:";
+const LEGACY_SENT_MARKER_PREFIX = "sent:";
+
+export type TrackedEmailDeliveryState = "sent_now" | "already_sent_current_link" | "in_progress" | "failed";
+
+export function classifyTrackedEmailState(resendEmailId: string | null, sentAt: string | null): TrackedEmailDeliveryState {
+  if (resendEmailId?.startsWith(EMAIL_SEND_CLAIM_PREFIX)) return "in_progress";
+  if (resendEmailId && sentAt && !resendEmailId.startsWith(LEGACY_SENT_MARKER_PREFIX)) return "already_sent_current_link";
+  return "failed";
+}
+
+export function trackedEmailStateWasSent(state: TrackedEmailDeliveryState) {
+  return state === "sent_now" || state === "already_sent_current_link";
+}
+
+function deliveryFlags(state: TrackedEmailDeliveryState) {
+  return {
+    deliveryState: state,
+    sentNow: state === "sent_now",
+    alreadySent: state === "already_sent_current_link",
+    inProgress: state === "in_progress",
+    failed: state === "failed",
+  };
+}
 
 export async function sendTrackedReservedSeatEmail(
   supabase: SupabaseClient,
   linkId: string,
   options: { allowResend?: boolean } = {},
-): Promise<ReservedSeatEmailResult & { sentAt: string | null; alreadySent?: boolean }> {
+): Promise<ReservedSeatEmailResult & ReturnType<typeof deliveryFlags> & { sentAt: string | null }> {
   const { data: linkData, error: linkError } = await supabase.from("show_reserved_seating_links").select("id,show_id,customer_name,email,ticket_count,selection_token,sent_at,resend_email_id,email_attempt_count,seat_category").eq("id", linkId).maybeSingle();
   if (linkError) throw linkError;
   const link = linkData as EmailLinkRow | null;
-  if (!link) return { success: false, resendId: null, error: "Reserved seating link was not found.", sentAt: null };
-  if (link.resend_email_id && !options.allowResend) return { success: true, resendId: link.resend_email_id, error: null, sentAt: link.sent_at, alreadySent: true };
+  if (!link) return { success: false, resendId: null, error: "Reserved seating link was not found.", sentAt: null, ...deliveryFlags("failed") };
+  if (!options.allowResend && link.resend_email_id) {
+    const state = classifyTrackedEmailState(link.resend_email_id, link.sent_at);
+    return {
+      success: state === "already_sent_current_link",
+      resendId: state === "already_sent_current_link" ? link.resend_email_id : null,
+      error: state === "failed" ? "Email tracking state is incomplete." : null,
+      sentAt: link.sent_at,
+      ...deliveryFlags(state),
+    };
+  }
 
   const { data: showData, error: showError } = await supabase.from("shows").select("name,show_date,show_start_time,venue,venue_address").eq("id", link.show_id).maybeSingle();
   if (showError) throw showError;
   const show = showData as EmailShowRow | null;
-  if (!show) return { success: false, resendId: null, error: "Show was not found.", sentAt: null };
+  if (!show) return { success: false, resendId: null, error: "Show was not found.", sentAt: null, ...deliveryFlags("failed") };
 
   const attemptAt = new Date().toISOString();
   const attemptCount = Math.max(0, link.email_attempt_count ?? 0) + 1;
@@ -50,7 +82,21 @@ export async function sendTrackedReservedSeatEmail(
       .select("id");
     if (claimError) throw claimError;
     if (!claimedRows?.length) {
-      return { success: true, resendId: null, error: null, sentAt: link.sent_at, alreadySent: true };
+      const { data: currentData, error: currentError } = await supabase
+        .from("show_reserved_seating_links")
+        .select("sent_at,resend_email_id")
+        .eq("id", link.id)
+        .maybeSingle();
+      if (currentError) throw currentError;
+      const current = currentData as Pick<EmailLinkRow, "sent_at" | "resend_email_id"> | null;
+      const state = classifyTrackedEmailState(current?.resend_email_id ?? null, current?.sent_at ?? null);
+      return {
+        success: state === "already_sent_current_link",
+        resendId: state === "already_sent_current_link" ? current?.resend_email_id ?? null : null,
+        error: state === "failed" ? "Email send claim could not be acquired." : null,
+        sentAt: current?.sent_at ?? null,
+        ...deliveryFlags(state),
+      };
     }
   } else {
     const { error: attemptError } = await supabase.from("show_reserved_seating_links").update({ email_attempt_count: attemptCount, last_email_attempt_at: attemptAt }).eq("id", link.id);
@@ -68,7 +114,7 @@ export async function sendTrackedReservedSeatEmail(
     let update = supabase.from("show_reserved_seating_links").update({ last_email_error: message, ...(sendClaim ? { resend_email_id: null } : {}) }).eq("id", link.id);
     if (sendClaim) update = update.eq("resend_email_id", sendClaim);
     await update;
-    return { success: false, resendId: null, error: message, sentAt: link.sent_at };
+    return { success: false, resendId: null, error: message, sentAt: link.sent_at, ...deliveryFlags("failed") };
   }
   const result = await sendReservedSeatEmail({
     customerName: link.customer_name,
@@ -89,7 +135,7 @@ export async function sendTrackedReservedSeatEmail(
     let update = supabase.from("show_reserved_seating_links").update({ last_email_error: error, ...(sendClaim ? { resend_email_id: null } : {}) }).eq("id", link.id);
     if (sendClaim) update = update.eq("resend_email_id", sendClaim);
     await update;
-    return { ...result, error, sentAt: link.sent_at };
+    return { ...result, error, sentAt: link.sent_at, ...deliveryFlags("failed") };
   }
 
   const sentAt = new Date().toISOString();
@@ -98,5 +144,5 @@ export async function sendTrackedReservedSeatEmail(
   if (sendClaim) trackingUpdate = trackingUpdate.eq("resend_email_id", sendClaim);
   const { error: trackingError } = await trackingUpdate;
   if (trackingError) throw trackingError;
-  return { ...result, sentAt };
+  return { ...result, sentAt, ...deliveryFlags("sent_now") };
 }
