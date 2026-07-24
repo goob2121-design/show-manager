@@ -5,7 +5,6 @@ import {
   getSquareConfig,
   listSquareCatalogItems,
   listSquareLocations,
-  maskIdentifier,
   retrieveSquareCatalogObject,
   type SquareCatalogItem,
   type SquareCatalogVariation,
@@ -17,6 +16,7 @@ import {
 } from "@/app/api/integrations/square/catalog-mapping";
 import { CreateSandboxCheckoutLinkButton } from "./create-sandbox-checkout-link-button";
 import { DebugLatestImportButton } from "./debug-latest-import-button";
+import { RecentSquareWebhookResults, type SquareImportEventRow } from "./recent-square-webhook-results";
 import { SquareTicketMappingControl } from "./square-ticket-mapping-control";
 
 export const runtime = "nodejs";
@@ -37,36 +37,6 @@ type SquarePendingCheckoutRow = {
   created_at: string;
   completed_at: string | null;
 };
-
-type SquareImportEventRow = {
-  id: string;
-  event_id: string | null;
-  event_type: string | null;
-  payment_id: string | null;
-  order_id: string | null;
-  line_item_uid: string | null;
-  catalog_variation_id: string | null;
-  show_id: string | null;
-  show_name: string | null;
-  result: string;
-  ticket_count: number | null;
-  email_present: boolean;
-  seat_link_created: boolean;
-  email_sent: boolean;
-  error_message: string | null;
-  payload_summary: Record<string, unknown> | null;
-  received_at: string;
-  imported_at: string | null;
-};
-
-function getSummaryString(summary: Record<string, unknown> | null, key: string) {
-  const value = summary?.[key];
-  return typeof value === "string" ? value : null;
-}
-
-function getSummaryBoolean(summary: Record<string, unknown> | null, key: string) {
-  return summary?.[key] === true;
-}
 
 function formatDateTime(value: string | null) {
   if (!value) return "Never";
@@ -101,6 +71,11 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
   const lastWebhookAt = typedEvents[0]?.received_at ?? null;
   const lastSuccessfulImportAt = typedEvents.find((event) => ["imported", "duplicate", "incomplete_customer"].includes(event.result))?.imported_at ?? null;
   const latestImportEvent = typedEvents[0] ?? null;
+  const purchaserNamesByOrder = Object.fromEntries(
+    typedPendingCheckouts
+      .filter((checkout) => checkout.square_order_id && checkout.purchaser_name.trim())
+      .map((checkout) => [checkout.square_order_id as string, checkout.purchaser_name.trim()]),
+  );
   let catalogOptions: SquareCatalogMappingOption[] = [];
   let currentMapping: SquareCatalogMappingOption | null = null;
 
@@ -209,34 +184,7 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
               </table>
             </div>
           </section>
-          <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-bold">Recent Square Webhook Results</h2>
-            <div className="mt-4 overflow-x-auto rounded-xl border border-stone-200">
-              <table className="min-w-full divide-y divide-stone-200 text-sm">
-                <thead className="bg-stone-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-stone-500">
-                  <tr><th className="px-3 py-2">Received</th><th className="px-3 py-2">Result</th><th className="px-3 py-2">Order</th><th className="px-3 py-2">Show</th><th className="px-3 py-2">Qty</th><th className="px-3 py-2">Name?</th><th className="px-3 py-2">Email?</th><th className="px-3 py-2">Customer Source</th><th className="px-3 py-2">Seat Link?</th><th className="px-3 py-2">Email Sent</th></tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {typedEvents.length > 0 ? typedEvents.map((event) => (
-                    <tr key={event.id}>
-                      <td className="px-3 py-2">{formatDateTime(event.received_at)}</td>
-                      <td className="px-3 py-2 font-semibold">{event.result}</td>
-                      <td className="px-3 py-2">{maskIdentifier(event.order_id) ?? "-"}</td>
-                      <td className="px-3 py-2">{event.show_name ?? "-"}</td>
-                      <td className="px-3 py-2">{event.ticket_count ?? "-"}</td>
-                      <td className="px-3 py-2">{getSummaryBoolean(event.payload_summary, "nameFound") ? "Yes" : "No"}</td>
-                      <td className="px-3 py-2">{event.email_present || getSummaryBoolean(event.payload_summary, "emailFound") ? "Yes" : "No"}</td>
-                      <td className="px-3 py-2">{getSummaryString(event.payload_summary, "customerSource") ?? "unavailable"}</td>
-                      <td className="px-3 py-2">{event.seat_link_created ? "Yes" : "No"}</td>
-                      <td className="px-3 py-2">{event.email_sent ? "Yes" : "No"}</td>
-                    </tr>
-                  )) : (
-                    <tr><td className="px-3 py-5 text-stone-500" colSpan={10}>No Square webhook events recorded yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <RecentSquareWebhookResults events={typedEvents} purchaserNamesByOrder={purchaserNamesByOrder} />
         </div>
       </main>
     </AdminGate>
