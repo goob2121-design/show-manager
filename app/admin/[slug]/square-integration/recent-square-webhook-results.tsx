@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type SquareImportEventRow = {
   id: string;
@@ -58,26 +58,69 @@ function getEventPurchaserName(event: SquareImportEventRow) {
     ?? getSummaryString(event.payload_summary, "customerName");
 }
 
+export function getTicketRelationshipKey(event: Pick<SquareImportEventRow, "payment_id" | "order_id" | "line_item_uid">) {
+  const paymentId = event.payment_id?.trim();
+  const orderId = event.order_id?.trim();
+  const lineItemUid = event.line_item_uid?.trim();
+  return paymentId && orderId && lineItemUid ? [paymentId, orderId, lineItemUid].join("|") : null;
+}
+
+type NameResolution = {
+  displayName: string;
+  source: "primary_webhook" | "grouped_webhook" | "related_ticket" | "pending_checkout" | "name_captured" | "unavailable";
+  candidates: {
+    primaryWebhook: boolean;
+    groupedWebhook: boolean;
+    relatedTicket: boolean;
+    pendingCheckout: boolean;
+    nameFoundFlag: boolean;
+  };
+};
+
+export function resolveGroupedPurchaserName(
+  primary: SquareImportEventRow,
+  events: SquareImportEventRow[],
+  purchaserNamesByTicketKey: Record<string, string> = {},
+  purchaserNamesByOrder: Record<string, string> = {},
+): NameResolution {
+  const primaryName = getEventPurchaserName(primary);
+  const groupedName = events
+    .filter((event) => event.id !== primary.id)
+    .map(getEventPurchaserName)
+    .find(Boolean) ?? null;
+  const relatedTicketName = events
+    .map((event) => {
+      const key = getTicketRelationshipKey(event);
+      return key ? purchaserNamesByTicketKey[key]?.trim() : "";
+    })
+    .find(Boolean) ?? null;
+  const pendingCheckoutName = events
+    .map((event) => event.order_id ? purchaserNamesByOrder[event.order_id]?.trim() : "")
+    .find(Boolean) ?? null;
+  const nameFoundFlag = events.some((event) => event.payload_summary?.nameFound === true);
+  const candidates = {
+    primaryWebhook: Boolean(primaryName),
+    groupedWebhook: Boolean(groupedName),
+    relatedTicket: Boolean(relatedTicketName),
+    pendingCheckout: Boolean(pendingCheckoutName),
+    nameFoundFlag,
+  };
+
+  if (primaryName) return { displayName: primaryName, source: "primary_webhook", candidates };
+  if (groupedName) return { displayName: groupedName, source: "grouped_webhook", candidates };
+  if (relatedTicketName) return { displayName: relatedTicketName, source: "related_ticket", candidates };
+  if (pendingCheckoutName) return { displayName: pendingCheckoutName, source: "pending_checkout", candidates };
+  if (nameFoundFlag) return { displayName: "Name captured", source: "name_captured", candidates };
+  return { displayName: "Unavailable", source: "unavailable", candidates };
+}
+
 export function getGroupedPurchaserName(
   primary: SquareImportEventRow,
   events: SquareImportEventRow[],
+  purchaserNamesByTicketKey: Record<string, string> = {},
   purchaserNamesByOrder: Record<string, string> = {},
 ) {
-  const primaryName = getEventPurchaserName(primary);
-  if (primaryName) return primaryName;
-
-  for (const event of events) {
-    if (event.id === primary.id) continue;
-    const groupedName = getEventPurchaserName(event);
-    if (groupedName) return groupedName;
-  }
-
-  for (const event of events) {
-    const pendingCheckoutName = event.order_id ? purchaserNamesByOrder[event.order_id]?.trim() : "";
-    if (pendingCheckoutName) return pendingCheckoutName;
-  }
-
-  return "Unavailable";
+  return resolveGroupedPurchaserName(primary, events, purchaserNamesByTicketKey, purchaserNamesByOrder).displayName;
 }
 
 function getResultClasses(result: string) {
@@ -124,12 +167,28 @@ function groupEvents(events: SquareImportEventRow[]) {
 export function RecentSquareWebhookResults({
   events,
   purchaserNamesByOrder,
+  purchaserNamesByTicketKey,
 }: {
   events: SquareImportEventRow[];
   purchaserNamesByOrder: Record<string, string>;
+  purchaserNamesByTicketKey: Record<string, string>;
 }) {
   const [filter, setFilter] = useState<ResultFilter>("all");
   const groups = useMemo(() => groupEvents(events), [events]);
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    for (const group of groups) {
+      const primary = group.events.find((event) => event.result === "imported")
+        ?? group.events.find((event) => event.result !== "duplicate")
+        ?? group.events[0];
+      const resolution = resolveGroupedPurchaserName(primary, group.events, purchaserNamesByTicketKey, purchaserNamesByOrder);
+      console.info("Square webhook purchaser-name presentation source.", {
+        selectedSource: resolution.source,
+        ...resolution.candidates,
+      });
+    }
+  }, [groups, purchaserNamesByOrder, purchaserNamesByTicketKey]);
+
   const filteredGroups = groups.filter((group) => {
     if (filter === "imported") return group.events.some((event) => event.result === "imported");
     if (filter === "duplicates") return group.events.some((event) => event.result === "duplicate");
@@ -167,7 +226,7 @@ export function RecentSquareWebhookResults({
             ?? group.events[0];
           const duplicates = group.events.filter((event) => event.result === "duplicate");
           const attentionEvents = group.events.filter((event) => ATTENTION_RESULTS.has(event.result));
-          const purchaserName = getGroupedPurchaserName(primary, group.events, purchaserNamesByOrder);
+          const purchaserName = getGroupedPurchaserName(primary, group.events, purchaserNamesByTicketKey, purchaserNamesByOrder);
 
           return (
             <article key={group.key} className="rounded-lg border border-stone-200 bg-white">

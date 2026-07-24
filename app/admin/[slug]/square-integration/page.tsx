@@ -38,6 +38,13 @@ type SquarePendingCheckoutRow = {
   completed_at: string | null;
 };
 
+type ImportedSquareTicketNameRow = {
+  guest_name: string;
+  external_payment_id: string | null;
+  external_order_id: string | null;
+  external_line_item_uid: string | null;
+};
+
 function formatDateTime(value: string | null) {
   if (!value) return "Never";
   const parsed = new Date(value);
@@ -76,6 +83,27 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
       .filter((checkout) => checkout.square_order_id && checkout.purchaser_name.trim())
       .map((checkout) => [checkout.square_order_id as string, checkout.purchaser_name.trim()]),
   );
+  const eventPaymentIds = Array.from(new Set(typedEvents.map((event) => event.payment_id?.trim()).filter((id): id is string => Boolean(id))));
+  let purchaserNamesByTicketKey: Record<string, string> = {};
+  if (eventPaymentIds.length > 0) {
+    const { data: importedTickets, error: importedTicketsError } = await supabase
+      .from("show_comp_tickets")
+      .select("guest_name, external_payment_id, external_order_id, external_line_item_uid")
+      .eq("external_source", "square")
+      .in("external_payment_id", eventPaymentIds);
+    if (importedTicketsError) {
+      console.error("Square webhook purchaser-name presentation lookup failed.");
+    } else {
+      purchaserNamesByTicketKey = Object.fromEntries(
+        ((importedTickets ?? []) as ImportedSquareTicketNameRow[])
+          .filter((ticket) => ticket.external_payment_id && ticket.external_order_id && ticket.external_line_item_uid && ticket.guest_name.trim())
+          .map((ticket) => [
+            [ticket.external_payment_id, ticket.external_order_id, ticket.external_line_item_uid].join("|"),
+            ticket.guest_name.trim(),
+          ]),
+      );
+    }
+  }
   let catalogOptions: SquareCatalogMappingOption[] = [];
   let currentMapping: SquareCatalogMappingOption | null = null;
 
@@ -184,7 +212,11 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
               </table>
             </div>
           </section>
-          <RecentSquareWebhookResults events={typedEvents} purchaserNamesByOrder={purchaserNamesByOrder} />
+          <RecentSquareWebhookResults
+            events={typedEvents}
+            purchaserNamesByOrder={purchaserNamesByOrder}
+            purchaserNamesByTicketKey={purchaserNamesByTicketKey}
+          />
         </div>
       </main>
     </AdminGate>

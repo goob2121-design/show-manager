@@ -42,7 +42,25 @@ test("uses purchaser name from another grouped row when primary lacks it", () =>
   assert.equal(getGroupedPurchaserName(imported, [imported, duplicate]), "Bryan Turner");
 });
 
-test("uses Unavailable only when no grouped row contains a purchaser name", () => {
+test("uses purchaser name from the exactly related imported ticket", () => {
+  const imported = event("imported", "imported");
+  const duplicate = event("duplicate", "duplicate");
+  const ticketKey = "payment_1|order_1|line_1";
+
+  assert.equal(
+    getGroupedPurchaserName(imported, [imported, duplicate], { [ticketKey]: "Bryan Turner" }),
+    "Bryan Turner",
+  );
+});
+
+test("uses Name captured when the boolean exists without a stored name", () => {
+  const imported = event("imported", "imported");
+  imported.payload_summary = { nameFound: true };
+
+  assert.equal(getGroupedPurchaserName(imported, [imported]), "Name captured");
+});
+
+test("uses Unavailable only when no name or name-present flag exists", () => {
   const imported = event("imported", "imported");
   const duplicate = event("duplicate", "duplicate");
 
