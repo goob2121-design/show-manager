@@ -20,6 +20,8 @@ function safeError(value: string | null) {
   return value?.replace(/https?:\/\/\S+/gi, "[private link removed]").slice(0, 500) || "Email delivery failed.";
 }
 
+const EMAIL_SEND_CLAIM_PREFIX = "sending:";
+
 export async function sendTrackedReservedSeatEmail(
   supabase: SupabaseClient,
   linkId: string,
@@ -38,8 +40,22 @@ export async function sendTrackedReservedSeatEmail(
 
   const attemptAt = new Date().toISOString();
   const attemptCount = Math.max(0, link.email_attempt_count ?? 0) + 1;
-  const { error: attemptError } = await supabase.from("show_reserved_seating_links").update({ email_attempt_count: attemptCount, last_email_attempt_at: attemptAt }).eq("id", link.id);
-  if (attemptError) throw attemptError;
+  const sendClaim = options.allowResend ? null : `${EMAIL_SEND_CLAIM_PREFIX}${crypto.randomUUID()}`;
+  if (sendClaim) {
+    const { data: claimedRows, error: claimError } = await supabase
+      .from("show_reserved_seating_links")
+      .update({ resend_email_id: sendClaim, email_attempt_count: attemptCount, last_email_attempt_at: attemptAt })
+      .eq("id", link.id)
+      .is("resend_email_id", null)
+      .select("id");
+    if (claimError) throw claimError;
+    if (!claimedRows?.length) {
+      return { success: true, resendId: null, error: null, sentAt: link.sent_at, alreadySent: true };
+    }
+  } else {
+    const { error: attemptError } = await supabase.from("show_reserved_seating_links").update({ email_attempt_count: attemptCount, last_email_attempt_at: attemptAt }).eq("id", link.id);
+    if (attemptError) throw attemptError;
+  }
 
 
   let seatSelectionUrl: string;
@@ -49,7 +65,9 @@ export async function sendTrackedReservedSeatEmail(
     logoUrl = getStageFlowEmailLogoUrl();
   } catch (error) {
     const message = safeError(error instanceof Error ? error.message : "StageFlow public URL is not configured.");
-    await supabase.from("show_reserved_seating_links").update({ last_email_error: message }).eq("id", link.id);
+    let update = supabase.from("show_reserved_seating_links").update({ last_email_error: message, ...(sendClaim ? { resend_email_id: null } : {}) }).eq("id", link.id);
+    if (sendClaim) update = update.eq("resend_email_id", sendClaim);
+    await update;
     return { success: false, resendId: null, error: message, sentAt: link.sent_at };
   }
   const result = await sendReservedSeatEmail({
@@ -68,12 +86,17 @@ export async function sendTrackedReservedSeatEmail(
 
   if (!result.success) {
     const error = safeError(result.error);
-    await supabase.from("show_reserved_seating_links").update({ last_email_error: error }).eq("id", link.id);
+    let update = supabase.from("show_reserved_seating_links").update({ last_email_error: error, ...(sendClaim ? { resend_email_id: null } : {}) }).eq("id", link.id);
+    if (sendClaim) update = update.eq("resend_email_id", sendClaim);
+    await update;
     return { ...result, error, sentAt: link.sent_at };
   }
 
   const sentAt = new Date().toISOString();
-  const { error: trackingError } = await supabase.from("show_reserved_seating_links").update({ sent_at: sentAt, resend_email_id: result.resendId, last_email_error: null }).eq("id", link.id);
+  const trackedResendId = result.resendId ?? (sendClaim ? `sent:${sendClaim.slice(EMAIL_SEND_CLAIM_PREFIX.length)}` : `sent:${crypto.randomUUID()}`);
+  let trackingUpdate = supabase.from("show_reserved_seating_links").update({ sent_at: sentAt, resend_email_id: trackedResendId, last_email_error: null }).eq("id", link.id);
+  if (sendClaim) trackingUpdate = trackingUpdate.eq("resend_email_id", sendClaim);
+  const { error: trackingError } = await trackingUpdate;
   if (trackingError) throw trackingError;
   return { ...result, sentAt };
 }

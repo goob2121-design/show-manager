@@ -69,6 +69,21 @@ function runCustomerDetailResolverTests() {
   expectEqual(noRecipientResult.purchaserEmail, "fallback@example.com", "no recipient payment email fallback");
   expectEqual(noRecipientResult.customerSource, "payment_or_order", "no recipient fallback source");
 
+  const paymentCardholderResult = resolveSquarePurchaserDetails({
+    payment: { id: "pay_card", status: "COMPLETED", card_details: { card: { cardholder_name: "Production Buyer" } } },
+    order: { id: "order_card" },
+    customer: null,
+  });
+  expectEqual(paymentCardholderResult.purchaserName, "Production Buyer", "payment cardholder name");
+  expectEqual(paymentCardholderResult.customerSource, "payment_or_order", "payment cardholder source");
+
+  const tenderCardholderResult = resolveSquarePurchaserDetails({
+    payment: { id: "pay_tender", status: "COMPLETED" },
+    order: { id: "order_tender", tenders: [{ card_details: { card: { cardholder_name: "Tender Buyer" } } }] },
+    customer: null,
+  });
+  expectEqual(tenderCardholderResult.purchaserName, "Tender Buyer", "order tender cardholder name");
+  expectEqual(tenderCardholderResult.customerSource, "payment_or_order", "order tender cardholder source");
   const incompleteResult = resolveSquarePurchaserDetails({ payment: { id: "pay_4", status: "COMPLETED", order_id: "order_4" }, order: { id: "order_4" }, customer: null });
   expectEqual(incompleteResult.purchaserName, "Square Customer", "incomplete fallback name");
   expectEqual(incompleteResult.purchaserEmail, null, "incomplete email");

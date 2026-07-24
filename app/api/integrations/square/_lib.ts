@@ -300,6 +300,7 @@ export type SquarePayment = {
   status?: string;
   order_id?: string;
   amount_money?: { amount?: number; currency?: string };
+  card_details?: { card?: { cardholder_name?: string } };
   buyer_email_address?: string;
   customer_id?: string;
   updated_at?: string;
@@ -332,7 +333,10 @@ export type SquareOrder = {
     shipment_details?: { recipient?: SquareOrderRecipient };
     delivery_details?: { recipient?: SquareOrderRecipient };
   }>;
-  tenders?: Array<{ customer_id?: string }>;
+  tenders?: Array<{
+    customer_id?: string;
+    card_details?: { card?: { cardholder_name?: string } };
+  }>;
 };
 
 export type SquareCustomer = {
