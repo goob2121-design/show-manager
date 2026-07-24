@@ -53,6 +53,33 @@ function getSummaryString(summary: Record<string, unknown> | null, key: string) 
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function getEventPurchaserName(event: SquareImportEventRow) {
+  return getSummaryString(event.payload_summary, "purchaserName")
+    ?? getSummaryString(event.payload_summary, "customerName");
+}
+
+export function getGroupedPurchaserName(
+  primary: SquareImportEventRow,
+  events: SquareImportEventRow[],
+  purchaserNamesByOrder: Record<string, string> = {},
+) {
+  const primaryName = getEventPurchaserName(primary);
+  if (primaryName) return primaryName;
+
+  for (const event of events) {
+    if (event.id === primary.id) continue;
+    const groupedName = getEventPurchaserName(event);
+    if (groupedName) return groupedName;
+  }
+
+  for (const event of events) {
+    const pendingCheckoutName = event.order_id ? purchaserNamesByOrder[event.order_id]?.trim() : "";
+    if (pendingCheckoutName) return pendingCheckoutName;
+  }
+
+  return "Unavailable";
+}
+
 function getResultClasses(result: string) {
   if (result === "imported") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (result === "duplicate") return "border-stone-200 bg-stone-100 text-stone-600";
@@ -140,10 +167,7 @@ export function RecentSquareWebhookResults({
             ?? group.events[0];
           const duplicates = group.events.filter((event) => event.result === "duplicate");
           const attentionEvents = group.events.filter((event) => ATTENTION_RESULTS.has(event.result));
-          const purchaserName = (primary.order_id && purchaserNamesByOrder[primary.order_id])
-            || getSummaryString(primary.payload_summary, "purchaserName")
-            || getSummaryString(primary.payload_summary, "customerName")
-            || "Unavailable";
+          const purchaserName = getGroupedPurchaserName(primary, group.events, purchaserNamesByOrder);
 
           return (
             <article key={group.key} className="rounded-lg border border-stone-200 bg-white">
