@@ -295,12 +295,19 @@ async function squareFetch<T>(config: SquarePhase1Config, path: string, init?: R
   return responseBody as T;
 }
 
+export type SquareAddress = {
+  first_name?: string;
+  last_name?: string;
+};
+
 export type SquarePayment = {
   id?: string;
   status?: string;
   order_id?: string;
   amount_money?: { amount?: number; currency?: string };
   card_details?: { card?: { cardholder_name?: string } };
+  billing_address?: SquareAddress;
+  shipping_address?: SquareAddress;
   buyer_email_address?: string;
   customer_id?: string;
   updated_at?: string;

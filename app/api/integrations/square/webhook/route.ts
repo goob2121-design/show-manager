@@ -4,11 +4,13 @@ import {
   createServiceRoleSupabaseClient,
   getSquarePhase1Config,
   getSquareHmacSha256SignatureHeader,
+  maskIdentifier,
   retrieveSquareCustomer,
   retrieveSquareOrder,
   retrieveSquarePayment,
   SquareApiError,
   verifySquareWebhookSignature,
+  type SquareOrder,
   type SquareOrderLineItem,
 } from "@/app/api/integrations/square/_lib";
 import {
@@ -29,6 +31,25 @@ type SquareWebhookEvent = {
   event_id?: string;
   data?: { id?: string; type?: string; object?: { payment?: { id?: string; status?: string; order_id?: string; card_details?: { statement_description?: string } } } };
 };
+
+const ORDER_RETRY_DELAYS_MS = [500, 1000] as const;
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+export async function retrieveSquareOrderWithRetry(
+  retrieveOrder: () => Promise<SquareOrder | null>,
+  sleep: (milliseconds: number) => Promise<void> = wait,
+) {
+  let order: SquareOrder | null = null;
+  for (let attempt = 0; attempt <= ORDER_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) await sleep(ORDER_RETRY_DELAYS_MS[attempt - 1]);
+    order = await retrieveOrder();
+    if (order?.line_items?.length) return { order, attempts: attempt + 1 };
+  }
+  return { order, attempts: ORDER_RETRY_DELAYS_MS.length + 1 };
+}
 
 function getLineItemQuantity(lineItem: SquareOrderLineItem) {
   const parsed = Number.parseInt(lineItem.quantity ?? "1", 10);
@@ -108,9 +129,8 @@ async function recordImportEvent(input: {
   importedAt?: string | null;
   emailSent?: boolean;
 }) {
-  try {
-    const supabase = createServiceRoleSupabaseClient();
-    await supabase.from("square_ticket_import_events").insert({
+  const supabase = createServiceRoleSupabaseClient();
+  const { error } = await supabase.from("square_ticket_import_events").insert({
       event_id: input.eventId,
       event_type: input.eventType,
       payment_id: input.paymentId,
@@ -128,9 +148,8 @@ async function recordImportEvent(input: {
       payload_summary: input.payloadSummary ?? null,
       imported_at: input.importedAt ?? null,
     });
-  } catch (error) {
-    console.error("Square import event log failed.", error instanceof Error ? error.message : "Unknown error");
-  }
+  if (!error || error.code === "23505") return true;
+  throw error;
 }
 
 async function maybeSendImportedSeatEmail(
@@ -138,15 +157,15 @@ async function maybeSendImportedSeatEmail(
   result: IngestExternalTicketSaleResult,
   environment: "sandbox" | "production",
 ) {
-  if (environment === "sandbox" && process.env.SQUARE_SANDBOX_SEND_EMAILS !== "true") return { emailSent: false, error: null };
-  if (!result.ticketId || !result.emailPresent || !result.seatLinkCreated) return { emailSent: false, error: null };
+  if (environment === "sandbox" && process.env.SQUARE_SANDBOX_SEND_EMAILS !== "true") return { emailAttempted: false, emailSent: false, error: null };
+  if (!result.ticketId || !result.emailPresent || !result.seatLinkCreated) return { emailAttempted: false, emailSent: false, error: null };
 
   const { data: link, error: linkError } = await supabase.from("show_reserved_seating_links").select("id").eq("source_ticket_id", result.ticketId).maybeSingle();
-  if (linkError) return { emailSent: false, error: "seat_link_lookup_failed" };
-  if (!link) return { emailSent: false, error: "seat_link_not_found" };
+  if (linkError) return { emailAttempted: false, emailSent: false, error: "seat_link_lookup_failed" };
+  if (!link) return { emailAttempted: false, emailSent: false, error: "seat_link_not_found" };
 
   const emailResult = await sendTrackedReservedSeatEmail(supabase, link.id);
-  return { emailSent: emailResult.success, error: emailResult.success ? null : emailResult.error };
+  return { emailAttempted: true, emailSent: emailResult.success, error: emailResult.success ? null : emailResult.error };
 }
 export async function POST(request: Request) {
   const { config, missing, invalid } = getSquarePhase1Config();
@@ -171,6 +190,41 @@ export async function POST(request: Request) {
   let eventType: string | null = null;
   let eventId: string | null = null;
   let paymentId: string | null = null;
+  let orderId: string | null = null;
+  let paymentStatus: string | null = null;
+  const finalState = {
+    mappedVariationFound: false,
+    showMatched: false,
+    ticketImported: false,
+    duplicateDetected: false,
+    customerEmailFound: false,
+    customerNameFound: false,
+    seatLinkCreated: false,
+    emailAttempted: false,
+    emailSent: false,
+    eventResultRowRecorded: false,
+  };
+  const respondSuccess = (body: Record<string, unknown>, resultCode: string, status = 200) => {
+    console.info("Square webhook final result.", {
+      eventType,
+      processingStage,
+      finalResultCode: resultCode,
+      paymentStatus,
+      paymentId: maskIdentifier(paymentId),
+      orderId: maskIdentifier(orderId),
+      mappedVariationFound: finalState.mappedVariationFound,
+      showMatched: finalState.showMatched,
+      ticketImported: finalState.ticketImported,
+      duplicateDetected: finalState.duplicateDetected,
+      customerEmailFound: finalState.customerEmailFound,
+      customerNameFound: finalState.customerNameFound,
+      seatLinkCreated: finalState.seatLinkCreated,
+      emailAttempted: finalState.emailAttempted,
+      emailSent: finalState.emailSent,
+      eventResultRowRecorded: finalState.eventResultRowRecorded,
+    });
+    return NextResponse.json(body, { status });
+  };
 
   try {
     processingStage = "parse_payload";
@@ -181,58 +235,59 @@ export async function POST(request: Request) {
     eventId = event.event_id ?? event.data?.id ?? null;
     if (eventType !== "payment.updated") {
       processingStage = "record_event";
-      await recordImportEvent({ eventId, eventType, paymentId: null, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "ignored_event", ticketCount: null, emailPresent: false, seatLinkCreated: false });
+      finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId: null, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "ignored_event", ticketCount: null, emailPresent: false, seatLinkCreated: false });
       processingStage = "complete";
-      return NextResponse.json({ success: true, result: "ignored_event" });
+      return respondSuccess({ success: true, result: "ignored_event" }, "ignored_event");
     }
 
     const eventPayment = event.data?.object?.payment;
     paymentId = eventPayment?.id ?? null;
     if (!paymentId) {
       processingStage = "record_event";
-      await recordImportEvent({ eventId, eventType, paymentId: null, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "missing_payment_id", ticketCount: null, emailPresent: false, seatLinkCreated: false });
+      finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId: null, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "missing_payment_id", ticketCount: null, emailPresent: false, seatLinkCreated: false });
       processingStage = "complete";
-      return NextResponse.json({ success: true, result: "missing_payment_id" });
+      return respondSuccess({ success: true, result: "missing_payment_id" }, "missing_payment_id");
     }
 
     const testAcknowledgement = getSquareDeveloperDashboardTestAcknowledgement(event, request.headers);
     if (testAcknowledgement) {
       processingStage = "record_event";
-      await recordImportEvent({ eventId, eventType, paymentId: null, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "test_event_acknowledged", ticketCount: null, emailPresent: false, seatLinkCreated: false });
+      finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId: null, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "test_event_acknowledged", ticketCount: null, emailPresent: false, seatLinkCreated: false });
       processingStage = "complete";
       console.info("Square Developer Dashboard test event acknowledged.", { result: "test_event_acknowledged" });
-      return NextResponse.json(
-        { success: true, result: testAcknowledgement.result },
-        { status: testAcknowledgement.status },
-      );
+      return respondSuccess({ success: true, result: testAcknowledgement.result }, testAcknowledgement.result, testAcknowledgement.status);
     }
 
     processingStage = "retrieve_payment";
     const payment = await retrieveSquarePayment(config, paymentId);
-    const paymentStatus = payment?.status ?? eventPayment?.status ?? "UNKNOWN";
-    const orderId = payment?.order_id ?? eventPayment?.order_id ?? null;
+    paymentStatus = payment?.status ?? eventPayment?.status ?? "UNKNOWN";
+    orderId = payment?.order_id ?? eventPayment?.order_id ?? null;
 
     if (paymentStatus !== "COMPLETED") {
       processingStage = "record_event";
-      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "ignored_status", ticketCount: null, emailPresent: false, seatLinkCreated: false, payloadSummary: { paymentStatus } });
+      finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "ignored_status", ticketCount: null, emailPresent: false, seatLinkCreated: false, payloadSummary: { paymentStatus } });
       processingStage = "complete";
-      return NextResponse.json({ success: true, result: "ignored_status" });
+      return respondSuccess({ success: true, result: "ignored_status" }, "ignored_status");
     }
 
     if (!payment || !orderId) {
       processingStage = "record_event";
-      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "missing_order_id", ticketCount: null, emailPresent: false, seatLinkCreated: false });
+      finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "missing_order_id", ticketCount: null, emailPresent: false, seatLinkCreated: false });
       processingStage = "complete";
-      return NextResponse.json({ success: true, result: "missing_order_id" });
+      return respondSuccess({ success: true, result: "missing_order_id" }, "missing_order_id");
     }
 
     processingStage = "retrieve_order";
-    const order = await retrieveSquareOrder(config, orderId);
+    const resolvedOrderId = orderId;
+    const orderRetrieval = await retrieveSquareOrderWithRetry(() => retrieveSquareOrder(config, resolvedOrderId));
+    const order = orderRetrieval.order;
     processingStage = "map_show";
     const supabase = createServiceRoleSupabaseClient();
     const pendingCheckout = await findSquarePendingCheckout(supabase, { orderId, paymentId, referenceId: order?.reference_id ?? null });
 
     if (pendingCheckout) {
+      finalState.customerNameFound = true;
+      finalState.customerEmailFound = true;
       const matchingLineItem = getMatchingSquareLineItem(order, pendingCheckout.catalog_variation_id);
       const actualQuantity = getSquareLineItemQuantity(matchingLineItem);
       const pendingSummary = {
@@ -248,9 +303,11 @@ export async function POST(request: Request) {
         const mismatch = !matchingLineItem ? "variation_mismatch" : "quantity_mismatch";
         await markSquarePendingCheckoutError(supabase, pendingCheckout.id, mismatch);
         processingStage = "record_event";
-        await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: matchingLineItem?.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, showId: pendingCheckout.show_id, showName: null, result: `pending_checkout_${mismatch}`, ticketCount: actualQuantity || null, emailPresent: true, seatLinkCreated: false, errorMessage: mismatch, payloadSummary: { ...pendingSummary, actualQuantity } });
+        finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: matchingLineItem?.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, showId: pendingCheckout.show_id, showName: null, result: `pending_checkout_${mismatch}`, ticketCount: actualQuantity || null, emailPresent: true, seatLinkCreated: false, errorMessage: mismatch, payloadSummary: { ...pendingSummary, actualQuantity } });
         processingStage = "complete";
-        return NextResponse.json({ success: true, results: [{ status: `pending_checkout_${mismatch}`, pendingCheckoutId: pendingCheckout.id }] });
+        finalState.mappedVariationFound = Boolean(matchingLineItem);
+        finalState.showMatched = true;
+        return respondSuccess({ success: true, results: [{ status: `pending_checkout_${mismatch}`, pendingCheckoutId: pendingCheckout.id }] }, `pending_checkout_${mismatch}`);
       }
 
       processingStage = "ingest_ticket";
@@ -274,10 +331,45 @@ export async function POST(request: Request) {
       await markSquarePendingCheckoutCompleted(supabase, pendingCheckout.id, { paymentId, orderId, importedTicketId: result.ticketId });
       processingStage = "send_email";
       const emailDelivery = await maybeSendImportedSeatEmail(supabase, result, config.environment);
+      finalState.showMatched ||= Boolean(result.showId);
+      finalState.ticketImported ||= result.status === "imported" || result.status === "incomplete_customer";
+      finalState.duplicateDetected ||= result.status === "duplicate";
+      finalState.seatLinkCreated ||= result.seatLinkCreated;
+      finalState.emailAttempted ||= emailDelivery.emailAttempted;
+      finalState.emailSent ||= emailDelivery.emailSent;
       processingStage = "record_event";
-      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: matchingLineItem.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, errorMessage: result.errorMessage ?? emailDelivery.error, payloadSummary: { importResult: result.status, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, ...pendingSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
+      finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: matchingLineItem.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, errorMessage: result.errorMessage ?? emailDelivery.error, payloadSummary: { importResult: result.status, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, ...pendingSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
       processingStage = "complete";
-      return NextResponse.json({ success: true, results: [result] });
+      finalState.mappedVariationFound = true;
+      finalState.showMatched = Boolean(result.showId);
+      finalState.ticketImported = result.status === "imported" || result.status === "incomplete_customer";
+      finalState.duplicateDetected = result.status === "duplicate";
+      finalState.customerEmailFound = result.emailPresent;
+      finalState.customerNameFound = true;
+      finalState.seatLinkCreated = result.seatLinkCreated;
+      finalState.emailAttempted = emailDelivery.emailAttempted;
+      finalState.emailSent = emailDelivery.emailSent;
+      return respondSuccess({ success: true, results: [result] }, result.status);
+    }
+
+    if (!order || !order.line_items?.length) {
+      const resultCode = order ? "no_line_items" : "missing_order";
+      processingStage = "record_event";
+      finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: resultCode, ticketCount: null, emailPresent: Boolean(payment.buyer_email_address), seatLinkCreated: false, payloadSummary: { paymentStatus, orderRetrievalAttempts: orderRetrieval.attempts, retryable: true } });
+      console.info("Square webhook order retrieval exhausted.", {
+        eventType,
+        processingStage,
+        finalResultCode: resultCode,
+        paymentStatus,
+        paymentId: maskIdentifier(paymentId),
+        orderId: maskIdentifier(orderId),
+        orderRetrievalAttempts: orderRetrieval.attempts,
+        eventResultRowRecorded: finalState.eventResultRowRecorded,
+      });
+      return NextResponse.json(
+        { success: false, retryable: true, stage: "retrieve_order", error: resultCode === "missing_order" ? "Square Order is not available yet." : "Square Order line items are not available yet." },
+        { status: 500 },
+      );
     }
 
     processingStage = "resolve_customer";
@@ -310,6 +402,8 @@ export async function POST(request: Request) {
     }
 
     const purchaserDetails = resolveSquarePurchaserDetails({ payment, order, customer });
+    finalState.customerNameFound = purchaserDetails.nameFound;
+    finalState.customerEmailFound = purchaserDetails.emailFound;
     const customerSummary = { nameFound: purchaserDetails.nameFound, emailFound: purchaserDetails.emailFound, phoneFound: purchaserDetails.phoneFound, customerSource: purchaserDetails.customerSource, customerIdPresent: Boolean(purchaserDetails.customerId), customerLookupError, squareOrderMatched: false };
     const results = [];
 
@@ -318,10 +412,11 @@ export async function POST(request: Request) {
       const catalogVariationId = lineItem.catalog_object_id?.trim() ?? "";
       const lineItemUid = lineItem.uid?.trim() ?? "";
       const quantity = getLineItemQuantity(lineItem);
+      if (catalogVariationId) finalState.mappedVariationFound = true;
 
       if (!catalogVariationId || !lineItemUid) {
         processingStage = "record_event";
-        await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: lineItemUid || null, catalogVariationId: catalogVariationId || null, showId: null, showName: null, result: "unmapped_item", ticketCount: null, emailPresent: purchaserDetails.emailFound, seatLinkCreated: false, payloadSummary: customerSummary });
+        finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid: lineItemUid || null, catalogVariationId: catalogVariationId || null, showId: null, showName: null, result: "unmapped_item", ticketCount: null, emailPresent: purchaserDetails.emailFound, seatLinkCreated: false, payloadSummary: customerSummary });
         results.push({ status: "unmapped_item", lineItemUid: lineItemUid || null });
         continue;
       }
@@ -331,13 +426,20 @@ export async function POST(request: Request) {
       processingStage = "create_seat_link";
       processingStage = "send_email";
       const emailDelivery = await maybeSendImportedSeatEmail(supabase, result, config.environment);
+      finalState.showMatched ||= Boolean(result.showId);
+      finalState.ticketImported ||= result.status === "imported" || result.status === "incomplete_customer";
+      finalState.duplicateDetected ||= result.status === "duplicate";
+      finalState.seatLinkCreated ||= result.seatLinkCreated;
+      finalState.emailAttempted ||= emailDelivery.emailAttempted;
+      finalState.emailSent ||= emailDelivery.emailSent;
       processingStage = "record_event";
-      await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid, catalogVariationId, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, errorMessage: result.errorMessage ?? emailDelivery.error, payloadSummary: { lineItemName: lineItem.name ?? null, paymentStatus, emailSent: emailDelivery.emailSent, ...customerSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
+      finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId, orderId, lineItemUid, catalogVariationId, showId: result.showId, showName: result.showName, result: result.status, ticketCount: result.ticketCount, emailPresent: result.emailPresent, seatLinkCreated: result.seatLinkCreated, emailSent: emailDelivery.emailSent, errorMessage: result.errorMessage ?? emailDelivery.error, payloadSummary: { lineItemName: lineItem.name ?? null, paymentStatus, emailSent: emailDelivery.emailSent, ...customerSummary }, importedAt: result.status === "imported" || result.status === "incomplete_customer" || result.status === "duplicate" ? new Date().toISOString() : null });
       results.push(result);
     }
 
     processingStage = "complete";
-    return NextResponse.json({ success: true, results });
+    const finalResultCode = results.length === 1 && "status" in results[0] ? String(results[0].status) : "processed";
+    return respondSuccess({ success: true, results }, finalResultCode);
   } catch (error) {
     const errorName = error instanceof Error ? error.name : "UnknownError";
     const errorMessage = sanitizeWebhookProcessingText(
@@ -352,7 +454,7 @@ export async function POST(request: Request) {
       errorMessage,
       stackTrace,
     });
-    await recordImportEvent({ eventId, eventType, paymentId, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "error", ticketCount: null, emailPresent: false, seatLinkCreated: false, errorMessage });
+    finalState.eventResultRowRecorded = await recordImportEvent({ eventId, eventType, paymentId, orderId: null, lineItemUid: null, catalogVariationId: null, showId: null, showName: null, result: "error", ticketCount: null, emailPresent: false, seatLinkCreated: false, errorMessage });
     return NextResponse.json(
       { success: false, stage: processingStage, error: errorMessage },
       { status: 500 },

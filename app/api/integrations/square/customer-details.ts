@@ -54,6 +54,11 @@ export function getSquareOrderCustomerId(order: SquareOrder | null, payment: Squ
     ?? normalizeText(payment?.customer_id);
 }
 
+function getSquarePaymentAddressName(payment: SquarePayment | null) {
+  return joinName(payment?.billing_address?.first_name, payment?.billing_address?.last_name)
+    ?? joinName(payment?.shipping_address?.first_name, payment?.shipping_address?.last_name);
+}
+
 function getSquareCardholderName(order: SquareOrder | null, payment: SquarePayment | null) {
   return normalizeText(payment?.card_details?.card?.cardholder_name)
     ?? normalizeText(order?.tenders?.find((tender) => normalizeText(tender.card_details?.card?.cardholder_name))?.card_details?.card?.cardholder_name);
@@ -67,7 +72,9 @@ export function resolveSquarePurchaserDetails(input: {
 }) : ResolvedSquarePurchaserDetails {
   const recipient = getSquareOrderRecipient(input.order);
   const customerName = joinName(input.customer?.given_name, input.customer?.family_name) ?? normalizeText(input.customer?.company_name);
-  const paymentOrOrderName = getSquareCardholderName(input.order, input.payment) ?? normalizeText(input.existingPurchaserName);
+  const paymentOrOrderName = getSquarePaymentAddressName(input.payment)
+    ?? getSquareCardholderName(input.order, input.payment)
+    ?? normalizeText(input.existingPurchaserName);
 
   const fulfillmentEmail = normalizeEmail(recipient?.email_address);
   const customerEmail = normalizeEmail(input.customer?.email_address);

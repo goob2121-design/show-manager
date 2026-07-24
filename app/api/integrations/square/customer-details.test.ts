@@ -69,6 +69,21 @@ function runCustomerDetailResolverTests() {
   expectEqual(noRecipientResult.purchaserEmail, "fallback@example.com", "no recipient payment email fallback");
   expectEqual(noRecipientResult.customerSource, "payment_or_order", "no recipient fallback source");
 
+  const billingNameResult = resolveSquarePurchaserDetails({
+    payment: { id: "pay_billing", status: "COMPLETED", billing_address: { first_name: "Real", last_name: "Buyer" } },
+    order: { id: "order_billing" },
+    customer: null,
+  });
+  expectEqual(billingNameResult.purchaserName, "Real Buyer", "payment billing name");
+  expectEqual(billingNameResult.customerSource, "payment_or_order", "payment billing source");
+
+  const shippingNameResult = resolveSquarePurchaserDetails({
+    payment: { id: "pay_shipping", status: "COMPLETED", shipping_address: { first_name: "Shipping", last_name: "Buyer" } },
+    order: { id: "order_shipping" },
+    customer: null,
+  });
+  expectEqual(shippingNameResult.purchaserName, "Shipping Buyer", "payment shipping name");
+
   const paymentCardholderResult = resolveSquarePurchaserDetails({
     payment: { id: "pay_card", status: "COMPLETED", card_details: { card: { cardholder_name: "Production Buyer" } } },
     order: { id: "order_card" },
