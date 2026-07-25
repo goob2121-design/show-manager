@@ -43,13 +43,14 @@ test("first-time and Pamela-style paid reserved links would add without ownershi
   assert.equal(preview.details[0]?.classification, "paid_reserved_link_missing_projection");
   assert.equal(preview.details[0]?.displayLabel, "Pamela Blevins");
   assert.equal(preview.details[0]?.quantity, 2);
+  assert.equal(preview.details[0]?.destinationGroup, "prepaid_online");
   assert.match(preview.details[0]?.maskedSourceIdentity ?? "", /^reserved_link:/);
   assert.equal(preview.details.some((item) => item.sourceType === "reserved_assignment"), false);
 });
 
 test("link with an existing source ticket and Square ticket are already present", () => {
   const preview = buildAdmissionsSyncPreview(baseData({
-    tickets: [{ id: "ticket_1", guest_name: "Square Customer", ticket_count: 1, ticket_type: "paid_online", external_source: "square" }],
+    tickets: [{ id: "ticket_1", guest_name: "Square Customer", ticket_count: 1, ticket_type: "paid_online", notes: null, external_source: "square" }],
     reservedLinks: [{
       id: "link_1",
       customer_name: "Linked Buyer",
@@ -87,6 +88,7 @@ test("reserved comp categories classify from stable link sources", () => {
     ["band_comp", "guest_comp", "media_comp", "volunteer_comp", "staff_comp", "other_comp"],
   );
   assert.equal(preview.counts.wouldAdd, 6);
+  assert.equal(preview.details.every((item) => item.destinationGroup === "special_admissions"), true);
   assert.equal(preview.details[0]?.displayLabel, "Band Comp - band Person");
   assert.equal(preview.details[1]?.displayLabel, "Guest Comp - guest Person");
 });
@@ -99,8 +101,26 @@ test("sponsor allowance is already present via native sponsor check-in", () => {
   assert.equal(preview.counts.alreadyPresent, 1);
   assert.equal(preview.details[0]?.classification, "sponsor_admission_native_check_in");
   assert.equal(preview.details[0]?.displayLabel, "Cumberland Mountain Music Show Sponsor");
+  assert.equal(preview.details[0]?.destinationGroup, "sponsor_native");
 });
 
+test("existing paid and comp tickets route conservatively while ambiguous manual entries need review", () => {
+  const preview = buildAdmissionsSyncPreview(baseData({
+    tickets: [
+      { id: "paid_ticket", guest_name: "Paid Buyer", ticket_count: 2, ticket_type: "paid_online", notes: null, external_source: null },
+      { id: "comp_ticket", guest_name: "Guest Comp", ticket_count: 1, ticket_type: "complimentary", notes: "[Comp Type: guest]", external_source: null },
+      { id: "manual_unknown", guest_name: "Manual Entry", ticket_count: 1, ticket_type: "manual", notes: null, external_source: null },
+      { id: "door_sale", guest_name: "Paid Door Sale", ticket_count: 1, ticket_type: "door_paid", notes: null, external_source: null },
+    ],
+  }), generatedAt);
+
+  assert.deepEqual(preview.details.map((item) => item.destinationGroup), [
+    "prepaid_online",
+    "special_admissions",
+    "needs_review",
+    "door_sale_native",
+  ]);
+});
 test("ambiguous ownership is skipped", () => {
   const preview = buildAdmissionsSyncPreview(baseData({
     reservedLinks: [{
@@ -140,7 +160,7 @@ test("repeated preview produces identical output", () => {
 
 test("missing names use source-specific fallbacks", () => {
   const preview = buildAdmissionsSyncPreview(baseData({
-    tickets: [{ id: "ticket_fallback", guest_name: null, ticket_count: 1, ticket_type: "manual", external_source: null }],
+    tickets: [{ id: "ticket_fallback", guest_name: null, ticket_count: 1, ticket_type: "manual", notes: null, external_source: null }],
     reservedLinks: [{ id: "link_fallback", customer_name: null, ticket_count: 1, source_ticket_id: null, selection_mode: "customer", is_complimentary: false, source_note: null, seat_category: "paid_reserved" }],
     reservedAssignments: [{ id: "assignment_fallback", seating_link_id: null, assignment_type: "customer", seat_category: "comp", notes: null }],
     sponsors: [{ id: "sponsor_fallback", comp_ticket_allowance: 1, sponsor: null }],
@@ -149,7 +169,7 @@ test("missing names use source-specific fallbacks", () => {
   assert.deepEqual(preview.details.map((item) => item.displayLabel), [
     "Unnamed Ticket Entry",
     "Unnamed Reserved Admission",
-    "Other Comp - Unnamed Reserved Assignment",
+    "Unnamed Reserved Assignment",
     "Unnamed Sponsor",
   ]);
 });
@@ -163,7 +183,20 @@ test("stable masked identity remains ID-based when names are identical", () => {
   assert.equal(preview.details[0]?.displayLabel, preview.details[1]?.displayLabel);
   assert.notEqual(preview.details[0]?.maskedSourceIdentity, preview.details[1]?.maskedSourceIdentity);
 });
-test("loader performs only five SELECT query chains and calls no mutation method", async () => {
+
+test("sidecar identity changes a reserved source from ready to add to already present", () => {
+  const link = { id: "link_projected", customer_name: "Pamela Blevins", ticket_count: 2, source_ticket_id: null, selection_mode: "customer", is_complimentary: false, source_note: null, seat_category: "paid_reserved" };
+  const before = buildAdmissionsSyncPreview(baseData({ reservedLinks: [link] }), generatedAt);
+  const after = buildAdmissionsSyncPreview(baseData({
+    reservedLinks: [link],
+    projectionSources: [{ source_type: "reserved_link", source_id: link.id, projected_ticket_id: "ticket_projection" }],
+  }), generatedAt);
+
+  assert.equal(before.details[0]?.status, "would_add");
+  assert.equal(after.details[0]?.status, "already_present");
+  assert.equal(after.details[0]?.displayLabel, "Pamela Blevins");
+});
+test("loader performs only six SELECT query chains and calls no mutation method", async () => {
   const calls: string[] = [];
   const rows: Record<string, unknown[]> = {
     shows: [{ id: "show_1" }],
@@ -171,6 +204,7 @@ test("loader performs only five SELECT query chains and calls no mutation method
     show_reserved_seating_links: [],
     show_reserved_seat_assignments: [],
     show_sponsors: [],
+    show_admission_projection_sources: [],
   };
 
   function query(table: string) {
@@ -201,7 +235,7 @@ test("loader performs only five SELECT query chains and calls no mutation method
 
   const preview = await loadAdmissionsSyncPreview(client, "show_1", "show-slug", generatedAt);
   assert.equal(preview.counts.wouldAdd, 0);
-  assert.equal(calls.filter((call) => call.endsWith(".select")).length, 5);
+  assert.equal(calls.filter((call) => call.endsWith(".select")).length, 6);
   assert.deepEqual(
     calls.filter((call) => call.startsWith("from:")),
     [
@@ -210,6 +244,7 @@ test("loader performs only five SELECT query chains and calls no mutation method
       "from:show_reserved_seating_links",
       "from:show_reserved_seat_assignments",
       "from:show_sponsors",
+      "from:show_admission_projection_sources",
     ],
   );
 });

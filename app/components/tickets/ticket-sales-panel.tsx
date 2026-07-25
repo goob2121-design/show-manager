@@ -8,6 +8,7 @@ export type TicketSalesPanelProps = {
   isManualTicketFormOpen: boolean;
   onToggleTicketImport: () => void;
   onToggleManualTicketForm: () => void;
+  onCheckInListPrepared?: () => void | Promise<void>;
 };
 
 export function TicketSalesPanel({
@@ -17,6 +18,7 @@ export function TicketSalesPanel({
   isManualTicketFormOpen,
   onToggleTicketImport,
   onToggleManualTicketForm,
+  onCheckInListPrepared,
 }: TicketSalesPanelProps) {
   return (
     <div className="grid gap-4">
@@ -46,7 +48,7 @@ export function TicketSalesPanel({
           Open Door Mode / Door Check-In
         </Link>
       </div>
-      <AdmissionsSyncPreviewPanel showId={showId} showSlug={showSlug} />
+      <AdmissionsSyncPreviewPanel showId={showId} showSlug={showSlug} onPrepared={onCheckInListPrepared} />
     </div>
   );
 }

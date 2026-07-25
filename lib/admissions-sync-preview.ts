@@ -20,12 +20,14 @@ export type AdmissionsPreviewClassification =
   | "ambiguous_source_ownership";
 
 export type AdmissionsPreviewStatus = "would_add" | "already_present" | "skipped" | "error";
+export type AdmissionsPreviewDestinationGroup = "prepaid_online" | "special_admissions" | "sponsor_native" | "door_sale_native" | "needs_review";
 
 export type AdmissionsPreviewDetail = {
   sourceType: AdmissionsPreviewSourceType;
   maskedSourceIdentity: string;
   displayLabel: string;
   quantity: number | null;
+  destinationGroup: AdmissionsPreviewDestinationGroup;
   classification: AdmissionsPreviewClassification;
   status: AdmissionsPreviewStatus;
   reason: string;
@@ -48,6 +50,7 @@ type PreviewTicket = {
   guest_name: string | null;
   ticket_count: number | string | null;
   ticket_type: string | null;
+  notes: string | null;
   external_source: string | null;
 };
 
@@ -70,6 +73,12 @@ type PreviewReservedAssignment = {
   notes: string | null;
 };
 
+type PreviewProjectionSource = {
+  source_type: "reserved_link" | "reserved_assignment";
+  source_id: string;
+  projected_ticket_id: string;
+};
+
 type PreviewSponsor = {
   id: string;
   comp_ticket_allowance: number | string | null;
@@ -82,6 +91,7 @@ export type AdmissionsPreviewData = {
   reservedLinks: PreviewReservedLink[];
   reservedAssignments: PreviewReservedAssignment[];
   sponsors: PreviewSponsor[];
+  projectionSources?: PreviewProjectionSource[];
 };
 
 function normalized(value: string | null | undefined) {
@@ -101,6 +111,33 @@ function quantity(value: number | string | null | undefined) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
 }
 
+function destinationForClassification(classification: AdmissionsPreviewClassification): AdmissionsPreviewDestinationGroup {
+  if (classification === "paid_reserved_link_missing_projection") return "prepaid_online";
+  if (classification === "sponsor_admission_native_check_in") return "sponsor_native";
+  if (
+    classification === "complimentary_reserved_link_missing_projection"
+    || classification === "guest_comp"
+    || classification === "band_comp"
+    || classification === "media_comp"
+    || classification === "volunteer_comp"
+    || classification === "staff_comp"
+    || classification === "other_comp"
+  ) return "special_admissions";
+  return "needs_review";
+}
+
+function ticketDestination(ticket: PreviewTicket): AdmissionsPreviewDestinationGroup {
+  const ticketType = normalized(ticket.ticket_type);
+  if (ticketType === "paid_online") return "prepaid_online";
+  if (ticketType === "door_paid") return "door_sale_native";
+  if (ticketType === "complimentary") return "special_admissions";
+  const noteText = normalized(ticket.notes);
+  if (ticketType === "manual") {
+    if (/\b(paid|prepaid|purchased|general admission|paid reserved)\b/.test(noteText)) return "prepaid_online";
+    if (/\b(comp|complimentary|guest|band|media|press|volunteer|staff)\b/.test(noteText)) return "special_admissions";
+  }
+  return "needs_review";
+}
 function categoryLabel(classification: AdmissionsPreviewClassification) {
   if (classification === "band_comp") return "Band Comp";
   if (classification === "guest_comp") return "Guest Comp";
@@ -132,6 +169,7 @@ function detail(
   sourceId: string,
   displayLabel: string,
   quantity: number | null,
+  destinationGroup: AdmissionsPreviewDestinationGroup,
   classification: AdmissionsPreviewClassification,
   status: AdmissionsPreviewStatus,
   reason: string,
@@ -141,6 +179,7 @@ function detail(
     maskedSourceIdentity: maskIdentifier(`${sourceType}:${sourceId}`),
     displayLabel,
     quantity,
+    destinationGroup,
     classification,
     status,
     reason,
@@ -196,6 +235,9 @@ export function buildAdmissionsSyncPreview(
   const ticketById = new Map(data.tickets.map((ticket) => [ticket.id, ticket]));
   const ticketIds = new Set(ticketById.keys());
   const linkIds = new Set(data.reservedLinks.map((link) => link.id));
+  const projectedSourceKeys = new Set(
+    (data.projectionSources ?? []).map((source) => `${source.source_type}:${source.source_id}`),
+  );
 
   for (const ticket of data.tickets) {
     details.push(detail(
@@ -203,6 +245,7 @@ export function buildAdmissionsSyncPreview(
       ticket.id,
       usefulHumanLabel(ticket.guest_name) ?? "Unnamed Ticket Entry",
       quantity(ticket.ticket_count),
+      ticketDestination(ticket),
       "already_present_in_check_in",
       "already_present",
       ticket.external_source === "square"
@@ -219,6 +262,14 @@ export function buildAdmissionsSyncPreview(
       ?? usefulHumanLabel(link.source_note)
       ?? "Unnamed Reserved Admission";
     const linkDisplayLabel = decorateAdmissionLabel(linkBaseLabel, linkAdmissionClassification);
+    if (projectedSourceKeys.has(`reserved_link:${link.id}`)) {
+      details.push(detail(
+        "reserved_link", link.id, linkDisplayLabel, quantity(link.ticket_count),
+        destinationForClassification(linkAdmissionClassification), "already_present_in_check_in",
+        "already_present", "A check-in projection already exists for this reserved link.",
+      ));
+      continue;
+    }
     if (link.source_ticket_id) {
       if (ticketIds.has(link.source_ticket_id)) {
         details.push(detail(
@@ -226,6 +277,7 @@ export function buildAdmissionsSyncPreview(
           link.id,
           linkDisplayLabel,
           quantity(link.ticket_count),
+          linkedTicket ? ticketDestination(linkedTicket) : destinationForClassification(linkAdmissionClassification),
           "already_present_in_check_in",
           "already_present",
           "Existing source ticket already points to a check-in row; no projection is needed.",
@@ -236,6 +288,7 @@ export function buildAdmissionsSyncPreview(
           link.id,
           linkDisplayLabel,
           quantity(link.ticket_count),
+          "needs_review",
           "ambiguous_source_ownership",
           "skipped",
           "Source ownership references a ticket that is not available for this show.",
@@ -249,6 +302,7 @@ export function buildAdmissionsSyncPreview(
       link.id,
       linkDisplayLabel,
       quantity(link.ticket_count),
+      destinationForClassification(linkAdmissionClassification),
       linkAdmissionClassification,
       "would_add",
       "Reserved admission has no source ticket and would receive a check-in projection.",
@@ -264,6 +318,7 @@ export function buildAdmissionsSyncPreview(
           assignment.id,
           usefulHumanLabel(assignment.notes) ?? "Unnamed Reserved Assignment",
           1,
+          "needs_review",
           "ambiguous_source_ownership",
           "skipped",
           "Assignment references a reserved link that is not available for this show.",
@@ -273,6 +328,28 @@ export function buildAdmissionsSyncPreview(
     }
 
     const assignmentClassification = classifyUnlinkedAssignment(assignment);
+    const assignmentCategory = normalized(assignment.seat_category);
+    const assignmentNoteLabel = usefulHumanLabel(assignment.notes);
+    if (!projectedSourceKeys.has(`reserved_assignment:${assignment.id}`) && (
+      !["paid_reserved", "comp", "guest"].includes(assignmentCategory)
+      || ((assignmentCategory === "comp" || assignmentCategory === "guest") && !assignmentNoteLabel)
+    )) {
+      details.push(detail(
+        "reserved_assignment", assignment.id, assignmentNoteLabel ?? "Unnamed Reserved Assignment", 1,
+        "needs_review", "ambiguous_source_ownership", "skipped",
+        "Unlinked assignment cannot be classified safely without a useful admission label.",
+      ));
+      continue;
+    }
+    if (projectedSourceKeys.has(`reserved_assignment:${assignment.id}`)) {
+      details.push(detail(
+        "reserved_assignment", assignment.id,
+        usefulHumanLabel(assignment.notes) ?? "Unnamed Reserved Assignment", 1,
+        destinationForClassification(assignmentClassification), "already_present_in_check_in",
+        "already_present", "A check-in projection already exists for this reserved assignment.",
+      ));
+      continue;
+    }
     const assignmentLabel = decorateAdmissionLabel(
       usefulHumanLabel(assignment.notes) ?? "Unnamed Reserved Assignment",
       assignmentClassification,
@@ -282,6 +359,7 @@ export function buildAdmissionsSyncPreview(
       assignment.id,
       assignmentLabel,
       1,
+      destinationForClassification(assignmentClassification),
       assignmentClassification,
       "would_add",
       "Customer assignment has no reserved link and would receive its own check-in projection.",
@@ -295,9 +373,10 @@ export function buildAdmissionsSyncPreview(
       sponsor.id,
       sponsorName(sponsor),
       quantity(sponsor.comp_ticket_allowance),
+      "sponsor_native",
       "sponsor_admission_native_check_in",
       "already_present",
-      "Sponsor allowance is already handled by the native sponsor check-in counter.",
+      "Already available via Sponsor Check-In.",
     ));
   }
 
@@ -329,10 +408,10 @@ export async function loadAdmissionsSyncPreview(
   if (showError) throw showError;
   if (!show) throw new Error("Show not found.");
 
-  const [ticketsResult, linksResult, assignmentsResult, sponsorsResult] = await Promise.all([
+  const [ticketsResult, linksResult, assignmentsResult, sponsorsResult, projectionSourcesResult] = await Promise.all([
     supabase
       .from("show_comp_tickets")
-      .select("id, guest_name, ticket_count, ticket_type, external_source")
+      .select("id, guest_name, ticket_count, ticket_type, notes, external_source")
       .eq("show_id", showId)
       .order("created_at", { ascending: true }),
     supabase
@@ -350,12 +429,18 @@ export async function loadAdmissionsSyncPreview(
       .select("id, comp_ticket_allowance, sponsor:sponsor_library(name)")
       .eq("show_id", showId)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("show_admission_projection_sources")
+      .select("source_type, source_id, projected_ticket_id")
+      .eq("show_id", showId)
+      .order("created_at", { ascending: true }),
   ]);
 
   if (ticketsResult.error) throw ticketsResult.error;
   if (linksResult.error) throw linksResult.error;
   if (assignmentsResult.error) throw assignmentsResult.error;
   if (sponsorsResult.error) throw sponsorsResult.error;
+  if (projectionSourcesResult.error) throw projectionSourcesResult.error;
 
   return buildAdmissionsSyncPreview({
     showId,
@@ -363,5 +448,6 @@ export async function loadAdmissionsSyncPreview(
     reservedLinks: (linksResult.data ?? []) as PreviewReservedLink[],
     reservedAssignments: (assignmentsResult.data ?? []) as PreviewReservedAssignment[],
     sponsors: (sponsorsResult.data ?? []) as PreviewSponsor[],
+    projectionSources: (projectionSourcesResult.data ?? []) as PreviewProjectionSource[],
   }, generatedAt);
 }

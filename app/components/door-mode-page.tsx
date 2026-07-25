@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ShowCompTicket, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
+import { checkInAdmissionLabel, checkInTicketDestination } from "@/lib/check-in-ticket-classification";
 
 const PAID_ONLINE_TICKET_PRICE = 8;
 const DOOR_TICKET_PRICE = 10;
@@ -98,19 +99,6 @@ function formatShowDate(value: string | null) {
     day: "numeric",
     year: "numeric",
   }).format(parsedDate);
-}
-
-function formatTicketTypeLabel(value: string | null | undefined) {
-  switch (normalizeGuestListTicketType(value)) {
-    case "paid_online":
-      return "Prepaid / Online";
-    case "door_paid":
-      return "Paid Door";
-    case "manual":
-      return "Manual / Other";
-    default:
-      return "Complimentary";
-  }
 }
 
 function renderTextWithLinks(text: string | null | undefined) {
@@ -393,7 +381,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const prepaidTickets = useMemo(
     () =>
       compTickets
-        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "paid_online")
+        .filter((item) => checkInTicketDestination(item.ticket_type, item.notes) === "prepaid_online")
         .sort((left, right) => {
           const leftComplete = left.checked_in_count >= left.ticket_count;
           const rightComplete = right.checked_in_count >= right.ticket_count;
@@ -412,10 +400,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   );
   const compAndOtherTickets = useMemo(
     () =>
-      compTickets.filter((item) => {
-        const type = normalizeGuestListTicketType(item.ticket_type);
-        return type === "complimentary" || type === "manual";
-      }),
+      compTickets.filter((item) => checkInTicketDestination(item.ticket_type, item.notes) === "special_admissions"),
     [compTickets],
   );
 
@@ -1118,16 +1103,16 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
             <div className="rounded-[28px] border border-stone-800 bg-stone-900/90 p-5 sm:p-6">
               <div className="flex flex-col gap-1">
-                <h2 className="text-xl font-semibold text-white">Comp / Other Check-In</h2>
+                <h2 className="text-xl font-semibold text-white">Special Admissions</h2>
                 <p className="text-sm text-stone-300">
-                  Complimentary and manual entries stay available here for night-of-show check-in.
+                  Named, non-sponsor guest, band, media, volunteer, staff, and other admissions.
                 </p>
               </div>
 
               <div className="mt-5 grid gap-4">
                 {compAndOtherTickets.length === 0 ? (
                   <p className="rounded-2xl border border-dashed border-stone-700 bg-stone-950/50 px-4 py-5 text-sm text-stone-400">
-                    No comp or manual entries for this show yet.
+                    No special admissions for this show yet.
                   </p>
                 ) : (
                   compAndOtherTickets.map((item) => (
@@ -1137,7 +1122,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-lg font-semibold text-white">{item.guest_name}</h3>
                             <span className="rounded-full border border-stone-700 bg-stone-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-stone-300">
-                              {formatTicketTypeLabel(item.ticket_type)}
+                              {checkInAdmissionLabel(item.ticket_type, item.notes)}
                             </span>
                             <span className="rounded-full border border-amber-700 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">
                               {item.checked_in_count} / {item.ticket_count} Checked In

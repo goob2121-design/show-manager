@@ -38,6 +38,7 @@ import {
 import { TicketPrintingPanel } from "@/app/components/tickets/ticket-printing-panel";
 import { TicketsCheckInPanel } from "@/app/components/tickets/tickets-check-in-panel";
 import { getGreetingName } from "@/lib/getGreetingName";
+import { checkInAdmissionLabel } from "@/lib/check-in-ticket-classification";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "@/app/available-seats/path";
 import {
@@ -1866,19 +1867,6 @@ function normalizeGuestListTicketType(value: string | null | undefined): GuestLi
   return value === "paid_online" || value === "door_paid" || value === "manual" || value === "complimentary"
     ? value
     : "complimentary";
-}
-
-function formatGuestListTicketTypeLabel(value: string | null | undefined) {
-  switch (value) {
-    case "paid_online":
-      return "Paid Online";
-    case "door_paid":
-      return "Paid Door";
-    case "manual":
-      return "Manual / Other";
-    default:
-      return "Complimentary";
-  }
 }
 
 function normalizeShowCompTicket(
@@ -20615,6 +20603,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               isManualTicketFormOpen,
               onToggleTicketImport: () => setIsTicketImportOpen((currentValue) => !currentValue),
               onToggleManualTicketForm: () => setIsManualTicketFormOpen((currentValue) => !currentValue),
+              onCheckInListPrepared: () => loadShowData(false),
             }}
             reservedSeatingPanelProps={{
               showSlug,
@@ -21384,7 +21373,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                     Qty: {item.ticket_count}
                                   </span>
                                   <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-800">
-                                    {formatGuestListTicketTypeLabel(item.ticket_type)}
+                                    {checkInAdmissionLabel(item.ticket_type, item.notes)}
                                   </span>
                                   {normalizeGuestListTicketType(item.ticket_type) !== "paid_online" && normalizeGuestListTicketType(item.ticket_type) !== "door_paid" ? (
                                     <select
