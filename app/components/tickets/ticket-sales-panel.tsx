@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { AdmissionsSyncPreviewPanel } from "@/app/components/tickets/admissions-sync-preview-panel";
 
 export type TicketSalesPanelProps = {
+  showId: string;
   showSlug: string;
   isTicketImportOpen: boolean;
   isManualTicketFormOpen: boolean;
@@ -9,6 +11,7 @@ export type TicketSalesPanelProps = {
 };
 
 export function TicketSalesPanel({
+  showId,
   showSlug,
   isTicketImportOpen,
   isManualTicketFormOpen,
@@ -43,6 +46,7 @@ export function TicketSalesPanel({
           Open Door Mode / Door Check-In
         </Link>
       </div>
+      <AdmissionsSyncPreviewPanel showId={showId} showSlug={showSlug} />
     </div>
   );
 }

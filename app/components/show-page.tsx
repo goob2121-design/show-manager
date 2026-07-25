@@ -20609,6 +20609,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             isTotalsOpen={isTicketTotalsOpen}
             onToggleTotals={() => setIsTicketTotalsOpen((currentValue) => !currentValue)}
             ticketSalesPanelProps={{
+              showId: show.id,
               showSlug,
               isTicketImportOpen,
               isManualTicketFormOpen,
