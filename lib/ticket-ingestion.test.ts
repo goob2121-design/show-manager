@@ -127,3 +127,142 @@ test("an unclaimed legacy link may be claimed by exact name and email", () => {
   assert.equal(match?.link.id, legacyLink.id);
   assert.equal(match?.action, "claimed_legacy");
 });
+
+test("concurrent sync calls resolve to one canonical reserved link", async () => {
+  const links: Array<Record<string, unknown>> = [];
+  const insertedTokens: string[] = [];
+  let initialReaders = 0;
+  let releaseInitialReaders: (() => void) | null = null;
+  const initialReadBarrier = new Promise<void>((resolve) => {
+    releaseInitialReaders = resolve;
+  });
+
+  const client = {
+    from(table: string) {
+      if (table === "show_reserved_seat_assignments") {
+        return {
+          select() {
+            return { eq() { return { not: async () => ({ data: [], error: null }) }; } };
+          },
+        };
+      }
+
+      if (table !== "show_reserved_seating_links") throw new Error(`Unexpected table: ${table}`);
+      return {
+        select(columns: string) {
+          if (columns === "*") {
+            return {
+              async eq() {
+                const snapshot = [...links];
+                initialReaders += 1;
+                if (initialReaders === 2) releaseInitialReaders?.();
+                await initialReadBarrier;
+                return { data: snapshot, error: null };
+              },
+            };
+          }
+          return {
+            eq(column: string, value: string) {
+              assert.equal(column, "show_id");
+              assert.equal(value, "show_1");
+              return {
+                eq(secondColumn: string, ticketId: string) {
+                  assert.equal(secondColumn, "source_ticket_id");
+                  return {
+                    async maybeSingle() {
+                      const match = links.find((item) => item.show_id === value && item.source_ticket_id === ticketId) ?? null;
+                      return { data: match ? { id: match.id } : null, error: null };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+        insert(rows: Array<Record<string, unknown>>) {
+          return {
+            async select() {
+              const row = rows[0];
+              const existing = links.find((item) => item.show_id === row.show_id && item.source_ticket_id === row.source_ticket_id);
+              if (existing) {
+                return {
+                  data: null,
+                  error: {
+                    code: "23505",
+                    message: 'duplicate key value violates unique constraint "show_reserved_seating_links_show_id_source_ticket_id_unique"',
+                    details: null,
+                    hint: null,
+                  },
+                };
+              }
+              const canonical = { ...row, id: "canonical_link" };
+              links.push(canonical);
+              insertedTokens.push("one-database-generated-token");
+              return { data: [{ id: canonical.id }], error: null };
+            },
+          };
+        },
+        update() {
+          throw new Error("Unexpected update");
+        },
+      };
+    },
+  } as unknown as SupabaseClient;
+
+  const importedTicket = ticket("ticket_1", "order_1", "import_1");
+  const [first, second] = await Promise.all([
+    syncReservedSeatingLinksForImportedOrders(client, "show_1", [importedTicket]),
+    syncReservedSeatingLinksForImportedOrders(client, "show_1", [importedTicket]),
+  ]);
+
+  assert.equal(links.length, 1);
+  assert.equal(insertedTokens.length, 1);
+  assert.deepEqual(first.linkIds, ["canonical_link"]);
+  assert.deepEqual(second.linkIds, ["canonical_link"]);
+  assert.deepEqual(new Set([...first.actions, ...second.actions]), new Set(["created", "existing_current_ticket"]));
+});
+
+test("unexpected reserved-link insert errors are not swallowed", async () => {
+  const unexpectedError = { code: "42501", message: "permission denied", details: null, hint: null };
+  const client = {
+    from(table: string) {
+      if (table === "show_reserved_seat_assignments") {
+        return { select() { return { eq() { return { not: async () => ({ data: [], error: null }) }; } }; } };
+      }
+      return {
+        select() { return { eq: async () => ({ data: [], error: null }) }; },
+        insert() { return { select: async () => ({ data: null, error: unexpectedError }) }; },
+      };
+    },
+  } as unknown as SupabaseClient;
+
+  await assert.rejects(
+    syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]),
+    (error: unknown) => error === unexpectedError,
+  );
+});
+
+test("a same-code conflict from any other unique constraint is not swallowed", async () => {
+  const unrelatedConflict = {
+    code: "23505",
+    message: 'duplicate key value violates unique constraint "some_other_unique_index"',
+    details: null,
+    hint: null,
+  };
+  const client = {
+    from(table: string) {
+      if (table === "show_reserved_seat_assignments") {
+        return { select() { return { eq() { return { not: async () => ({ data: [], error: null }) }; } }; } };
+      }
+      return {
+        select() { return { eq: async () => ({ data: [], error: null }) }; },
+        insert() { return { select: async () => ({ data: null, error: unrelatedConflict }) }; },
+      };
+    },
+  } as unknown as SupabaseClient;
+
+  await assert.rejects(
+    syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]),
+    (error: unknown) => error === unrelatedConflict,
+  );
+});

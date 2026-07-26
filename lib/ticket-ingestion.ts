@@ -128,7 +128,10 @@ export async function syncReservedSeatingLinksForImportedOrders(
       .filter((value): value is string => Boolean(value)),
   );
 
-  const createdRows: Array<Record<string, string | number | null>> = [];
+  const createdRows: Array<{
+    values: Record<string, string | number | null>;
+    actionIndex: number;
+  }> = [];
   const updatedRows: Array<{ id: string; updates: Record<string, string | number | null> }> = [];
   const warnings: string[] = [];
   const linkIds: string[] = [];
@@ -154,15 +157,18 @@ export async function syncReservedSeatingLinksForImportedOrders(
 
     if (!matchedLink) {
       createdRows.push({
-        show_id: showId,
-        customer_name: ticket.guest_name,
-        email: normalizeOptionalField(ticket.email),
-        ticket_count: ticket.ticket_count,
-        selection_mode: "imported",
-        seat_category: "paid_reserved",
-        source_ticket_id: ticket.id,
-        source_order_id: sourceOrderId,
-        source_import_key: sourceImportKey,
+        values: {
+          show_id: showId,
+          customer_name: ticket.guest_name,
+          email: normalizeOptionalField(ticket.email),
+          ticket_count: ticket.ticket_count,
+          selection_mode: "imported",
+          seat_category: "paid_reserved",
+          source_ticket_id: ticket.id,
+          source_order_id: sourceOrderId,
+          source_import_key: sourceImportKey,
+        },
+        actionIndex: actions.length,
       });
       createdCount += 1;
       actions.push("created");
@@ -185,10 +191,35 @@ export async function syncReservedSeatingLinksForImportedOrders(
     if (typeof updates.ticket_count === "number") matchedLink.ticket_count = updates.ticket_count;
   }
 
-  if (createdRows.length > 0) {
-    const { data, error } = await supabase.from("show_reserved_seating_links").insert(createdRows).select("id");
-    if (error) throw error;
-    linkIds.push(...((data ?? []) as Array<{ id: string }>).map((row) => row.id));
+  for (const row of createdRows) {
+    const { data, error } = await supabase
+      .from("show_reserved_seating_links")
+      .insert([row.values])
+      .select("id");
+
+    if (!error) {
+      linkIds.push(...((data ?? []) as Array<{ id: string }>).map((item) => item.id));
+      continue;
+    }
+
+    const diagnostic = [error.message, error.details, error.hint].filter(Boolean).join(" ");
+    const isExpectedOwnershipRace = error.code === "23505"
+      && diagnostic.includes("show_reserved_seating_links_show_id_source_ticket_id_unique");
+    const sourceTicketId = normalizeOptionalField(row.values.source_ticket_id as string | null);
+    if (!isExpectedOwnershipRace || !sourceTicketId) throw error;
+
+    const { data: canonicalLink, error: canonicalLinkError } = await supabase
+      .from("show_reserved_seating_links")
+      .select("id")
+      .eq("show_id", showId)
+      .eq("source_ticket_id", sourceTicketId)
+      .maybeSingle();
+    if (canonicalLinkError) throw canonicalLinkError;
+    if (!canonicalLink) throw error;
+
+    createdCount -= 1;
+    actions[row.actionIndex] = "existing_current_ticket";
+    linkIds.push((canonicalLink as { id: string }).id);
   }
 
   for (const row of updatedRows) {
