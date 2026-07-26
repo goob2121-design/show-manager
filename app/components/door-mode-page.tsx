@@ -15,6 +15,7 @@ import {
   isAdmissionFullyCheckedIn,
   normalizedDoorSearch,
   normalizeDoorReservedSeatIds,
+  visibleDoorModeNote,
   type RecentGuestCheckIn,
 } from "@/lib/door-mode-presentation";
 import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
@@ -150,6 +151,17 @@ function renderTextWithLinks(text: string | null | undefined) {
 
     return <Fragment key={`${part}-${index}`}>{part}</Fragment>;
   });
+}
+
+function renderDoorModeNoteDetails(notes: string | null | undefined) {
+  const visibleNote = visibleDoorModeNote(notes);
+  if (!visibleNote) return null;
+  return (
+    <details className="text-xs text-gray-500">
+      <summary className="cursor-pointer font-medium text-gray-400">Details</summary>
+      <p className="mt-1 whitespace-pre-wrap leading-5">{renderTextWithLinks(visibleNote)}</p>
+    </details>
+  );
 }
 
 function sortCompTickets(items: ShowCompTicket[]) {
@@ -1152,12 +1164,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           ) : null}
                         </div>
                         {renderSeatLocationControl(item)}
-                        {item.notes?.trim() ? (
-                          <details className="text-xs text-gray-500">
-                            <summary className="cursor-pointer font-medium text-gray-400">Details</summary>
-                            <p className="mt-1 whitespace-pre-wrap leading-5">{renderTextWithLinks(item.notes)}</p>
-                          </details>
-                        ) : null}
+                        {renderDoorModeNoteDetails(item.notes)}
                       </div>
 
                       <div className="grid gap-2 sm:grid-cols-3">
@@ -1271,12 +1278,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           </div>
                           {item.email ? <p className="text-sm text-gray-300">{item.email}</p> : null}
                           {renderSeatLocationControl(item)}
-                          {item.notes?.trim() ? (
-                            <details className="text-xs text-gray-500">
-                              <summary className="cursor-pointer font-medium text-gray-400">Details</summary>
-                              <p className="mt-1 whitespace-pre-wrap leading-5">{renderTextWithLinks(item.notes)}</p>
-                            </details>
-                          ) : null}
+                          {renderDoorModeNoteDetails(item.notes)}
                         </div>
 
                         <div className="grid gap-3 sm:grid-cols-2">

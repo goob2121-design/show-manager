@@ -17,6 +17,14 @@ export type DoorAttendanceAdmission = {
   ticket_count: number;
 };
 
+export const LEGACY_SQUARE_SANDBOX_NOTE =
+  "Imported from Square Sandbox webhook. Purchaser email not sent in Phase 1.";
+
+export function visibleDoorModeNote(notes: string | null | undefined) {
+  if (!notes?.trim() || notes === LEGACY_SQUARE_SANDBOX_NOTE) return null;
+  return notes;
+}
+
 export function normalizedDoorSearch(value: string) {
   return value.trim().toLowerCase();
 }

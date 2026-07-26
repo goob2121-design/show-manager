@@ -10,6 +10,7 @@ import {
   isAdmissionFullyCheckedIn,
   normalizeDoorReservedSeatIds,
   parseDoorReservedSeatIds,
+  visibleDoorModeNote,
 // @ts-expect-error Node's type-stripping test runner requires the TypeScript extension.
 } from "./door-mode-presentation.ts";
 
@@ -219,4 +220,27 @@ test("Paid Door remains a compact responsive strip with its existing controls an
   assert.match(compactSection, /min-h-11/);
   assert.doesNotMatch(compactSection, /overflow-x/);
   assert.match(source.slice(Math.max(0, compactStripIndex - 80), compactStripIndex), /flex flex-col gap-3/);
+});
+
+test("Door Mode suppresses only the exact misleading legacy Square note", () => {
+  const legacyNote = "Imported from Square Sandbox webhook. Purchaser email not sent in Phase 1.";
+  assert.equal(visibleDoorModeNote(legacyNote), null);
+  assert.equal(visibleDoorModeNote("Please seat near the aisle."), "Please seat near the aisle.");
+  assert.equal(
+    visibleDoorModeNote("Imported from Square Sandbox webhook. Purchaser email not sent in Phase 1. Follow up."),
+    "Imported from Square Sandbox webhook. Purchaser email not sent in Phase 1. Follow up.",
+  );
+  assert.equal(
+    visibleDoorModeNote("[Admission Type: reserved] Prepared from paid reserved seating admission."),
+    "[Admission Type: reserved] Prepared from paid reserved seating admission.",
+  );
+});
+
+test("Door Mode applies visible-note filtering only at Details rendering", async () => {
+  const source = await readFile(doorModePath, "utf8");
+  assert.equal((source.match(/renderDoorModeNoteDetails\(item\.notes\)/g) ?? []).length, 2);
+  assert.match(source, /checkInAdmissionLabel\(item\.ticket_type, item\.notes\)/);
+  assert.match(source, /admissionMatchesDoorSearch/);
+  assert.match(source, /handleAdjustTicketCheckIn/);
+  assert.doesNotMatch(source, /\.from\("show_comp_tickets"\)\s*\.update\(\{\s*notes:/);
 });
