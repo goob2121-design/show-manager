@@ -36,7 +36,7 @@ type TicketsCheckInPanelProps = {
 };
 
 const ticketWorkflowSections: Array<{ key: TicketWorkflowSection; title: string; subtitle: string }> = [
-  { key: "ticket-sales", title: "Ticket Sales & Check-In", subtitle: "Import orders, add tickets, and open door mode" },
+  { key: "ticket-sales", title: "Ticket Sales & Check-In", subtitle: "Manage ticket entries, prepare check-in, and open Door Mode" },
   { key: "reserved-seating", title: "Reserved Seating", subtitle: "Manage seat assignments and seat cards" },
   { key: "sponsor-comp", title: "Sponsor & Comp Tickets", subtitle: "Manage sponsor comps and guest tickets" },
   { key: "reports", title: "Reports & Printouts", subtitle: "Print lists and backup sheets" },

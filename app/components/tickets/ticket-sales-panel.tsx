@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { AdmissionsSyncPreviewPanel } from "@/app/components/tickets/admissions-sync-preview-panel";
+import type { PrepareCheckInListResult } from "@/lib/prepare-check-in-list";
+
+// Emergency fallback importer remains implemented but is hidden from the normal automatic-Square workflow.
+export const SHOW_LEGACY_PAID_ORDER_IMPORT = false;
 
 export type TicketSalesPanelProps = {
   showId: string;
@@ -8,7 +12,7 @@ export type TicketSalesPanelProps = {
   isManualTicketFormOpen: boolean;
   onToggleTicketImport: () => void;
   onToggleManualTicketForm: () => void;
-  onCheckInListPrepared?: () => void | Promise<void>;
+  onCheckInListPrepared?: (result: PrepareCheckInListResult) => void | Promise<void>;
 };
 
 export function TicketSalesPanel({
@@ -24,16 +28,18 @@ export function TicketSalesPanel({
     <div className="grid gap-4">
       <div>
         <h3 className="text-base font-semibold text-stone-900">Ticket Sales &amp; Check-In</h3>
-        <p className="text-sm text-stone-600">Import paid online orders, add manual tickets, or jump straight into door mode.</p>
+        <p className="text-sm text-stone-600">Manage ticket entries, prepare check-in, and open Door Mode.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <button
-          type="button"
-          onClick={onToggleTicketImport}
-          className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-        >
-          {isTicketImportOpen ? "Hide Import Paid Online Orders" : "Import Paid Online Orders"}
-        </button>
+        {SHOW_LEGACY_PAID_ORDER_IMPORT ? (
+          <button
+            type="button"
+            onClick={onToggleTicketImport}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+          >
+            {isTicketImportOpen ? "Hide Import Paid Online Orders" : "Import Paid Online Orders"}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onToggleManualTicketForm}

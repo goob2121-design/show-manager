@@ -36,6 +36,8 @@ import {
   type CompTicketPrintScope,
 } from "@/app/components/tickets/ticket-print-builders";
 import { TicketPrintingPanel } from "@/app/components/tickets/ticket-printing-panel";
+import { SHOW_LEGACY_PAID_ORDER_IMPORT } from "@/app/components/tickets/ticket-sales-panel";
+import { GuestListTicketEntries } from "@/app/components/tickets/guest-list-ticket-entries";
 import { TicketsCheckInPanel } from "@/app/components/tickets/tickets-check-in-panel";
 import { getGreetingName } from "@/lib/getGreetingName";
 import { checkInAdmissionLabel } from "@/lib/check-in-ticket-classification";
@@ -6296,6 +6298,7 @@ export function ShowPage({
   const [checklistDueDateDrafts, setChecklistDueDateDrafts] = useState<Record<string, string>>({});
   const [activeChecklistActionId, setActiveChecklistActionId] = useState<string | null>(null);
   const [compTickets, setCompTickets] = useState<ShowCompTicket[]>([]);
+  const [guestListExpandToken, setGuestListExpandToken] = useState(0);
   const [compTicketFormState, setCompTicketFormState] = useState<CompTicketFormState>(initialCompTicketFormState);
   const [editingCompTicketId, setEditingCompTicketId] = useState<string | null>(null);
   const [editingCompTicketFormState, setEditingCompTicketFormState] =
@@ -20603,7 +20606,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               isManualTicketFormOpen,
               onToggleTicketImport: () => setIsTicketImportOpen((currentValue) => !currentValue),
               onToggleManualTicketForm: () => setIsManualTicketFormOpen((currentValue) => !currentValue),
-              onCheckInListPrepared: () => loadShowData(false),
+              onCheckInListPrepared: async (result) => {
+                if (result.added > 0) setGuestListExpandToken((current) => current + 1);
+                await loadShowData(false);
+              },
             }}
             reservedSeatingPanelProps={{
               showSlug,
@@ -20906,7 +20912,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             </div>
             ) : null}
 
-            {activeTicketWorkflowSection === "ticket-sales" ? (
+            {activeTicketWorkflowSection === "ticket-sales" && SHOW_LEGACY_PAID_ORDER_IMPORT ? (
             <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -21203,18 +21209,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             </>
             ) : null}
 
-            {activeTicketWorkflowSection === "ticket-sales" ? (compTickets.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                No tickets or check-in entries have been added for this show yet.
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                <div className="flex items-center justify-between rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 sm:px-5">
-                  <div>
-                    <h3 className="text-base font-semibold text-stone-900">Guest List / Ticket Entries</h3>
-                    <p className="text-sm text-stone-600">Manage paid online orders, complimentary tickets, manual entries, and check-ins.</p>
+            {activeTicketWorkflowSection === "ticket-sales" ? (
+              <GuestListTicketEntries
+                showId={show.id}
+                entryCount={compTickets.length}
+                forceExpandToken={guestListExpandToken}
+              >
+                {compTickets.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                    No tickets or check-in entries have been added for this show yet.
                   </div>
-                </div>
+                ) : (
+                  <div className="grid gap-3">
                 <div className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                   <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
                     <input
@@ -21457,8 +21463,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     )}
                   </article>
                 ))}
-              </div>
-            )) : null}
+                    </div>
+                )}
+              </GuestListTicketEntries>
+            ) : null}
           </TicketsCheckInPanel>
         ) : null}
 

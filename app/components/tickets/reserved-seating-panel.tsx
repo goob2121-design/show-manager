@@ -1,5 +1,8 @@
 import Link from "next/link";
 
+// Legacy and duplicate shortcuts remain implemented below as recoverable fallbacks, but are hidden from normal admin use.
+const SHOW_LEGACY_RESERVED_SEATING_SHORTCUTS = false;
+
 export type TicketReservedSeatingPanelProps = {
   showSlug: string;
   isReservedSeatingOpen: boolean;
@@ -45,26 +48,30 @@ export function TicketReservedSeatingPanel({
             >
               {isReservedSeatingOpen ? "Hide Reserved Seating" : "Open Reserved Seating"}
             </button>
-            <button
-              type="button"
-              onClick={onOpenPublicSeatAvailabilityPage}
-              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-            >
-              Public Seat Availability
-            </button>
-            <button
-              type="button"
-              onClick={onCopyPublicSeatAvailabilityLink}
-              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-            >
-              {copiedPublicSeatAvailabilityLink ? "Copied Public Link" : "Copy Public Seat Availability Link"}
-            </button>
-            <Link
-              href={`/admin/${showSlug}/print/reserved-seat-cards`}
-              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-            >
-              Print Reserved Seat Cards
-            </Link>
+            {SHOW_LEGACY_RESERVED_SEATING_SHORTCUTS ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onOpenPublicSeatAvailabilityPage}
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  Public Seat Availability
+                </button>
+                <button
+                  type="button"
+                  onClick={onCopyPublicSeatAvailabilityLink}
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                >
+                  {copiedPublicSeatAvailabilityLink ? "Copied Public Link" : "Copy Public Seat Availability Link"}
+                </button>
+                <Link
+                  href={`/admin/${showSlug}/print/reserved-seat-cards`}
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  Print Reserved Seat Cards
+                </Link>
+              </>
+            ) : null}
             <Link
               href={`/admin/${showSlug}/print/comp-reserved-seat-cards`}
               className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
@@ -96,7 +103,7 @@ export function TicketReservedSeatingPanel({
       </div>
 
       <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-        Online orders are automatically added to Reserved Seating. Print assigned seat cards from Reserved Seating after seats are selected. Use the paid online fallback print option only for orders that still need generic reserved cards.
+        Online orders are automatically added to Reserved Seating. After seats are selected, open Reserved Seating to print assigned seat cards with the purchaser&apos;s actual seat numbers.
       </div>
 
       <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">

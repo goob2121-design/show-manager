@@ -1,5 +1,8 @@
 import Link from "next/link";
 
+// Reserved Seating is the canonical home for backup cards; keep this duplicate entry point recoverable but hidden.
+const SHOW_DUPLICATE_BACKUP_GUEST_LIST_CARDS = false;
+
 export type TicketReportsPanelProps = {
   showSlug: string;
   onPrintCompList: () => void;
@@ -21,12 +24,14 @@ export function TicketReportsPanel({ showSlug, onPrintCompList, onExportCompList
           >
             Print Door Count List
           </Link>
-          <Link
-            href={`/admin/${showSlug}/print/blank-seat-cards`}
-            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-          >
-            Print Back-Up / Guest List Cards
-          </Link>
+          {SHOW_DUPLICATE_BACKUP_GUEST_LIST_CARDS ? (
+            <Link
+              href={`/admin/${showSlug}/print/blank-seat-cards`}
+              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+            >
+              Print Back-Up / Guest List Cards
+            </Link>
+          ) : null}
           <button
             type="button"
             onClick={onPrintCompList}

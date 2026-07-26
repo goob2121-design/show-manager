@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import type { AdmissionsPreviewClassification, AdmissionsPreviewDetail, AdmissionsSyncPreviewResult } from "@/lib/admissions-sync-preview";
@@ -21,7 +21,7 @@ import type { PrepareCheckInListResult } from "@/lib/prepare-check-in-list";
 type AdmissionsSyncPreviewPanelProps = {
   showId: string;
   showSlug: string;
-  onPrepared?: () => void | Promise<void>;
+  onPrepared?: (result: PrepareCheckInListResult) => void | Promise<void>;
 };
 
 function formatClassification(value: AdmissionsPreviewClassification) {
@@ -122,7 +122,7 @@ export function AdmissionsSyncPreviewPanel({ showId, showSlug, onPrepared }: Adm
       if (!response.ok || !payload.success || !payload.result) throw new Error(payload.error || "Unable to prepare the check-in list.");
       setPrepareResult(payload.result);
       setIsConfirmationOpen(false);
-      await onPrepared?.();
+      await onPrepared?.(payload.result);
       await loadPreview();
     } catch (error) {
       setPrepareError(error instanceof Error ? error.message : "Unable to prepare the check-in list.");
