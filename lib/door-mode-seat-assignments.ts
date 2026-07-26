@@ -10,6 +10,11 @@ type ProjectionSourceRow = {
   projected_ticket_id: string;
 };
 
+type DirectReservedLinkRow = {
+  id: string;
+  source_ticket_id: string | null;
+};
+
 type SeatAssignmentRow = {
   seating_link_id: string | null;
   seat_id: string;
@@ -17,56 +22,81 @@ type SeatAssignmentRow = {
 
 export function buildDoorModeSeatAssignments(
   projections: ProjectionSourceRow[],
+  directLinks: DirectReservedLinkRow[],
   assignments: SeatAssignmentRow[],
+  canonicalSeatIds: readonly string[],
 ): DoorModeSeatAssignment[] {
-  const projectedTicketIdByLinkId = new Map(
-    projections.map((projection) => [projection.source_id, projection.projected_ticket_id]),
-  );
-  const seatIdsByProjectedTicketId = new Map<string, Set<string>>();
+  const ticketIdsByLinkId = new Map<string, Set<string>>();
+  const seatIdsByTicketId = new Map<string, Set<string>>();
+  const canonicalPosition = new Map(canonicalSeatIds.map((seatId, index) => [seatId, index]));
+
+  function registerOwnership(linkId: string, ticketId: string) {
+    const ticketIds = ticketIdsByLinkId.get(linkId) ?? new Set<string>();
+    ticketIds.add(ticketId);
+    ticketIdsByLinkId.set(linkId, ticketIds);
+    if (!seatIdsByTicketId.has(ticketId)) seatIdsByTicketId.set(ticketId, new Set());
+  }
 
   for (const projection of projections) {
-    if (!seatIdsByProjectedTicketId.has(projection.projected_ticket_id)) {
-      seatIdsByProjectedTicketId.set(projection.projected_ticket_id, new Set());
-    }
+    registerOwnership(projection.source_id, projection.projected_ticket_id);
+  }
+  for (const link of directLinks) {
+    if (link.source_ticket_id) registerOwnership(link.id, link.source_ticket_id);
   }
 
   for (const assignment of assignments) {
-    if (!assignment.seating_link_id) continue;
-    const projectedTicketId = projectedTicketIdByLinkId.get(assignment.seating_link_id);
-    if (!projectedTicketId || !assignment.seat_id) continue;
-    seatIdsByProjectedTicketId.get(projectedTicketId)?.add(assignment.seat_id);
+    if (!assignment.seating_link_id || !canonicalPosition.has(assignment.seat_id)) continue;
+    for (const ticketId of ticketIdsByLinkId.get(assignment.seating_link_id) ?? []) {
+      seatIdsByTicketId.get(ticketId)?.add(assignment.seat_id);
+    }
   }
 
-  return [...seatIdsByProjectedTicketId.entries()].map(([projectedTicketId, seatIds]) => ({
+  return [...seatIdsByTicketId.entries()].map(([projectedTicketId, seatIds]) => ({
     projectedTicketId,
-    seatIds: [...seatIds],
+    seatIds: [...seatIds].sort(
+      (left, right) => canonicalPosition.get(left)! - canonicalPosition.get(right)!,
+    ),
   }));
 }
 
 export async function loadDoorModeSeatAssignments(
   supabase: Pick<SupabaseClient, "from">,
   showId: string,
+  canonicalSeatIds: readonly string[],
 ): Promise<DoorModeSeatAssignment[]> {
   const { data: projectionData, error: projectionError } = await supabase
     .from("show_admission_projection_sources")
     .select("source_id, projected_ticket_id")
     .eq("show_id", showId)
     .eq("source_type", "reserved_link");
-
   if (projectionError) throw projectionError;
-  const projections = (projectionData ?? []) as ProjectionSourceRow[];
-  if (projections.length === 0) return [];
 
-  const linkIds = [...new Set(projections.map((projection) => projection.source_id))];
+  const { data: directLinkData, error: directLinkError } = await supabase
+    .from("show_reserved_seating_links")
+    .select("id, source_ticket_id")
+    .eq("show_id", showId)
+    .not("source_ticket_id", "is", null);
+  if (directLinkError) throw directLinkError;
+
+  const projections = (projectionData ?? []) as ProjectionSourceRow[];
+  const directLinks = (directLinkData ?? []) as DirectReservedLinkRow[];
+  const linkIds = [...new Set([
+    ...projections.map((projection) => projection.source_id),
+    ...directLinks.map((link) => link.id),
+  ])];
+  if (linkIds.length === 0) return [];
+
   const { data: assignmentData, error: assignmentError } = await supabase
     .from("show_reserved_seat_assignments")
     .select("seating_link_id, seat_id")
     .eq("show_id", showId)
     .in("seating_link_id", linkIds);
-
   if (assignmentError) throw assignmentError;
+
   return buildDoorModeSeatAssignments(
     projections,
+    directLinks,
     (assignmentData ?? []) as SeatAssignmentRow[],
+    canonicalSeatIds,
   );
 }

@@ -191,3 +191,32 @@ test("Door Mode seat dialog is canonical, accessible, focus-safe, and read-only"
   assert.equal((source.match(/\.from\("show_comp_tickets"\)\s*\n\s*\.update\(/g) ?? []).length, 4);
   assert.doesNotMatch(source, /api\/integrations\/square|ticket-ingestion|send-reserved-seat-link-email/);
 });
+
+test("Paid Door remains a compact responsive strip with its existing controls and behavior", async () => {
+  const source = await readFile(doorModePath, "utf8");
+  assert.match(source, /data-testid="paid-door-compact-strip"/);
+  assert.match(source, />Paid Door Tickets</);
+  assert.match(source, /Current: \{doorPaidTickets\}/);
+  assert.match(source, /\{\[1, 2, 5\]\.map\(\(quantity\) => \(/);
+  assert.match(source, /onClick=\{\(\) => void handleAddDoorSale\(quantity\)\}/);
+  assert.match(source, /disabled=\{Boolean\(activeActionId\)\}/);
+  assert.match(source, /onClick=\{\(\) => void handleSubtractDoorSale\(\)\}/);
+  assert.match(source, /disabled=\{Boolean\(activeActionId\) \|\| doorPaidTickets <= 0\}/);
+  assert.match(source, />\s*-1\s*</);
+  assert.match(source, /onClick=\{\(\) => void handleUndoLastAction\(\)\}/);
+  assert.match(source, /disabled=\{Boolean\(activeActionId\) \|\| recentActivities\.length === 0\}/);
+  assert.match(source, />\s*Undo Last\s*</);
+
+  const compactStripIndex = source.indexOf('data-testid="paid-door-compact-strip"');
+  const specialAdmissionsIndex = source.indexOf("Special Admissions", compactStripIndex);
+  assert.ok(compactStripIndex >= 0);
+  assert.ok(specialAdmissionsIndex > compactStripIndex);
+
+  const compactSection = source.slice(compactStripIndex, specialAdmissionsIndex);
+  assert.match(compactSection, /xl:flex-row/);
+  assert.match(compactSection, /grid grid-cols-3/);
+  assert.match(compactSection, /sm:flex-wrap/);
+  assert.match(compactSection, /min-h-11/);
+  assert.doesNotMatch(compactSection, /overflow-x/);
+  assert.match(source.slice(Math.max(0, compactStripIndex - 80), compactStripIndex), /flex flex-col gap-3/);
+});

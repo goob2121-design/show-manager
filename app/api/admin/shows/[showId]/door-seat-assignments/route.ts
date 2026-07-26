@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAdminSessionCookieName, verifyAdminSessionCookieValue } from "@/lib/admin-session";
 import { loadDoorModeSeatAssignments } from "@/lib/door-mode-seat-assignments";
+import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
 
 export const runtime = "nodejs";
 
@@ -39,7 +40,11 @@ export async function GET(request: Request, context: DoorSeatAssignmentsRouteCon
       return NextResponse.json({ success: false, error: "Admin access is required." }, { status: 401 });
     }
 
-    const assignments = await loadDoorModeSeatAssignments(createReadOnlyServiceClient(), showId);
+    const assignments = await loadDoorModeSeatAssignments(
+      createReadOnlyServiceClient(),
+      showId,
+      RESERVED_SEAT_DEFINITIONS.map((seat) => seat.seatId),
+    );
     return NextResponse.json(assignments);
   } catch (error) {
     console.error("Door Mode seat lookup failed.", error);

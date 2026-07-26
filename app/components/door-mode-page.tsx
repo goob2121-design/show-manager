@@ -1200,28 +1200,22 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             </div>
           </div>
 
-          <div className="flex flex-col gap-6">
-            <div className="rounded-[28px] border border-gray-700 bg-gray-800 p-4 sm:p-5 xl:sticky xl:top-28">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="border-l-4 border-emerald-500 pl-3 text-xl font-semibold text-gray-50">Paid Door Tickets &middot; {doorPaidTickets}</h2>
-                  <span className="rounded-full border border-emerald-700/60 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">
-                    {formatCurrency(DOOR_TICKET_PRICE)} each
-                  </span>
-                </div>
-                <p className="text-sm text-gray-300">
-                  Quick tap controls for live paid door entry.
-                </p>
+          <div className="flex flex-col gap-3">
+            <div data-testid="paid-door-compact-strip" className="flex flex-col gap-3 rounded-[20px] border border-emerald-900/60 bg-gray-800 px-3 py-3 shadow-sm shadow-slate-950/10 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h2 className="border-l-4 border-emerald-600 pl-3 text-base font-semibold text-gray-50 sm:text-lg">Paid Door Tickets</h2>
+                <span className="text-sm font-semibold text-emerald-200">Current: {doorPaidTickets}</span>
+                <span className="text-xs font-medium text-gray-400">{formatCurrency(DOOR_TICKET_PRICE)} each</span>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center xl:justify-end">
                 {[1, 2, 5].map((quantity) => (
                   <button
                     key={`door-plus-${quantity}`}
                     type="button"
                     onClick={() => void handleAddDoorSale(quantity)}
                     disabled={Boolean(activeActionId)}
-                    className="rounded-[20px] bg-emerald-700 px-4 py-4 text-center text-xl font-semibold text-gray-50 shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
+                    className="min-h-11 rounded-lg bg-emerald-700 px-4 text-base font-semibold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
                   >
                     +{quantity}
                   </button>
@@ -1230,7 +1224,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                   type="button"
                   onClick={() => void handleSubtractDoorSale()}
                   disabled={Boolean(activeActionId) || doorPaidTickets <= 0}
-                  className="rounded-[20px] border border-gray-700 bg-gray-800 px-4 py-4 text-center text-xl font-semibold text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-11 rounded-lg border border-gray-700 bg-gray-700 px-4 text-base font-semibold text-gray-100 transition hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   -1
                 </button>
@@ -1238,7 +1232,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                   type="button"
                   onClick={() => void handleUndoLastAction()}
                   disabled={Boolean(activeActionId) || recentActivities.length === 0}
-                  className="col-span-2 rounded-[20px] border border-sky-700 bg-sky-500/10 px-4 py-3.5 text-center text-base font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="col-span-2 min-h-11 rounded-lg border border-sky-800/80 bg-sky-500/[0.07] px-4 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
                 >
                   Undo Last
                 </button>
