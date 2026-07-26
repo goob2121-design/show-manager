@@ -1,15 +1,30 @@
-"use client";
+﻿"use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { ReservedSeatMap, type ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ShowCompTicket, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 import { checkInAdmissionLabel, checkInTicketDestination } from "@/lib/check-in-ticket-classification";
+import {
+  addRecentGuestCheckIn,
+  admissionMatchesDoorSearch,
+  attendanceProgressPercent,
+  expectedDoorAttendance,
+  isAdmissionFullyCheckedIn,
+  normalizedDoorSearch,
+  normalizeDoorReservedSeatIds,
+  type RecentGuestCheckIn,
+} from "@/lib/door-mode-presentation";
+import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
+import type { DoorModeSeatAssignment } from "@/lib/door-mode-seat-assignments";
 
 const PAID_ONLINE_TICKET_PRICE = 8;
 const DOOR_TICKET_PRICE = 10;
 const COMP_TICKET_VALUE = 10;
 const RECENT_ACTIVITY_LIMIT = 8;
+const DOOR_RESERVED_SEAT_IDS = RESERVED_SEAT_DEFINITIONS.map((seat) => seat.seatId);
 
 type DoorModePageProps = {
   showSlug: string;
@@ -20,6 +35,13 @@ type DoorModeActivity = {
   label: string;
   createdAt: number;
   undo: () => Promise<void>;
+};
+
+type DoorSeatView = {
+  guestName: string;
+  admissionLabel: string;
+  seatIds: string[];
+  trigger: HTMLButtonElement;
 };
 
 type DoorModeShowSponsor = ShowSponsor & {
@@ -98,6 +120,7 @@ function formatShowDate(value: string | null) {
     month: "long",
     day: "numeric",
     year: "numeric",
+    timeZone: "UTC",
   }).format(parsedDate);
 }
 
@@ -217,7 +240,7 @@ function SponsorLogoThumbnail({
     .join("") || "SP";
 
   return (
-    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-stone-700 bg-stone-800/70">
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-gray-700 bg-gray-800/70">
       {logoUrl ? (
         <img
           src={logoUrl}
@@ -225,7 +248,7 @@ function SponsorLogoThumbnail({
           className="h-full w-full object-cover"
         />
       ) : (
-        <span className="text-sm font-semibold uppercase tracking-[0.14em] text-stone-300">
+        <span className="text-sm font-semibold uppercase tracking-[0.14em] text-gray-300">
           {initials}
         </span>
       )}
@@ -246,6 +269,16 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [guestSearch, setGuestSearch] = useState("");
+  const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
+  const [isRecentCheckInsOpen, setIsRecentCheckInsOpen] = useState(false);
+  const [checkInConfirmation, setCheckInConfirmation] = useState<string | null>(null);
+  const [recentGuestCheckIns, setRecentGuestCheckIns] = useState<RecentGuestCheckIn[]>([]);
+  const [seatView, setSeatView] = useState<DoorSeatView | null>(null);
+  const [seatIdsByTicketId, setSeatIdsByTicketId] = useState<Record<string, string[]>>({});
+  const seatDialogCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const printMenuRef = useRef<HTMLDivElement | null>(null);
+  const guestSearchRef = useRef<HTMLInputElement | null>(null);
 
   const loadDoorModeData = useCallback(async () => {
     setIsLoading(true);
@@ -275,6 +308,23 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       if (ticketError) {
         throw ticketError;
       }
+
+      let seatAssignments: DoorModeSeatAssignment[] = [];
+      try {
+        const seatResponse = await fetch(
+          `/api/admin/shows/${encodeURIComponent(normalizedShow.id)}/door-seat-assignments?slug=${encodeURIComponent(normalizedShow.slug)}`,
+          { method: "GET", credentials: "same-origin", cache: "no-store" },
+        );
+        const seatPayload = await seatResponse.json().catch(() => null) as DoorModeSeatAssignment[] | null;
+        if (seatResponse.ok && Array.isArray(seatPayload)) {
+          seatAssignments = seatPayload;
+        }
+      } catch {
+        seatAssignments = [];
+      }
+      setSeatIdsByTicketId(Object.fromEntries(
+        seatAssignments.map((assignment) => [assignment.projectedTicketId, assignment.seatIds]),
+      ));
 
       const { data: showSponsorData, error: showSponsorError } = await supabase
         .from("show_sponsors")
@@ -320,6 +370,47 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isPrintMenuOpen) return;
+    function handlePrintMenuDismiss(event: MouseEvent | KeyboardEvent) {
+      if (event instanceof KeyboardEvent && event.key === "Escape") {
+        setIsPrintMenuOpen(false);
+        return;
+      }
+      if (event instanceof MouseEvent && printMenuRef.current && !printMenuRef.current.contains(event.target as Node)) {
+        setIsPrintMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePrintMenuDismiss);
+    document.addEventListener("keydown", handlePrintMenuDismiss);
+    return () => {
+      document.removeEventListener("mousedown", handlePrintMenuDismiss);
+      document.removeEventListener("keydown", handlePrintMenuDismiss);
+    };
+  }, [isPrintMenuOpen]);
+
+  useEffect(() => {
+    if (!checkInConfirmation) return;
+    const timeout = window.setTimeout(() => setCheckInConfirmation(null), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [checkInConfirmation]);
+
+  useEffect(() => {
+    if (!seatView) return;
+    const trigger = seatView.trigger;
+    const focusFrame = window.requestAnimationFrame(() => seatDialogCloseButtonRef.current?.focus());
+    function handleSeatDialogKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setSeatView(null);
+      window.requestAnimationFrame(() => trigger.focus());
+    }
+    document.addEventListener("keydown", handleSeatDialogKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleSeatDialogKeyDown);
+    };
+  }, [seatView]);
 
   const doorPaidTickets = useMemo(
     () =>
@@ -372,6 +463,9 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const totalAttendance =
     totalPaidAttendance + compCheckedInTickets + sponsorCompTicketsCheckedIn + manualCheckedInTickets;
   const totalRevenue = doorPaidRevenue + prepaidOnlineRevenue;
+  const expectedAttendance = expectedDoorAttendance(compTickets, sponsorCompTicketsAllowed);
+  const attendanceProgress = attendanceProgressPercent(totalAttendance, expectedAttendance);
+  void attendanceProgress;
   const formattedCurrentTime = currentTime.toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
@@ -403,6 +497,68 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       compTickets.filter((item) => checkInTicketDestination(item.ticket_type, item.notes) === "special_admissions"),
     [compTickets],
   );
+
+  const filteredPrepaidTickets = useMemo(
+    () => prepaidTickets.filter((item) => admissionMatchesDoorSearch(
+      item, checkInAdmissionLabel(item.ticket_type, item.notes), guestSearch,
+    )),
+    [guestSearch, prepaidTickets],
+  );
+  const filteredSpecialAdmissions = useMemo(
+    () => compAndOtherTickets.filter((item) => admissionMatchesDoorSearch(
+      item, checkInAdmissionLabel(item.ticket_type, item.notes), guestSearch,
+    )),
+    [compAndOtherTickets, guestSearch],
+  );
+  const hasActiveGuestSearch = normalizedDoorSearch(guestSearch).length > 0;
+  const prepaidAdmissionCount = prepaidTickets.reduce((sum, item) => sum + item.ticket_count, 0);
+  const specialAdmissionCount = compAndOtherTickets.reduce((sum, item) => sum + item.ticket_count, 0);
+  const doorSeatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
+    const highlightedSeatIds = new Set(seatView?.seatIds ?? []);
+    return Object.fromEntries(
+      RESERVED_SEAT_DEFINITIONS.map((seat) => [
+        seat.seatId,
+        {
+          seatId: seat.seatId,
+          label: seat.seatId,
+          status: highlightedSeatIds.has(seat.seatId) ? "selected" : "unavailable",
+          disabled: true,
+        },
+      ]),
+    ) as Record<string, ReservedSeatMapSeatState>;
+  }, [seatView]);
+
+  function closeSeatView() {
+    const trigger = seatView?.trigger;
+    setSeatView(null);
+    window.requestAnimationFrame(() => trigger?.focus());
+  }
+
+  function renderSeatLocationControl(item: ShowCompTicket) {
+    const seatIds = normalizeDoorReservedSeatIds(
+      seatIdsByTicketId[item.id] ?? [],
+      DOOR_RESERVED_SEAT_IDS,
+    );
+    if (seatIds.length === 0) return null;
+
+    return (
+      <button
+        type="button"
+        aria-label={`View seats ${seatIds.join(" and ")} for ${item.guest_name}`}
+        onClick={(event) => {
+          setSeatView({
+            guestName: item.guest_name,
+            admissionLabel: checkInAdmissionLabel(item.ticket_type, item.notes),
+            seatIds,
+            trigger: event.currentTarget,
+          });
+        }}
+        className="inline-flex w-fit items-center rounded-lg border border-sky-800/70 bg-sky-500/[0.07] px-3 py-2 text-sm font-semibold text-sky-200 transition hover:border-sky-700 hover:bg-sky-500/10 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+      >
+        Seats: {seatIds.join(", ")} <span className="ml-2 text-xs font-medium text-sky-300">View Seats</span>
+      </button>
+    );
+  }
 
   function pushRecentActivity(activity: DoorModeActivity) {
     setRecentActivities((current) => [activity, ...current].slice(0, RECENT_ACTIVITY_LIMIT));
@@ -752,6 +908,19 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       );
 
       const previousCheckedInCount = item.checked_in_count;
+      if (delta > 0) {
+        const checkedInByAction = updatedTicket.checked_in_count - previousCheckedInCount;
+        setCheckInConfirmation(`${item.guest_name} checked in - ${updatedTicket.checked_in_count} / ${item.ticket_count}`);
+        setRecentGuestCheckIns((current) => addRecentGuestCheckIn(current, {
+          id: `${item.id}-${Date.now()}`,
+          guestName: item.guest_name,
+          quantity: checkedInByAction,
+          resultingTotal: updatedTicket.checked_in_count,
+          ticketCount: item.ticket_count,
+          createdAt: Date.now(),
+        }));
+        window.requestAnimationFrame(() => guestSearchRef.current?.focus());
+      }
       pushRecentActivity({
         id: `ticket-${item.id}-${Date.now()}`,
         label: `${item.guest_name} ${delta > 0 ? "+1 check-in" : "-1 undo"}`,
@@ -813,9 +982,9 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-stone-950 px-4 py-8 text-stone-100 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl rounded-[28px] border border-stone-800 bg-stone-900/80 p-8">
-          <p className="text-lg font-medium text-stone-200">Loading Door Mode...</p>
+      <main className="min-h-screen bg-gray-900 px-4 py-8 text-gray-100 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl rounded-[28px] border border-gray-700 bg-gray-800 p-8">
+          <p className="text-lg font-medium text-gray-200">Loading Door Mode...</p>
         </div>
       </main>
     );
@@ -823,8 +992,8 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
   if (!show) {
     return (
-      <main className="min-h-screen bg-stone-950 px-4 py-8 text-stone-100 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl rounded-[28px] border border-rose-900 bg-stone-900/80 p-8">
+      <main className="min-h-screen bg-gray-900 px-4 py-8 text-gray-100 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl rounded-[28px] border border-rose-900 bg-gray-800 p-8">
           <p className="text-lg font-semibold text-rose-300">Show not found.</p>
           <Link href="/admin" className="mt-4 inline-flex text-sm font-medium text-emerald-300 underline">
             Back to Admin
@@ -835,76 +1004,49 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-stone-950 px-4 py-6 text-stone-100 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-[1800px] flex-col gap-3">
-        <section className="rounded-[22px] border border-stone-800 bg-stone-900/90 p-3.5 shadow-2xl shadow-black/30">
-          <div className="relative flex flex-col gap-3 lg:min-h-[5.5rem] lg:justify-center">
-            <div className="space-y-1 lg:min-w-0 lg:pr-56">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded-full border border-emerald-700/60 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                  Door Mode / Check-In Mode
-                </span>
-                <span className="rounded-full border border-stone-700 bg-stone-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-300">
-                  {formatShowDate(show.show_date)}
-                </span>
-              </div>
-              <h1 className="text-[1.65rem] font-semibold tracking-tight text-white">
-                {show.name}
-              </h1>
-              <p className="hidden max-w-3xl text-sm leading-5 text-stone-300 xl:block">
-                Fast live check-in for prepaid and comp guests, plus touch-friendly paid door ticket counting.
-              </p>
-            </div>
-
-            <div className="flex flex-col items-center gap-1.5 rounded-xl border border-stone-800 bg-stone-950/35 px-3 py-2 text-center lg:absolute lg:left-1/2 lg:top-1/2 lg:w-auto lg:min-w-[13rem] lg:-translate-x-1/2 lg:-translate-y-1/2 lg:justify-center lg:px-4">
-              <div className="text-4xl font-semibold tracking-[0.04em] text-stone-100 sm:text-5xl">
-                {formattedCurrentTime}
+    <main className="min-h-screen bg-gray-900 px-4 py-6 text-gray-100 sm:px-6 lg:px-8">
+      <div inert={Boolean(seatView)} className="mx-auto flex max-w-[1800px] flex-col gap-3">
+        <section className="overflow-hidden rounded-[22px] border border-gray-700 bg-slate-900 shadow-lg shadow-slate-950/20">
+          <div className="h-1 bg-gradient-to-r from-red-800 via-amber-500/80 to-transparent" />
+          <div className="grid gap-2 px-3 py-2 sm:px-4 sm:py-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center">
+            <div className="min-w-0">
+              <Image
+                src="/cmms-logo.png"
+                alt="Cumberland Mountain Music Show"
+                width={500}
+                height={300}
+                className="h-9 w-auto max-w-full object-contain sm:h-12"
+              />
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
+                <span>{formatShowDate(show.show_date)}</span>
+                {show.venue?.trim() ? <span>{show.venue}</span> : null}
+                <Link href={`/admin/${show.slug}`} className="text-xs font-medium text-gray-500 transition hover:text-gray-300">&larr; Back to Admin</Link>
               </div>
             </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 lg:absolute lg:right-0 lg:top-1/2 lg:-translate-y-1/2">
-              <div className="flex min-w-[9rem] max-w-[11rem] flex-col items-center gap-1 rounded-lg border border-emerald-900/70 bg-emerald-500/5 px-2.5 py-1.5">
-                <div className="flex items-center justify-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(74,222,128,0.7)]" />
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-300">
-                    Online
-                  </span>
-                </div>
-                <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-stone-800">
-                  <div className="door-mode-scanner absolute inset-y-0 left-0 w-10 rounded-full bg-gradient-to-r from-transparent via-emerald-300 to-transparent opacity-80" />
-                </div>
+            <div className="text-left lg:text-center">
+              <p className="text-3xl font-semibold tracking-[0.04em] text-gray-100 sm:text-4xl">{formattedCurrentTime}</p>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Local time</p>
+            </div>
+            <div className="flex items-center gap-3 lg:justify-self-end">
+              <p className="text-lg font-semibold text-gray-200 sm:text-xl">Door Check-In</p>
+              <div aria-label="Connected" className="flex min-h-9 items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-500/5 px-3">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">Connected</span>
               </div>
-              <Link
-                href={`/admin/${show.slug}`}
-                className="inline-flex items-center justify-center rounded-2xl border border-stone-700 bg-stone-800 px-4 py-3 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
-              >
-                Back to Admin
-              </Link>
             </div>
           </div>
         </section>
-
-        <style jsx>{`
-          .door-mode-scanner {
-            animation: door-mode-scan 2.6s ease-in-out infinite alternate;
-          }
-
-          @keyframes door-mode-scan {
-            0% {
-              transform: translateX(-110%);
-            }
-
-            100% {
-              transform: translateX(360%);
-            }
-          }
-        `}</style>
-
         {statusMessage ? (
           <div className="rounded-2xl border border-emerald-800 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
             {statusMessage}
           </div>
         ) : null}
+
+        <div aria-live="polite" aria-atomic="true">
+          {checkInConfirmation ? (
+            <div className="rounded-2xl border border-emerald-700 bg-emerald-500/15 px-4 py-3 text-sm font-semibold text-emerald-100 shadow-lg">{checkInConfirmation}</div>
+          ) : null}
+        </div>
 
         {errorMessage ? (
           <div className="rounded-2xl border border-rose-800 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
@@ -912,107 +1054,109 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
           </div>
         ) : null}
 
-        <section className="sticky top-3 z-20 rounded-[20px] border border-stone-800 bg-stone-900/95 p-2.5 shadow-xl shadow-black/30 backdrop-blur">
-          <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
-            <div className="grid flex-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-6">
-              {[
-                { label: "Paid Door", value: doorPaidTickets, tone: "text-emerald-300" },
-                { label: "Prepaid In", value: prepaidOnlineTickets, tone: "text-sky-300" },
-                { label: "Comp In", value: compCheckedInTickets, tone: "text-amber-300" },
-                { label: "Sponsor Comps", value: sponsorCompTicketsCheckedIn, tone: "text-fuchsia-300" },
-                { label: "Attendance", value: totalAttendance, tone: "text-white" },
-                { label: "Revenue", value: formatCurrency(totalRevenue), tone: "text-emerald-300" },
-              ].map((item) => (
-                <div key={item.label} className="rounded-xl border border-stone-800 bg-stone-950/60 px-2.5 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-500">
-                    {item.label}
-                  </p>
-                  <p className={`mt-0.5 text-base font-semibold ${item.tone}`}>{item.value}</p>
-                </div>
-              ))}
+        <section className="sticky top-3 z-20 border-y border-gray-700 bg-slate-900/95 px-2.5 py-2 shadow-sm shadow-slate-950/20 backdrop-blur" data-testid="door-operational-toolbar">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <div className="flex w-full gap-2 md:min-w-[280px] md:max-w-[380px] md:flex-1">
+              <label htmlFor="door-guest-search" className="sr-only">Search Guests</label>
+              <input
+                ref={guestSearchRef}
+                id="door-guest-search"
+                type="search"
+                value={guestSearch}
+                onChange={(event) => setGuestSearch(event.target.value)}
+                placeholder="Search guests..."
+                className="min-h-10 min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm text-gray-50 outline-none transition placeholder:text-gray-500 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30"
+              />
+              {hasActiveGuestSearch ? (
+                <button type="button" aria-label="Clear guest search" onClick={() => { setGuestSearch(""); guestSearchRef.current?.focus(); }} className="min-h-10 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 hover:bg-gray-700">Clear</button>
+              ) : null}
             </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Link
-                href={`/admin/${show.slug}/print/door-guest-list`}
-                className="inline-flex items-center justify-center rounded-xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
-              >
-                Print Door Guest List
-              </Link>
-              <Link
-                href={`/admin/${show.slug}/print/reserved-seat-cards`}
-                className="inline-flex items-center justify-center rounded-xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
-              >
-                Print Reserved Seat Cards
-              </Link>
-              <Link
-                href={`/admin/${show.slug}/print/blank-seat-cards`}
-                className="inline-flex items-center justify-center rounded-xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
-              >
-                Print Blank Seat Cards
-              </Link>
-              <button
-                type="button"
-                onClick={() => setIsSponsorCompPanelOpen(true)}
-                className="inline-flex items-center justify-center rounded-xl border border-fuchsia-700/70 bg-fuchsia-500/10 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-500/20"
-              >
-                Sponsor Comp Tickets
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsTotalsPanelOpen(true)}
-                className="inline-flex items-center justify-center rounded-xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
-              >
-                View Totals
-              </button>
+            <div className="flex flex-wrap items-center gap-2 md:ml-auto md:justify-end">
+              <button type="button" aria-label="Sponsor Comp Tickets" onClick={() => setIsSponsorCompPanelOpen(true)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-amber-700/70 bg-amber-500/10 px-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20">Sponsor Comps</button>
+              <div ref={printMenuRef} className="relative">
+                <button type="button" aria-expanded={isPrintMenuOpen} aria-haspopup="menu" onClick={() => setIsPrintMenuOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Print <span aria-hidden="true">&#9662;</span></button>
+                {isPrintMenuOpen ? (
+                  <div role="menu" className="absolute left-0 z-30 mt-2 grid min-w-56 overflow-hidden rounded-xl border border-gray-700 bg-gray-800 p-1.5 shadow-2xl sm:left-auto sm:right-0">
+                    <Link role="menuitem" href={`/admin/${show.slug}/print/door-guest-list`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Door Guest List</Link>
+                    <Link role="menuitem" href={`/admin/${show.slug}/print/reserved-seat-cards`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Reserved Seat Cards</Link>
+                    <Link role="menuitem" href={`/admin/${show.slug}/print/blank-seat-cards`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Blank Seat Cards</Link>
+                  </div>
+                ) : null}
+              </div>
+              <button type="button" aria-label="View Totals" onClick={() => setIsTotalsPanelOpen(true)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Totals</button>
+              <div className="relative">
+                <button type="button" aria-label="Recent Check-Ins" aria-expanded={isRecentCheckInsOpen} aria-controls="door-recent-check-ins" onClick={() => setIsRecentCheckInsOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Recent ({recentGuestCheckIns.length})</button>
+                {isRecentCheckInsOpen ? (
+                  <div id="door-recent-check-ins" className="absolute left-0 z-30 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-gray-700 bg-gray-800 p-3 shadow-2xl sm:left-auto sm:right-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">Recent Check-Ins &middot; This session</p>
+                    <div className="mt-2 grid max-h-72 gap-2 overflow-y-auto">
+                      {recentGuestCheckIns.length === 0 ? <p className="text-xs text-gray-500">No named guest check-ins yet.</p> : recentGuestCheckIns.map((action) => (
+                        <div key={action.id} className="rounded-lg bg-gray-900/70 px-3 py-2">
+                          <p className="text-sm font-semibold text-gray-100">{action.guestName}</p>
+                          <p className="text-xs text-gray-400">+{action.quantity} &middot; {action.resultingTotal} / {action.ticketCount} checked in &middot; {new Date(action.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              <div aria-label="Connected" className="flex min-h-10 items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-500/5 px-3">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">Connected</span>
+              </div>
             </div>
           </div>
+          {hasActiveGuestSearch && filteredPrepaidTickets.length === 0 && filteredSpecialAdmissions.length === 0 ? (
+            <p className="mt-2 rounded-lg border border-dashed border-gray-700 bg-gray-900/50 px-3 py-2 text-xs text-gray-300">No matching prepaid or special-admission guests.</p>
+          ) : null}
         </section>
-
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,0.72fr)]">
-          <div className="rounded-[28px] border border-stone-800 bg-stone-900/90 p-5 sm:p-6">
+          <div className="rounded-[28px] border border-gray-700 bg-gray-800 p-5 sm:p-6">
             <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold text-white">Prepaid / Online Check-In</h2>
-              <p className="text-sm text-stone-300">
+              <h2 className="border-l-4 border-sky-500 pl-3 text-xl font-semibold text-gray-50">Prepaid / Online Check-In &middot; {prepaidAdmissionCount}</h2>
+              <p className="text-sm text-gray-300">
                 Check in online orders as guests arrive. Totals update immediately.
               </p>
             </div>
 
             <div className="mt-4 grid gap-2.5 2xl:grid-cols-2">
-              {prepaidTickets.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-stone-700 bg-stone-950/50 px-4 py-5 text-sm text-stone-400">
+              {filteredPrepaidTickets.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 px-4 py-5 text-sm text-gray-400">
                   No prepaid / online tickets for this show yet.
                 </p>
               ) : (
-                prepaidTickets.map((item) => (
+                filteredPrepaidTickets.map((item) => (
                   <article
                     key={item.id}
-                    className={`rounded-[20px] border p-3 transition ${
-                      item.checked_in_count >= item.ticket_count
-                        ? "border-emerald-900/70 bg-emerald-500/10 opacity-80"
-                        : "border-stone-800 bg-stone-950/60"
+                    className={`rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${
+                      isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count)
+                        ? "border-emerald-900/60 bg-emerald-500/[0.07] opacity-80 hover:border-emerald-800/70"
+                        : "border-gray-700 bg-gray-800 hover:border-gray-600"
                     }`}
                   >
                     <div className="flex flex-col gap-2.5">
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="min-w-0 truncate text-base font-semibold text-white">{item.guest_name}</h3>
-                          <span className="rounded-full border border-stone-700 bg-stone-800 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-300">
+                          <h3 className="min-w-0 truncate text-xl font-semibold text-gray-50 sm:text-2xl">{item.guest_name}</h3>
+                          <span className="rounded-full border border-sky-700/70 bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-200">{checkInAdmissionLabel(item.ticket_type, item.notes)}</span>
+                          <span className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-300">
                             Qty {item.ticket_count}
                           </span>
                           <span className="rounded-full border border-sky-700 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-300">
-                            {item.checked_in_count} Checked In
+                            {item.checked_in_count} / {item.ticket_count} checked in
                           </span>
-                          {item.checked_in_count >= item.ticket_count ? (
+                          {isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? (
                             <span className="rounded-full border border-emerald-700/70 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
-                              ✅ Fully Checked In
+                              Checked In
                             </span>
                           ) : null}
                         </div>
+                        {renderSeatLocationControl(item)}
                         {item.notes?.trim() ? (
-                          <p className="whitespace-pre-wrap text-xs leading-5 text-stone-300">
-                            {renderTextWithLinks(item.notes)}
-                          </p>
+                          <details className="text-xs text-gray-500">
+                            <summary className="cursor-pointer font-medium text-gray-400">Details</summary>
+                            <p className="mt-1 whitespace-pre-wrap leading-5">{renderTextWithLinks(item.notes)}</p>
+                          </details>
                         ) : null}
                       </div>
 
@@ -1028,7 +1172,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           disabled={
                             Boolean(activeActionId) || item.checked_in_count >= item.ticket_count
                           }
-                          className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-3 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-3 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Check In All
                         </button>
@@ -1036,7 +1180,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           type="button"
                           onClick={() => void handleAdjustTicketCheckIn(item, 1)}
                           disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
-                          className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
+                          className="rounded-xl bg-emerald-700 px-4 py-4 text-base font-bold text-gray-50 shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
                         >
                           +1 Check In
                         </button>
@@ -1044,7 +1188,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                           type="button"
                           onClick={() => void handleAdjustTicketCheckIn(item, -1)}
                           disabled={Boolean(activeActionId) || item.checked_in_count <= 0}
-                          className="rounded-xl border border-stone-700 bg-stone-800 px-3 py-3 text-sm font-semibold text-stone-100 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-xl border border-gray-700 bg-gray-800 px-3 py-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           -1 Undo
                         </button>
@@ -1057,15 +1201,15 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
           </div>
 
           <div className="flex flex-col gap-6">
-            <div className="rounded-[28px] border border-stone-800 bg-stone-900/90 p-4 sm:p-5 xl:sticky xl:top-28">
+            <div className="rounded-[28px] border border-gray-700 bg-gray-800 p-4 sm:p-5 xl:sticky xl:top-28">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-xl font-semibold text-white">Paid Door Tickets</h2>
+                  <h2 className="border-l-4 border-emerald-500 pl-3 text-xl font-semibold text-gray-50">Paid Door Tickets &middot; {doorPaidTickets}</h2>
                   <span className="rounded-full border border-emerald-700/60 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">
                     {formatCurrency(DOOR_TICKET_PRICE)} each
                   </span>
                 </div>
-                <p className="text-sm text-stone-300">
+                <p className="text-sm text-gray-300">
                   Quick tap controls for live paid door entry.
                 </p>
               </div>
@@ -1077,7 +1221,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                     type="button"
                     onClick={() => void handleAddDoorSale(quantity)}
                     disabled={Boolean(activeActionId)}
-                    className="rounded-[20px] bg-emerald-600 px-4 py-4 text-center text-xl font-semibold text-white shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-800"
+                    className="rounded-[20px] bg-emerald-700 px-4 py-4 text-center text-xl font-semibold text-gray-50 shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
                   >
                     +{quantity}
                   </button>
@@ -1086,7 +1230,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                   type="button"
                   onClick={() => void handleSubtractDoorSale()}
                   disabled={Boolean(activeActionId) || doorPaidTickets <= 0}
-                  className="rounded-[20px] border border-stone-700 bg-stone-800 px-4 py-4 text-center text-xl font-semibold text-stone-100 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-[20px] border border-gray-700 bg-gray-800 px-4 py-4 text-center text-xl font-semibold text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   -1
                 </button>
@@ -1101,38 +1245,43 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-stone-800 bg-stone-900/90 p-5 sm:p-6">
+            <div className="rounded-[28px] border border-gray-700 bg-gray-800 p-5 sm:p-6">
               <div className="flex flex-col gap-1">
-                <h2 className="text-xl font-semibold text-white">Special Admissions</h2>
-                <p className="text-sm text-stone-300">
+                <h2 className="border-l-4 border-violet-500 pl-3 text-xl font-semibold text-gray-50">Special Admissions &middot; {specialAdmissionCount}</h2>
+                <p className="text-sm text-gray-300">
                   Named, non-sponsor guest, band, media, volunteer, staff, and other admissions.
                 </p>
               </div>
 
               <div className="mt-5 grid gap-4">
-                {compAndOtherTickets.length === 0 ? (
-                  <p className="rounded-2xl border border-dashed border-stone-700 bg-stone-950/50 px-4 py-5 text-sm text-stone-400">
+                {filteredSpecialAdmissions.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 px-4 py-5 text-sm text-gray-400">
                     No special admissions for this show yet.
                   </p>
                 ) : (
-                  compAndOtherTickets.map((item) => (
-                    <article key={item.id} className="rounded-[24px] border border-stone-800 bg-stone-950/60 p-4">
+                  filteredSpecialAdmissions.map((item) => (
+                    <article key={item.id} className={`rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? "border-emerald-900/60 bg-emerald-500/[0.07] opacity-80 hover:border-emerald-800/70" : "border-gray-700 bg-gray-800 hover:border-gray-600"}`}>
                       <div className="flex flex-col gap-4">
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-lg font-semibold text-white">{item.guest_name}</h3>
-                            <span className="rounded-full border border-stone-700 bg-stone-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-stone-300">
+                            <h3 className="text-xl font-semibold text-gray-50 sm:text-2xl">{item.guest_name}</h3>
+                            <span className="rounded-full border border-gray-700 bg-gray-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-300">
                               {checkInAdmissionLabel(item.ticket_type, item.notes)}
                             </span>
                             <span className="rounded-full border border-amber-700 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">
-                              {item.checked_in_count} / {item.ticket_count} Checked In
+                              {item.checked_in_count} / {item.ticket_count} checked in
                             </span>
+                            {isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? (
+                              <span className="rounded-full border border-emerald-700/70 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200">Checked In</span>
+                            ) : null}
                           </div>
-                          {item.email ? <p className="text-sm text-stone-300">{item.email}</p> : null}
+                          {item.email ? <p className="text-sm text-gray-300">{item.email}</p> : null}
+                          {renderSeatLocationControl(item)}
                           {item.notes?.trim() ? (
-                            <p className="whitespace-pre-wrap text-sm leading-6 text-stone-300">
-                              {renderTextWithLinks(item.notes)}
-                            </p>
+                            <details className="text-xs text-gray-500">
+                              <summary className="cursor-pointer font-medium text-gray-400">Details</summary>
+                              <p className="mt-1 whitespace-pre-wrap leading-5">{renderTextWithLinks(item.notes)}</p>
+                            </details>
                           ) : null}
                         </div>
 
@@ -1141,7 +1290,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                             type="button"
                             onClick={() => void handleAdjustTicketCheckIn(item, 1)}
                             disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
-                            className="rounded-2xl bg-emerald-600 px-5 py-5 text-xl font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-800"
+                            className="rounded-2xl bg-emerald-700 px-5 py-5 text-xl font-semibold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
                           >
                             +1 Check In
                           </button>
@@ -1149,7 +1298,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                             type="button"
                             onClick={() => void handleAdjustTicketCheckIn(item, -1)}
                             disabled={Boolean(activeActionId) || item.checked_in_count <= 0}
-                            className="rounded-2xl border border-stone-700 bg-stone-800 px-5 py-5 text-xl font-semibold text-stone-100 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-2xl border border-gray-700 bg-gray-800 px-5 py-5 text-xl font-semibold text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             -1 Undo
                           </button>
@@ -1164,17 +1313,17 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
         </section>
 
         {isTotalsPanelOpen ? (
-          <div className="fixed inset-0 z-40 flex items-start justify-end bg-black/60 p-3 sm:p-6">
-            <div className="flex h-full w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-stone-800 bg-stone-900 shadow-2xl shadow-black/40">
-              <div className="flex items-center justify-between border-b border-stone-800 px-5 py-4 sm:px-6">
+          <div className="fixed inset-0 z-40 flex items-start justify-end bg-slate-950/70 p-3 sm:p-6">
+            <div className="flex h-full w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-gray-700 bg-gray-800 shadow-lg shadow-slate-950/25">
+              <div className="flex items-center justify-between border-b border-gray-700 px-5 py-4 sm:px-6">
                 <div>
-                  <h2 className="text-xl font-semibold text-white">Live Totals</h2>
-                  <p className="text-sm text-stone-400">Attendance, revenue, and recent Door Mode activity.</p>
+                  <h2 className="text-xl font-semibold text-gray-50">Live Totals</h2>
+                  <p className="text-sm text-gray-400">Attendance, revenue, and recent Door Mode activity.</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsTotalsPanelOpen(false)}
-                  className="rounded-2xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
+                  className="rounded-2xl border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-semibold text-gray-100 transition hover:bg-gray-700"
                 >
                   Close
                 </button>
@@ -1186,44 +1335,44 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                     { label: "Paid Door Tickets", value: doorPaidTickets, secondary: formatCurrency(doorPaidRevenue), tone: "text-emerald-300" },
                     { label: "Prepaid / Online Checked In", value: prepaidOnlineTickets, secondary: formatCurrency(prepaidOnlineRevenue), tone: "text-sky-300" },
                     { label: "Comp Tickets Checked In", value: compCheckedInTickets, secondary: `Value ${formatCurrency(estimatedCompValue)}`, tone: "text-amber-300" },
-                    { label: "Sponsor Comps Allowed", value: sponsorCompTicketsAllowed, secondary: `Remaining ${sponsorCompTicketsRemaining}`, tone: "text-fuchsia-300" },
-                    { label: "Sponsor Comps Checked In", value: sponsorCompTicketsCheckedIn, secondary: "Separate from paid tickets", tone: "text-fuchsia-200" },
-                    { label: "Total Paid Attendance", value: totalPaidAttendance, secondary: "Door + Prepaid", tone: "text-white" },
-                    { label: "Total Attendance", value: totalAttendance, secondary: "Including comps", tone: "text-white" },
+                    { label: "Sponsor Comps Allowed", value: sponsorCompTicketsAllowed, secondary: `Remaining ${sponsorCompTicketsRemaining}`, tone: "text-amber-300" },
+                    { label: "Sponsor Comps Checked In", value: sponsorCompTicketsCheckedIn, secondary: "Separate from paid tickets", tone: "text-amber-200" },
+                    { label: "Total Paid Attendance", value: totalPaidAttendance, secondary: "Door + Prepaid", tone: "text-gray-50" },
+                    { label: "Total Attendance", value: totalAttendance, secondary: "Including comps", tone: "text-gray-50" },
                     { label: "Total Revenue", value: formatCurrency(totalRevenue), secondary: "Paid tickets only", tone: "text-emerald-300" },
                   ].map((card) => (
-                    <article key={card.label} className="rounded-[24px] border border-stone-800 bg-stone-950/60 p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">
+                    <article key={card.label} className="rounded-[24px] border border-gray-700 bg-gray-900/60 p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
                         {card.label}
                       </p>
                       <p className={`mt-3 text-3xl font-semibold ${card.tone}`}>
                         {card.value}
                       </p>
-                      <p className="mt-2 text-sm text-stone-400">{card.secondary}</p>
+                      <p className="mt-2 text-sm text-gray-400">{card.secondary}</p>
                     </article>
                   ))}
                 </div>
 
-                <div className="mt-6 rounded-[24px] border border-stone-800 bg-stone-950/60 p-5">
+                <div className="mt-6 rounded-[24px] border border-gray-700 bg-gray-900/60 p-5">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-white">Recent Activity</h3>
-                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">
+                    <h3 className="text-lg font-semibold text-gray-50">Recent Activity</h3>
+                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
                       Last {RECENT_ACTIVITY_LIMIT}
                     </span>
                   </div>
                   <div className="mt-4 grid gap-3">
                     {recentActivities.length === 0 ? (
-                      <p className="rounded-2xl border border-dashed border-stone-700 bg-stone-950/50 px-4 py-5 text-sm text-stone-400">
+                      <p className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 px-4 py-5 text-sm text-gray-400">
                         No recent door or check-in actions yet.
                       </p>
                     ) : (
                       recentActivities.map((activity) => (
                         <div
                           key={activity.id}
-                          className="rounded-2xl border border-stone-800 bg-stone-950/50 px-4 py-3"
+                          className="rounded-2xl border border-gray-700 bg-gray-900/50 px-4 py-3"
                         >
-                          <p className="text-sm font-semibold text-stone-100">{activity.label}</p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.14em] text-stone-500">
+                          <p className="text-sm font-semibold text-gray-100">{activity.label}</p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.14em] text-gray-500">
                             {new Date(activity.createdAt).toLocaleTimeString([], {
                               hour: "numeric",
                               minute: "2-digit",
@@ -1241,19 +1390,19 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
         ) : null}
 
         {isSponsorCompPanelOpen ? (
-          <div className="fixed inset-0 z-40 flex items-start justify-end bg-black/60 p-3 sm:p-6">
-            <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-stone-800 bg-stone-900 shadow-2xl shadow-black/40">
-              <div className="flex items-center justify-between border-b border-stone-800 px-5 py-4 sm:px-6">
+          <div className="fixed inset-0 z-40 flex items-start justify-end bg-slate-950/70 p-3 sm:p-6">
+            <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-gray-700 bg-gray-800 shadow-lg shadow-slate-950/25">
+              <div className="flex items-center justify-between border-b border-gray-700 px-5 py-4 sm:px-6">
                 <div>
-                  <h2 className="text-xl font-semibold text-white">Sponsor Comp Tickets</h2>
-                  <p className="text-sm text-stone-400">
+                  <h2 className="border-l-4 border-amber-500 pl-3 text-xl font-semibold text-gray-50">Sponsor Comp Tickets</h2>
+                  <p className="text-sm text-gray-400">
                     Check sponsor comps separately from paid door and prepaid online tickets.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsSponsorCompPanelOpen(false)}
-                  className="rounded-2xl border border-stone-700 bg-stone-800 px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-stone-700"
+                  className="rounded-2xl border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-semibold text-gray-100 transition hover:bg-gray-700"
                 >
                   Close
                 </button>
@@ -1262,19 +1411,19 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
                 <div className="mb-5 grid gap-3 sm:grid-cols-3">
                   {[
-                    { label: "Allowed", value: sponsorCompTicketsAllowed, tone: "text-fuchsia-300" },
-                    { label: "Checked In", value: sponsorCompTicketsCheckedIn, tone: "text-fuchsia-100" },
+                    { label: "Allowed", value: sponsorCompTicketsAllowed, tone: "text-amber-300" },
+                    { label: "Checked In", value: sponsorCompTicketsCheckedIn, tone: "text-amber-100" },
                     { label: "Remaining", value: sponsorCompTicketsRemaining, tone: "text-sky-300" },
                   ].map((item) => (
-                    <article key={item.label} className="rounded-[22px] border border-stone-800 bg-stone-950/60 px-4 py-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">{item.label}</p>
+                    <article key={item.label} className="rounded-[22px] border border-gray-700 bg-gray-900/60 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">{item.label}</p>
                       <p className={`mt-2 text-2xl font-semibold ${item.tone}`}>{item.value}</p>
                     </article>
                   ))}
                 </div>
 
                 {sponsorsWithCompTickets.length === 0 ? (
-                  <p className="rounded-2xl border border-dashed border-stone-700 bg-stone-950/50 px-4 py-5 text-sm text-stone-400">
+                  <p className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 px-4 py-5 text-sm text-gray-400">
                     No sponsor comp tickets have been assigned for this show.
                   </p>
                 ) : (
@@ -1286,7 +1435,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                       return (
                         <article
                           key={`door-sponsor-comp-${sponsor.id}`}
-                          className="rounded-[24px] border border-stone-800 bg-stone-950/60 p-4"
+                          className="rounded-[24px] border border-gray-700 bg-gray-900/60 p-4"
                         >
                           <div className="flex flex-col gap-3">
                             <div className="flex gap-3">
@@ -1296,13 +1445,13 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                               />
                               <div className="min-w-0 flex-1 space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <h3 className="min-w-0 truncate text-base font-semibold text-white">
+                                  <h3 className="min-w-0 truncate text-base font-semibold text-gray-50">
                                     {getSponsorCardName(sponsor)}
                                   </h3>
-                                  <span className="rounded-full border border-stone-700 bg-stone-800 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-300">
+                                  <span className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-300">
                                     Allowed {sponsor.comp_ticket_allowance}
                                   </span>
-                                  <span className="rounded-full border border-fuchsia-700/70 bg-fuchsia-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-fuchsia-200">
+                                  <span className="rounded-full border border-amber-700/70 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200">
                                     {sponsor.comp_tickets_checked_in} Checked In
                                   </span>
                                   <span className="rounded-full border border-sky-700/70 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200">
@@ -1310,7 +1459,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                                   </span>
                                 </div>
                                 {sponsor.recognition_notes?.trim() ? (
-                                  <p className="text-xs leading-5 text-stone-300">{sponsor.recognition_notes}</p>
+                                  <p className="text-xs leading-5 text-gray-300">{sponsor.recognition_notes}</p>
                                 ) : null}
                               </div>
                             </div>
@@ -1320,7 +1469,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                                 type="button"
                                 onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, 1)}
                                 disabled={Boolean(activeActionId)}
-                                className="rounded-xl bg-fuchsia-600 px-3 py-3 text-sm font-semibold text-white transition hover:bg-fuchsia-500 disabled:cursor-not-allowed disabled:bg-fuchsia-900 disabled:opacity-40"
+                                className="rounded-xl bg-amber-600 px-3 py-3 text-sm font-semibold text-gray-50 transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-900 disabled:opacity-40"
                               >
                                 Check In 1
                               </button>
@@ -1336,14 +1485,14 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                                       [sponsor.id]: event.target.value,
                                     }))
                                   }
-                                  className="min-w-0 flex-1 rounded-xl border border-stone-700 bg-stone-900 px-3 py-3 text-sm text-stone-100 outline-none transition focus:border-fuchsia-500"
+                                  className="min-w-0 flex-1 rounded-xl border border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-100 outline-none transition focus:border-amber-500"
                                   placeholder="Custom amount"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => void handleCheckInCustomSponsorCompAmount(sponsor)}
                                   disabled={Boolean(activeActionId)}
-                                  className="rounded-xl border border-fuchsia-700/70 bg-fuchsia-500/10 px-3 py-3 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="rounded-xl border border-amber-700/70 bg-amber-500/10 px-3 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   Check In Custom
                                 </button>
@@ -1355,7 +1504,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                                 type="button"
                                 onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, -1)}
                                 disabled={Boolean(activeActionId) || sponsor.comp_tickets_checked_in <= 0}
-                                className="rounded-xl border border-stone-700 bg-stone-800 px-3 py-2.5 text-sm font-semibold text-stone-100 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-xl border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm font-semibold text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 Undo
                               </button>
@@ -1371,6 +1520,48 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
           </div>
         ) : null}
       </div>
+      {seatView ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-5"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeSeatView();
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="door-seat-dialog-title"
+            data-testid="door-seat-dialog"
+            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[20px] border border-gray-700 bg-gray-800 shadow-xl shadow-slate-950/30 sm:max-h-[calc(100vh-2.5rem)]"
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-gray-700 px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <h2 id="door-seat-dialog-title" className="truncate text-xl font-semibold text-gray-50">{seatView.guestName}</h2>
+                <p className="mt-1 text-sm text-gray-300">{seatView.admissionLabel}</p>
+                <p className="mt-1 text-sm font-semibold text-amber-200">Reserved Seats: {seatView.seatIds.join(", ")}</p>
+              </div>
+              <button
+                ref={seatDialogCloseButtonRef}
+                type="button"
+                onClick={closeSeatView}
+                className="min-h-10 rounded-lg border border-gray-700 bg-gray-700 px-4 text-sm font-semibold text-gray-50 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+              >
+                Close
+              </button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+              <ReservedSeatMap
+                seatStates={doorSeatStates}
+                title="Venue Seating Layout"
+                helperText="Stage and front orientation are shown above the seating sections."
+                includeSelectedLegend={false}
+                showCustomerSeatDetails={false}
+                legendVariant="door-readonly"
+              />
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Fragment } from "react";
 import {
@@ -23,7 +23,7 @@ type ReservedSeatMapProps = {
   helperText?: string;
   includeSelectedLegend?: boolean;
   showCustomerSeatDetails?: boolean;
-  legendVariant?: "customer" | "public" | "admin";
+  legendVariant?: "customer" | "public" | "admin" | "door-readonly";
   chromeVariant?: "stageflow" | "cmms-public";
 };
 
@@ -38,6 +38,11 @@ const publicLegendItems = [
   { label: "Available", classes: "border-emerald-400/70 bg-emerald-500 text-white shadow-[0_0_18px_rgba(34,197,94,0.24)]" },
   { label: "Taken", classes: "border-rose-400/70 bg-rose-500 text-white shadow-[0_0_18px_rgba(244,63,94,0.22)]" },
   { label: "Unavailable", classes: "border-slate-500/80 bg-slate-500 text-white" },
+] as const;
+
+const doorReadOnlyLegendItems = [
+  { label: "Guest's Seats", classes: "border-amber-300/80 bg-amber-400 text-stone-950" },
+  { label: "Other Seats", classes: "border-slate-500/80 bg-slate-500 text-white" },
 ] as const;
 
 const adminLegendItems = [
@@ -89,9 +94,11 @@ export function ReservedSeatMap({
   legendVariant = "customer",
   chromeVariant = "stageflow",
 }: ReservedSeatMapProps) {
-  const visibleLegendItems = legendVariant === "admin"
-    ? adminLegendItems
-    : legendVariant === "public"
+  const visibleLegendItems = legendVariant === "door-readonly"
+    ? doorReadOnlyLegendItems
+    : legendVariant === "admin"
+      ? adminLegendItems
+      : legendVariant === "public"
       ? publicLegendItems
       : includeSelectedLegend
         ? customerLegendItems
