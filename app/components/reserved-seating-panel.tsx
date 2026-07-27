@@ -13,6 +13,10 @@ import {
   sortReservedSeatIds,
 } from "@/lib/reserved-seating";
 import type { ReservedSeatEmailTrackingSummary } from "@/lib/reserved-seat-email-tracking";
+import {
+  getReservedSeatEmailStatusDisplayModel,
+  type ReservedSeatEmailTrackingRequestState,
+} from "@/lib/reserved-seat-email-status-display";
 import { createClient } from "@/lib/supabase/client";
 import type { ReservedSeatCategory, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -228,6 +232,7 @@ export function ReservedSeatingPanel({
   const [selectedSponsorCompId, setSelectedSponsorCompId] = useState(selectedSponsorId);
   const [seatListFilter, setSeatListFilter] = useState<ReservedSeatListFilter>("all");
   const [emailStatuses, setEmailStatuses] = useState<Record<string, ReservedSeatEmailStatus>>({});
+  const [emailTrackingRequestState, setEmailTrackingRequestState] = useState<ReservedSeatEmailTrackingRequestState>("loading");
   const supabase = useMemo(() => createClient(), []);
 
   function formatEmailEventTimestamp(value: string | null) {
@@ -238,10 +243,12 @@ export function ReservedSeatingPanel({
   async function loadReservedSeatEmailStatuses(nextLinks: ShowReservedSeatingLink[]) {
     if (nextLinks.length === 0) {
       setEmailStatuses({});
+      setEmailTrackingRequestState("loaded");
       return;
     }
 
     try {
+      setEmailTrackingRequestState("loading");
       const response = await fetch(`/api/admin/shows/${showId}/reserved-seat-email-status?slug=${encodeURIComponent(showSlug)}`, {
         method: "GET",
         credentials: "same-origin",
@@ -256,10 +263,15 @@ export function ReservedSeatingPanel({
       }
 
       setEmailStatuses(Object.fromEntries(payload.statuses.map((status) => [status.reservedSeatingLinkId, status])));
+      setEmailTrackingRequestState("loaded");
     } catch (error) {
       console.error("Reserved-seat email status load failed.", error);
-      setEmailStatuses({});
+      setEmailTrackingRequestState("error");
     }
+  }
+
+  async function handleRetryEmailTracking() {
+    await loadReservedSeatEmailStatuses(links);
   }
 
   async function loadReservedSeating() {
@@ -286,7 +298,7 @@ export function ReservedSeatingPanel({
       await loadReservedSeatEmailStatuses(nextLinks);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to load reserved seating."));
-      setEmailStatuses({});
+      setEmailTrackingRequestState("error");
     } finally {
       setIsLoading(false);
     }
@@ -294,7 +306,7 @@ export function ReservedSeatingPanel({
 
   useEffect(() => {
     void loadReservedSeating();
-  }, [showId]);
+  }, [showId, showSlug]);
 
   useEffect(() => {
     if (!selectedSponsorId) return;
@@ -1068,6 +1080,10 @@ export function ReservedSeatingPanel({
               const isManualAssigning = manualAssignLinkId === link.id;
               const linkSeatCategory = normalizeReservedSeatCategory(link.seat_category, link.is_complimentary);
               const emailStatus = emailStatuses[link.id];
+              const emailStatusDisplay = getReservedSeatEmailStatusDisplayModel({
+                emailStatus,
+                requestState: emailTrackingRequestState,
+              });
               return (
                 <article key={link.id} className={`rounded-2xl border p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : "border-white/10 bg-slate-950/30"}`}>
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1086,15 +1102,15 @@ export function ReservedSeatingPanel({
                       {link.source_note?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.source_note}</p> : null}
                       <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 px-3 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Email Status</p>
-                        <p className={`mt-1 text-sm font-semibold ${emailStatus?.prominentLabel === "Not Sent" ? "text-amber-200" : emailStatus?.prominentLabel === "Tracking unavailable" ? "text-slate-200" : "text-emerald-200"}`}>
-                          {emailStatus?.prominentLabel ?? "Tracking unavailable"}
-                          {emailStatus?.prominentTimestamp ? ` · ${formatEmailEventTimestamp(emailStatus.prominentTimestamp)}` : ""}
+                        <p className={`mt-1 text-sm font-semibold ${emailStatusDisplay.statusTone === "warning" ? "text-amber-200" : emailStatusDisplay.statusTone === "neutral" ? "text-slate-200" : "text-emerald-200"}`}>
+                          {emailStatusDisplay.prominentLabel}
+                          {emailStatusDisplay.prominentTimestamp ? ` · ${formatEmailEventTimestamp(emailStatusDisplay.prominentTimestamp)}` : ""}
                         </p>
-                        {emailStatus?.history?.length ? (
+                        {emailStatusDisplay.showHistory ? (
                           <details className="mt-2">
                             <summary className="cursor-pointer text-xs font-semibold text-slate-300">View tracking history</summary>
                             <div className="mt-2 space-y-1">
-                              {emailStatus.history.map((entry) => (
+                              {emailStatusDisplay.history.map((entry) => (
                                 <p key={`${entry.label}-${entry.timestamp ?? "none"}`} className="text-xs text-slate-300">
                                   {entry.label}
                                   {entry.timestamp ? ` · ${formatEmailEventTimestamp(entry.timestamp)}` : ""}
@@ -1103,8 +1119,20 @@ export function ReservedSeatingPanel({
                             </div>
                           </details>
                         ) : null}
+                        {emailStatusDisplay.secondaryMessage ? (
+                          <p className="mt-2 text-xs text-slate-400">{emailStatusDisplay.secondaryMessage}</p>
+                        ) : null}
+                        {emailStatusDisplay.showRetryButton ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleRetryEmailTracking()}
+                            className="mt-2 inline-flex rounded-lg border border-white/12 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/[0.1]"
+                          >
+                            Retry
+                          </button>
+                        ) : null}
                         <p className="mt-2 text-xs text-slate-400">Attempts: {emailStatus?.attempts ?? link.email_attempt_count ?? 0}</p>
-                        {emailStatus && !emailStatus.trackingAvailable && link.sent_at ? (
+                        {emailStatus?.prominentLabel === "Tracking unavailable" && link.sent_at ? (
                           <p className="mt-1 text-xs text-slate-400">Tracking unavailable for this message.</p>
                         ) : null}
                         {(emailStatus?.lastEmailError ?? link.last_email_error) ? (
