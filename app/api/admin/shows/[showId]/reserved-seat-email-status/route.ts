@@ -1,11 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAdminSessionCookieName, verifyAdminSessionCookieValue } from "@/lib/admin-session";
+import { getAdminSessionCookieName } from "@/lib/admin-session";
 import {
   deriveReservedSeatEmailTrackingSummary,
   type ReservedSeatEmailEventRecord,
 } from "@/lib/reserved-seat-email-tracking";
+import { validateReservedSeatEmailStatusAccess } from "@/lib/reserved-seat-email-status-auth";
 
 export const runtime = "nodejs";
 
@@ -29,20 +30,33 @@ export async function GET(request: Request, context: ReservedSeatEmailStatusRout
     const { showId } = await context.params;
     const { searchParams } = new URL(request.url);
     const slug = searchParams.get("slug")?.trim() ?? "";
-    if (!showId?.trim() || !slug) {
-      return NextResponse.json({ success: false, error: "Show ID and slug are required." }, { status: 400 });
+
+    const supabase = createServiceRoleSupabaseClient();
+    const { data: show, error: showError } = await supabase
+      .from("shows")
+      .select("id,slug")
+      .eq("id", showId)
+      .maybeSingle();
+
+    if (showError) {
+      throw showError;
     }
 
     const cookieStore = await cookies();
-    if (!verifyAdminSessionCookieValue(slug, cookieStore.get(getAdminSessionCookieName(slug))?.value)) {
-      return NextResponse.json({ success: false, error: "Admin access is required." }, { status: 401 });
+    const accessResult = validateReservedSeatEmailStatusAccess({
+      requestedShowId: showId,
+      requestedSlug: slug,
+      canonicalShow: show ? { id: show.id, slug: show.slug } : null,
+      cookieValue: show?.slug ? cookieStore.get(getAdminSessionCookieName(show.slug))?.value : undefined,
+    });
+    if (!accessResult.ok) {
+      return NextResponse.json({ success: false, error: accessResult.error }, { status: accessResult.status });
     }
 
-    const supabase = createServiceRoleSupabaseClient();
     const { data: links, error: linksError } = await supabase
       .from("show_reserved_seating_links")
       .select("id,resend_email_id,sent_at,email_attempt_count,last_email_error")
-      .eq("show_id", showId);
+      .eq("show_id", accessResult.showId);
 
     if (linksError) {
       throw linksError;
