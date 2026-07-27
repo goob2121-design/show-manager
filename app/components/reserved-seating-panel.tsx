@@ -12,6 +12,7 @@ import {
   RESERVED_SEATING_VENUE,
   sortReservedSeatIds,
 } from "@/lib/reserved-seating";
+import type { ReservedSeatEmailTrackingSummary } from "@/lib/reserved-seat-email-tracking";
 import { createClient } from "@/lib/supabase/client";
 import type { ReservedSeatCategory, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -54,6 +55,11 @@ type LinkWithSeats = ShowReservedSeatingLink & {
 
 type CopyFeedbackTarget = "subject" | "body" | "link" | null;
 type ReservedSeatListFilter = "all" | ReservedSeatCategory;
+type ReservedSeatEmailStatus = ReservedSeatEmailTrackingSummary & {
+  reservedSeatingLinkId: string;
+  attempts: number;
+  lastEmailError: string | null;
+};
 
 const initialLinkFormState: LinkFormState = {
   customerName: "",
@@ -221,7 +227,40 @@ export function ReservedSeatingPanel({
   const [copyFeedback, setCopyFeedback] = useState<CopyFeedbackTarget>(null);
   const [selectedSponsorCompId, setSelectedSponsorCompId] = useState(selectedSponsorId);
   const [seatListFilter, setSeatListFilter] = useState<ReservedSeatListFilter>("all");
+  const [emailStatuses, setEmailStatuses] = useState<Record<string, ReservedSeatEmailStatus>>({});
   const supabase = useMemo(() => createClient(), []);
+
+  function formatEmailEventTimestamp(value: string | null) {
+    if (!value) return "";
+    return new Date(value).toLocaleString();
+  }
+
+  async function loadReservedSeatEmailStatuses(nextLinks: ShowReservedSeatingLink[]) {
+    if (nextLinks.length === 0) {
+      setEmailStatuses({});
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/shows/${showId}/reserved-seat-email-status?slug=${encodeURIComponent(showSlug)}`, {
+        method: "GET",
+        credentials: "same-origin",
+      });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        statuses?: ReservedSeatEmailStatus[];
+      };
+
+      if (!response.ok || !payload.success || !Array.isArray(payload.statuses)) {
+        throw new Error("Reserved-seat email tracking is unavailable.");
+      }
+
+      setEmailStatuses(Object.fromEntries(payload.statuses.map((status) => [status.reservedSeatingLinkId, status])));
+    } catch (error) {
+      console.error("Reserved-seat email status load failed.", error);
+      setEmailStatuses({});
+    }
+  }
 
   async function loadReservedSeating() {
     setIsLoading(true);
@@ -241,10 +280,13 @@ export function ReservedSeatingPanel({
         throw assignmentsError;
       }
 
-      setLinks((linkRows ?? []) as ShowReservedSeatingLink[]);
+      const nextLinks = (linkRows ?? []) as ShowReservedSeatingLink[];
+      setLinks(nextLinks);
       setAssignments((assignmentRows ?? []) as ShowReservedSeatAssignment[]);
+      await loadReservedSeatEmailStatuses(nextLinks);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to load reserved seating."));
+      setEmailStatuses({});
     } finally {
       setIsLoading(false);
     }
@@ -1025,6 +1067,7 @@ export function ReservedSeatingPanel({
               const status = getLinkStatus(link);
               const isManualAssigning = manualAssignLinkId === link.id;
               const linkSeatCategory = normalizeReservedSeatCategory(link.seat_category, link.is_complimentary);
+              const emailStatus = emailStatuses[link.id];
               return (
                 <article key={link.id} className={`rounded-2xl border p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : "border-white/10 bg-slate-950/30"}`}>
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1041,9 +1084,33 @@ export function ReservedSeatingPanel({
                       </div>
                       {link.email?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.email}</p> : null}
                       {link.source_note?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.source_note}</p> : null}
-                      {link.resend_email_id && link.sent_at ? <p className="mt-2 text-xs text-emerald-200">Email sent: {new Date(link.sent_at).toLocaleString()}</p> : <p className="mt-2 text-xs text-amber-200">Email sent: No</p>}
-                      <p className="mt-1 text-xs text-slate-400">Delivery attempts: {link.email_attempt_count ?? 0}</p>
-                      {link.last_email_error ? <p className="mt-1 text-xs text-rose-200">Last email error: {link.last_email_error}</p> : null}
+                      <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 px-3 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Email Status</p>
+                        <p className={`mt-1 text-sm font-semibold ${emailStatus?.prominentLabel === "Not Sent" ? "text-amber-200" : emailStatus?.prominentLabel === "Tracking unavailable" ? "text-slate-200" : "text-emerald-200"}`}>
+                          {emailStatus?.prominentLabel ?? "Tracking unavailable"}
+                          {emailStatus?.prominentTimestamp ? ` · ${formatEmailEventTimestamp(emailStatus.prominentTimestamp)}` : ""}
+                        </p>
+                        {emailStatus?.history?.length ? (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-xs font-semibold text-slate-300">View tracking history</summary>
+                            <div className="mt-2 space-y-1">
+                              {emailStatus.history.map((entry) => (
+                                <p key={`${entry.label}-${entry.timestamp ?? "none"}`} className="text-xs text-slate-300">
+                                  {entry.label}
+                                  {entry.timestamp ? ` · ${formatEmailEventTimestamp(entry.timestamp)}` : ""}
+                                </p>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
+                        <p className="mt-2 text-xs text-slate-400">Attempts: {emailStatus?.attempts ?? link.email_attempt_count ?? 0}</p>
+                        {emailStatus && !emailStatus.trackingAvailable && link.sent_at ? (
+                          <p className="mt-1 text-xs text-slate-400">Tracking unavailable for this message.</p>
+                        ) : null}
+                        {(emailStatus?.lastEmailError ?? link.last_email_error) ? (
+                          <p className="mt-1 text-xs text-rose-200">Last email error: {emailStatus?.lastEmailError ?? link.last_email_error}</p>
+                        ) : null}
+                      </div>
                       <p className="mt-2 break-all text-sm text-slate-400">{getCustomerLinkUrl(link.selection_token)}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {link.seatIds.length > 0 ? (
