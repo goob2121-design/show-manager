@@ -59,11 +59,19 @@ test("reserved seat map supports sponsor packet legend and neutral print styling
   assert.match(source, /legendVariant\?: "customer" \| "public" \| "admin" \| "door-readonly" \| "sponsor-packet"/);
   assert.match(source, /chromeVariant\?: "stageflow" \| "cmms-public" \| "sponsor-packet"/);
   assert.match(source, /sizeVariant\?: "default" \| "compact"/);
-  assert.match(source, /const sponsorPacketLegendItems = \[\s*\{ label: "Your Reserved Seats"/);
+  assert.match(source, /const sponsorPacketLegendItems = \[\s*\{ label: "Your Reserved Seats", classes: "border-\[#5f430f\] bg-\[#d6af45\] text-\[#1f1505\]"/);
   assert.doesNotMatch(source, /const sponsorPacketLegendItems = \[[\s\S]*Other Seats/);
   assert.match(source, /min-w-\[620px\]/);
   assert.match(source, /flex flex-wrap items-center justify-center/);
-  assert.match(source, /w-full max-w-full overflow-hidden text-stone-900 shadow-none/);
+  assert.match(source, /w-full max-w-full overflow-hidden text-\[#050505\] shadow-none/);
+  assert.match(source, /status === "selected"[\s\S]*border-\[#5f430f\] bg-\[#d6af45\] text-\[#1f1505\]/);
+  assert.match(source, /cursor-not-allowed border-stone-400 bg-stone-100 text-stone-600 opacity-100/);
+  assert.match(source, /\.packet-sponsor-seat--selected,\s*\.packet-sponsor-seat-legend \{[\s\S]*background-color: #d4a72c !important;[\s\S]*border-color: #5a4300 !important;[\s\S]*-webkit-print-color-adjust: exact !important;[\s\S]*print-color-adjust: exact !important;[\s\S]*box-shadow: inset 0 0 0 999px #d4a72c !important;/);
+  assert.match(source, /\.packet-sponsor-seat--neutral \{[\s\S]*background-color: #f5f5f4 !important;[\s\S]*border-color: #a8a29e !important;[\s\S]*-webkit-print-color-adjust: exact !important;/);
+  assert.match(source, /packet-sponsor-seat-map/);
+  assert.match(source, /packet-sponsor-seat--selected/);
+  assert.match(source, /packet-sponsor-seat--neutral/);
+  assert.match(source, /packet-sponsor-seat-legend/);
 });
 
 test("print css keeps seat summary and map together on the ticket page with compact packet-specific sizing", async () => {
@@ -71,7 +79,14 @@ test("print css keeps seat summary and map together on the ticket page with comp
 
   assert.match(source, /\.packet-ticket-seat-summary,\s*\.packet-ticket-seat-map \{ break-inside: avoid; page-break-inside: avoid; \}/);
   assert.match(source, /\.packet-ticket-page \{ font-size: 9\.85pt !important; line-height: 1\.28 !important; \}/);
+  assert.match(source, /\.packet-page \.text-stone-600,[\s\S]*color: #333333 !important;/);
   assert.match(source, /\.packet-ticket-page \.packet-ticket-content \{ margin-top: 0\.5rem !important; padding: 0 !important; border: 0 !important;/);
-  assert.match(source, /\.packet-ticket-page \.packet-seat-map-frame \{ padding: 0 !important; border: 1px solid #d6d3d1 !important;.*transform: scale\(0\.74\);/);
-  assert.match(source, /\.packet-ticket-page \.packet-ticket-map-heading \{ margin-top: 0\.4rem !important; padding-top: 0\.22rem !important; border-top: 1px solid #0f766e !important; \}/);
+  assert.match(source, /packet-cover-title packet-heading mt-3 text-4xl font-bold text-stone-900 print:text-\[#111111\]/);
+  assert.match(source, /\.packet-cover-page \.packet-cover-title \{ color: #111111 !important; font-weight: 800 !important; opacity: 1 !important; -webkit-text-fill-color: #111111 !important; \}/);
+  assert.match(source, /\.packet-show-page \.packet-section-heading \{ color: #0f5c53 !important; border-color: #0f5c53 !important;[\s\S]*font-weight: 700 !important;/);
+  assert.match(source, /\.packet-ticket-page \.packet-ticket-seat-summary \{[\s\S]*border-left: 2\.5px solid #0f5c53 !important;[\s\S]*color: #050505 !important;/);
+  assert.match(source, /\.packet-ticket-page \.packet-ticket-seat-summary \.packet-ticket-seat-summary-heading \{[\s\S]*font-weight: 700 !important;[\s\S]*color: #7a5a14 !important;/);
+  assert.match(source, /\.packet-ticket-page \.packet-ticket-seat-summary \.packet-ticket-seat-id-value \{ color: #050505 !important; font-weight: 700 !important; \}/);
+  assert.match(source, /\.packet-ticket-page \.packet-seat-map-frame \{ padding: 0 !important; border: 1px solid #a8a29e !important;.*transform: scale\(0\.74\);/);
+  assert.match(source, /\.packet-ticket-page \.packet-ticket-map-heading \{ margin-top: 0\.4rem !important; padding-top: 0\.22rem !important; border-top: 1px solid #0f5c53 !important; \}/);
 });

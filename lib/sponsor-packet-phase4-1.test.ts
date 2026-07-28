@@ -54,7 +54,7 @@ test("standard show information uses compact readable one-page rules without cli
 test("screen headings use accessible teal while print headings remain dark", async () => {
   const value = await source();
   assert.match(value, /packet-section-heading \{ color: #0e7490; \}/);
-  assert.match(value, /packet-show-page \.packet-section-heading \{ color: #052e2b !important/);
+  assert.match(value, /packet-show-page \.packet-section-heading \{ color: #0f5c53 !important; border-color: #0f5c53 !important;/);
   assert.match(value, /packet-section-heading border-b border-teal-500\/50/);
 });
 

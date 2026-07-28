@@ -14,6 +14,10 @@ test("cover uses a dramatically larger centered CMMS logo without an empty spons
   assert.match(value, /height=\{432\}/);
   assert.match(value, /h-64 max-w-full w-auto object-contain/);
   assert.match(value, /relative flex w-full justify-center/);
+  assert.match(value, /packet-cover-page/);
+  assert.match(value, /packet-cover-label mt-8 text-xs font-semibold uppercase tracking-\[0\.24em\] text-emerald-800/);
+  assert.match(value, /packet-cover-title packet-heading mt-3 text-4xl font-bold text-stone-900 print:text-\[#111111\]/);
+  assert.match(value, /packet-cover-title-underline mt-3 h-\[3px\] w-36 rounded-full bg-amber-700\/80/);
   assert.match(value, /draft\.sponsorLogoUrl \? <Image/);
   assert.doesNotMatch(value, /Sponsor logo unavailable/);
 });
@@ -29,6 +33,9 @@ test("print output forces headings, body, lists, tickets, and footers to near-bl
   const value = await source();
   assert.match(value, /\.packet-page, \.packet-page \* \{ color: #050505 !important; \}/);
   assert.match(value, /\.packet-page \{ background: #fff !important; \}/);
+  assert.match(value, /\.packet-cover-page \.packet-cover-label \{ color: #23433d !important; opacity: 1 !important; -webkit-text-fill-color: #23433d !important; \}/);
+  assert.match(value, /\.packet-cover-page \.packet-cover-title \{ color: #111111 !important; font-weight: 800 !important; opacity: 1 !important; -webkit-text-fill-color: #111111 !important; \}/);
+  assert.match(value, /\.packet-cover-page \.packet-cover-title-underline \{ background: #b68a2c !important; \}/);
   assert.match(value, /\.packet-footer/);
 });
 
