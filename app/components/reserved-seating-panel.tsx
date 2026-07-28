@@ -14,7 +14,11 @@ import {
 } from "@/lib/reserved-seating";
 import type { ReservedSeatEmailTrackingSummary } from "@/lib/reserved-seat-email-tracking";
 import {
+  formatReservedSeatEmailFullTimestamp,
+  formatReservedSeatEmailTimestamp,
   getReservedSeatEmailStatusDisplayModel,
+  getReservedSeatEmailStatusVisual,
+  type ReservedSeatEmailStatusTone,
   type ReservedSeatEmailTrackingRequestState,
 } from "@/lib/reserved-seat-email-status-display";
 import { createClient } from "@/lib/supabase/client";
@@ -206,6 +210,29 @@ function buildReservedSeatingMessageBody(link: LinkWithSeats, absoluteUrl: strin
   ].join("\n");
 }
 
+function getEmailStatusToneClasses(tone: ReservedSeatEmailStatusTone) {
+  switch (tone) {
+    case "blue":
+      return "border-sky-400/30 bg-sky-500/[0.07] text-sky-200";
+    case "green":
+      return "border-emerald-400/30 bg-emerald-500/[0.07] text-emerald-200";
+    case "cyan":
+      return "border-cyan-400/30 bg-cyan-500/[0.07] text-cyan-200";
+    case "gold":
+      return "border-amber-300/35 bg-amber-400/[0.08] text-amber-100";
+    case "orange":
+      return "border-orange-400/30 bg-orange-500/[0.07] text-orange-200";
+    case "purple":
+      return "border-violet-400/30 bg-violet-500/[0.07] text-violet-200";
+    case "amber":
+      return "border-amber-400/30 bg-amber-500/[0.07] text-amber-200";
+    case "red":
+      return "border-rose-400/30 bg-rose-500/[0.07] text-rose-200";
+    default:
+      return "border-white/12 bg-white/[0.05] text-slate-200";
+  }
+}
+
 export function ReservedSeatingPanel({
   showId,
   showSlug,
@@ -234,11 +261,6 @@ export function ReservedSeatingPanel({
   const [emailStatuses, setEmailStatuses] = useState<Record<string, ReservedSeatEmailStatus>>({});
   const [emailTrackingRequestState, setEmailTrackingRequestState] = useState<ReservedSeatEmailTrackingRequestState>("loading");
   const supabase = useMemo(() => createClient(), []);
-
-  function formatEmailEventTimestamp(value: string | null) {
-    if (!value) return "";
-    return new Date(value).toLocaleString();
-  }
 
   async function loadReservedSeatEmailStatuses(nextLinks: ShowReservedSeatingLink[]) {
     if (nextLinks.length === 0) {
@@ -1084,6 +1106,7 @@ export function ReservedSeatingPanel({
                 emailStatus,
                 requestState: emailTrackingRequestState,
               });
+              const emailStatusToneClasses = getEmailStatusToneClasses(emailStatusDisplay.statusTone);
               return (
                 <article key={link.id} className={`rounded-2xl border p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : "border-white/10 bg-slate-950/30"}`}>
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1097,30 +1120,65 @@ export function ReservedSeatingPanel({
                         <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                           {link.ticket_count} seat{link.ticket_count === 1 ? "" : "s"}
                         </span>
+                        {emailStatusDisplay.showCompactBadge ? (
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${emailStatusToneClasses}`}>
+                            <span aria-hidden="true">{emailStatusDisplay.statusIcon}</span>
+                            {emailStatusDisplay.compactBadgeLabel}
+                          </span>
+                        ) : null}
                       </div>
                       {link.email?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.email}</p> : null}
                       {link.source_note?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.source_note}</p> : null}
-                      <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 px-3 py-3">
+                      <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 px-3 py-3" aria-live="polite">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Email Status</p>
-                        <p className={`mt-1 text-sm font-semibold ${emailStatusDisplay.statusTone === "warning" ? "text-amber-200" : emailStatusDisplay.statusTone === "neutral" ? "text-slate-200" : "text-emerald-200"}`}>
-                          {emailStatusDisplay.prominentLabel}
-                          {emailStatusDisplay.prominentTimestamp ? ` · ${formatEmailEventTimestamp(emailStatusDisplay.prominentTimestamp)}` : ""}
-                        </p>
+                        <div className={`mt-2 rounded-lg border-l-2 px-3 py-2 ${emailStatusToneClasses}`}>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-75">Latest Activity</p>
+                          <p className="mt-1 flex items-center gap-2 text-sm font-semibold">
+                            <span aria-hidden="true">{emailStatusDisplay.statusIcon}</span>
+                            <span>{emailStatusDisplay.prominentLabel}</span>
+                          </p>
+                          {emailStatusDisplay.prominentTimestamp ? (
+                            <time
+                              className="mt-1 block text-xs opacity-80"
+                              dateTime={emailStatusDisplay.prominentTimestamp}
+                              title={formatReservedSeatEmailFullTimestamp(emailStatusDisplay.prominentTimestamp)}
+                            >
+                              {formatReservedSeatEmailTimestamp(emailStatusDisplay.prominentTimestamp)}
+                            </time>
+                          ) : null}
+                        </div>
                         {emailStatusDisplay.showHistory ? (
                           <details className="mt-2">
                             <summary className="cursor-pointer text-xs font-semibold text-slate-300">View tracking history</summary>
-                            <div className="mt-2 space-y-1">
-                              {emailStatusDisplay.history.map((entry) => (
-                                <p key={`${entry.label}-${entry.timestamp ?? "none"}`} className="text-xs text-slate-300">
-                                  {entry.label}
-                                  {entry.timestamp ? ` · ${formatEmailEventTimestamp(entry.timestamp)}` : ""}
-                                </p>
-                              ))}
+                            <div className="mt-2 space-y-2" role="list">
+                              {emailStatusDisplay.history.map((entry, index) => {
+                                const historyVisual = getReservedSeatEmailStatusVisual(entry.label);
+                                return (
+                                  <div key={`${entry.label}-${entry.timestamp ?? "none"}-${index}`} className="flex items-start gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] px-2.5 py-2" role="listitem">
+                                    <span className="mt-0.5 text-sm" aria-hidden="true">{historyVisual.icon}</span>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-slate-200">{entry.label}</p>
+                                      {entry.timestamp ? (
+                                        <time
+                                          className="mt-0.5 block text-[11px] text-slate-400"
+                                          dateTime={entry.timestamp}
+                                          title={formatReservedSeatEmailFullTimestamp(entry.timestamp)}
+                                        >
+                                          {formatReservedSeatEmailTimestamp(entry.timestamp)}
+                                        </time>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </details>
                         ) : null}
                         {emailStatusDisplay.secondaryMessage ? (
-                          <p className="mt-2 text-xs text-slate-400">{emailStatusDisplay.secondaryMessage}</p>
+                          <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-200">
+                            <span aria-hidden="true">⚠</span>
+                            {emailStatusDisplay.secondaryMessage}
+                          </p>
                         ) : null}
                         {emailStatusDisplay.showRetryButton ? (
                           <button

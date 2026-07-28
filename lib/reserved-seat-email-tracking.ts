@@ -129,16 +129,6 @@ export function getReservedSeatEmailStatusLabel(
   }
 }
 
-function dedupeTrackingLines(lines: ReservedSeatEmailTrackingLine[]) {
-  const seen = new Set<string>();
-  return lines.filter((line) => {
-    const key = `${line.label}|${line.timestamp ?? ""}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 export function deriveReservedSeatEmailTrackingSummary(input: {
   sentAt: string | null;
   resendEmailId: string | null;
@@ -148,13 +138,23 @@ export function deriveReservedSeatEmailTrackingSummary(input: {
     new Date(left.event_created_at).getTime() - new Date(right.event_created_at).getTime()
   ));
 
-  const history = dedupeTrackingLines([
-    ...(input.sentAt ? [{ label: "Sent", timestamp: input.sentAt }] : []),
+  const providerSentExistsForCurrentMessage = Boolean(
+    input.resendEmailId
+    && sortedEvents.some(
+      (event) => event.event_type === "email.sent" && event.resend_email_id === input.resendEmailId,
+    ),
+  );
+  const history = [
+    ...(input.sentAt && !providerSentExistsForCurrentMessage
+      ? [{ label: "Sent", timestamp: input.sentAt }]
+      : []),
     ...sortedEvents.map((event) => ({
       label: getReservedSeatEmailStatusLabel(event.event_type, event.click_target),
       timestamp: event.event_created_at,
     })),
-  ]);
+  ].sort((left, right) => (
+    new Date(left.timestamp ?? 0).getTime() - new Date(right.timestamp ?? 0).getTime()
+  ));
 
   if (!input.sentAt && !input.resendEmailId) {
     return {

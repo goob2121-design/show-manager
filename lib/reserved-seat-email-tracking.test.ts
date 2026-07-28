@@ -67,3 +67,58 @@ test("older sent markers safely report tracking unavailable without claiming not
   assert.equal(summary.prominentLabel, "Tracking unavailable");
   assert.equal(summary.history.some((entry: { label: string }) => /not opened/i.test(entry.label)), false);
 });
+test("local sent_at fallback is hidden when the current provider Sent event exists", async () => {
+  const { deriveReservedSeatEmailTrackingSummary } = await trackingModulePromise;
+  const summary = deriveReservedSeatEmailTrackingSummary({
+    sentAt: "2026-07-27T14:00:00.000Z",
+    resendEmailId: "re_current",
+    events: [makeEvent({ event_type: "email.sent", resend_email_id: "re_current", event_created_at: "2026-07-27T14:00:01.000Z" })],
+  });
+
+  assert.deepEqual(summary.history.filter((entry: { label: string }) => entry.label === "Sent"), [
+    { label: "Sent", timestamp: "2026-07-27T14:00:01.000Z" },
+  ]);
+});
+
+test("local sent_at remains as the Sent fallback when no current provider Sent event exists", async () => {
+  const { deriveReservedSeatEmailTrackingSummary } = await trackingModulePromise;
+  const summary = deriveReservedSeatEmailTrackingSummary({
+    sentAt: "2026-07-27T14:00:00.000Z",
+    resendEmailId: "re_current",
+    events: [makeEvent({ event_type: "email.delivered", resend_email_id: "re_current", event_created_at: "2026-07-27T14:00:02.000Z" })],
+  });
+
+  assert.deepEqual(summary.history.map((entry: { label: string }) => entry.label), ["Sent", "Delivered"]);
+});
+
+test("distinct legitimate provider Sent events remain separate and chronological", async () => {
+  const { deriveReservedSeatEmailTrackingSummary } = await trackingModulePromise;
+  const summary = deriveReservedSeatEmailTrackingSummary({
+    sentAt: "2026-07-27T15:00:00.000Z",
+    resendEmailId: "re_second",
+    events: [
+      makeEvent({ id: "sent_2", event_type: "email.sent", resend_email_id: "re_second", event_created_at: "2026-07-27T15:00:01.000Z" }),
+      makeEvent({ id: "sent_1", event_type: "email.sent", resend_email_id: "re_first", event_created_at: "2026-07-27T14:00:01.000Z" }),
+    ],
+  });
+
+  assert.deepEqual(summary.history, [
+    { label: "Sent", timestamp: "2026-07-27T14:00:01.000Z" },
+    { label: "Sent", timestamp: "2026-07-27T15:00:01.000Z" },
+  ]);
+});
+
+test("Sent fallback cleanup leaves all other provider event types untouched", async () => {
+  const { deriveReservedSeatEmailTrackingSummary } = await trackingModulePromise;
+  const summary = deriveReservedSeatEmailTrackingSummary({
+    sentAt: "2026-07-27T14:00:00.000Z",
+    resendEmailId: "re_current",
+    events: [
+      makeEvent({ event_type: "email.sent", resend_email_id: "re_current", event_created_at: "2026-07-27T14:00:01.000Z" }),
+      makeEvent({ id: "delivered", event_type: "email.delivered", resend_email_id: "re_current", event_created_at: "2026-07-27T14:00:02.000Z" }),
+      makeEvent({ id: "opened", event_type: "email.opened", resend_email_id: "re_current", event_created_at: "2026-07-27T14:00:03.000Z" }),
+    ],
+  });
+
+  assert.deepEqual(summary.history.map((entry: { label: string }) => entry.label), ["Sent", "Delivered", "Opened (estimated)"]);
+});
