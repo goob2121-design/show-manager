@@ -121,7 +121,12 @@ test("Door Mode toolbar is compact on desktop and safely stacked on mobile", asy
   assert.match(source, /aria-label="Sponsor Comp Tickets"/);
   assert.match(source, /aria-label="View Totals"/);
   assert.match(source, /aria-label="Recent Check-Ins"/);
-  assert.match(source, /<div aria-label="Connected"/);
+  assert.equal((source.match(/aria-label="Connected"/g) ?? []).length, 1);
+  const toolbarSource = source.slice(
+    source.indexOf('data-testid="door-operational-toolbar"'),
+    source.indexOf("Prepaid / Online Check-In"),
+  );
+  assert.doesNotMatch(toolbarSource, /aria-label="Connected"/);
   assert.doesNotMatch(source, /<button[^>]*aria-label="Connected"/);
   assert.doesNotMatch(source, /overflow-x/);
   assert.ok(source.indexOf("Back to Admin") < source.indexOf('data-testid="door-operational-toolbar"'));
@@ -133,6 +138,7 @@ test("Door Mode hero shows one dynamic title with centered clock and right-side 
   assert.match(source, /lg:grid-cols-\[minmax\(0,1fr\)_auto_minmax\(0,1fr\)\]/);
   assert.match(source, /lg:text-center[\s\S]*\{formattedCurrentTime\}/);
   assert.match(source, /Door Check-In[\s\S]*aria-label="Connected"/);
+  assert.equal((source.match(/>\s*Connected\s*</g) ?? []).length, 1);
   assert.match(source, /px-3 py-2 sm:px-4 sm:py-3/);
   assert.match(source, /formatShowDate\(show\.show_date\)/);
   assert.match(source, /&larr; Back to Admin/);
@@ -160,6 +166,7 @@ test("Door Mode hero uses the official compact CMMS logo without duplicating tit
   assert.match(source, /lg:grid-cols-\[minmax\(0,1fr\)_auto_minmax\(0,1fr\)\]/);
   assert.match(source, /\{formattedCurrentTime\}/);
   assert.match(source, /Door Check-In[\s\S]*aria-label="Connected"/);
+  assert.equal((source.match(/>\s*Connected\s*</g) ?? []).length, 1);
   assert.match(source, /px-3 py-2 sm:px-4 sm:py-3/);
   assert.doesNotMatch(source, /overflow-x/);
 });

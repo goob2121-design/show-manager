@@ -1112,10 +1112,6 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                   </div>
                 ) : null}
               </div>
-              <div aria-label="Connected" className="flex min-h-10 items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-500/5 px-3">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">Connected</span>
-              </div>
             </div>
           </div>
           {hasActiveGuestSearch && filteredPrepaidTickets.length === 0 && filteredSpecialAdmissions.length === 0 ? (
