@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -23261,12 +23261,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   Store sponsors once, then assign and order them for this show.
                 </p>
               </div>
-              <Link
-                href={`/admin/${show.slug}/print/sponsors`}
-                className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-              >
-                Print Sponsor Rundown
-              </Link>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/admin/${show.slug}/sponsor-packet`}
+                  className="w-fit rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                >
+                  Sponsor Packet Builder
+                </Link>
+                <Link
+                  href={`/admin/${show.slug}/print/sponsors`}
+                  className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  Print Sponsor Rundown
+                </Link>
+              </div>
             </div>
 
             <SectionLoadWarning
