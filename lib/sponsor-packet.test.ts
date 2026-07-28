@@ -42,7 +42,7 @@ test("ticket wording handles singular, plural, reserved, general admission, and 
   const { buildSponsorTicketParagraph } = await packetModulePromise;
   assert.equal(buildSponsorTicketParagraph(await makeDraft({ ticketCount: 1, admissionType: "general" })), "Enclosed is one complimentary general-admission ticket for the Cumberland Mountain Music Show.");
   assert.match(buildSponsorTicketParagraph(await makeDraft({ ticketCount: 4, admissionType: "reserved", seatLabels: "R-C1, R-C2, R-C3, R-C4" })) ?? "", /four complimentary reserved-seat tickets|4 complimentary reserved-seat tickets/);
-  assert.match(buildSponsorTicketParagraph(await makeDraft({ ticketCount: 4, admissionType: "reserved", seatLabels: "" })) ?? "", /assistance selecting or locating your reserved seats/);
+  assert.equal(buildSponsorTicketParagraph(await makeDraft({ ticketCount: 4, admissionType: "reserved", seatLabels: "" })), "Enclosed are 4 complimentary reserved-seat tickets for the Cumberland Mountain Music Show.");
   assert.equal(buildSponsorTicketParagraph(await makeDraft({ includeTickets: false })), null);
 });
 

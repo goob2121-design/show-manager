@@ -1,0 +1,77 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const packetModulePromise = import(new URL("./sponsor-packet.ts", import.meta.url).href);
+const componentPath = new URL("../app/components/sponsor-packet-builder.tsx", import.meta.url);
+const seatMapPath = new URL("../app/components/reserved-seat-map.tsx", import.meta.url);
+
+function componentSource() { return readFile(componentPath, "utf8"); }
+function seatMapSource() { return readFile(seatMapPath, "utf8"); }
+
+test("seat summary groups consecutive seats by section and row", async () => {
+  const { buildSponsorPacketSeatSummary } = await packetModulePromise;
+  const summary = buildSponsorPacketSeatSummary(["L-C1", "L-C2", "L-C3", "R-A10"]);
+
+  assert.deepEqual(summary.invalidSeatIds, []);
+  assert.deepEqual(summary.validSeatIds, ["L-C1", "L-C2", "L-C3", "R-A10"]);
+  assert.equal(summary.groups.length, 2);
+  assert.equal(summary.groups[0]?.summaryLabel, "Left Section, Row C: Seats 1–3");
+  assert.equal(summary.groups[1]?.summaryLabel, "Right Section, Row A: Seat 10");
+});
+
+test("seat summary ignores invalid seat ids without exposing them in groups", async () => {
+  const { buildSponsorPacketSeatSummary } = await packetModulePromise;
+  const summary = buildSponsorPacketSeatSummary(["L-B1", "BAD-SEAT", "R-Z99"]);
+
+  assert.deepEqual(summary.validSeatIds, ["L-B1"]);
+  assert.deepEqual(summary.invalidSeatIds, ["BAD-SEAT", "R-Z99"]);
+  assert.equal(summary.groups.length, 1);
+  assert.equal(summary.groups[0]?.rowLabel, "B");
+});
+
+test("ticket page renders reserved-seat summary and printable map without duplicate assigned-seats wording", async () => {
+  const source = await componentSource();
+
+  assert.match(source, /buildSponsorPacketSeatSummary/);
+  assert.match(source, /Your Reserved Seats/);
+  assert.match(source, /Reserved Seat Location Map/);
+  assert.match(source, /Highlighted seats are reserved for \$\{draft\.sponsorName\}\./);
+  assert.match(source, /packet-ticket-map-heading/);
+  assert.match(source, /legendVariant="sponsor-packet"/);
+  assert.match(source, /chromeVariant="sponsor-packet"/);
+  assert.match(source, /sizeVariant="compact"/);
+  assert.doesNotMatch(source, /<strong>Assigned seats:<\/strong>/);
+});
+
+test("ticket page preserves reserved fallback message and optional map toggle", async () => {
+  const source = await componentSource();
+
+  assert.match(source, /Reserved seating is included\. Seat information will be provided separately\./);
+  assert.match(source, /reservedSeatLocationMap: true/);
+  assert.match(source, /Include Reserved Seat Location Map/);
+  assert.match(source, /showReservedSeatMap = showReservedSeatSummary && presentationSections\.reservedSeatLocationMap/);
+});
+
+test("reserved seat map supports sponsor packet legend and neutral print styling", async () => {
+  const source = await seatMapSource();
+
+  assert.match(source, /legendVariant\?: "customer" \| "public" \| "admin" \| "door-readonly" \| "sponsor-packet"/);
+  assert.match(source, /chromeVariant\?: "stageflow" \| "cmms-public" \| "sponsor-packet"/);
+  assert.match(source, /sizeVariant\?: "default" \| "compact"/);
+  assert.match(source, /const sponsorPacketLegendItems = \[\s*\{ label: "Your Reserved Seats"/);
+  assert.doesNotMatch(source, /const sponsorPacketLegendItems = \[[\s\S]*Other Seats/);
+  assert.match(source, /min-w-\[620px\]/);
+  assert.match(source, /flex flex-wrap items-center justify-center/);
+  assert.match(source, /w-full max-w-full overflow-hidden text-stone-900 shadow-none/);
+});
+
+test("print css keeps seat summary and map together on the ticket page with compact packet-specific sizing", async () => {
+  const source = await componentSource();
+
+  assert.match(source, /\.packet-ticket-seat-summary,\s*\.packet-ticket-seat-map \{ break-inside: avoid; page-break-inside: avoid; \}/);
+  assert.match(source, /\.packet-ticket-page \{ font-size: 9\.85pt !important; line-height: 1\.28 !important; \}/);
+  assert.match(source, /\.packet-ticket-page \.packet-ticket-content \{ margin-top: 0\.5rem !important; padding: 0 !important; border: 0 !important;/);
+  assert.match(source, /\.packet-ticket-page \.packet-seat-map-frame \{ padding: 0 !important; border: 1px solid #d6d3d1 !important;.*transform: scale\(0\.74\);/);
+  assert.match(source, /\.packet-ticket-page \.packet-ticket-map-heading \{ margin-top: 0\.4rem !important; padding-top: 0\.22rem !important; border-top: 1px solid #0f766e !important; \}/);
+});

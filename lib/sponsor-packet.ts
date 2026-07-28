@@ -107,6 +107,20 @@ export type SponsorPacketSavedDraft = {
   updated_at: string;
 };
 
+export type SponsorPacketSeatSummaryGroup = {
+  section: string;
+  sectionLabel: string;
+  rowLabel: string;
+  seatNumbers: number[];
+  summaryLabel: string;
+};
+
+export type SponsorPacketSeatSummary = {
+  validSeatIds: string[];
+  invalidSeatIds: string[];
+  groups: SponsorPacketSeatSummaryGroup[];
+};
+
 export type SponsorPacketShowSource = { id: string; slug: string; name: string; show_date: string | null; venue: string | null; venue_address: string | null; show_start_time: string | null };
 export type SponsorPacketSponsorSource = { id: string; name: string; logo_url?: string | null; recognition_notes?: string | null };
 export type SponsorPacketShowSponsorSource = { show_id: string; sponsor_id: string | null; comp_ticket_allowance: number; recognition_notes: string | null };
@@ -114,21 +128,46 @@ export type SponsorPacketGuestSource = { show_id: string; name: string | null; g
 export type SponsorPacketReservedLinkSource = { id: string; show_id: string; customer_name: string };
 export type SponsorPacketSeatAssignmentSource = { show_id: string; seating_link_id: string | null; seat_id: string };
 
-export const DEFAULT_SPONSOR_THANK_YOU = `On behalf of everyone involved with the Cumberland Mountain Music Show, I would like to personally thank you for your generous support of our upcoming event.
+export const DEFAULT_SPONSOR_THANK_YOU = `On behalf of everyone involved with the Cumberland Mountain Music Show, I would like to personally thank you for your generosity toward our upcoming event.
 
-Your sponsorship helps us bring outstanding performers and local musicians together for a welcoming, family-friendly evening of bluegrass, gospel, classic country, and Appalachian music.
+Your generous support helps us present a family-friendly evening of bluegrass, gospel, classic country, and Appalachian music while preserving the traditions that make our region so special.
 
-Because of partners like you, we can keep admission affordable for our community while preserving and celebrating the musical traditions that make our region so special.
+Because of partners like you, we're able to keep the Cumberland Mountain Music Show welcoming, affordable, and enjoyable for families throughout our community.
 
-Enclosed you will find information about the upcoming show, along with any complimentary tickets and reserved seating included with your sponsorship.
+Enclosed in your Sponsor Packet is information about the upcoming show, our featured guest, venue details, and any complimentary tickets or reserved seating included with your packet. We hope these materials answer any questions and help make your visit to the Cumberland Mountain Music Show as enjoyable as possible.
 
-We are truly grateful for your support of the Cumberland Mountain Music Show. Your partnership helps us preserve the rich musical traditions of our Appalachian region while providing a family-friendly evening of entertainment for our community.
-
-We look forward to seeing you at the upcoming Cumberland Mountain Music Show, and thank you for helping make another successful season possible.`;
+We truly appreciate your support and look forward to seeing you at the upcoming Cumberland Mountain Music Show. Thank you for helping make another successful season possible. We are honored to have you as part of the CMMS family.`;
 export const DEFAULT_VENUE_NAME = "Lincoln Memorial University — Cumberland Gap Convention Center";
 export const DEFAULT_VENUE_ADDRESS = "601 Colwyn Avenue\nCumberland Gap, TN 37724";
 export const DEFAULT_SPONSOR_PACKET_SECTIONS: Record<SponsorPacketSectionKey, boolean> = { showInformation: true, specialGuest: true, complimentaryTickets: true, reservedSeating: true, venueDirections: true, bandInformation: true, sponsorRecognition: true, contactInformation: true };
 export const DEFAULT_SPONSOR_RECOGNITION = "As one of our valued sponsors, your business will be recognized through our event program, website, social media, and live announcements during the Cumberland Mountain Music Show. We sincerely appreciate your support of live music in our community.";
+
+const SPONSOR_PACKET_RESERVED_SEATING_SECTION_CONFIGS = [
+  { label: "Left Section", prefix: "L", rows: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] as const, seatsPerRow: 10 },
+  { label: "Right Section", prefix: "R", rows: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"] as const, seatsPerRow: 10 },
+] as const;
+
+type SponsorPacketReservedSeatDefinition = { seatId: string; section: "L" | "R"; rowLabel: string; seatNumber: number };
+
+const SPONSOR_PACKET_RESERVED_SEAT_DEFINITIONS: SponsorPacketReservedSeatDefinition[] = SPONSOR_PACKET_RESERVED_SEATING_SECTION_CONFIGS.flatMap((section) =>
+  section.rows.flatMap((rowLabel) =>
+    Array.from({ length: section.seatsPerRow }, (_, index) => index + 1).map((seatNumber) => ({
+      seatId: `${section.prefix}-${rowLabel}${seatNumber}`,
+      section: section.prefix,
+      rowLabel,
+      seatNumber,
+    })),
+  ),
+);
+
+function getSponsorPacketReservedSeatDefinition(seatId: string) {
+  return SPONSOR_PACKET_RESERVED_SEAT_DEFINITIONS.find((seat) => seat.seatId === seatId) ?? null;
+}
+
+function sortSponsorPacketReservedSeatIds(seatIds: string[]) {
+  const positionBySeatId = new Map(SPONSOR_PACKET_RESERVED_SEAT_DEFINITIONS.map((seat, index) => [seat.seatId, index]));
+  return [...seatIds].sort((left, right) => (positionBySeatId.get(left) ?? Number.MAX_SAFE_INTEGER) - (positionBySeatId.get(right) ?? Number.MAX_SAFE_INTEGER));
+}
 
 function normalizeName(value: string) { return value.trim().toLocaleLowerCase(); }
 function savedText(value: string | null | undefined, fallback: string) { return value === null || value === undefined ? fallback : value; }
@@ -177,9 +216,81 @@ export function buildSponsorTicketParagraph(draft: SponsorPacketDraft) {
   const countWord = draft.ticketCount === 1 ? "one" : String(draft.ticketCount);
   const ticketWord = draft.ticketCount === 1 ? "ticket" : "tickets";
   if (draft.admissionType === "general") return `Enclosed ${draft.ticketCount === 1 ? "is" : "are"} ${countWord} complimentary general-admission ${ticketWord} for the Cumberland Mountain Music Show.`;
-  const seats = draft.seatLabels.trim();
-  if (seats) return `Enclosed ${draft.ticketCount === 1 ? "is" : "are"} ${countWord} complimentary reserved-seat ${ticketWord} for the Cumberland Mountain Music Show. ${draft.ticketCount === 1 ? "Your reserved seat is" : "Your reserved seats are"} ${seats}.`;
-  return `Enclosed ${draft.ticketCount === 1 ? "is" : "are"} ${countWord} complimentary ${ticketWord} for the Cumberland Mountain Music Show. Please contact us if you would like assistance selecting or locating your reserved ${draft.ticketCount === 1 ? "seat" : "seats"}.`;
+  return `Enclosed ${draft.ticketCount === 1 ? "is" : "are"} ${countWord} complimentary reserved-seat ${ticketWord} for the Cumberland Mountain Music Show.`;
+}
+
+function formatSeatNumberRanges(seatNumbers: number[]) {
+  const uniqueSeatNumbers = [...new Set(seatNumbers)].sort((left, right) => left - right);
+  if (uniqueSeatNumbers.length === 0) return "";
+
+  const ranges: string[] = [];
+  let start = uniqueSeatNumbers[0];
+  let end = uniqueSeatNumbers[0];
+
+  for (let index = 1; index < uniqueSeatNumbers.length; index += 1) {
+    const current = uniqueSeatNumbers[index];
+    if (current === end + 1) {
+      end = current;
+      continue;
+    }
+    ranges.push(start === end ? `${start}` : `${start}–${end}`);
+    start = current;
+    end = current;
+  }
+
+  ranges.push(start === end ? `${start}` : `${start}–${end}`);
+
+  if (ranges.length === 1) return ranges[0];
+  if (ranges.length === 2) return `${ranges[0]} and ${ranges[1]}`;
+  return `${ranges.slice(0, -1).join(", ")}, and ${ranges[ranges.length - 1]}`;
+}
+
+export function buildSponsorPacketSeatSummary(seatIds: string[]) : SponsorPacketSeatSummary {
+  const validDefinitions: SponsorPacketReservedSeatDefinition[] = sortSponsorPacketReservedSeatIds(
+    [...new Set(seatIds.map((seatId) => seatId.trim()).filter(Boolean))]
+      .filter((seatId) => Boolean(getSponsorPacketReservedSeatDefinition(seatId))),
+  ).flatMap((seatId) => {
+    const definition = getSponsorPacketReservedSeatDefinition(seatId);
+    return definition ? [definition] : [];
+  });
+
+  const validSeatIds = validDefinitions.map((definition) => definition.seatId);
+  const invalidSeatIds = [...new Set(seatIds.map((seatId) => seatId.trim()).filter(Boolean))]
+    .filter((seatId) => !validSeatIds.includes(seatId));
+
+  const sectionLabelByPrefix = new Map(SPONSOR_PACKET_RESERVED_SEATING_SECTION_CONFIGS.map((section) => [section.prefix, section.label]));
+  const grouped = new Map<string, SponsorPacketSeatSummaryGroup>();
+
+  for (const definition of validDefinitions) {
+    const key = `${definition.section}:${definition.rowLabel}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        section: definition.section,
+        sectionLabel: sectionLabelByPrefix.get(definition.section) ?? definition.section,
+        rowLabel: definition.rowLabel,
+        seatNumbers: [],
+        summaryLabel: "",
+      });
+    }
+    grouped.get(key)?.seatNumbers.push(definition.seatNumber);
+  }
+
+  const groups = [...grouped.values()].map((group) => {
+    const seatNumbers = [...group.seatNumbers].sort((left, right) => left - right);
+    const seatRangeLabel = formatSeatNumberRanges(seatNumbers);
+    const seatLabelPrefix = seatNumbers.length === 1 ? "Seat" : "Seats";
+    return {
+      ...group,
+      seatNumbers,
+      summaryLabel: `${group.sectionLabel}, Row ${group.rowLabel}: ${seatLabelPrefix} ${seatRangeLabel}`,
+    };
+  });
+
+  return {
+    validSeatIds,
+    invalidSeatIds,
+    groups,
+  };
 }
 
 export function cloneBandMembers(members: SponsorPacketBandMember[]) { return members.map((member) => ({ ...member })); }

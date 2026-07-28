@@ -15,13 +15,14 @@ async function draft() {
 
 test("revised default letter is warm but removes the repeated Phase 3 gratitude paragraphs", async () => {
   const value = (await draft()).thankYouMessage;
-  assert.match(value, /preserving and celebrating the musical traditions/);
-  assert.match(value, /affordable for our community/);
-  assert.match(value, /We look forward to seeing you/);
+  assert.match(value, /preserving the traditions that make our region so special/);
+  assert.match(value, /our featured guest, venue details/);
+  assert.match(value, /look forward to seeing you at the upcoming Cumberland Mountain Music Show/);
+  assert.doesNotMatch(value, /affordable for our community/);
   assert.doesNotMatch(value, /confidence in our mission/);
   assert.doesNotMatch(value, /another great season/);
   assert.doesNotMatch(value, /It is because of partners like you/);
-  assert.equal((value.match(/truly grateful/g) ?? []).length, 1);
+  assert.equal((value.match(/support/g) ?? []).length, 2);
 });
 
 test("saved custom letter remains unchanged when applied to the revised default", async () => {
@@ -34,9 +35,10 @@ test("saved custom letter remains unchanged when applied to the revised default"
 test("letter page uses its own compact one-page strategy and keeps signature together", async () => {
   const value = await source();
   assert.match(value, /packet-letter-page/);
-  assert.match(value, /font-size: 10\.25pt !important/);
-  assert.match(value, /line-height: 1\.48 !important/);
-  assert.match(value, /letter-content \{ gap: 0\.55rem/);
+  assert.match(value, /font-size: 10\.35pt !important/);
+  assert.match(value, /line-height: 1\.46 !important/);
+  assert.match(value, /letter-content \{ gap: 0\.45rem/);
+  assert.match(value, /letter-contact-block \{ margin-top: 1rem !important/);
   assert.match(value, /packet-signature \{ break-inside: avoid/);
   assert.match(value, /packet-keep packet-signature/);
 });
@@ -70,6 +72,12 @@ test("venue wording, band spacing, and concise show-page closing are present", a
   assert.match(value, /Venue information and directions:/);
   assert.match(value, /mt-3 grid gap-2[^\n]*bandMembers\.filter/);
   assert.match(value, /We look forward to seeing you at the Cumberland Mountain Music Show\./);
+});
+
+test("letter print layout removes duplicated website and email from the signature while keeping editable subject", async () => {
+  const value = await source();
+  assert.match(value, /draft\.subject \? <h2 className="packet-heading text-xl font-semibold">\{draft\.subject\}<\/h2> : null/);
+  assert.match(value, /<div className="packet-keep packet-signature pt-3"><p>Sincerely,<\/p>\{signatureImageUrl \? <Image[\s\S]*?<p>Cumberland Mountain Music Show<\/p><\/div>/);
 });
 
 test("Phase 4.1 does not alter draft serialization or API", async () => {

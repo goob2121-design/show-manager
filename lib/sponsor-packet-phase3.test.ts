@@ -15,12 +15,12 @@ async function defaultDraft() {
   });
 }
 
-test("new packets use the long personal letter and professional signature defaults", async () => {
+test("new packets use the refined one-page letter and professional signature defaults", async () => {
   const draft = await defaultDraft();
-  assert.ok(draft.thankYouMessage.length > 700);
+  assert.ok(draft.thankYouMessage.length < 1100);
   assert.match(draft.thankYouMessage, /On behalf of everyone involved with the Cumberland Mountain Music Show/);
-  assert.match(draft.thankYouMessage, /preserving and celebrating the musical traditions/);
-  assert.match(draft.thankYouMessage, /family-friendly evening of entertainment/);
+  assert.match(draft.thankYouMessage, /preserving the traditions that make our region so special/);
+  assert.match(draft.thankYouMessage, /our featured guest, venue details/);
   assert.equal(draft.closingName, "Bryan Turner");
   assert.equal(draft.closingTitle, "Owner & Producer");
   assert.equal(draft.contactEmail, "info@cumberlandmountainmusic.com");

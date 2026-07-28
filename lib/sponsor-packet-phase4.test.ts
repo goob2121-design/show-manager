@@ -39,7 +39,7 @@ test("new signature and printed fallback use Owner & Producer", async () => {
   const value = await source();
   assert.match(value, /draft\.closingTitle \|\| "Owner & Producer"/);
   assert.match(value, /Bryan Turner/);
-  assert.match(value, /info@cumberlandmountainmusic\.com/);
+  assert.match(value, /<div className="packet-keep packet-signature pt-3"><p>Sincerely,<\/p>\{signatureImageUrl \? <Image[\s\S]*?<p>Cumberland Mountain Music Show<\/p><\/div>/);
 });
 
 test("letter includes personal owner-producer closing and professional paragraph spacing", async () => {
@@ -48,6 +48,15 @@ test("letter includes personal owner-producer closing and professional paragraph
   assert.match(value, /letter-content mt-5 space-y-3/);
   assert.match(value, /line-height: 1\.65/);
   assert.match(value, /orphans: 3; widows: 3/);
+});
+
+test("mailing address follows business-letter order with date and attention line support", async () => {
+  const value = await source();
+  assert.match(value, /formatSponsorPacketDate\(draft\.packetDate\)/);
+  assert.match(value, /hasMailingAddress/);
+  assert.match(value, /draft\.sponsorName \? <p className="font-semibold">\{draft\.sponsorName\}<\/p> : null/);
+  assert.match(value, /draft\.contactPerson \? <p>Attention: \{draft\.contactPerson\}<\/p> : null/);
+  assert.match(value, /mailingLines\.map/);
 });
 
 test("section headings and available photos receive consistent print-safe treatment", async () => {
