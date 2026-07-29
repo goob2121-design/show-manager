@@ -985,7 +985,7 @@ function getShowCardTone(isArchived: boolean) {
   };
 }
 
-const stageflowDashboardVersion = "StageFlow 3.0";
+const stageflowDashboardVersion = "StageFlow 5.0";
 
 export default function ShowsDashboardPage() {
   const router = useRouter();

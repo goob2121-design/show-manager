@@ -120,7 +120,7 @@ test("active hierarchy is responsive, long-name safe, and omits an anonymous nam
   assert.match(source, /guestNameSizeClass\(welcome\.displayName\)/);
   assert.match(source, /\[overflow-wrap:anywhere\]/);
   assert.match(source, /max-w-\[94vw\]/);
-  assert.match(source, /doorWelcomeProgressText\(welcome\)/);
+  assert.match(source, /doorWelcomeGuestCount\(welcome\.quantityCheckedIn\)/);
   assert.match(source, /Enjoy the Show!/);
   assert.doesNotMatch(source, /Welcome to the Show!<\/p>/);
 });
@@ -130,7 +130,7 @@ test("reserved seats are conditional, wrap safely, and receive one subtle entran
   assert.match(source, /welcome\.assignedSeatLabels\.length > 0/);
   assert.doesNotMatch(source, /No seats assigned/);
   assert.match(source, /motion-safe:animate-\[seats-in_300ms_ease-out_120ms_both\]/);
-  assert.match(source, /assignedSeatLabels\.join\(" • "\)/);
+  assert.match(source, /chunkDoorWelcomeSeats\(welcome\.assignedSeatLabels\)/);
   assert.match(source, /max-w-\[92vw\]/);
 });
 
@@ -138,9 +138,9 @@ test("idle rotation runs only while idle and exposes no totals or internal statu
   const source = await readFile(displayPath, "utf8");
   assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
   assert.match(source, /if \(welcome\) return;\s*const rotation = window\.setInterval/);
-  assert.match(source, /const activeIdleIndex = idleMessageIndex % IDLE_MESSAGES\.length/);
+  assert.match(source, /const activeIdleIndex = idleMessageIndex % idleMessages\.length/);
   assert.match(source, /Thank You to Our Sponsors/);
-  assert.match(source, /Enjoy Tonight/);
+  assert.match(source, /buildTimedIdleMessages/);
   assert.doesNotMatch(source, /attendance|check-in statistics|Square status|running total/i);
 });
 
@@ -155,7 +155,7 @@ test("fullscreen, reduced motion, and BroadcastChannel behavior remain intact", 
 });
 test("Phase 1.3 replaces the idle CMMS logo only when a sponsor logo is available on the sponsor slide", async () => {
   const source = await readFile(displayPath, "utf8");
-  assert.match(source, /const isSponsorSlide = activeIdleIndex === 1/);
+  assert.match(source, /const isSponsorSlide = activeIdleMessage === "Thank You to Our Sponsors"/);
   assert.match(source, /const activeSponsorLogo = isSponsorSlide && sponsorLogos\.length > 0/);
   assert.match(source, /\{activeSponsorLogo \? \(/);
   assert.match(source, /src=\{activeSponsorLogo\.logoUrl\}/);
@@ -169,7 +169,7 @@ test("Phase 1.3 gives sponsor logos a large fixed responsive showcase without di
   assert.match(source, /HERO_LOGO_CONTAINER_CLASS = "mx-auto flex h-\[min\(38vh,26rem\)\] w-\[min\(68vw,52rem\)\] items-center justify-center/);
   assert.match(source, /HERO_LOGO_IMAGE_CLASS = "h-full w-full object-contain/);
   assert.equal((source.match(/className=\{HERO_LOGO_IMAGE_CLASS\}/g) ?? []).length, 2);
-  assert.match(source, /motion-safe:animate-\[logo-swap-in_250ms_ease-out\]/);
+  assert.match(source, /motion-safe:animate-\[logo-swap-in_400ms_ease-out\]/);
   assert.match(source, /@keyframes logo-swap-in/);
   assert.match(source, /p-\[clamp\(0\.125rem,0\.5vw,0\.5rem\)\]/);
   assert.match(source, /overflow-hidden/);
@@ -179,16 +179,16 @@ test("Phase 1.3 rotates distinct valid sponsor logos once per existing idle cycl
   const source = await readFile(displayPath, "utf8");
   assert.match(source, /return name && logoUrl \? \[\{ name, logoUrl \}\] : \[\]/);
   assert.match(source, /findIndex\(\(item\) => item\.logoUrl === logo\.logoUrl\) === index/);
-  assert.match(source, /const sponsorCycle = Math\.floor\(idleMessageIndex \/ IDLE_MESSAGES\.length\)/);
+  assert.match(source, /const sponsorCycle = Math\.floor\(idleMessageIndex \/ idleMessages\.length\)/);
   assert.match(source, /sponsorLogos\[sponsorCycle % sponsorLogos\.length\]/);
   assert.match(source, /setIdleMessageIndex\(\(current\) => current \+ 1\)/);
-  assert.equal((source.match(/window\.setInterval/g) ?? []).length, 1);
+  assert.equal((source.match(/window\.setInterval/g) ?? []).length, 2);
   assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
 });
 
 test("Phase 1.3 reuses the existing show read and established sponsor logo relation", async () => {
   const source = await readFile(displayPath, "utf8");
-  assert.equal((source.match(/\.from\("shows"\)/g) ?? []).length, 1);
+  assert.equal((source.match(/\.from\("shows"\)/g) ?? []).length, 2);
   assert.doesNotMatch(source, /\.from\("show_sponsors"\)/);
   assert.match(source, /show_sponsors\(placement_order, sponsor:sponsor_library\(name, logo_url\)\)/);
   assert.match(source, /\.sort\(\(left, right\) => left\.placement_order - right\.placement_order\)/);
@@ -224,4 +224,28 @@ test("Phase 1.3 remains presentation-only and leaves messaging, timers, and muta
   assert.match(displaySource, /IDLE_ROTATION_INTERVAL_MS/);
   assert.match(doorSource, /publishDoorWelcomeEvent/);
   assert.doesNotMatch(displaySource, /publishDoorWelcomeEvent/);
+});
+test("Phase 2 adds premium guest hierarchy and calm motion without changing welcome timing", async () => {
+  const source = await readFile(displayPath, "utf8");
+  assert.match(source, />\s*Now Welcoming\s*</);
+  assert.match(source, /guest-welcome-in_300ms_ease-out/);
+  assert.match(source, /guest-spotlight_9500ms_ease-out_forwards/);
+  assert.match(source, /venue-gradient_50s_ease-in-out_infinite/);
+  assert.match(source, /doorWelcomeGuestCount\(welcome\.quantityCheckedIn\)/);
+  assert.match(source, /chunkDoorWelcomeSeats\(welcome\.assignedSeatLabels\)/);
+  assert.match(source, /line\.join\(" • "\)/);
+  assert.match(source, /DOOR_WELCOME_IDLE_TIMEOUT_MS \+ DISPLAY_TRANSITION_MS/);
+});
+
+test("Phase 2.1 uses additive New York timed windows without touching Door Mode", async () => {
+  const displaySource = await readFile(displayPath, "utf8");
+  const doorSource = await readFile(doorModePath, "utf8");
+  assert.match(displaySource, /resolveTimedIdleWindow\(clockNow\)/);
+  assert.match(displaySource, /buildTimedIdleMessages\(timedIdleWindow\)/);
+  assert.match(displaySource, /const clock = window\.setInterval/);
+  assert.match(displaySource, /}, 60_000\)/);
+  assert.match(displaySource, /activeIdleMessage === POST_SHOW_HEADLINE && nextShowDate/);
+  assert.doesNotMatch(displaySource, /resolveDoorWelcomeMode|doorWelcomeModeHeadlines|presentationOverride/);
+  assert.doesNotMatch(doorSource, /welcome-display-presentation-mode|DOOR_WELCOME_OVERRIDE_MODES/);
+  assert.doesNotMatch(displaySource, /postMessage\(/);
 });
