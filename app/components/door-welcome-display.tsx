@@ -189,7 +189,7 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   const showVenue = show?.venue?.trim() || null;
 
   return (
-    <main className="relative grid h-screen min-h-[24rem] place-items-center overflow-hidden bg-[#071426] px-[clamp(1rem,4vw,5rem)] py-[clamp(1rem,3vh,2.5rem)] text-center text-white">
+    <main className="relative grid h-dvh min-h-0 place-items-center overflow-hidden bg-[#071426] px-[clamp(1rem,4vw,5rem)] py-[clamp(1rem,3vh,2.5rem)] text-center text-white">
       <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(202,160,58,0.09),transparent_32%),linear-gradient(135deg,#071426,#101820_42%,#0b2135_72%,#071426)] bg-[length:160%_160%] motion-safe:animate-[venue-gradient_50s_ease-in-out_infinite]" />
       {fullscreenSupported && !isFullscreen ? (
         <button
@@ -266,7 +266,7 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
             aria-live="polite"
             aria-atomic="true"
             aria-hidden={!showWelcome}
-            className={`col-start-1 row-start-1 mx-auto flex max-h-full w-full flex-col items-center justify-center gap-[clamp(0.75rem,2.2vh,1.75rem)] text-center transition-opacity duration-[250ms] ease-out motion-reduce:transition-none ${
+            className={`active-welcome-layout col-start-1 row-start-1 mx-auto flex max-h-full w-full flex-col items-center justify-center gap-[clamp(0.75rem,2.2vh,1.75rem)] text-center transition-opacity duration-[250ms] ease-out motion-reduce:transition-none ${
               showWelcome ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
@@ -276,28 +276,28 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
               width={900}
               height={415}
               priority
-              className="mx-auto h-auto max-h-[24vh] w-[clamp(13rem,36vw,32rem)] object-contain"
+              className="active-welcome-logo mx-auto h-auto max-h-[24vh] w-[clamp(13rem,36vw,32rem)] object-contain"
             />
-            <h1 className="mx-auto mt-[clamp(0.75rem,2.5vh,2rem)] w-full text-center text-[clamp(1.15rem,2.5vw,2.5rem)] font-semibold uppercase tracking-[0.18em] text-[#e2bc59]">
+            <h1 className="active-welcome-heading mx-auto mt-[clamp(0.75rem,2.5vh,2rem)] w-full text-center text-[clamp(1.15rem,2.5vw,2.5rem)] font-semibold uppercase tracking-[0.18em] text-[#e2bc59]">
               Now Welcoming
             </h1>
             {welcome.displayName ? (
-              <div className="relative mx-auto mt-[clamp(0.75rem,2.5vh,2rem)] flex max-w-full justify-center px-2 text-center">
+              <div className="active-welcome-name-wrap relative mx-auto mt-[clamp(0.75rem,2.5vh,2rem)] flex max-w-full justify-center px-2 text-center">
                 <div aria-hidden="true" className="absolute -inset-x-[12%] -inset-y-[70%] -z-10 rounded-full bg-[radial-gradient(ellipse,rgba(213,170,66,0.18),transparent_68%)] opacity-0 blur-2xl motion-safe:animate-[guest-spotlight_9500ms_ease-out_forwards]" />
-                <h2 className={`relative max-w-[94vw] text-balance [overflow-wrap:anywhere] font-bold leading-[0.94] tracking-[-0.035em] motion-safe:animate-[guest-welcome-in_300ms_ease-out] ${guestNameSizeClass(welcome.displayName)}`}>
+                <h2 className={`active-welcome-name relative max-w-[94vw] text-balance [overflow-wrap:anywhere] font-bold leading-[0.94] tracking-[-0.035em] motion-safe:animate-[guest-welcome-in_300ms_ease-out] ${guestNameSizeClass(welcome.displayName)}`}>
                   {welcome.displayName}
                 </h2>
               </div>
             ) : null}
-            <p className={`${welcome.displayName ? "mt-[clamp(1rem,3vh,2.25rem)]" : "mt-[clamp(1.5rem,5vh,4rem)]"} mx-auto w-full text-center text-[clamp(1.65rem,3.7vw,3.6rem)] font-semibold leading-tight text-white/90`}>
+            <p className={`active-welcome-count ${welcome.displayName ? "mt-[clamp(1rem,3vh,2.25rem)]" : "mt-[clamp(1.5rem,5vh,4rem)]"} mx-auto w-full text-center text-[clamp(1.65rem,3.7vw,3.6rem)] font-semibold leading-tight text-white/90`}>
               {doorWelcomeGuestCount(welcome.quantityCheckedIn)}
             </p>
             {welcome.assignedSeatLabels.length > 0 ? (
-              <div className="mx-auto mt-[clamp(1.25rem,3.5vh,3rem)] flex max-w-full flex-col items-center border-t text-center border-[#d5aa42]/50 px-[clamp(1rem,5vw,4rem)] pt-[clamp(0.75rem,2vh,1.5rem)] motion-safe:animate-[seats-in_300ms_ease-out_120ms_both]">
-                <h2 className="text-[clamp(1rem,1.8vw,1.75rem)] font-semibold text-[#e2bc59]">
+              <div className="active-welcome-seats mx-auto mt-[clamp(1.25rem,3.5vh,3rem)] flex max-w-full flex-col items-center border-t text-center border-[#d5aa42]/50 px-[clamp(1rem,5vw,4rem)] pt-[clamp(0.75rem,2vh,1.5rem)] motion-safe:animate-[seats-in_300ms_ease-out_120ms_both]">
+                <h2 className="active-welcome-seat-heading text-[clamp(1rem,1.8vw,1.75rem)] font-semibold text-[#e2bc59]">
                   Reserved {welcome.assignedSeatLabels.length === 1 ? "Seat" : "Seats"}
                 </h2>
-                <div className="mx-auto mt-2 flex max-w-[92vw] flex-col items-center gap-1 text-center text-[clamp(1.9rem,4.5vw,4.5rem)] font-bold leading-tight tracking-wide">
+                <div className="active-welcome-seat-labels mx-auto mt-2 flex max-w-[92vw] flex-col items-center gap-1 text-center text-[clamp(1.9rem,4.5vw,4.5rem)] font-bold leading-tight tracking-wide">
                   {chunkDoorWelcomeSeats(welcome.assignedSeatLabels).map((line, lineIndex) => (
                     <p key={`${welcome.timestamp}-seat-line-${lineIndex}`} className="max-w-full text-balance [overflow-wrap:anywhere]">
                       {line.join(" • ")}
@@ -306,7 +306,7 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
                 </div>
               </div>
             ) : null}
-            <p className="mx-auto mt-[clamp(1rem,3vh,2.5rem)] w-full text-center text-[clamp(1.1rem,2vw,1.9rem)] font-medium tracking-wide text-[#e2bc59]">
+            <p className="active-welcome-enjoy mx-auto mt-[clamp(1rem,3vh,2.5rem)] w-full text-center text-[clamp(1.1rem,2vw,1.9rem)] font-medium tracking-wide text-[#e2bc59]">
               Enjoy the Show!
             </p>
           </section>
@@ -339,6 +339,82 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
         @keyframes seats-in {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @media (max-height: 800px) {
+          .active-welcome-layout {
+            gap: clamp(0.35rem, 1.2vh, 0.7rem) !important;
+          }
+          .active-welcome-logo {
+            max-height: 18vh !important;
+            width: clamp(11rem, 30vw, 26rem) !important;
+          }
+          .active-welcome-heading,
+          .active-welcome-name-wrap {
+            margin-top: clamp(0.25rem, 1vh, 0.55rem) !important;
+          }
+          .active-welcome-name {
+            font-size: clamp(2rem, 6vw, 5.5rem) !important;
+          }
+          .active-welcome-count {
+            margin-top: clamp(0.35rem, 1.2vh, 0.7rem) !important;
+            font-size: clamp(1.35rem, 3vw, 2.7rem) !important;
+          }
+          .active-welcome-seats {
+            margin-top: clamp(0.4rem, 1.4vh, 0.85rem) !important;
+            padding-top: clamp(0.35rem, 1vh, 0.65rem) !important;
+          }
+          .active-welcome-seat-labels {
+            margin-top: 0.3rem !important;
+            font-size: clamp(1.5rem, 3.6vw, 3.3rem) !important;
+          }
+          .active-welcome-enjoy {
+            margin-top: clamp(0.3rem, 1vh, 0.6rem) !important;
+            font-size: clamp(1rem, 1.7vw, 1.45rem) !important;
+          }
+        }
+        @media (max-height: 680px) {
+          .active-welcome-layout {
+            gap: clamp(0.2rem, 0.8vh, 0.45rem) !important;
+          }
+          .active-welcome-logo {
+            max-height: 14vh !important;
+            width: clamp(10rem, 27vw, 22rem) !important;
+          }
+          .active-welcome-heading {
+            margin-top: 0.2rem !important;
+            font-size: clamp(1rem, 2vw, 1.55rem) !important;
+          }
+          .active-welcome-name-wrap {
+            margin-top: 0.2rem !important;
+          }
+          .active-welcome-name {
+            font-size: clamp(1.8rem, 5.2vw, 4.4rem) !important;
+          }
+          .active-welcome-count {
+            margin-top: 0.25rem !important;
+            font-size: clamp(1.2rem, 2.6vw, 2.15rem) !important;
+          }
+          .active-welcome-seats {
+            margin-top: 0.3rem !important;
+            padding-top: 0.3rem !important;
+          }
+          .active-welcome-seat-heading {
+            font-size: clamp(0.95rem, 1.5vw, 1.3rem) !important;
+          }
+          .active-welcome-seat-labels {
+            margin-top: 0.2rem !important;
+            gap: 0.15rem !important;
+            font-size: clamp(1.35rem, 3.1vw, 2.6rem) !important;
+          }
+          .active-welcome-enjoy {
+            margin-top: 0.25rem !important;
+            font-size: clamp(0.9rem, 1.5vw, 1.2rem) !important;
+          }
+        }
+        @media (max-height: 620px) {
+          .active-welcome-enjoy {
+            display: none;
+          }
         }
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {

@@ -210,7 +210,7 @@ test("Phase 1.3 preserves the active logo hierarchy, responsive centering, and a
   const source = await readFile(displayPath, "utf8");
   assert.match(source, /max-h-\[24vh\] w-\[clamp\(13rem,36vw,32rem\)\]/);
   assert.match(source, /text-\[clamp\(2\.5rem,7\.5vw,7\.5rem\)\]/);
-  assert.match(source, /h-screen min-h-\[24rem\].*overflow-hidden/);
+  assert.match(source, /h-dvh min-h-0.*overflow-hidden/);
   assert.match(source, /aria-live="off"/);
   assert.match(source, /prefers-reduced-motion: reduce/);
   assert.match(source, /transition-duration: 0\.01ms !important/);
@@ -248,4 +248,19 @@ test("Phase 2.1 uses additive New York timed windows without touching Door Mode"
   assert.doesNotMatch(displaySource, /resolveDoorWelcomeMode|doorWelcomeModeHeadlines|presentationOverride/);
   assert.doesNotMatch(doorSource, /welcome-display-presentation-mode|DOOR_WELCOME_OVERRIDE_MODES/);
   assert.doesNotMatch(displaySource, /postMessage\(/);
+});
+test("active welcome tightens by viewport height without changing idle presentation", async () => {
+  const source = await readFile(displayPath, "utf8");
+  assert.match(source, /active-welcome-layout/);
+  assert.match(source, /@media \(max-height: 800px\)/);
+  assert.match(source, /@media \(max-height: 680px\)/);
+  assert.match(source, /@media \(max-height: 620px\)/);
+  assert.match(source, /\.active-welcome-logo \{/);
+  assert.match(source, /\.active-welcome-name \{/);
+  assert.match(source, /\.active-welcome-seat-labels \{/);
+  assert.match(source, /\.active-welcome-enjoy \{\s*display: none;/);
+  assert.match(source, /chunkDoorWelcomeSeats\(welcome\.assignedSeatLabels\)/);
+  assert.match(source, /line\.join\(" • "\)/);
+  assert.match(source, /motion-safe:animate-\[guest-welcome-in_300ms_ease-out\]/);
+  assert.match(source, /prefers-reduced-motion: reduce/);
 });
