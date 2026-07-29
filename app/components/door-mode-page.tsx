@@ -20,6 +20,11 @@ import {
 } from "@/lib/door-mode-presentation";
 import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
 import type { DoorModeSeatAssignment } from "@/lib/door-mode-seat-assignments";
+import {
+  createDoorWelcomeEvent,
+  openDoorWelcomeDisplay,
+  publishDoorWelcomeEvent,
+} from "@/lib/door-welcome-display";
 
 const PAID_ONLINE_TICKET_PRICE = 8;
 const DOOR_TICKET_PRICE = 10;
@@ -288,6 +293,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [recentGuestCheckIns, setRecentGuestCheckIns] = useState<RecentGuestCheckIn[]>([]);
   const [seatView, setSeatView] = useState<DoorSeatView | null>(null);
   const [seatIdsByTicketId, setSeatIdsByTicketId] = useState<Record<string, string[]>>({});
+  const [welcomeDisplayWarning, setWelcomeDisplayWarning] = useState<string | null>(null);
   const seatDialogCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const printMenuRef = useRef<HTMLDivElement | null>(null);
   const guestSearchRef = useRef<HTMLInputElement | null>(null);
@@ -580,6 +586,12 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
     setRecentActivities((current) => current.filter((item) => item.id !== activityId));
   }
 
+  function publishWelcome(input: Parameters<typeof createDoorWelcomeEvent>[0]) {
+    if (!publishDoorWelcomeEvent(showSlug, createDoorWelcomeEvent(input))) {
+      setWelcomeDisplayWarning("Welcome Display messaging is unavailable in this browser. Check-in is unaffected.");
+    }
+  }
+
   async function handleAdjustSponsorCompCheckIn(
     sponsor: ShowSponsor,
     delta: number,
@@ -636,6 +648,17 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       setStatusMessage(
         `${getSponsorCardName(sponsor)} sponsor comp check-ins updated to ${nextCheckedInCount}.`,
       );
+      if (delta > 0) {
+        publishWelcome({
+          showSlug,
+          displayName: getSponsorCardName(sponsor),
+          quantityCheckedIn: delta,
+          ticketQuantity: sponsor.comp_ticket_allowance,
+          checkedInTotal: nextCheckedInCount,
+          assignedSeatLabels: [],
+          admissionCategory: "Sponsor Comp",
+        });
+      }
 
       pushRecentActivity({
         id: `sponsor-comp-${sponsor.id}-${Date.now()}`,
@@ -718,6 +741,15 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       const insertedTicket = normalizeShowCompTicket(data as ShowCompTicket);
       setCompTickets((current) => sortCompTickets([...current, insertedTicket]));
       setStatusMessage(`Added ${quantity} paid door ticket${quantity === 1 ? "" : "s"}.`);
+      publishWelcome({
+        showSlug,
+        displayName: null,
+        quantityCheckedIn: quantity,
+        ticketQuantity: quantity,
+        checkedInTotal: quantity,
+        assignedSeatLabels: [],
+        admissionCategory: "Paid Door",
+      });
 
       pushRecentActivity({
         id: `door-add-${insertedTicket.id}`,
@@ -931,6 +963,17 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
           ticketCount: item.ticket_count,
           createdAt: Date.now(),
         }));
+        if (checkedInByAction > 0) {
+          publishWelcome({
+            showSlug,
+            displayName: item.guest_name,
+            quantityCheckedIn: checkedInByAction,
+            ticketQuantity: item.ticket_count,
+            checkedInTotal: updatedTicket.checked_in_count,
+            assignedSeatLabels: seatIdsByTicketId[item.id] ?? [],
+            admissionCategory: checkInAdmissionLabel(item.ticket_type, item.notes),
+          });
+        }
         window.requestAnimationFrame(() => guestSearchRef.current?.focus());
       }
       pushRecentActivity({
@@ -1065,6 +1108,11 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             {errorMessage}
           </div>
         ) : null}
+        {welcomeDisplayWarning ? (
+          <div className="rounded-xl border border-amber-800/70 bg-amber-500/10 px-4 py-2 text-xs text-amber-100" role="status">
+            {welcomeDisplayWarning}
+          </div>
+        ) : null}
 
         <section className="sticky top-3 z-20 border-y border-gray-700 bg-slate-900/95 px-2.5 py-2 shadow-sm shadow-slate-950/20 backdrop-blur" data-testid="door-operational-toolbar">
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
@@ -1095,6 +1143,19 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                   </div>
                 ) : null}
               </div>
+              <button
+                type="button"
+                aria-label="Open Welcome Display"
+                onClick={() => {
+                  const displayWindow = openDoorWelcomeDisplay(show.slug);
+                  if (!displayWindow) {
+                    setWelcomeDisplayWarning("The Welcome Display was blocked. Allow pop-ups, then try again.");
+                  }
+                }}
+                className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#9f7d2e] bg-[#d5aa42]/10 px-3 text-sm font-semibold text-[#f1d98c] transition hover:bg-[#d5aa42]/20"
+              >
+                Open Welcome Display
+              </button>
               <button type="button" aria-label="View Totals" onClick={() => setIsTotalsPanelOpen(true)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Totals</button>
               <div className="relative">
                 <button type="button" aria-label="Recent Check-Ins" aria-expanded={isRecentCheckInsOpen} aria-controls="door-recent-check-ins" onClick={() => setIsRecentCheckInsOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Recent ({recentGuestCheckIns.length})</button>
