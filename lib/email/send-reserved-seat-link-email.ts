@@ -1,15 +1,22 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendReservedSeatEmail, type ReservedSeatEmailResult } from "@/lib/email/reserved-seat-email";
-import { RESERVED_SEATING_VENUE } from "@/lib/reserved-seating";
+import { RESERVED_SEATING_VENUE, formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { buildReservedSeatSelectionUrl, getStageFlowEmailLogoUrl } from "@/lib/server/stageflow-public-url";
 
 type EmailLinkRow = {
   id: string; show_id: string; customer_name: string; email: string | null; ticket_count: number;
-  selection_token: string; sent_at: string | null; resend_email_id: string | null;
+  selection_token: string; scan_token: string | null; sent_at: string | null; resend_email_id: string | null;
   email_attempt_count: number | null; seat_category: string | null;
 };
 
-type EmailShowRow = { name: string; show_date: string | null; show_start_time: string | null; venue: string | null; venue_address: string | null };
+type EmailShowRow = {
+  name: string;
+  show_date: string | null;
+  show_start_time: string | null;
+  venue: string | null;
+  venue_address: string | null;
+  ticket_code_format: string | null;
+};
 
 function formatShowDate(value: string | null) {
   if (!value) return "Date TBD";
@@ -18,6 +25,14 @@ function formatShowDate(value: string | null) {
 
 function safeError(value: string | null) {
   return value?.replace(/https?:\/\/\S+/gi, "[private link removed]").slice(0, 500) || "Email delivery failed.";
+}
+
+export function normalizeReservedSeatEmailConfigError(error: unknown) {
+  const message = error instanceof Error ? error.message : "StageFlow public URL is not configured.";
+  if (message === "STAGEFLOW_PUBLIC_URL is not configured.") {
+    return "Email cannot be sent locally until STAGEFLOW_PUBLIC_URL is configured.";
+  }
+  return message;
 }
 
 const EMAIL_SEND_CLAIM_PREFIX = "sending:";
@@ -50,7 +65,7 @@ export async function sendTrackedReservedSeatEmail(
   linkId: string,
   options: { allowResend?: boolean } = {},
 ): Promise<ReservedSeatEmailResult & ReturnType<typeof deliveryFlags> & { sentAt: string | null }> {
-  const { data: linkData, error: linkError } = await supabase.from("show_reserved_seating_links").select("id,show_id,customer_name,email,ticket_count,selection_token,sent_at,resend_email_id,email_attempt_count,seat_category").eq("id", linkId).maybeSingle();
+  const { data: linkData, error: linkError } = await supabase.from("show_reserved_seating_links").select("id,show_id,customer_name,email,ticket_count,selection_token,scan_token,sent_at,resend_email_id,email_attempt_count,seat_category").eq("id", linkId).maybeSingle();
   if (linkError) throw linkError;
   const link = linkData as EmailLinkRow | null;
   if (!link) return { success: false, resendId: null, error: "Reserved seating link was not found.", sentAt: null, ...deliveryFlags("failed") };
@@ -65,10 +80,17 @@ export async function sendTrackedReservedSeatEmail(
     };
   }
 
-  const { data: showData, error: showError } = await supabase.from("shows").select("name,show_date,show_start_time,venue,venue_address").eq("id", link.show_id).maybeSingle();
+  const [{ data: showData, error: showError }, { data: assignmentData, error: assignmentError }] = await Promise.all([
+    supabase.from("shows").select("name,show_date,show_start_time,venue,venue_address,ticket_code_format").eq("id", link.show_id).maybeSingle(),
+    supabase.from("show_reserved_seat_assignments").select("seat_id").eq("seating_link_id", link.id).order("created_at", { ascending: true }),
+  ]);
   if (showError) throw showError;
+  if (assignmentError) throw assignmentError;
   const show = showData as EmailShowRow | null;
   if (!show) return { success: false, resendId: null, error: "Show was not found.", sentAt: null, ...deliveryFlags("failed") };
+  const assignedSeatLabels = sortReservedSeatIds(
+    ((assignmentData ?? []) as Array<{ seat_id: string }>).map((assignment) => assignment.seat_id),
+  ).map((seatId) => formatReservedSeatLabel(seatId));
 
   const attemptAt = new Date().toISOString();
   const attemptCount = Math.max(0, link.email_attempt_count ?? 0) + 1;
@@ -110,7 +132,7 @@ export async function sendTrackedReservedSeatEmail(
     seatSelectionUrl = buildReservedSeatSelectionUrl(link.selection_token);
     logoUrl = getStageFlowEmailLogoUrl();
   } catch (error) {
-    const message = safeError(error instanceof Error ? error.message : "StageFlow public URL is not configured.");
+    const message = safeError(normalizeReservedSeatEmailConfigError(error));
     let update = supabase.from("show_reserved_seating_links").update({ last_email_error: message, ...(sendClaim ? { resend_email_id: null } : {}) }).eq("id", link.id);
     if (sendClaim) update = update.eq("resend_email_id", sendClaim);
     await update;
@@ -126,6 +148,9 @@ export async function sendTrackedReservedSeatEmail(
     venueAddress: show.venue_address?.trim() || RESERVED_SEATING_VENUE.venueAddress,
     ticketCount: link.ticket_count,
     seatSelectionUrl,
+    scanToken: link.scan_token,
+    ticketCodeFormat: show.ticket_code_format,
+    assignedSeatLabels,
     logoUrl,
     categoryLabel: link.seat_category,
   });

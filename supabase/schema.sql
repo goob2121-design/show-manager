@@ -30,7 +30,8 @@ alter table public.shows
 alter table public.shows
   add column if not exists promo_short text,
   add column if not exists promo_long text,
-  add column if not exists ticket_link text;
+  add column if not exists ticket_link text,
+  add column if not exists ticket_code_format text;
 
 alter table public.shows
   add column if not exists is_archived boolean default false;

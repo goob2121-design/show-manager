@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { PrintButton } from "@/app/components/print-button";
+import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
 import { PrintStudioExportButton } from "./print-studio-export-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { GuestProfile, ShowCompTicket, ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
@@ -211,7 +212,24 @@ function hasSelectedReservedSeatsForTicket(
   const sourceImportKey = ticket.import_key?.trim() ?? "";
   const customerKey = buildReservedSeatingMatchKey(ticket.guest_name ?? "", ticket.email);
 
-  const matchedLink = reservedLinks.find((link) => {
+  const matchedLink = findReservedSeatingLinkForTicket(ticket, reservedLinks);
+
+  if (!matchedLink) {
+    return false;
+  }
+
+  return selectedLinkIds.has(matchedLink.id) || Boolean(matchedLink.submitted_at);
+}
+
+function findReservedSeatingLinkForTicket(
+  ticket: DoorGuestListRow,
+  reservedLinks: ReservedSeatingLinkRow[],
+) {
+  const sourceOrderId = ticket.order_id?.trim() ?? "";
+  const sourceImportKey = ticket.import_key?.trim() ?? "";
+  const customerKey = buildReservedSeatingMatchKey(ticket.guest_name ?? "", ticket.email);
+
+  return reservedLinks.find((link) => {
     if (link.source_ticket_id === ticket.id) {
       return true;
     }
@@ -230,12 +248,6 @@ function hasSelectedReservedSeatsForTicket(
 
     return false;
   });
-
-  if (!matchedLink) {
-    return false;
-  }
-
-  return selectedLinkIds.has(matchedLink.id) || Boolean(matchedLink.submitted_at);
 }
 
 function chunkItems<T>(items: T[], chunkSize: number) {
@@ -707,10 +719,12 @@ function DoorGuestListPrintView({ tickets }: { tickets: DoorGuestListRow[] }) {
 }
 
 function ReservedSeatCardsPrintView({
+  show,
   tickets,
   reservedLinks,
   assignments,
 }: {
+  show: ShowRecord;
   tickets: DoorGuestListRow[];
   reservedLinks: ReservedSeatingLinkRow[];
   assignments: SelectedReservedSeatRow[];
@@ -723,13 +737,14 @@ function ReservedSeatCardsPrintView({
   const seatCards = reservedEntries.flatMap((ticket) => {
     const seatCount = Math.max(1, ticket.ticket_count);
 
-    return Array.from({ length: seatCount }, (_, index) => ({
-      id: `${ticket.id}-seat-${index + 1}`,
-      purchaserName: ticket.guest_name?.trim() || "Reserved Guest",
-      seatNumber: index + 1,
-      totalSeats: seatCount,
-    }));
-  });
+      return Array.from({ length: seatCount }, (_, index) => ({
+        id: `${ticket.id}-seat-${index + 1}`,
+        purchaserName: ticket.guest_name?.trim() || "Reserved Guest",
+        seatNumber: index + 1,
+        totalSeats: seatCount,
+        scanToken: findReservedSeatingLinkForTicket(ticket, reservedLinks)?.scan_token ?? null,
+      }));
+    });
 
   if (seatCards.length === 0) {
     return (
@@ -766,19 +781,29 @@ function ReservedSeatCardsPrintView({
                 alt="Cumberland Mountain Music Show logo"
                 className="h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[42px] print:max-w-[124px]"
               />
-              <div className="flex flex-1 flex-col items-center justify-center py-2">
-                <h2 className="text-xl font-black uppercase tracking-[0.06em] text-stone-950 print:text-[18px]">
-                  {card.purchaserName}
+                <div className="flex flex-1 flex-col items-center justify-center py-2">
+                  <h2 className="text-xl font-black uppercase tracking-[0.06em] text-stone-950 print:text-[18px]">
+                    {card.purchaserName}
                 </h2>
                 {card.totalSeats > 1 ? (
                   <p className="mt-3 text-xs font-medium tracking-[0.16em] text-stone-500 print:text-[10px]">
                     Seat {card.seatNumber} of {card.totalSeats}
-                  </p>
-                ) : null}
-              </div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
-                Reserved Seating
-              </p>
+                    </p>
+                  ) : null}
+                </div>
+                <div className="w-full">
+                  <ReservationTicketCode
+                    scanToken={card.scanToken}
+                    format={show.ticket_code_format}
+                    purchaserName={card.purchaserName}
+                    ticketCount={card.totalSeats}
+                    compact
+                    printable
+                  />
+                </div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-600 print:text-[10px]">
+                  Reserved Seating
+                </p>
             </article>
           ))}
         </section>
@@ -846,7 +871,7 @@ function CompReservedSeatCardsPrintView({
                   alt="Cumberland Mountain Music Show logo"
                   className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[42px] print:max-w-[124px]"
                 />
-                <div className="flex flex-1 flex-col items-center justify-center py-1.5">
+                  <div className="flex flex-1 flex-col items-center justify-center py-1.5">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[10px]">
                     {getReservedSeatCategoryLabel(category)}
                   </p>
@@ -857,13 +882,24 @@ function CompReservedSeatCardsPrintView({
                   <p className="mt-1 text-sm font-semibold tracking-[0.12em] text-stone-600 print:text-[12px]">
                     Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
                   </p>
-                  <p className="mt-1.5 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
-                    {show.name} - {formatShowDate(show.show_date)}
-                  </p>
-                </div>
-              </article>
-            );
-          })}
+                    <p className="mt-1.5 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
+                      {show.name} - {formatShowDate(show.show_date)}
+                    </p>
+                  </div>
+                  <div className="w-full">
+                    <ReservationTicketCode
+                      scanToken={reservedLink?.scan_token}
+                      format={show.ticket_code_format}
+                      purchaserName={card.customer_name?.trim() || "Reserved Comp Guest"}
+                      ticketCount={1}
+                      seatLabels={[card.seat_id]}
+                      compact
+                      printable
+                    />
+                  </div>
+                </article>
+              );
+            })}
         </section>
       ))}
     </div>
@@ -913,11 +949,11 @@ function BlankSeatCardsPrintView() {
 function SelectedReservedSeatCardsPrintView({
   assignments,
   reservedLinks,
-  showDate,
+  show,
 }: {
   assignments: SelectedReservedSeatRow[];
   reservedLinks: ReservedSeatingLinkRow[];
-  showDate: string | null;
+  show: ShowRecord;
 }) {
   const reservedLinkById = new Map(reservedLinks.map((link) => [link.id, link]));
   const seatCards = [...assignments]
@@ -988,13 +1024,24 @@ function SelectedReservedSeatCardsPrintView({
                   <p className="mt-1 text-sm font-semibold tracking-[0.12em] text-stone-600 print:text-[12px]">
                     Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
                   </p>
-                  <p className="mt-1.5 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
-                    {formatShowDate(showDate)}
-                  </p>
-                </div>
-              </article>
-            );
-          })}
+                    <p className="mt-1.5 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
+                      {formatShowDate(show.show_date)}
+                    </p>
+                  </div>
+                  <div className="w-full">
+                    <ReservationTicketCode
+                      scanToken={reservedLink?.scan_token}
+                      format={show.ticket_code_format}
+                      purchaserName={card.customer_name?.trim() || "Reserved Guest"}
+                      ticketCount={1}
+                      seatLabels={[card.seat_id]}
+                      compact
+                      printable
+                    />
+                  </div>
+                </article>
+              );
+            })}
         </section>
       ))}
     </div>
@@ -1303,6 +1350,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         {printKind === "door-guest-list" ? <DoorGuestListPrintView tickets={doorGuestList} /> : null}
         {printKind === "reserved-seat-cards" ? (
           <ReservedSeatCardsPrintView
+            show={show}
             tickets={doorGuestList}
             reservedLinks={reservedSeatingLinks}
             assignments={selectedReservedSeatAssignments}
@@ -1320,7 +1368,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
           <SelectedReservedSeatCardsPrintView
             assignments={selectedReservedSeatAssignments}
             reservedLinks={reservedSeatingLinks}
-            showDate={show.show_date}
+            show={show}
           />
         ) : null}
       </PrintShell>

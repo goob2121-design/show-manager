@@ -60,6 +60,7 @@ export type ShowRecord = {
   promo_short: string | null;
   promo_long: string | null;
   ticket_link: string | null;
+  ticket_code_format: string | null;
   square_catalog_variation_id?: string | null;
   opening_script: string | null;
   intermission_script: string | null;
@@ -450,6 +451,7 @@ export type ShowReservedSeatingLink = {
   email: string | null;
   ticket_count: number;
   selection_token: string;
+  scan_token: string | null;
   submitted_at: string | null;
   sent_at: string | null;
   resend_email_id: string | null;
@@ -539,4 +541,5 @@ export type ShowDetailsFormState = {
   promoShort: string;
   promoLong: string;
   ticketLink: string;
+  ticketCodeFormat: string;
 };

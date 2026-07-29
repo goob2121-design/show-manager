@@ -9,7 +9,6 @@ import {
   formatReservedSeatLabel,
   getReservedSeatDefinition,
   RESERVED_SEAT_DEFINITIONS,
-  RESERVED_SEATING_VENUE,
   sortReservedSeatIds,
 } from "@/lib/reserved-seating";
 import type { ReservedSeatEmailTrackingSummary } from "@/lib/reserved-seat-email-tracking";
@@ -21,6 +20,11 @@ import {
   type ReservedSeatEmailStatusTone,
   type ReservedSeatEmailTrackingRequestState,
 } from "@/lib/reserved-seat-email-status-display";
+import {
+  buildReservedSeatingMessageBody,
+  buildReservedSeatingMessageSubject,
+} from "@/lib/reserved-seat-generated-message";
+import { tryGenerateReservationScanToken } from "@/lib/reservation-scan-tokens";
 import { createClient } from "@/lib/supabase/client";
 import type { ReservedSeatCategory, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -179,37 +183,6 @@ function getReservedSeatCategoryBadgeClasses(category: ReservedSeatCategory) {
   }
 }
 
-function buildReservedSeatingMessageSubject() {
-  return "Your Reserved Seating Link for Cumberland Mountain Music Show";
-}
-
-function buildReservedSeatingMessageBody(link: LinkWithSeats, absoluteUrl: string, formattedDate: string) {
-  return [
-    `Hi ${link.customer_name},`,
-    "",
-    "Thank you for purchasing tickets to the Cumberland Mountain Music Show!",
-    "",
-    "Reserved seating is available for this show. You can select your seats using your private seat-selection link below:",
-    "",
-    absoluteUrl,
-    "",
-    "Show Information:",
-    "Cumberland Mountain Music Show",
-    formattedDate !== "Date TBD" ? formattedDate : "Date TBD",
-    RESERVED_SEATING_VENUE.venueName,
-    RESERVED_SEATING_VENUE.venueAddress,
-    "",
-    `Please choose up to ${link.ticket_count} seat${link.ticket_count === 1 ? "" : "s"}. Once your seats are confirmed, they will be reserved for you.`,
-    "",
-    "If you prefer not to select your seats, that's perfectly fine too. We'll be happy to reserve seats for you and have them ready when you arrive.",
-    "",
-    "If you have any trouble with the link, just reply to this message and we'll be happy to help.",
-    "",
-    "Thank you,",
-    "Cumberland Mountain Music Show",
-  ].join("\n");
-}
-
 function getEmailStatusToneClasses(tone: ReservedSeatEmailStatusTone) {
   switch (tone) {
     case "blue":
@@ -260,6 +233,7 @@ export function ReservedSeatingPanel({
   const [seatListFilter, setSeatListFilter] = useState<ReservedSeatListFilter>("all");
   const [emailStatuses, setEmailStatuses] = useState<Record<string, ReservedSeatEmailStatus>>({});
   const [emailTrackingRequestState, setEmailTrackingRequestState] = useState<ReservedSeatEmailTrackingRequestState>("loading");
+  const [ticketCodeActionId, setTicketCodeActionId] = useState<string | null>(null);
   const supabase = useMemo(() => createClient(), []);
 
   async function loadReservedSeatEmailStatuses(nextLinks: ShowReservedSeatingLink[]) {
@@ -294,6 +268,108 @@ export function ReservedSeatingPanel({
 
   async function handleRetryEmailTracking() {
     await loadReservedSeatEmailStatuses(links);
+  }
+
+  async function handleGenerateTicketCode(link: LinkWithSeats) {
+    if (link.scan_token) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Generate a ticket code for ${link.customer_name}? This will not replace an existing code.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setTicketCodeActionId(link.id);
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/reserved-seat-ticket-codes`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: showSlug,
+          action: "generate-one",
+          reservationId: link.id,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        error?: string;
+        generated?: number;
+      } | null;
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Unable to generate a ticket code for this reservation.");
+      }
+
+      setStatusMessage(
+        payload.generated
+          ? "Ticket code generated. You can now send or print the reservation confirmation."
+          : "Ticket code already exists for this reservation.",
+      );
+      await loadReservedSeating();
+      onAssignmentsChange?.();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to generate a ticket code for this reservation."));
+    } finally {
+      setTicketCodeActionId(null);
+    }
+  }
+
+  async function handleGenerateMissingTicketCodes() {
+    const missingCount = links.filter((link) => !link.scan_token).length;
+    if (missingCount <= 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Generate ticket codes for ${missingCount} existing reservation${missingCount === 1 ? "" : "s"} in this show that do not already have one? This will not replace existing codes.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setTicketCodeActionId("bulk");
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/reserved-seat-ticket-codes`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: showSlug,
+          action: "generate-missing",
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        error?: string;
+        generated?: number;
+        alreadyHadCode?: number;
+        failed?: number;
+      } | null;
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Unable to generate missing ticket codes.");
+      }
+
+      setStatusMessage(
+        `Generated ${payload.generated ?? 0} ticket code${payload?.generated === 1 ? "" : "s"}. ${payload.alreadyHadCode ?? 0} already had codes. ${payload.failed ?? 0} failed.`,
+      );
+      await loadReservedSeating();
+      onAssignmentsChange?.();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to generate missing ticket codes."));
+    } finally {
+      setTicketCodeActionId(null);
+    }
   }
 
   async function loadReservedSeating() {
@@ -379,6 +455,10 @@ export function ReservedSeatingPanel({
     () => linksWithSeats.filter((link) => seatListFilter === "all" || normalizeReservedSeatCategory(link.seat_category, link.is_complimentary) === seatListFilter),
     [linksWithSeats, seatListFilter],
   );
+  const missingTicketCodeCount = useMemo(
+    () => linksWithSeats.filter((link) => !link.scan_token).length,
+    [linksWithSeats],
+  );
 
   const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
     const assignmentBySeatId = new Map(assignments.map((assignment) => [assignment.seat_id, assignment]));
@@ -425,6 +505,7 @@ export function ReservedSeatingPanel({
         customer_name: formState.customerName.trim(),
         email: formState.email.trim() || null,
         ticket_count: ticketCount,
+        scan_token: tryGenerateReservationScanToken(),
         selection_mode: formState.isComplimentary ? "comp" : "customer",
         is_complimentary: formState.isComplimentary,
         source_note: formState.sourceNote.trim() || null,
@@ -849,14 +930,24 @@ export function ReservedSeatingPanel({
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Message Body</p>
                 <textarea
                   readOnly
-                  value={buildReservedSeatingMessageBody(messageLink, getCustomerLinkUrl(messageLink.selection_token), formatShowDate(showDate))}
+                  value={buildReservedSeatingMessageBody({
+                    customerName: messageLink.customer_name,
+                    ticketCount: messageLink.ticket_count,
+                    absoluteUrl: getCustomerLinkUrl(messageLink.selection_token),
+                    formattedDate: formatShowDate(showDate),
+                  })}
                   className="mt-2 min-h-[18rem] w-full rounded-xl border border-white/12 bg-slate-950/70 px-3 py-3 text-sm leading-6 text-slate-100 outline-none"
                 />
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => void copyReservedSeatingMessageText(
-                      buildReservedSeatingMessageBody(messageLink, getCustomerLinkUrl(messageLink.selection_token), formatShowDate(showDate)),
+                      buildReservedSeatingMessageBody({
+                        customerName: messageLink.customer_name,
+                        ticketCount: messageLink.ticket_count,
+                        absoluteUrl: getCustomerLinkUrl(messageLink.selection_token),
+                        formattedDate: formatShowDate(showDate),
+                      }),
                       "body",
                     )}
                     className="inline-flex rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500"
@@ -1085,6 +1176,18 @@ export function ReservedSeatingPanel({
               {option.label}
             </button>
           ))}
+          {missingTicketCodeCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => void handleGenerateMissingTicketCodes()}
+              disabled={ticketCodeActionId === "bulk"}
+              className="rounded-full border border-amber-400/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {ticketCodeActionId === "bulk"
+                ? "Generating Ticket Codes..."
+                : `Generate Missing Ticket Codes (${missingTicketCodeCount})`}
+            </button>
+          ) : null}
         </div>
 
         {linksWithSeats.length === 0 && !isLoading ? (
@@ -1207,6 +1310,22 @@ export function ReservedSeatingPanel({
                           ))
                         ) : (
                           <span className="text-sm text-slate-400">No seats selected yet.</span>
+                        )}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {link.scan_token ? (
+                          <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100">
+                            Ticket Code Ready
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void handleGenerateTicketCode(link)}
+                            disabled={ticketCodeActionId === link.id}
+                            className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {ticketCodeActionId === link.id ? "Generating..." : "Generate Ticket Code"}
+                          </button>
                         )}
                       </div>
                     </div>

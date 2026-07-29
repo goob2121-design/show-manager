@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import {
@@ -12,7 +13,7 @@ import {
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
 type ReservedSeatSelectionPageProps = {
-  show: Pick<ShowRecord, "name" | "show_date" | "venue" | "show_logo_url">;
+  show: Pick<ShowRecord, "name" | "show_date" | "venue" | "show_logo_url" | "ticket_code_format">;
   seatingLink: ShowReservedSeatingLink;
   assignments: ShowReservedSeatAssignment[];
 };
@@ -195,36 +196,54 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const formattedShowDate = formatShowDate(show.show_date);
 
   return (
-    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 pb-28 text-slate-100 sm:px-6 sm:py-8 sm:pb-8">
+    <main className="confirmation-print-root min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 pb-28 text-slate-100 sm:px-6 sm:py-8 sm:pb-8">
       <style jsx global>{`
         @media print {
+          html,
           body {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
             background: #ffffff !important;
           }
 
-          body * {
-            visibility: hidden;
+          body {
+            margin: 0 !important;
           }
 
-          .seat-confirmation-print,
-          .seat-confirmation-print * {
-            visibility: visible;
+          .confirmation-print-root {
+            min-height: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+            padding: 0 !important;
+          }
+
+          .seat-confirmation-screen {
+            display: none !important;
           }
 
           .seat-confirmation-print {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
+            display: block !important;
+            position: static !important;
+            width: auto !important;
             background: #ffffff !important;
             color: #111111 !important;
             padding: 0;
             margin: 0;
+            break-after: auto !important;
+            page-break-after: auto !important;
+          }
+
+          .seat-confirmation-print .ticket-code-block {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
 
       <section className="mx-auto flex w-full max-w-[96rem] flex-col gap-6 overflow-x-hidden">
+        <div className="seat-confirmation-screen">
         <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#08111f]/95 shadow-[0_24px_60px_rgba(2,6,23,0.45)]">
           <div className="relative border-b border-white/10 px-4 py-5 text-white sm:px-6 lg:px-8 lg:py-6">
             <img
@@ -319,6 +338,14 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                   <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
                     Your reserved seats are confirmed.
                   </div>
+                  <ReservationTicketCode
+                    scanToken={seatingLink.scan_token}
+                    format={show.ticket_code_format}
+                    purchaserName={seatingLink.customer_name}
+                    ticketCount={seatingLink.ticket_count}
+                    seatLabels={confirmedSeatIds.map((seatId) => formatReservedSeatLabel(seatId))}
+                    compact
+                  />
                   <button
                     type="button"
                     onClick={() => window.print()}
@@ -462,6 +489,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             </button>
           </div>
         ) : null}
+        </div>
 
         {confirmedSeatIds.length > 0 ? (
           <section className="seat-confirmation-print hidden print:block">
@@ -493,12 +521,23 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                       <div key={seatId} className="rounded-xl border border-black px-4 py-3">
                         <p className="text-lg font-semibold">{formatReservedSeatLabel(seatId)}</p>
                         <p className="mt-1 text-sm">
-                          {details.section ? `${details.section} · Row ${details.row} · Seat ${details.seatNumber}` : seatId}
+                          {details.section ? `${details.section} - Row ${details.row} - Seat ${details.seatNumber}` : seatId}
                         </p>
                       </div>
                     );
                   })}
                 </div>
+              </div>
+
+              <div className="mt-6">
+                <ReservationTicketCode
+                  scanToken={seatingLink.scan_token}
+                  format={show.ticket_code_format}
+                  purchaserName={seatingLink.customer_name}
+                  ticketCount={seatingLink.ticket_count}
+                  seatLabels={confirmedSeatIds.map((seatId) => formatReservedSeatLabel(seatId))}
+                  printable
+                />
               </div>
 
               <p className="mt-8 text-sm">

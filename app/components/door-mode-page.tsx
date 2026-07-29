@@ -8,6 +8,12 @@ import { createClient } from "@/lib/supabase/client";
 import type { ShowCompTicket, ShowRecord, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 import { checkInAdmissionLabel, checkInTicketDestination } from "@/lib/check-in-ticket-classification";
 import {
+  deriveScannedDoorModeQuantities,
+  normalizeScannedReservationToken,
+  type DoorModeScanLookupResponse,
+  type DoorModeScanLookupTicket,
+} from "@/lib/door-mode-scan";
+import {
   addRecentGuestCheckIn,
   admissionMatchesDoorSearch,
   attendanceProgressPercent,
@@ -49,6 +55,23 @@ type DoorSeatView = {
   seatIds: string[];
   trigger: HTMLButtonElement;
 };
+
+type DoorScanBehavior = "review" | "auto";
+
+type DoorScanFoundResult = Extract<DoorModeScanLookupResponse, { success: true }>["result"] & {
+  kind: "found";
+};
+
+type DoorScanState =
+  | { kind: "idle" }
+  | { kind: "invalid" }
+  | { kind: "not_found" }
+  | { kind: "error"; message: string }
+  | { kind: "found"; lookup: DoorScanFoundResult };
+
+const DOOR_SCAN_BEHAVIOR_STORAGE_KEY = "stageflow-door-scan-behavior";
+const DOOR_SCANNER_EXPANDED_STORAGE_KEY = "stageflow-door-scanner-expanded";
+const DOOR_SCAN_DUPLICATE_WINDOW_MS = 1500;
 
 type DoorModeShowSponsor = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -293,10 +316,39 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [recentGuestCheckIns, setRecentGuestCheckIns] = useState<RecentGuestCheckIn[]>([]);
   const [seatView, setSeatView] = useState<DoorSeatView | null>(null);
   const [seatIdsByTicketId, setSeatIdsByTicketId] = useState<Record<string, string[]>>({});
+  const [scanInput, setScanInput] = useState("");
+  const [scanState, setScanState] = useState<DoorScanState>({ kind: "idle" });
+  const [scanBehavior, setScanBehavior] = useState<DoorScanBehavior>(() => {
+    if (typeof window === "undefined") {
+      return "review";
+    }
+
+    try {
+      const savedBehavior = window.localStorage.getItem(DOOR_SCAN_BEHAVIOR_STORAGE_KEY);
+      return savedBehavior === "auto" ? "auto" : "review";
+    } catch {
+      return "review";
+    }
+  });
+  const [isScannerExpanded, setIsScannerExpanded] = useState(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    try {
+      const savedValue = window.localStorage.getItem(DOOR_SCANNER_EXPANDED_STORAGE_KEY);
+      return savedValue !== "collapsed";
+    } catch {
+      return true;
+    }
+  });
+  const [isScanLookupPending, setIsScanLookupPending] = useState(false);
   const [welcomeDisplayWarning, setWelcomeDisplayWarning] = useState<string | null>(null);
   const seatDialogCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const printMenuRef = useRef<HTMLDivElement | null>(null);
   const guestSearchRef = useRef<HTMLInputElement | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
+  const recentScanRef = useRef<{ token: string; timestamp: number } | null>(null);
 
   const loadDoorModeData = useCallback(async () => {
     setIsLoading(true);
@@ -387,6 +439,29 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
     return () => {
       window.clearInterval(timer);
     };
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DOOR_SCAN_BEHAVIOR_STORAGE_KEY, scanBehavior);
+    } catch {
+      // Ignore storage write issues and continue using the in-memory preference.
+    }
+  }, [scanBehavior]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DOOR_SCANNER_EXPANDED_STORAGE_KEY,
+        isScannerExpanded ? "expanded" : "collapsed",
+      );
+    } catch {
+      // Ignore storage write issues and continue using the in-memory preference.
+    }
+  }, [isScannerExpanded]);
+
+  useEffect(() => {
+    focusScanInput();
   }, []);
 
   useEffect(() => {
@@ -546,6 +621,36 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
     ) as Record<string, ReservedSeatMapSeatState>;
   }, [seatView]);
 
+  const scannedTicket = useMemo(() => {
+    if (scanState.kind !== "found" || !scanState.lookup.ticket) {
+      return null;
+    }
+
+    const currentTicket = compTickets.find((item) => item.id === scanState.lookup.ticket?.id);
+    if (currentTicket) {
+      return currentTicket;
+    }
+
+    const fallbackTicket = scanState.lookup.ticket as DoorModeScanLookupTicket;
+    return normalizeShowCompTicket({
+      ...fallbackTicket,
+      email: null,
+      order_id: null,
+      import_key: null,
+    });
+  }, [compTickets, scanState]);
+
+  const scannedReservationQuantities = useMemo(() => {
+    if (scanState.kind !== "found" || !scannedTicket) {
+      return null;
+    }
+
+    return deriveScannedDoorModeQuantities({
+      reservationTicketCount: scanState.lookup.reservation.ticketCount,
+      checkedInCount: scannedTicket.checked_in_count,
+    });
+  }, [scanState, scannedTicket]);
+
   function closeSeatView() {
     const trigger = seatView?.trigger;
     setSeatView(null);
@@ -584,6 +689,124 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
   function removeRecentActivity(activityId: string) {
     setRecentActivities((current) => current.filter((item) => item.id !== activityId));
+  }
+
+  function focusScanInput() {
+    window.requestAnimationFrame(() => scanInputRef.current?.focus());
+  }
+
+  function resetScanState(nextState: DoorScanState = { kind: "idle" }) {
+    setScanState(nextState);
+    setScanInput("");
+    focusScanInput();
+  }
+
+  async function handleScannedLookup(rawValue: string) {
+    if (!show) {
+      return;
+    }
+
+    const normalizedToken = normalizeScannedReservationToken(rawValue);
+    if (!normalizedToken) {
+      setScanState({ kind: "invalid" });
+      setScanInput("");
+      focusScanInput();
+      return;
+    }
+
+    const now = Date.now();
+    if (
+      isScanLookupPending &&
+      recentScanRef.current?.token === normalizedToken &&
+      now - recentScanRef.current.timestamp < DOOR_SCAN_DUPLICATE_WINDOW_MS
+    ) {
+      return;
+    }
+
+    recentScanRef.current = { token: normalizedToken, timestamp: now };
+    setIsScanLookupPending(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(show.id)}/door-scan-lookup`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          slug: show.slug,
+          scannedToken: normalizedToken,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as DoorModeScanLookupResponse | null;
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload && "error" in payload ? payload.error : "Unable to scan this ticket right now.");
+      }
+
+      if (payload.result.kind !== "found") {
+        setScanState({ kind: "not_found" });
+        setScanInput("");
+        focusScanInput();
+        return;
+      }
+
+      const foundResult = payload.result;
+      setScanState({ kind: "found", lookup: foundResult });
+      setScanInput("");
+      focusScanInput();
+
+      const foundTicket = foundResult.ticket;
+      const autoTicket = foundTicket
+        ? compTickets.find((item) => item.id === foundTicket.id)
+          ?? normalizeShowCompTicket({
+            ...foundTicket,
+            email: null,
+            order_id: null,
+            import_key: null,
+          })
+        : null;
+      const autoQuantities =
+        foundTicket
+          ? deriveScannedDoorModeQuantities({
+              reservationTicketCount: foundResult.reservation.ticketCount,
+              checkedInCount: foundTicket.checked_in_count,
+            })
+          : null;
+
+      if (
+        scanBehavior === "auto" &&
+        autoTicket &&
+        autoQuantities &&
+        !autoQuantities.isFullyCheckedIn &&
+        autoQuantities.remainingTickets > 0
+      ) {
+        await handleAdjustTicketCheckIn(
+          autoTicket,
+          autoQuantities.remainingTickets,
+        );
+      }
+    } catch (error) {
+      setScanState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to scan this ticket right now.",
+      });
+      setScanInput("");
+      focusScanInput();
+    } finally {
+      setIsScanLookupPending(false);
+    }
+  }
+
+  function handleSearchScannedGuest() {
+    if (scanState.kind !== "found") {
+      return;
+    }
+
+    setGuestSearch(scanState.lookup.reservation.customerName);
+    window.requestAnimationFrame(() => guestSearchRef.current?.focus());
   }
 
   function publishWelcome(input: Parameters<typeof createDoorWelcomeEvent>[0]) {
@@ -1113,6 +1336,225 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             {welcomeDisplayWarning}
           </div>
         ) : null}
+
+        <section className="rounded-[24px] border border-gray-700 bg-gray-800 p-4 shadow-sm shadow-slate-950/10 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="border-l-4 border-amber-500 pl-3 text-xl font-semibold text-gray-50">Ticket Scanner</h2>
+              <span className="rounded-full border border-emerald-800/70 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
+                {isScanLookupPending ? "Scanning" : "Scanner Ready"}
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-expanded={isScannerExpanded}
+              onClick={() => setIsScannerExpanded((current) => !current)}
+              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-semibold text-gray-100 transition hover:bg-gray-800"
+            >
+              {isScannerExpanded ? "Collapse" : "Expand"}
+            </button>
+          </div>
+
+          {isScannerExpanded ? (
+            <>
+              <div className="mt-4 grid gap-3 xl:grid-cols-[16rem_minmax(0,1fr)_auto] xl:items-end">
+                <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-400">
+                  Scan Behavior
+                  <select
+                    value={scanBehavior}
+                    onChange={(event) => setScanBehavior(event.target.value === "auto" ? "auto" : "review")}
+                    className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-semibold normal-case tracking-normal text-gray-100 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+                  >
+                    <option value="review">Review Before Check-In</option>
+                    <option value="auto">Check In Immediately</option>
+                  </select>
+                </label>
+                <label className="min-w-0 flex-1">
+                  <span className="sr-only">Scan Ticket</span>
+                  <input
+                    ref={scanInputRef}
+                    type="text"
+                    inputMode="text"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    value={scanInput}
+                    onChange={(event) => setScanInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleScannedLookup(scanInput);
+                      }
+                    }}
+                    placeholder="Scan Ticket Code"
+                    className="min-h-12 w-full rounded-xl border border-gray-700 bg-gray-900 px-4 text-lg font-semibold text-gray-50 outline-none transition placeholder:text-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleScannedLookup(scanInput)}
+                    disabled={isScanLookupPending}
+                    className="min-h-12 rounded-xl bg-amber-600 px-5 text-base font-semibold text-gray-950 transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-700 disabled:text-amber-100"
+                  >
+                    {isScanLookupPending ? "Scanning..." : "Scan Ticket"}
+                  </button>
+                  {scanState.kind !== "idle" ? (
+                    <button
+                      type="button"
+                      onClick={() => resetScanState()}
+                      className="min-h-12 rounded-xl border border-gray-700 bg-gray-900 px-5 text-sm font-semibold text-gray-100 transition hover:bg-gray-800"
+                    >
+                      Scan Again
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-4">
+            {scanState.kind === "invalid" ? (
+              <div className="rounded-2xl border border-rose-800 bg-rose-500/10 px-4 py-5 text-sm text-rose-200">
+                <p className="text-base font-semibold text-rose-100">Invalid Ticket Code</p>
+                <p className="mt-1">This scan did not match the expected StageFlow ticket-code format for Door Mode.</p>
+              </div>
+            ) : null}
+
+            {scanState.kind === "not_found" ? (
+              <div className="rounded-2xl border border-amber-800 bg-amber-500/10 px-4 py-5 text-sm text-amber-100">
+                <p className="text-base font-semibold text-amber-50">Ticket Not Found</p>
+                <p className="mt-1">This code does not match a reservation for this show.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => resetScanState()}
+                    className="rounded-lg border border-amber-700/70 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20"
+                  >
+                    Scan Again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.requestAnimationFrame(() => guestSearchRef.current?.focus())}
+                    className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-semibold text-gray-100 transition hover:bg-gray-800"
+                  >
+                    Search Manually
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {scanState.kind === "error" ? (
+              <div className="rounded-2xl border border-rose-800 bg-rose-500/10 px-4 py-5 text-sm text-rose-200">
+                <p className="text-base font-semibold text-rose-100">Scan Failed</p>
+                <p className="mt-1">{scanState.message}</p>
+              </div>
+            ) : null}
+
+            {scanState.kind === "found" ? (
+              <article className={`rounded-[24px] border px-4 py-5 shadow-sm shadow-slate-950/10 sm:px-5 ${
+                scannedReservationQuantities?.isFullyCheckedIn
+                  ? "border-amber-700/70 bg-amber-500/10"
+                  : "border-emerald-800/70 bg-emerald-500/10"
+              }`}>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                        {scannedTicket
+                          ? scannedReservationQuantities?.isFullyCheckedIn
+                            ? "Already Checked In"
+                            : (scannedReservationQuantities?.checkedInCount ?? 0) > 0
+                              ? "Ready To Check In"
+                              : "Ready To Check In"
+                          : "Reservation Found"}
+                      </p>
+                      <h3 className="mt-1 text-2xl font-semibold text-gray-50 sm:text-3xl">
+                        {scanState.lookup.reservation.customerName}
+                      </h3>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full border border-sky-700/70 bg-sky-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-sky-200">
+                        {scannedTicket
+                          ? checkInAdmissionLabel(scannedTicket.ticket_type, scannedTicket.notes)
+                          : scanState.lookup.reservation.admissionLabel}
+                      </span>
+                      <span className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-200">
+                        {scanState.lookup.reservation.ticketCount} Ticket{scanState.lookup.reservation.ticketCount === 1 ? "" : "s"}
+                      </span>
+                      {scannedTicket && scannedReservationQuantities ? (
+                        <span className="rounded-full border border-emerald-800/70 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-200">
+                          {scannedReservationQuantities.checkedInCount} / {scannedReservationQuantities.totalEligibleTickets} checked in
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {scanState.lookup.reservation.seatLabels.length > 0 ? (
+                      <p className="text-sm text-gray-200">
+                        <span className="font-semibold text-gray-50">Seats:</span>{" "}
+                        {scanState.lookup.reservation.seatLabels.join(", ")}
+                      </p>
+                    ) : null}
+
+                    {!scannedTicket ? (
+                      <p className="text-sm text-amber-100">
+                        This reservation was found, but it does not currently have a Door Mode check-in record. Run Prepare Check-In List before scanning it at the door.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex w-full flex-col gap-2 lg:w-64">
+                    <button
+                      type="button"
+                      onClick={() => resetScanState()}
+                      className="rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800"
+                    >
+                      Scan Again
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSearchScannedGuest}
+                      className="rounded-xl border border-sky-800/80 bg-sky-500/[0.07] px-4 py-3 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/10"
+                    >
+                      Search Manually
+                    </button>
+                    {scannedTicket ? (
+                      <>
+                        {scannedReservationQuantities?.isMultiTicket ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleAdjustTicketCheckIn(scannedTicket, scannedReservationQuantities.remainingTickets)}
+                            disabled={Boolean(activeActionId) || scannedReservationQuantities.isFullyCheckedIn}
+                            className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Check In All
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void handleAdjustTicketCheckIn(scannedTicket, 1)}
+                          disabled={Boolean(activeActionId) || scannedReservationQuantities?.isFullyCheckedIn}
+                          className="rounded-xl bg-emerald-700 px-4 py-4 text-base font-bold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
+                        >
+                          {scannedReservationQuantities?.isMultiTicket ? "+1 Check In" : "Check In"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleAdjustTicketCheckIn(scannedTicket, -1)}
+                          disabled={Boolean(activeActionId) || (scannedReservationQuantities?.checkedInCount ?? 0) <= 0}
+                          className="rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          -1 Undo
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            ) : null}
+              </div>
+            </>
+          ) : null}
+        </section>
 
         <section className="sticky top-3 z-20 border-y border-gray-700 bg-slate-900/95 px-2.5 py-2 shadow-sm shadow-slate-950/20 backdrop-blur" data-testid="door-operational-toolbar">
           <div className="flex flex-col gap-2 md:flex-row md:items-center">

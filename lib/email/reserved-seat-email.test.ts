@@ -92,6 +92,36 @@ test("uses singular ticket and seat-selection wording", () => {
   assert.match(email.text, /Please choose your reserved seat using the button above\./);
 });
 
+test("email generation still succeeds when scan_token is null", () => {
+  const email = buildReservedSeatEmail({ ...input, scanToken: null, ticketCodeFormat: "both" });
+  assert.doesNotMatch(email.html, /YOUR ENTRY CODE/);
+  assert.doesNotMatch(email.text, /YOUR ENTRY CODE/);
+  assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
+});
+
+test("email generation still succeeds when barcode rendering fails", () => {
+  const email = buildReservedSeatEmail({
+    ...input,
+    scanToken: "bad\ntoken",
+    ticketCodeFormat: "code128",
+  });
+  assert.doesNotMatch(email.html, /YOUR ENTRY CODE/);
+  assert.match(email.text, /Select Your Reserved Seats:/);
+  assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
+});
+
+test("email includes a ticket-code section when scan_token is present", () => {
+  const email = buildReservedSeatEmail({
+    ...input,
+    scanToken: "stf_A8D23F7C19B84E2A",
+    ticketCodeFormat: "both",
+    assignedSeatLabels: ["L-A1", "L-A2"],
+  });
+  assert.match(email.html, /YOUR ENTRY CODE/);
+  assert.match(email.text, /Ticket Code: \.\.\.9B84E2A/i);
+  assert.match(email.html, /L-A1, L-A2/);
+});
+
 test("uses the production sender and reply-to addresses", () => {
   assert.equal(RESERVED_SEAT_EMAIL_EVENT_NAME, "The Cumberland Mountain Music Show");
   assert.equal(RESERVED_SEAT_EMAIL_FROM, "The Cumberland Mountain Music Show <tickets@cumberlandmountainmusic.com>");

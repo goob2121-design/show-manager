@@ -26,7 +26,7 @@ export default async function ReservedSeatingPage({ params }: ReservedSeatingPag
   const [{ data: show }, { data: assignments }] = await Promise.all([
     supabase
       .from("shows")
-      .select("name, show_date, venue, show_logo_url")
+      .select("name, show_date, venue, show_logo_url, ticket_code_format")
       .eq("id", seatingLink.show_id)
       .maybeSingle(),
     supabase
@@ -36,7 +36,7 @@ export default async function ReservedSeatingPage({ params }: ReservedSeatingPag
       .order("created_at", { ascending: true }),
   ]);
 
-  const typedShow = show as Pick<ShowRecord, "name" | "show_date" | "venue" | "show_logo_url"> | null;
+  const typedShow = show as Pick<ShowRecord, "name" | "show_date" | "venue" | "show_logo_url" | "ticket_code_format"> | null;
   const typedSeatingLink = seatingLink as ShowReservedSeatingLink;
   const typedAssignments = (assignments ?? []) as ShowReservedSeatAssignment[];
 

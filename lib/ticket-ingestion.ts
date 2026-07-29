@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { tryGenerateReservationScanToken } from "@/lib/reservation-scan-tokens";
 import type { ShowCompTicket, ShowReservedSeatingLink } from "@/lib/types";
 
 export type ExternalTicketIngestionStatus =
@@ -162,6 +163,7 @@ export async function syncReservedSeatingLinksForImportedOrders(
           customer_name: ticket.guest_name,
           email: normalizeOptionalField(ticket.email),
           ticket_count: ticket.ticket_count,
+          scan_token: tryGenerateReservationScanToken(),
           selection_mode: "imported",
           seat_category: "paid_reserved",
           source_ticket_id: ticket.id,

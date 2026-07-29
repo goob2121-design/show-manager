@@ -29,6 +29,7 @@ import {
 } from "@/app/components/promo-materials-view";
 import { formatPromoLinkType } from "@/app/components/promo-links-view";
 import { ReservedSeatingPanel } from "@/app/components/reserved-seating-panel";
+import { normalizeTicketCodeFormat, tryGenerateReservationScanToken } from "@/lib/reservation-scan-tokens";
 import {
   createTicketPrintBuilders,
   type CompAdmissionType,
@@ -282,6 +283,7 @@ const initialShowDetailsFormState: ShowDetailsFormState = {
   promoShort: "",
   promoLong: "",
   ticketLink: "",
+  ticketCodeFormat: "qr",
 };
 
 const DEFAULT_GUEST_WELCOME_MESSAGE_INTRO =
@@ -5986,6 +5988,7 @@ function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
     promoShort: show.promo_short ?? "",
     promoLong: show.promo_long ?? "",
     ticketLink: show.ticket_link ?? "",
+    ticketCodeFormat: normalizeTicketCodeFormat(show.ticket_code_format),
   };
 }
 
@@ -8482,6 +8485,7 @@ export function ShowPage({
             customer_name: row.name,
             email: null,
             ticket_count: Math.max(1, row.quantity),
+            scan_token: tryGenerateReservationScanToken(),
             selection_mode: "comp",
             is_complimentary: true,
             source_note: buildCompCategoryNotes(row.notes, row.category, row.admissionType),
@@ -9818,7 +9822,7 @@ export function ShowPage({
   }
 
   function handleShowDetailsChange(
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
     const { name, value } = event.target;
 
@@ -11828,6 +11832,7 @@ export function ShowPage({
         promo_short: normalizeOptionalField(showDetailsFormState.promoShort),
         promo_long: normalizeOptionalField(showDetailsFormState.promoLong),
         ticket_link: normalizeOptionalField(showDetailsFormState.ticketLink),
+        ticket_code_format: normalizeTicketCodeFormat(showDetailsFormState.ticketCodeFormat),
       };
 
       const { data, error } = await supabase
@@ -20492,6 +20497,23 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   />
                 </label>
 
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Ticket Code Format
+                  <select
+                    name="ticketCodeFormat"
+                    value={showDetailsFormState.ticketCodeFormat}
+                    onChange={handleShowDetailsChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  >
+                    <option value="qr">QR Code</option>
+                    <option value="code128">Code 128 Barcode</option>
+                    <option value="both">Show Both</option>
+                  </select>
+                  <span className="text-xs font-normal text-stone-500">
+                    Controls how reservation ticket codes appear in emails, customer pages, and printouts.
+                  </span>
+                </label>
+
                 <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -27501,6 +27523,7 @@ async function syncReservedSeatingLinksForImportedOrders(
         customer_name: ticket.guest_name,
         email: normalizeOptionalField(ticket.email),
         ticket_count: ticket.ticket_count,
+        scan_token: tryGenerateReservationScanToken(),
         selection_mode: "imported",
         seat_category: "paid_reserved",
         source_ticket_id: ticket.id,
