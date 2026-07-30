@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
@@ -65,8 +65,16 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const [hasSubmitted, setHasSubmitted] = useState(Boolean(seatingLink.submitted_at));
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [isResendingTicketEmail, setIsResendingTicketEmail] = useState(false);
+  const [ticketEmailMessage, setTicketEmailMessage] = useState<string | null>(null);
+  const [ticketEmailMessageTone, setTicketEmailMessageTone] = useState<"success" | "warning">("success");
   const isAlreadySubmitted = hasSubmitted;
 
+  useEffect(() => {
+    if (!isAlreadySubmitted || new URLSearchParams(window.location.search).get("print") !== "1") return;
+    const printTimer = window.setTimeout(() => window.print(), 250);
+    return () => window.clearTimeout(printTimer);
+  }, [isAlreadySubmitted]);
   const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
     const assignmentBySeatId = new Map(assignments.map((assignment) => [assignment.seat_id, assignment]));
     const selectedSeatIdSet = new Set(selectedSeatIds);
@@ -134,7 +142,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
         }),
       });
 
-      const payload = (await response.json()) as { success?: boolean; error?: string; data?: { seatIds?: string[] } };
+      const payload = (await response.json()) as { success?: boolean; error?: string; data?: { seatIds?: string[]; ticketEmailDelivered?: boolean; ticketEmailMessage?: string | null } };
 
       if (!response.ok || !payload.success) {
         throw new Error(payload.error || "Unable to save reserved seats.");
@@ -144,6 +152,10 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
       setConfirmedSeatIds(normalizedSeatIds);
       setSelectedSeatIds(normalizedSeatIds);
       setHasSubmitted(true);
+      setTicketEmailMessageTone(payload.data?.ticketEmailDelivered ? "success" : "warning");
+      setTicketEmailMessage(payload.data?.ticketEmailDelivered
+        ? "Your official ticket email is on its way."
+        : payload.data?.ticketEmailMessage || "Your seats are confirmed, but the ticket email could not be delivered automatically.");
       setShowSuccessModal(true);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save reserved seats.");
@@ -152,6 +164,26 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
     }
   }
 
+  async function resendOfficialTicketEmail() {
+    setIsResendingTicketEmail(true);
+    setTicketEmailMessage(null);
+    try {
+      const response = await fetch("/api/reserved-seating/ticket-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: seatingLink.selection_token }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; message?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to resend your ticket email.");
+      setTicketEmailMessageTone("success");
+      setTicketEmailMessage(payload.message || "Your official ticket email has been sent again.");
+    } catch (error) {
+      setTicketEmailMessageTone("warning");
+      setTicketEmailMessage(error instanceof Error ? error.message : "Unable to resend your ticket email right now.");
+    } finally {
+      setIsResendingTicketEmail(false);
+    }
+  }
   function handleConfirmClick() {
     if (isAlreadySubmitted) {
       return;
@@ -353,6 +385,19 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                   >
                     Print Seat Confirmation
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => void resendOfficialTicketEmail()}
+                    disabled={isResendingTicketEmail || !seatingLink.email?.trim()}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-amber-300/25 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isResendingTicketEmail ? "Sending..." : "Email My Tickets Again"}
+                  </button>
+                  {ticketEmailMessage ? (
+                    <p className={`rounded-xl border px-3 py-2 text-sm ${ticketEmailMessageTone === "success" ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-100" : "border-amber-300/25 bg-amber-400/10 text-amber-100"}`}>
+                      {ticketEmailMessage}
+                    </p>
+                  ) : null}
                 </div>
               )}
             </aside>
@@ -453,6 +498,11 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 <p className="mt-1 text-sm text-slate-300">{RESERVED_SEATING_VENUE.venueAddress}</p>
               </div>
 
+              {ticketEmailMessage ? (
+                <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${ticketEmailMessageTone === "success" ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-100" : "border-amber-300/25 bg-amber-400/10 text-amber-100"}`}>
+                  {ticketEmailMessage}
+                </div>
+              ) : null}
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"

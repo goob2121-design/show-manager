@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { deliverOfficialTicketEmail } from "@/lib/email/official-ticket-email";
 import { RESERVED_SEAT_DEFINITIONS, RESERVED_SEATING_VENUE, formatReservedSeatLabel, getReservedSeatDefinition, sortReservedSeatIds } from "@/lib/reserved-seating";
 import type { ShowRecord, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -134,7 +135,7 @@ async function sendReservedSeatingAdminNotification(payload: {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as SubmitReservedSeatsRequestBody;
     const token = typeof body.token === "string" ? body.token.trim() : "";
@@ -253,6 +254,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
 
+    let ticketEmailDelivered = false;
+    let ticketEmailMessage: string | null = null;
+    try {
+      const ticketEmailResult = await deliverOfficialTicketEmail(supabase, typedSeatingLink.id, { requestOrigin: request.nextUrl.origin });
+      ticketEmailDelivered = ticketEmailResult.success;
+      if (!ticketEmailResult.success) {
+        ticketEmailMessage = "Your seats are confirmed, but we could not deliver the ticket email automatically. You can send it again from this page.";
+      }
+    } catch (error) {
+      ticketEmailMessage = "Your seats are confirmed, but we could not deliver the ticket email automatically. You can send it again from this page.";
+      console.error("Automatic official ticket email failed after reservation commit.", {
+        reservationId: typedSeatingLink.id,
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
     const { data: showRecord, error: showError } = await supabase
       .from("shows")
       .select("slug, name, show_date, show_start_time")
@@ -281,6 +297,8 @@ export async function POST(request: Request) {
       data: {
         seatIds: uniqueSeatIds,
         submittedAt,
+        ticketEmailDelivered,
+        ticketEmailMessage,
       },
     });
   } catch (error) {

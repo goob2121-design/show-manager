@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendReservedSeatEmail, type ReservedSeatEmailResult } from "@/lib/email/reserved-seat-email";
 import { RESERVED_SEATING_VENUE, formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
-import { buildReservedSeatSelectionUrl, getStageFlowEmailLogoUrl } from "@/lib/server/stageflow-public-url";
+import { buildReservedSeatSelectionUrl } from "@/lib/server/stageflow-public-url";
 
 type EmailLinkRow = {
   id: string; show_id: string; customer_name: string; email: string | null; ticket_count: number;
@@ -127,10 +127,8 @@ export async function sendTrackedReservedSeatEmail(
 
 
   let seatSelectionUrl: string;
-  let logoUrl: string;
   try {
     seatSelectionUrl = buildReservedSeatSelectionUrl(link.selection_token);
-    logoUrl = getStageFlowEmailLogoUrl();
   } catch (error) {
     const message = safeError(normalizeReservedSeatEmailConfigError(error));
     let update = supabase.from("show_reserved_seating_links").update({ last_email_error: message, ...(sendClaim ? { resend_email_id: null } : {}) }).eq("id", link.id);
@@ -151,7 +149,6 @@ export async function sendTrackedReservedSeatEmail(
     scanToken: link.scan_token,
     ticketCodeFormat: show.ticket_code_format,
     assignedSeatLabels,
-    logoUrl,
     categoryLabel: link.seat_category,
   });
 

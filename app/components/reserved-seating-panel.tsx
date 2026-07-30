@@ -565,6 +565,25 @@ export function ReservedSeatingPanel({
       setActiveActionId(null);
     }
   }
+  async function handleResendOfficialTicketEmail(link: LinkWithSeats) {
+    setActiveActionId(`ticket-email-${link.id}`);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/reserved-seat-ticket-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: showSlug, reservationId: link.id }),
+      });
+      const result = await response.json() as { success?: boolean; error?: string; message?: string };
+      if (!response.ok || !result.success) throw new Error(result.error || "Unable to resend the official ticket email.");
+      setStatusMessage(result.message || "Official ticket email resent.");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to resend the official ticket email."));
+    } finally {
+      setActiveActionId(null);
+    }
+  }
   async function copyReservedSeatingMessageText(value: string, target: Exclude<CopyFeedbackTarget, null>) {
     try {
       if (!navigator.clipboard?.writeText) {
@@ -1362,7 +1381,18 @@ export function ReservedSeatingPanel({
                         >
                           {activeActionId === `email-${link.id}` ? "Sending..." : link.resend_email_id ? "Resend Seat Email" : link.last_email_error ? "Retry Email" : "Send Seat Email"}
                         </button>
-                      ) : null}                      <button
+                      ) : null}
+                      {link.submitted_at && link.email?.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleResendOfficialTicketEmail(link)}
+                          disabled={activeActionId === `ticket-email-${link.id}`}
+                          className="rounded-xl border border-amber-300/25 bg-amber-400/10 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {activeActionId === `ticket-email-${link.id}` ? "Sending Ticket..." : "Resend Ticket Email"}
+                        </button>
+                      ) : null}
+                      <button
                         type="button"
                         onClick={() => void handleCopyLink(link)}
                         className="rounded-xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"

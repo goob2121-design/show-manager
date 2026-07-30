@@ -27,7 +27,6 @@ const input: ReservedSeatEmailInput = {
   venueAddress: "601 Colwyn St, Cumberland Gap, TN 37724",
   ticketCount: 2,
   seatSelectionUrl: "https://stageflow.cumberlandmountainmusic.com/reserved-seating/private-token",
-  logoUrl: "https://stageflow.cumberlandmountainmusic.com/cmms-logo.png",
 };
 
 test("builds the revised plural reserved-seat message", () => {
@@ -35,7 +34,7 @@ test("builds the revised plural reserved-seat message", () => {
   assert.equal(email.subject, "Select Your Reserved Seats - The Cumberland Mountain Music Show");
   assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
   assert.match(email.text, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
-  assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/cmms-logo\.png/);
+  assert.match(email.html, /src="cid:cmms-logo"/);
   assert.match(email.html, /Tickets Purchased/);
   assert.match(email.html, /2 Reserved Seats/);
   assert.match(email.text, /Tickets Purchased: 2 Reserved Seats/);
