@@ -8,6 +8,7 @@ type ReservationTicketCodeProps = {
   seatLabels?: string[];
   compact?: boolean;
   printable?: boolean;
+  phone?: boolean;
 };
 
 export function ReservationTicketCode({
@@ -18,6 +19,7 @@ export function ReservationTicketCode({
   seatLabels = [],
   compact = false,
   printable = false,
+  phone = false,
 }: ReservationTicketCodeProps) {
   const display = buildReservationTicketCodeDisplay(scanToken, format);
 
@@ -25,9 +27,11 @@ export function ReservationTicketCode({
     return null;
   }
 
-  const wrapperClassName = compact
+  const wrapperClassName = phone
     ? "rounded-2xl border border-white/10 bg-white/[0.04] p-3"
-    : "rounded-3xl border border-white/10 bg-white/[0.04] p-4 sm:p-5";
+    : compact
+      ? "rounded-2xl border border-white/10 bg-white/[0.04] p-3"
+      : "rounded-3xl border border-white/10 bg-white/[0.04] p-4 sm:p-5";
   const surfaceClassName = printable
     ? "rounded-2xl border border-stone-300 bg-white p-3 text-center"
     : "rounded-2xl border border-white/10 bg-white p-3 text-center text-slate-950";
@@ -45,13 +49,13 @@ export function ReservationTicketCode({
         </p>
       </div>
 
-      <div className={`mt-4 grid gap-3 ${display.format === "both" ? "md:grid-cols-2" : ""}`}>
+      <div className={`mt-4 grid gap-3 ${display.format === "both" && !phone ? "md:grid-cols-2" : ""}`}>
         {display.qrDataUri ? (
           <div className={surfaceClassName}>
             <img
               src={display.qrDataUri}
               alt="Reservation QR code"
-              className={`mx-auto h-auto w-full max-w-[220px] object-contain ${compact ? "max-h-[180px]" : "max-h-[220px]"} ${printable ? "print:max-w-[150px]" : ""}`}
+              className={`mx-auto h-auto w-full object-contain ${phone ? "max-h-[300px] max-w-[300px]" : compact ? "max-h-[180px] max-w-[220px]" : "max-h-[220px] max-w-[220px]"} ${printable ? "print:max-w-[150px]" : ""}`}
             />
             <p className={`mt-2 text-xs font-semibold uppercase tracking-[0.18em] ${metaTextClassName}`}>
               QR Code
@@ -64,11 +68,8 @@ export function ReservationTicketCode({
             <img
               src={display.code128DataUri}
               alt="Reservation barcode"
-              className={`mx-auto h-auto w-full max-w-[320px] object-contain ${compact ? "max-h-[100px]" : "max-h-[120px]"} ${printable ? "print:max-w-[260px]" : ""}`}
+              className={`mx-auto h-auto w-full object-contain ${phone ? "max-h-[180px] max-w-[460px]" : compact ? "max-h-[100px] max-w-[320px]" : "max-h-[120px] max-w-[320px]"} ${printable ? "print:max-w-[260px]" : ""}`}
             />
-            <p className={`mt-2 text-xs font-semibold uppercase tracking-[0.18em] ${metaTextClassName}`}>
-              Ticket Code: {display.shortReference}
-            </p>
           </div>
         ) : null}
       </div>

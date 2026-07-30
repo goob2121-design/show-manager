@@ -117,7 +117,8 @@ test("email includes a ticket-code section when scan_token is present", () => {
     assignedSeatLabels: ["L-A1", "L-A2"],
   });
   assert.match(email.html, /YOUR ENTRY CODE/);
-  assert.match(email.text, /Ticket Code: \.\.\.9B84E2A/i);
+  assert.doesNotMatch(email.html, /Ticket Code:/i);
+  assert.doesNotMatch(email.text, /Ticket Code:/i);
   assert.match(email.html, /L-A1, L-A2/);
 });
 

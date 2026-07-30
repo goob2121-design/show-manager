@@ -54,6 +54,8 @@ test("QR and Code128 helpers both preserve the same scan token", () => {
   assert.equal(code128.token, token);
   assert.match(qr.svg, /^<svg[\s\S]*<\/svg>$/);
   assert.match(code128.svg, /^<svg[\s\S]*<\/svg>$/);
+  assert.doesNotMatch(code128.svg, /<text\b/);
+  assert.match(code128.svg, /<rect\b/);
   assert.match(qr.dataUri, /^data:image\/svg\+xml;utf8,/);
   assert.match(code128.dataUri, /^data:image\/svg\+xml;utf8,/);
 });

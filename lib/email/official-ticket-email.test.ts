@@ -16,10 +16,19 @@ test("official ticket email reuses entry-code rendering and contains ticket deta
   assert.match(source, /eventName/);
   assert.match(source, /showTime/);
   assert.match(source, /venueName/);
-  assert.match(source, /seatLabels\.join\(" • "\)/);
+  assert.match(source, /seatLabels\.join\(/);
   assert.match(source, /ticketCodeFormat: input\.ticketCodeFormat/);
-  assert.match(source, />View Ticket</);
-  assert.match(source, />Print Ticket</);
+  assert.match(source, /Phone-Friendly Ticket/);
+  assert.match(source, /View Standard Ticket/);
+  assert.match(source, /Print Ticket<\/a>/);
+  assert.match(source, /Most guests simply use their phone at the door\./);
+  assert.match(source, /quickest entry/);
+  assert.match(source, /\?phone=1/);
+  const phoneButtonIndex = source.indexOf("&#128241; Phone-Friendly Ticket");
+  const printButtonIndex = source.indexOf("&#128424;&#65039; Print Ticket");
+  const standardButtonIndex = source.indexOf("&#127760; View Standard Ticket");
+  assert.ok(phoneButtonIndex >= 0 && phoneButtonIndex < printButtonIndex);
+  assert.ok(printButtonIndex < standardButtonIndex);
   assert.match(source, /\?print=1/);
   assert.match(source, /Present this QR code or barcode on your phone/);
 });
@@ -45,8 +54,8 @@ test("customer and authenticated admin resend call the same helper without regen
   assert.match(customerRoute, /deliverOfficialTicketEmail\(supabase, link\.id, \{ requestOrigin: request\.nextUrl\.origin \}\)/);
   assert.match(adminRoute, /validateReservedSeatEmailStatusAccess/);
   assert.match(adminRoute, /deliverOfficialTicketEmail\(supabase, reservation\.id, \{ requestOrigin: request\.nextUrl\.origin \}\)/);
-  assert.match(customerPage, /Email My Tickets Again/);
-  assert.match(customerPage, /URLSearchParams\(window\.location\.search\)\.get\("print"\)/);
+  assert.match(customerPage, /Email Ticket Again/);
+  assert.match(customerPage, /searchParams\.get\("print"\)/);
   assert.match(adminPanel, /Resend Ticket Email/);
   for (const source of [customerRoute, adminRoute]) {
     assert.doesNotMatch(source, /tryGenerateReservationScanToken|generateReservationScanToken|\.insert\(/);

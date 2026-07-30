@@ -102,7 +102,7 @@ export function buildTicketCodeSection(
     const barcodeImageSrc = imageSources ? imageSources.barcodeImageSrc : display.code128DataUri;
     const qrImageSrc = imageSources ? imageSources.qrImageSrc : display.qrDataUri;
     const ticketCodeHtml = barcodeImageSrc
-      ? `<div style="margin-top:14px;text-align:center;"><img src="${escapeHtml(barcodeImageSrc)}" alt="Reservation barcode" width="300" style="display:block;width:100%;max-width:300px;height:auto;margin:0 auto;border:0;"><p style="margin:8px 0 0;color:#475569;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Ticket Code: ${escapeHtml(display.shortReference)}</p></div>`
+      ? `<div style="margin-top:14px;text-align:center;"><img src="${escapeHtml(barcodeImageSrc)}" alt="Reservation barcode" width="300" style="display:block;width:100%;max-width:300px;height:auto;margin:0 auto;border:0;"></div>`
       : "";
     const qrHtml = qrImageSrc
       ? `<div style="text-align:center;"><img src="${escapeHtml(qrImageSrc)}" alt="Reservation QR code" width="200" height="200" style="display:block;width:100%;max-width:200px;height:auto;margin:0 auto;border:0;background:#ffffff;"></div>`
@@ -120,7 +120,6 @@ export function buildTicketCodeSection(
         `Ticket holder: ${input.customerName.trim() || "Guest"}`,
         `Tickets in this reservation: ${ticketCount}`,
         ...(assignedSeats.length ? [`Seats: ${assignedSeats.join(", ")}`] : []),
-        `Ticket Code: ${display.shortReference}`,
         "",
       ].join("\n"),
     };

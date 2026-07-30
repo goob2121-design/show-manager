@@ -183,9 +183,8 @@ export function generateCode128(scanToken: string): GeneratedScanAsset {
     x += actualWidth;
     black = !black;
   }
-  const textY = height + 18;
   const svgWidth = x + quiet;
-  const svgHeight = height + 28;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}" role="img" aria-label="StageFlow Code 128 barcode for ${escapeXml(scanToken)}"><rect width="${svgWidth}" height="${svgHeight}" fill="#ffffff" />${bars.join("")}<text x="${svgWidth / 2}" y="${textY}" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#111111">${escapeXml(scanToken)}</text></svg>`;
+  const svgHeight = height;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}" role="img" aria-label="StageFlow Code 128 barcode for ${escapeXml(scanToken)}"><rect width="${svgWidth}" height="${svgHeight}" fill="#ffffff" />${bars.join("")}</svg>`;
   return { type: ScanCodeType.CODE128, token: scanToken, mimeType: "image/svg+xml", svg, dataUri: encodeSvg(svg) };
 }

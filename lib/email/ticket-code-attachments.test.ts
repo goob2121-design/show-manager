@@ -43,6 +43,7 @@ test("browser ticket rendering remains on the existing data URI display path", a
 
   assert.match(source, /src=\{display\.qrDataUri\}/);
   assert.match(source, /src=\{display\.code128DataUri\}/);
+  assert.doesNotMatch(source, /Ticket Code:/);
   assert.doesNotMatch(source, /cid:ticket-/);
 });
 
