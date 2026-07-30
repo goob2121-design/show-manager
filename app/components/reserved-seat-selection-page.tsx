@@ -266,7 +266,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
       <style jsx global>{`
         @page {
           size: Letter portrait;
-          margin: 0.3in;
+          margin: 0.2in;
         }
 
         @media print {
@@ -307,8 +307,8 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
           }
 
           .seat-confirmation-print .ticket-code-block {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
+            break-inside: auto !important;
+            page-break-inside: auto !important;
           }
           .ticket-print-sheet {
             box-sizing: border-box !important;
@@ -316,8 +316,8 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             max-width: 7.8in !important;
             margin: 0 auto !important;
             padding: 0.12in 0.18in !important;
-            break-inside: avoid-page !important;
-            page-break-inside: avoid !important;
+            break-inside: auto !important;
+            page-break-inside: auto !important;
           }
 
           .ticket-print-header {
@@ -345,19 +345,79 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             padding: 0.08in !important;
           }
 
+
+          .ticket-print-details {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 0.12in !important;
+          }
+
+          .ticket-print-seats > div {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .ticket-print-code .ticket-code-intro {
+            gap: 0.02in !important;
+          }
+
+          .ticket-print-code .ticket-code-grid {
+            align-items: center !important;
+            gap: 0.08in !important;
+            margin-top: 0.06in !important;
+          }
+
+          .ticket-print-code .ticket-code-grid-both {
+            grid-template-columns: 1.5in minmax(0, 1fr) !important;
+          }
+
+          .ticket-print-code .ticket-code-grid-qr,
+          .ticket-print-code .ticket-code-grid-code128 {
+            grid-template-columns: minmax(0, 1fr) !important;
+            justify-items: center !important;
+          }
+
+          .ticket-print-code .ticket-code-surface {
+            box-sizing: border-box !important;
+            width: 100% !important;
+            padding: 0.05in !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          .ticket-print-code .ticket-code-grid-qr .ticket-code-surface {
+            max-width: 1.65in !important;
+          }
+
+          .ticket-print-code .ticket-code-grid-code128 .ticket-code-surface {
+            max-width: 4.1in !important;
+          }
+
           .ticket-print-code img[alt="Reservation QR code"] {
-            max-width: 1.55in !important;
-            max-height: 1.55in !important;
+            width: 1.4in !important;
+            max-width: 1.4in !important;
+            max-height: 1.4in !important;
           }
 
           .ticket-print-code img[alt="Reservation barcode"] {
             width: 3.8in !important;
             max-width: 100% !important;
-            max-height: 1.15in !important;
+            max-height: 1in !important;
+          }
+
+          .ticket-print-code img[alt="Reservation QR code"] + p {
+            margin-top: 0.02in !important;
+          }
+
+          .ticket-print-code .ticket-code-meta {
+            gap: 0.02in !important;
+            margin-top: 0.06in !important;
+            padding: 0.06in 0.08in !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
 
           .ticket-print-footer {
-            margin-top: 0.1in !important;
+            margin-top: 0.08in !important;
           }
         }
       `}</style>
@@ -452,6 +512,18 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 )}
               </div>
 
+              <div className="mt-4">
+                <ReservationTicketCode
+                  scanToken={seatingLink.scan_token}
+                  format={show.ticket_code_format}
+                  purchaserName={seatingLink.customer_name}
+                  ticketCount={seatingLink.ticket_count}
+                  seatLabels={seatsToShow.map((seatId) => formatReservedSeatLabel(seatId))}
+                  compact
+                  interactive
+                />
+              </div>
+
               {errorMessage ? (
                 <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                   {errorMessage}
@@ -475,14 +547,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                     <p className="mt-2 leading-6">You may also print your ticket or email it to yourself again.</p>
                     <p className="mt-2 font-semibold">{ticketCoverageMessage}</p>
                   </div>
-                  <ReservationTicketCode
-                    scanToken={seatingLink.scan_token}
-                    format={show.ticket_code_format}
-                    purchaserName={seatingLink.customer_name}
-                    ticketCount={seatingLink.ticket_count}
-                    seatLabels={confirmedSeatIds.map((seatId) => formatReservedSeatLabel(seatId))}
-                    compact
-                  />
+
                   <button
                     type="button"
                     onClick={openPhoneTicket}

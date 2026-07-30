@@ -83,16 +83,25 @@ test("phone BOTH mode stacks QR before barcode and preserves existing code gener
   assert.doesNotMatch(code, /generateReservationScanToken|tryGenerateReservationScanToken/);
 });
 
-test("print CSS targets Letter portrait and protects the ticket from page breaks", async () => {
-  const page = await readFile(ticketPageUrl, "utf8");
+test("print CSS keeps the complete Letter ticket in natural compact flow", async () => {
+  const [page, code] = await Promise.all([
+    readFile(ticketPageUrl, "utf8"),
+    readFile(ticketCodeUrl, "utf8"),
+  ]);
 
   assert.match(page, /size: Letter portrait/);
-  assert.match(page, /margin: 0\.3in/);
-  assert.match(page, /ticket-print-sheet/);
-  assert.match(page, /break-inside: avoid-page/);
-  assert.match(page, /page-break-inside: avoid/);
-  assert.match(page, /ticket-print-code img\[alt="Reservation QR code"\]/);
-  assert.match(page, /ticket-print-code img\[alt="Reservation barcode"\]/);
+  assert.match(page, /margin: 0\.2in/);
+  assert.match(page, /\.confirmation-print-root \{[\s\S]*?min-height: 0 !important;[\s\S]*?height: auto !important;/);
+  assert.match(page, /\.seat-confirmation-print \.ticket-code-block \{[\s\S]*?break-inside: auto !important;[\s\S]*?page-break-inside: auto !important;/);
+  assert.doesNotMatch(page, /break-inside: avoid-page/);
+  assert.doesNotMatch(page, /break-before: page|page-break-before: always/);
+  assert.match(page, /\.ticket-print-code \.ticket-code-grid-both \{[\s\S]*?grid-template-columns: 1\.5in minmax\(0, 1fr\)/);
+  assert.match(page, /\.ticket-print-code \.ticket-code-grid-qr,[\s\S]*?\.ticket-code-grid-code128[\s\S]*?justify-items: center/);
+  assert.match(page, /width: 1\.4in !important/);
+  assert.match(page, /width: 3\.8in !important/);
+  assert.match(code, /printable \? `ticket-code-grid-\$\{display\.format\}` : ""/);
+  assert.match(code, /src=\{display\.qrDataUri\}/);
+  assert.match(code, /src=\{display\.code128DataUri\}/);
 });
 
 test("ticket route reads display time without changing reservation data", async () => {
