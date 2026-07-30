@@ -8,8 +8,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "@/app/components/admin-gate";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { buildShowTimelineMessages } from "@/lib/show-reminders";
+import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
 import { createClient } from "@/lib/supabase/client";
-import type { GuestProfile, SetlistEntry, ShowFinanceItem, ShowGuestSong, ShowRecord } from "@/lib/types";
+import type { GuestProfile, SetlistEntry, ShowCompTicket, ShowFinanceItem, ShowGuestSong, ShowRecord, ShowReservedSeatingLink } from "@/lib/types";
 
 type SetlistEntryRow = SetlistEntry & {
   guest_song?: ShowGuestSong | ShowGuestSong[] | null;
@@ -30,10 +31,12 @@ type CopyLinkRole = "guest" | "band" | "admin" | "mc";
 type CopyMenuDirection = "up" | "down";
 
 type CurrentShowDashboardMetrics = {
-  songLibraryCount: number | null;
-  totalGuestProfilesCount: number | null;
-  totalGuestSongsCount: number | null;
-  promoMaterialsCount: number | null;
+  onlineTicketsSold: number;
+  reservedSeatsAssigned: number;
+  reservedSeatCapacity: number | null;
+  sponsorCompTicketsIssued: number;
+  sponsorRecordsCount: number;
+  reservedSeatLinksCount: number;
   guestSongs: ShowGuestSong[];
   guestProfiles: GuestProfile[];
   setlistEntries: Array<Pick<SetlistEntry, "id" | "guest_song_id" | "section">>;
@@ -57,14 +60,6 @@ function MusicNoteIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
       <path d="M12.5 3.5v8.25a2.5 2.5 0 1 1-1.5-2.28V5.2l5-1.2v6.55a2.5 2.5 0 1 1-1.5-2.28V3.5l-2 .48Z" />
-    </svg>
-  );
-}
-
-function GuestsIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
-      <path d="M7 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM13.25 8.25a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM3.75 15.75a3.75 3.75 0 0 1 7.5 0M11 15.75a3.1 3.1 0 0 1 5.25-2.25" />
     </svg>
   );
 }
@@ -154,6 +149,7 @@ const initialFormState: ShowFormState = {
 };
 
 const dashboardPanelStorageKey = "stageflow-admin-dashboard-panels";
+const dashboardCopyLinksStorageKey = "stageflow-dashboard-copy-links-expanded";
 const defaultMainDashboardPanels: Record<MainDashboardPanel, boolean> = {
   quickActions: true,
   showSnapshot: true,
@@ -1020,15 +1016,28 @@ export default function ShowsDashboardPage() {
   const [prefillSourceShowId, setPrefillSourceShowId] = useState<PrefillSource>("");
   const [openCopyMenuShowId, setOpenCopyMenuShowId] = useState<string | null>(null);
   const [copyMenuDirection, setCopyMenuDirection] = useState<CopyMenuDirection>("down");
+  const [isCopyLinksExpanded, setIsCopyLinksExpanded] = useState<boolean>(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    try {
+      return window.localStorage.getItem(dashboardCopyLinksStorageKey) === "expanded";
+    } catch {
+      return false;
+    }
+  });
   const [financeItems, setFinanceItems] = useState<ShowFinanceItem[]>([]);
   const [selectedFinanceYear, setSelectedFinanceYear] = useState(() => new Date().getUTCFullYear());
   const [financeSummaryErrorMessage, setFinanceSummaryErrorMessage] = useState<string | null>(null);
   const [isPrintingYearlyFinanceReport, setIsPrintingYearlyFinanceReport] = useState(false);
   const [currentShowMetrics, setCurrentShowMetrics] = useState<CurrentShowDashboardMetrics>({
-    songLibraryCount: null,
-    totalGuestProfilesCount: null,
-    totalGuestSongsCount: null,
-    promoMaterialsCount: null,
+    onlineTicketsSold: 0,
+    reservedSeatsAssigned: 0,
+    reservedSeatCapacity: RESERVED_SEAT_DEFINITIONS.length,
+    sponsorCompTicketsIssued: 0,
+    sponsorRecordsCount: 0,
+    reservedSeatLinksCount: 0,
     guestSongs: [],
     guestProfiles: [],
     setlistEntries: [],
@@ -1071,16 +1080,6 @@ export default function ShowsDashboardPage() {
       (song) => normalizeGuestName(song.submitted_by_name) === guestName,
     );
   });
-  const guestsReadyCount = currentShowMetrics.guestProfiles.filter(
-    (guest) => guest.permission_granted && Boolean(guest.photo_url?.trim()),
-  ).length;
-  const setlistSectionCounts = (["set1", "set2", "encore"] as const).map((section) => ({
-    section,
-    count: currentShowMetrics.setlistEntries.filter((entry) => entry.section === section).length,
-  }));
-  const guestNames = currentShowMetrics.guestProfiles
-    .map((guest) => guest.name?.trim())
-    .filter((name): name is string => Boolean(name));
   const needsAttentionItems = [
     ...guestsMissingPhotos.slice(0, 4).map((guest) => ({
       title: `${guest.name || "Unnamed guest"} needs a promo photo`,
@@ -1102,8 +1101,49 @@ export default function ShowsDashboardPage() {
       : []),
   ].slice(0, 6);
   const nextShowSetlistTotal = currentShowMetrics.setlistEntries.length;
-  const nextShowPreviewGuests = currentShowMetrics.guestProfiles.slice(0, 4);
-  const nextShowPreviewSongs = currentShowMetrics.guestSongs.slice(0, 4);
+  const showProgressItems = currentShow
+    ? [
+        {
+          label: "Event configured",
+          complete: Boolean(currentShow.name?.trim() && currentShow.show_date && currentShow.venue?.trim()),
+          href: `/admin/${currentShow.slug}`,
+        },
+        {
+          label: "Guest artist assigned",
+          complete: currentShowMetrics.guestProfiles.length > 0,
+          href: `/admin/${currentShow.slug}?tab=guests`,
+        },
+        {
+          label: "Tickets on sale",
+          complete: Boolean(currentShow.ticket_link?.trim() || currentShow.square_catalog_variation_id?.trim()),
+          href: `/admin/${currentShow.slug}?tab=details`,
+        },
+        {
+          label: "Band set list started",
+          complete: nextShowSetlistTotal > 0,
+          href: `/admin/${currentShow.slug}?tab=setlist`,
+        },
+        {
+          label: "MC script started",
+          complete: [
+            currentShow.opening_script,
+            currentShow.intermission_script,
+            currentShow.closing_script,
+          ].some((value) => Boolean(value?.trim())),
+          href: `/admin/${currentShow.slug}?tab=mc`,
+        },
+        {
+          label: "Sponsor / comp records added",
+          complete: currentShowMetrics.sponsorRecordsCount > 0 || currentShowMetrics.sponsorCompTicketsIssued > 0,
+          href: `/admin/${currentShow.slug}?tab=tickets`,
+        },
+        {
+          label: "Reserved seats assigned",
+          complete: currentShowMetrics.reservedSeatsAssigned > 0,
+          href: `/admin/${currentShow.slug}?tab=tickets`,
+        },
+      ]
+    : [];
   const availableFinanceYears = useMemo(() => {
     const years = new Set<number>([new Date().getUTCFullYear()]);
 
@@ -1276,35 +1316,9 @@ export default function ShowsDashboardPage() {
       const nextCurrentShow =
         nextShows.find((show) => !show.is_archived && show.show_date && show.show_date >= new Date().toISOString().slice(0, 10)) ??
         null;
-      const [
-        { count: songLibraryCount, error: songLibraryCountError },
-        { count: totalGuestProfilesCount, error: totalGuestProfilesCountError },
-        { count: totalGuestSongsCount, error: totalGuestSongsCountError },
-        { count: promoMaterialsCount, error: promoMaterialsCountError },
-        { data: financeItemsData, error: financeItemsError },
-      ] = await Promise.all([
-        supabase.from("songs").select("id", { count: "exact", head: true }),
-        supabase.from("guest_profiles").select("id", { count: "exact", head: true }),
-        supabase.from("show_guest_songs").select("id", { count: "exact", head: true }),
-        supabase.from("promo_materials").select("id", { count: "exact", head: true }),
+      const [{ data: financeItemsData, error: financeItemsError }] = await Promise.all([
         supabase.from("show_finance_items").select("*"),
       ]);
-
-      if (songLibraryCountError) {
-        throw songLibraryCountError;
-      }
-
-      if (totalGuestProfilesCountError) {
-        throw totalGuestProfilesCountError;
-      }
-
-      if (totalGuestSongsCountError) {
-        throw totalGuestSongsCountError;
-      }
-
-      if (promoMaterialsCountError) {
-        throw promoMaterialsCountError;
-      }
 
       if (financeItemsError) {
         console.error("Failed to load yearly finance summary items.", financeItemsError);
@@ -1323,10 +1337,12 @@ export default function ShowsDashboardPage() {
       if (!nextCurrentShow) {
         setShows(nextShows);
         setCurrentShowMetrics({
-          songLibraryCount: songLibraryCount ?? 0,
-          totalGuestProfilesCount: totalGuestProfilesCount ?? 0,
-          totalGuestSongsCount: totalGuestSongsCount ?? 0,
-          promoMaterialsCount: promoMaterialsCount ?? 0,
+          onlineTicketsSold: 0,
+          reservedSeatsAssigned: 0,
+          reservedSeatCapacity: RESERVED_SEAT_DEFINITIONS.length,
+          sponsorCompTicketsIssued: 0,
+          sponsorRecordsCount: 0,
+          reservedSeatLinksCount: 0,
           guestSongs: [],
           guestProfiles: [],
           setlistEntries: [],
@@ -1338,6 +1354,10 @@ export default function ShowsDashboardPage() {
         { data: guestSongs, error: guestSongsError },
         { data: guestProfiles, error: guestProfilesError },
         { data: setlistEntries, error: setlistEntriesError },
+        { data: compTickets, error: compTicketsError },
+        { count: reservedSeatsAssigned, error: reservedSeatsAssignedError },
+        { data: reservedLinks, error: reservedLinksError },
+        { count: sponsorRecordsCount, error: sponsorRecordsCountError },
       ] = await Promise.all([
         supabase
           .from("show_guest_songs")
@@ -1350,6 +1370,23 @@ export default function ShowsDashboardPage() {
         supabase
           .from("setlist_entries")
           .select("id, guest_song_id, section")
+          .eq("show_id", nextCurrentShow.id),
+        supabase
+          .from("show_comp_tickets")
+          .select("ticket_count, ticket_type")
+          .eq("show_id", nextCurrentShow.id),
+        supabase
+          .from("show_reserved_seat_assignments")
+          .select("id", { count: "exact", head: true })
+          .eq("show_id", nextCurrentShow.id)
+          .eq("assignment_type", "customer"),
+        supabase
+          .from("show_reserved_seating_links")
+          .select("id, ticket_count, is_complimentary, seat_category")
+          .eq("show_id", nextCurrentShow.id),
+        supabase
+          .from("show_sponsors")
+          .select("id", { count: "exact", head: true })
           .eq("show_id", nextCurrentShow.id),
       ]);
 
@@ -1364,13 +1401,38 @@ export default function ShowsDashboardPage() {
       if (setlistEntriesError) {
         throw setlistEntriesError;
       }
+      if (compTicketsError) {
+        throw compTicketsError;
+      }
+      if (reservedSeatsAssignedError) {
+        throw reservedSeatsAssignedError;
+      }
+      if (reservedLinksError) {
+        throw reservedLinksError;
+      }
+      if (sponsorRecordsCountError) {
+        throw sponsorRecordsCountError;
+      }
+
+      const typedCompTickets = (compTickets ?? []) as Array<Pick<ShowCompTicket, "ticket_count" | "ticket_type">>;
+      const typedReservedLinks = (reservedLinks ?? []) as Array<
+        Pick<ShowReservedSeatingLink, "id" | "ticket_count" | "is_complimentary" | "seat_category">
+      >;
+      const onlineTicketsSold = typedCompTickets
+        .filter((ticket) => ticket.ticket_type === "paid_online")
+        .reduce((sum, ticket) => sum + Math.max(0, ticket.ticket_count ?? 0), 0);
+      const sponsorCompTicketsIssued = typedCompTickets
+        .filter((ticket) => ticket.ticket_type === "complimentary")
+        .reduce((sum, ticket) => sum + Math.max(0, ticket.ticket_count ?? 0), 0);
 
       setShows(nextShows);
       setCurrentShowMetrics({
-        songLibraryCount: songLibraryCount ?? 0,
-        totalGuestProfilesCount: totalGuestProfilesCount ?? 0,
-        totalGuestSongsCount: totalGuestSongsCount ?? 0,
-        promoMaterialsCount: promoMaterialsCount ?? 0,
+        onlineTicketsSold,
+        reservedSeatsAssigned: reservedSeatsAssigned ?? 0,
+        reservedSeatCapacity: RESERVED_SEAT_DEFINITIONS.length,
+        sponsorCompTicketsIssued,
+        sponsorRecordsCount: sponsorRecordsCount ?? 0,
+        reservedSeatLinksCount: typedReservedLinks.length,
         guestSongs: (guestSongs ?? []) as ShowGuestSong[],
         guestProfiles: (guestProfiles ?? []) as GuestProfile[],
         setlistEntries: (setlistEntries ?? []) as Array<Pick<SetlistEntry, "id" | "guest_song_id" | "section">>,
@@ -1464,6 +1526,21 @@ export default function ShowsDashboardPage() {
       console.error("Failed to persist dashboard panel state.", error);
     }
   }, [expandedDashboardSections, expandedMainPanels]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        dashboardCopyLinksStorageKey,
+        isCopyLinksExpanded ? "expanded" : "collapsed",
+      );
+    } catch (error) {
+      console.error("Failed to persist dashboard copy-link state.", error);
+    }
+  }, [isCopyLinksExpanded]);
 
   function handleChange(
     event: ChangeEvent<HTMLInputElement>,
@@ -2019,27 +2096,6 @@ export default function ShowsDashboardPage() {
     }));
   }
 
-  function renderPortalLinks(show: ShowRecord) {
-    return (
-      <>
-        <Link
-          href={`/band/${show.slug}`}
-          className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 text-center text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-        >
-          <DashboardIcon><MusicNoteIcon /></DashboardIcon>
-          Band
-        </Link>
-        <Link
-          href={`/admin/${show.slug}`}
-          className="inline-flex min-w-[105px] shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-emerald-800"
-        >
-          <DashboardIcon><ShieldIcon /></DashboardIcon>
-          Admin
-        </Link>
-      </>
-    );
-  }
-
   function renderEditForm(show: ShowRecord, title: string, description: string) {
     return (
       <form className="grid gap-4" onSubmit={(event) => handleSaveShow(event, show.id)}>
@@ -2476,10 +2532,10 @@ export default function ShowsDashboardPage() {
                       What Matters Right Now
                     </p>
                     <h2 className="text-2xl font-semibold tracking-tight text-stone-900 dark:text-slate-100">
-                      Upcoming Shows
+                      Current Show Control Center
                     </h2>
                     <p className="text-sm text-stone-600 dark:text-slate-300">
-                      A quick operations view of the next show, nearby upcoming events, and anything that still needs attention.
+                      The next show, what still needs attention, and the operational numbers that matter most right now.
                     </p>
                   </div>
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-lg font-semibold text-stone-700 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#181818] dark:text-slate-200">
@@ -2494,47 +2550,50 @@ export default function ShowsDashboardPage() {
                     Loading control-center highlights...
                   </div>
                 ) : currentShow ? (
-                  <div className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
-                    <section className="stage-premium-card rounded-3xl border border-slate-700/60 bg-gradient-to-br from-[#101827] via-[#111b2d] to-[#0b1220] p-5 sm:p-6">
+                  <div className="grid gap-4 sm:gap-5">
+                    <section className="stage-premium-card rounded-3xl border border-slate-700/60 bg-gradient-to-br from-[#101827] via-[#111b2d] to-[#0b1220] p-4 sm:p-5">
                       <div className="flex flex-col gap-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="stage-gold-divider">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                              Next Show
-                            </p>
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="flex min-w-0 items-start gap-4">
                             {currentShow.show_logo_url ? (
-                              <div className="mt-3">
+                              <div className="shrink-0 pt-0.5">
                                 <img
                                   src={currentShow.show_logo_url}
                                   alt={`${currentShow.name} logo`}
-                                  className="h-auto max-h-20 w-full max-w-[220px] object-contain"
+                                  className="h-auto max-h-12 w-full max-w-[120px] object-contain"
                                 />
                               </div>
                             ) : null}
-                            <h3 className="mt-2 text-3xl font-semibold tracking-tight text-[#f5f5f5]">
-                              {currentShow.name}
-                            </h3>
-                            <div className="mt-2 grid gap-1 text-sm text-[#b8b8b8]">
-                              <p className="flex items-center gap-2">
-                                <DashboardIcon><CalendarIcon /></DashboardIcon>
-                                {formatShowDate(currentShow.show_date)}
+
+                            <div className="stage-gold-divider min-w-0">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+                                Next Show
                               </p>
-                              <p className="flex items-center gap-2">
-                                <DashboardIcon><MapPinIcon /></DashboardIcon>
-                                {currentShow.venue || "Venue not set"}
-                              </p>
-                              <p className="flex items-center gap-2">
-                                <DashboardIcon><HashIcon /></DashboardIcon>
-                                {currentShow.slug}
-                              </p>
+                              <h3 className="mt-1 text-2xl font-semibold tracking-tight text-[#f5f5f5] sm:text-[1.7rem]">
+                                {currentShow.name}
+                              </h3>
+                              <div className="mt-2 grid gap-1 text-sm text-[#b8b8b8]">
+                                <p className="flex items-center gap-2">
+                                  <DashboardIcon><CalendarIcon /></DashboardIcon>
+                                  {formatShowDate(currentShow.show_date)}
+                                </p>
+                                <p className="flex items-center gap-2">
+                                  <DashboardIcon><MapPinIcon /></DashboardIcon>
+                                  {currentShow.venue || "Venue not set"}
+                                </p>
+                                <p className="flex items-center gap-2">
+                                  <DashboardIcon><HashIcon /></DashboardIcon>
+                                  {currentShow.slug}
+                                </p>
+                              </div>
                             </div>
                           </div>
 
-                          <div className="grid w-full gap-3 sm:w-auto sm:min-w-[250px]">
+                          <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:min-w-[320px]">
                             <Link
                               href={`/admin/${currentShow.slug}/door`}
                               aria-label={`Open Door Mode for ${currentShow.name}`}
-                              className="group flex min-h-20 w-full items-center gap-3 rounded-2xl border border-emerald-400/35 bg-emerald-700 px-4 py-3 text-left text-white shadow-[0_0_28px_rgba(5,150,105,0.28)] transition hover:border-emerald-300/60 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                              className="group flex min-h-16 w-full items-center gap-3 rounded-2xl border border-emerald-400/35 bg-emerald-700 px-4 py-3 text-left text-white shadow-[0_0_28px_rgba(5,150,105,0.28)] transition hover:border-emerald-300/60 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
                             >
                               <DashboardIcon className="h-10 w-10 rounded-xl bg-white/10 text-emerald-100">
                                 <DoorModeIcon />
@@ -2548,11 +2607,11 @@ export default function ShowsDashboardPage() {
                               </span>
                             </Link>
                             <Link
-                              href={`/admin/${currentShow.slug}`}
-                              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[rgba(255,255,255,0.09)]"
+                              href={`/admin/${currentShow.slug}?tab=tickets`}
+                              className="inline-flex min-h-16 w-full items-center justify-center gap-2 rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[rgba(255,255,255,0.09)]"
                             >
                               <DashboardIcon><ShieldIcon /></DashboardIcon>
-                              Open Admin Portal
+                              Ticket Sales
                             </Link>
                           </div>
                         </div>
@@ -2560,33 +2619,35 @@ export default function ShowsDashboardPage() {
                         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                           {[
                             {
-                              label: "Song Library",
-                              value: currentShowMetrics.songLibraryCount?.toString() ?? "0",
-                              detail: "Reusable songs ready for planning",
+                              label: "Online Tickets Sold",
+                              value: currentShowMetrics.onlineTicketsSold.toString(),
+                              detail: "Completed online purchases",
                               icon: <MusicNoteIcon />,
                             },
                             {
-                              label: "Guest Songs",
-                              value: currentShowMetrics.guestSongs.length.toString(),
-                              detail: "Submitted for this show",
+                              label: "Reserved Seats",
+                              value: currentShowMetrics.reservedSeatCapacity
+                                ? `${currentShowMetrics.reservedSeatsAssigned}/${currentShowMetrics.reservedSeatCapacity}`
+                                : currentShowMetrics.reservedSeatsAssigned.toString(),
+                              detail: "Currently assigned",
                               icon: <MicrophoneIcon />,
                             },
                             {
-                              label: "Guests Ready",
-                              value: `${guestsReadyCount}/${currentShowMetrics.guestProfiles.length}`,
-                              detail: "Permission granted and photo added",
+                              label: "Sponsor & Comp",
+                              value: currentShowMetrics.sponsorCompTicketsIssued.toString(),
+                              detail: "Tickets issued",
                               icon: <CheckCircleIcon />,
                             },
                             {
-                              label: "Setlist Entries",
-                              value: nextShowSetlistTotal.toString(),
-                              detail: "Official songs already placed",
+                              label: "Needs Attention",
+                              value: needsAttentionItems.length.toString(),
+                              detail: needsAttentionItems.length === 0 ? "Nothing currently needs attention" : "Outstanding show tasks",
                               icon: <ListIcon />,
                             },
                           ].map((card) => (
                             <div
                               key={card.label}
-                              className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4"
+                              className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-5 sm:min-h-[172px]"
                             >
                               <div className="flex items-center gap-2">
                                 <DashboardIcon className="h-8 w-8 text-emerald-300 sm:h-9 sm:w-9">{card.icon}</DashboardIcon>
@@ -2594,197 +2655,19 @@ export default function ShowsDashboardPage() {
                                   {card.label}
                                 </p>
                               </div>
-                              <p className="mt-2 text-2xl font-semibold text-[#f5f5f5]">
+                              <p className="mt-4 text-3xl font-extrabold tracking-tight text-[#f5f5f5] sm:text-[2.35rem]">
                                 {card.value}
                               </p>
-                              <p className="mt-1 text-sm text-[#b8b8b8]">
+                              <p className="mt-2 text-sm text-[#b8b8b8]">
                                 {card.detail}
                               </p>
                             </div>
                           ))}
                         </div>
-
-                        <div id="next-show-links" className="grid gap-4 lg:grid-cols-[1fr_auto]">
-                          <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
-                              Portal Access
-                            </p>
-                            <div className="mt-4 flex flex-row flex-wrap items-center justify-center gap-3">
-                              {renderPortalLinks(currentShow)}
-                            </div>
-                          </div>
-
-                          <div className="stage-premium-card relative rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
-                              Copy Links
-                            </p>
-                            <button
-                              type="button"
-                              onClick={(event) => handleToggleCopyMenu(event, currentShow.id)}
-                              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-2.5 text-sm font-semibold text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
-                            >
-                              <DashboardIcon><CopyIcon /></DashboardIcon>
-                              Open Copy Menu
-                            </button>
-
-                            {openCopyMenuShowId === currentShow.id ? (
-                              <div
-                                className={`absolute left-4 right-4 z-20 overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#181818] shadow-lg ${
-                                  copyMenuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2"
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopyLink(currentShow.slug, "guest")}
-                                  className="flex w-full items-center justify-center px-4 py-2.5 text-center text-sm font-medium text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
-                                >
-                                  {copiedLinkKey === `guest-${currentShow.slug}` ? "Copied Guest Link" : "Copy Guest Link"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopyLink(currentShow.slug, "band")}
-                                  className="flex w-full items-center justify-center border-t border-[rgba(255,255,255,0.10)] px-4 py-2.5 text-center text-sm font-medium text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
-                                >
-                                  {copiedLinkKey === `band-${currentShow.slug}` ? "Copied Band Link" : "Copy Band Link"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopyLink(currentShow.slug, "mc")}
-                                  className="flex w-full items-center justify-center border-t border-[rgba(255,255,255,0.10)] px-4 py-2.5 text-center text-sm font-medium text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
-                                >
-                                  {copiedLinkKey === `mc-${currentShow.slug}` ? "Copied MC Link" : "Copy MC Link"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopyLink(currentShow.slug, "admin")}
-                                  className="flex w-full items-center justify-center border-t border-[rgba(255,255,255,0.10)] px-4 py-2.5 text-center text-sm font-medium text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
-                                >
-                                  {copiedLinkKey === `admin-${currentShow.slug}` ? "Copied Admin Link" : "Copy Admin Link"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 lg:grid-cols-3">
-                          <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
-                              Guests
-                            </p>
-                            {nextShowPreviewGuests.length === 0 ? (
-                              <p className="mt-3 text-sm text-[#b8b8b8]">
-                                No guest profiles added yet.
-                              </p>
-                            ) : (
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {nextShowPreviewGuests.map((guest) => (
-                                  <Link
-                                    key={guest.id}
-                                    href={`/admin/${currentShow.slug}?tab=guests`}
-                                    className="rounded-full border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-3 py-1 text-sm font-medium text-[#f5f5f5] transition hover:border-[rgba(200,155,60,0.38)] hover:bg-[rgba(200,155,60,0.14)] hover:text-[#f1dfb7]"
-                                  >
-                                    {guest.name || "Unnamed guest"}
-                                  </Link>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
-                              Submitted Songs
-                            </p>
-                            {nextShowPreviewSongs.length === 0 ? (
-                              <p className="mt-3 text-sm text-[#b8b8b8]">
-                                No guest songs submitted yet.
-                              </p>
-                            ) : (
-                              <div className="mt-3 grid gap-2">
-                                {nextShowPreviewSongs.map((song) => (
-                                  <Link
-                                    key={song.id}
-                                    href={`/admin/${currentShow.slug}?tab=songs`}
-                                    className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0f0f0f] px-3 py-2 text-sm text-[#f5f5f5] transition hover:bg-[rgba(200,155,60,0.14)]"
-                                  >
-                                    <span className="font-medium">{song.title}</span>
-                                    {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
-                                  </Link>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
-                              Setlist Preview
-                            </p>
-                            {nextShowSetlistTotal === 0 ? (
-                              <p className="mt-3 text-sm text-[#b8b8b8]">
-                                No setlist entries added yet.
-                              </p>
-                            ) : (
-                              <div className="mt-3 grid gap-2">
-                                {setlistSectionCounts.map((item) => (
-                                  <Link
-                                    key={item.section}
-                                    href={`/admin/${currentShow.slug}?tab=setlist`}
-                                    className="flex items-center justify-between rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0f0f0f] px-3 py-2 text-sm transition hover:bg-[rgba(200,155,60,0.14)]"
-                                  >
-                                    <span className="font-medium text-[#f5f5f5]">
-                                      {getSetlistSectionLabel(item.section)}
-                                    </span>
-                                    <span className="font-semibold text-[#f1dfb7]">
-                                      {item.count}
-                                    </span>
-                                  </Link>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
                       </div>
                     </section>
 
-                    <div className="grid gap-5">
-                      <section className="stage-premium-card rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#141414] sm:p-5">
-                        <div className="flex flex-col gap-1">
-                          <h3 className="stage-gold-divider text-lg font-semibold text-stone-900 dark:text-slate-100">
-                            Nearby Upcoming Shows
-                          </h3>
-                          <p className="text-sm text-stone-600 dark:text-slate-300">
-                            Keep the next few events visible without losing the larger focus card.
-                          </p>
-                        </div>
-
-                        <div className="mt-4 grid gap-3">
-                          {(upcomingShows.length > 0 ? upcomingShows : activeShows).slice(0, 4).map((show) => (
-                            <Link
-                              key={show.id}
-                              href={`/admin/${show.slug}`}
-                              className="rounded-2xl border border-stone-200 bg-white px-4 py-4 transition hover:-translate-y-0.5 hover:border-emerald-300 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#181818] dark:hover:border-[rgba(200,155,60,0.28)]"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-base font-semibold text-stone-900 dark:text-slate-100">
-                                    {show.name}
-                                  </p>
-                                  <div className="mt-1 flex flex-col gap-1 text-sm text-stone-600 dark:text-slate-300">
-                                    <p>{formatShowDate(show.show_date)}</p>
-                                    {show.venue ? <p>{show.venue}</p> : null}
-                                    <p className="text-xs uppercase tracking-[0.12em] text-stone-500 dark:text-slate-400">
-                                      {show.slug}
-                                    </p>
-                                  </div>
-                                </div>
-                                <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-700 dark:bg-[#0f0f0f] dark:text-slate-300">
-                                  {show.id === currentShow.id ? "Next" : "Upcoming"}
-                                </span>
-                              </div>
-                            </Link>
-                          ))}
-                        </div>
-                      </section>
-
+                    <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
                       <section className="stage-premium-card rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#141414] sm:p-5">
                         <div className="flex flex-col gap-1">
                           <h3 className="stage-gold-divider text-lg font-semibold text-stone-900 dark:text-slate-100">
@@ -2797,7 +2680,7 @@ export default function ShowsDashboardPage() {
 
                         {needsAttentionItems.length === 0 ? (
                           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-sm text-emerald-900 dark:border-[rgba(200,155,60,0.22)] dark:bg-[rgba(200,155,60,0.14)] dark:text-[#f1dfb7]">
-                            Everything for this show is looking good.
+                            Nothing currently needs attention.
                           </div>
                         ) : (
                           <div className="mt-4 grid gap-3">
@@ -2817,6 +2700,116 @@ export default function ShowsDashboardPage() {
                           </div>
                         )}
                       </section>
+
+                      <section className="stage-premium-card rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#141414] sm:p-5">
+                        <div className="flex flex-col gap-1">
+                          <h3 className="stage-gold-divider text-lg font-semibold text-stone-900 dark:text-slate-100">
+                            Show Progress
+                          </h3>
+                          <p className="text-sm text-stone-600 dark:text-slate-300">
+                            A quick readiness check built from the current show data already in StageFlow.
+                          </p>
+                        </div>
+
+                        {showProgressItems.length === 0 ? (
+                          <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#181818] dark:text-slate-400">
+                            No upcoming show is currently configured.
+                          </div>
+                        ) : (
+                          <div className="mt-4 grid gap-2.5">
+                            {showProgressItems.map((item) => (
+                              <Link
+                                key={item.label}
+                                href={item.href}
+                                className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 transition hover:-translate-y-0.5 dark:border-[rgba(255,255,255,0.10)] dark:bg-[#181818] ${
+                                  item.complete
+                                    ? "border-stone-200 bg-white opacity-75 hover:border-stone-300 dark:hover:border-[rgba(255,255,255,0.16)]"
+                                    : "border-amber-200 bg-amber-50/70 hover:border-amber-300 dark:border-amber-500/20 dark:bg-amber-500/10 dark:hover:border-amber-400/35"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span
+                                    className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${
+                                      item.complete
+                                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                        : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                                    }`}
+                                    aria-hidden="true"
+                                  >
+                                    {item.complete ? "✓" : "!"}
+                                  </span>
+                                  <span className="text-sm font-medium text-stone-900 dark:text-slate-100">
+                                    {item.label}
+                                  </span>
+                                </div>
+                                <span className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                  item.complete
+                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                    : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                                }`}>
+                                  {item.complete ? "Ready" : "Needs setup"}
+                                </span>
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                    </div>
+
+                    <div id="next-show-links" className="grid gap-3">
+                      <div className="stage-premium-card rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#141414] px-4 py-3">
+                        <button
+                          type="button"
+                          aria-expanded={isCopyLinksExpanded}
+                          onClick={() => setIsCopyLinksExpanded((current) => !current)}
+                          className="flex w-full items-center justify-between gap-3 text-left"
+                        >
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
+                              Copy Links
+                            </p>
+                            <p className="mt-1 text-sm text-[#b8b8b8]">
+                              Quick access to guest, band, MC, and admin links.
+                            </p>
+                          </div>
+                          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] text-sm font-semibold text-[#f5f5f5]">
+                            {isCopyLinksExpanded ? "-" : "+"}
+                          </span>
+                        </button>
+
+                        {isCopyLinksExpanded ? (
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(currentShow.slug, "guest")}
+                              className="inline-flex items-center justify-center rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-2.5 text-sm font-semibold text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
+                            >
+                              {copiedLinkKey === `guest-${currentShow.slug}` ? "Copied Guest Link" : "Copy Guest Link"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(currentShow.slug, "band")}
+                              className="inline-flex items-center justify-center rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-2.5 text-sm font-semibold text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
+                            >
+                              {copiedLinkKey === `band-${currentShow.slug}` ? "Copied Band Link" : "Copy Band Link"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(currentShow.slug, "mc")}
+                              className="inline-flex items-center justify-center rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-2.5 text-sm font-semibold text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
+                            >
+                              {copiedLinkKey === `mc-${currentShow.slug}` ? "Copied MC Link" : "Copy MC Link"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(currentShow.slug, "admin")}
+                              className="inline-flex items-center justify-center rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-2.5 text-sm font-semibold text-[#f5f5f5] transition hover:bg-[rgba(255,255,255,0.06)]"
+                            >
+                              {copiedLinkKey === `admin-${currentShow.slug}` ? "Copied Admin Link" : "Copy Admin Link"}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 ) : (

@@ -26,3 +26,27 @@ test("Door Mode remains show-specific and preserves the existing Admin action", 
   assert.ok(adminLink > doorModeLink);
   assert.match(source, /<AdminGate[\s\S]*?slug="shows-dashboard"/);
 });
+
+test("dashboard replaces generic summary cards with current-show operations metrics", async () => {
+  const source = await readFile(dashboardUrl, "utf8");
+
+  assert.match(source, /Online Tickets Sold/);
+  assert.match(source, /Reserved Seats/);
+  assert.match(source, /Sponsor & Comp/);
+  assert.match(source, /Show Progress/);
+  assert.match(source, /Ticket Sales/);
+  assert.match(source, /isCopyLinksExpanded/);
+  assert.doesNotMatch(source, /Portal Access/);
+  assert.doesNotMatch(source, /Nearby Upcoming Shows/);
+  assert.doesNotMatch(source, /Open Admin Portal/);
+});
+
+test("dashboard derives scanned current-show metrics from show-scoped ticket and seating sources", async () => {
+  const source = await readFile(dashboardUrl, "utf8");
+
+  assert.match(source, /from\("show_comp_tickets"\)[\s\S]*select\("ticket_count, ticket_type"\)[\s\S]*eq\("show_id", nextCurrentShow\.id\)/);
+  assert.match(source, /from\("show_reserved_seat_assignments"\)[\s\S]*eq\("assignment_type", "customer"\)/);
+  assert.match(source, /from\("show_reserved_seating_links"\)[\s\S]*eq\("show_id", nextCurrentShow\.id\)/);
+  assert.match(source, /ticket_type === "paid_online"/);
+  assert.match(source, /ticket_type === "complimentary"/);
+});
