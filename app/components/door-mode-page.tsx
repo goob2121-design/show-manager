@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -70,8 +70,8 @@ type DoorScanState =
   | { kind: "found"; lookup: DoorScanFoundResult };
 
 const DOOR_SCAN_BEHAVIOR_STORAGE_KEY = "stageflow-door-scan-behavior";
-const DOOR_SCANNER_EXPANDED_STORAGE_KEY = "stageflow-door-scanner-expanded";
 const DOOR_SCAN_DUPLICATE_WINDOW_MS = 1500;
+const DOOR_SCAN_RESULT_TIMEOUT_MS = 12_000;
 
 type DoorModeShowSponsor = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -330,18 +330,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       return "review";
     }
   });
-  const [isScannerExpanded, setIsScannerExpanded] = useState(() => {
-    if (typeof window === "undefined") {
-      return true;
-    }
-
-    try {
-      const savedValue = window.localStorage.getItem(DOOR_SCANNER_EXPANDED_STORAGE_KEY);
-      return savedValue !== "collapsed";
-    } catch {
-      return true;
-    }
-  });
+  const [lastScannedGuestName, setLastScannedGuestName] = useState<string | null>(null);
   const [isScanLookupPending, setIsScanLookupPending] = useState(false);
   const [welcomeDisplayWarning, setWelcomeDisplayWarning] = useState<string | null>(null);
   const seatDialogCloseButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -450,19 +439,20 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   }, [scanBehavior]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        DOOR_SCANNER_EXPANDED_STORAGE_KEY,
-        isScannerExpanded ? "expanded" : "collapsed",
-      );
-    } catch {
-      // Ignore storage write issues and continue using the in-memory preference.
-    }
-  }, [isScannerExpanded]);
-
-  useEffect(() => {
     focusScanInput();
   }, []);
+
+  useEffect(() => {
+    if (scanState.kind === "idle" || activeActionId) return;
+
+    const timer = window.setTimeout(() => {
+      setScanState({ kind: "idle" });
+      setScanInput("");
+      window.requestAnimationFrame(() => scanInputRef.current?.focus());
+    }, DOOR_SCAN_RESULT_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [activeActionId, scanState]);
 
   useEffect(() => {
     if (!isPrintMenuOpen) return;
@@ -754,6 +744,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       }
 
       const foundResult = payload.result;
+      setLastScannedGuestName(foundResult.reservation.customerName);
       setScanState({ kind: "found", lookup: foundResult });
       setScanInput("");
       focusScanInput();
@@ -1337,225 +1328,145 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
           </div>
         ) : null}
 
-        <section className="rounded-[24px] border border-gray-700 bg-gray-800 p-4 shadow-sm shadow-slate-950/10 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="border-l-4 border-amber-500 pl-3 text-xl font-semibold text-gray-50">Ticket Scanner</h2>
-              <span className="rounded-full border border-emerald-800/70 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
-                {isScanLookupPending ? "Scanning" : "Scanner Ready"}
-              </span>
+        <section className="rounded-2xl border border-gray-700 bg-gray-800 px-2.5 py-2 shadow-sm shadow-slate-950/10" data-testid="door-scanner-panel">
+          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center lg:flex-nowrap">
+            <div className="flex min-w-0 items-center gap-2 lg:shrink-0">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${isScanLookupPending ? "animate-pulse bg-amber-400" : "bg-emerald-400"}`} aria-hidden="true" />
+              <h2 className="truncate text-sm font-bold text-gray-50">{isScanLookupPending ? "Scanning" : "Scanner Ready"}</h2>
             </div>
-            <button
-              type="button"
-              aria-expanded={isScannerExpanded}
-              onClick={() => setIsScannerExpanded((current) => !current)}
-              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-semibold text-gray-100 transition hover:bg-gray-800"
-            >
-              {isScannerExpanded ? "Collapse" : "Expand"}
-            </button>
+            <span className="shrink-0 text-xs font-semibold text-gray-300">
+              Immediate: <span className={scanBehavior === "auto" ? "text-emerald-300" : "text-gray-400"}>{scanBehavior === "auto" ? "ON" : "OFF"}</span>
+            </span>
+            <span className="min-w-0 truncate text-xs text-gray-400 md:max-w-40 lg:max-w-32 xl:max-w-48">
+              Last: <span className="font-medium text-gray-200">{lastScannedGuestName ?? "None"}</span>
+            </span>
+            <label className="min-w-0 md:flex-1 lg:w-48 lg:flex-none">
+              <span className="sr-only">Scan Behavior</span>
+              <select
+                value={scanBehavior}
+                onChange={(event) => setScanBehavior(event.target.value === "auto" ? "auto" : "review")}
+                aria-label="Scan behavior"
+                className="h-10 w-full min-w-0 rounded-lg border border-gray-700 bg-gray-900 px-2.5 text-xs font-semibold text-gray-100 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+              >
+                <option value="review">Review Before Check-In</option>
+                <option value="auto">Check In Immediately</option>
+              </select>
+            </label>
+            <label className="min-w-0 flex-1 md:basis-[22rem] lg:basis-auto">
+              <span className="sr-only">Scan Ticket</span>
+              <input
+                ref={scanInputRef}
+                type="text"
+                inputMode="text"
+                autoComplete="off"
+                enterKeyHint="search"
+                placeholder="Scan Ticket Code"
+                value={scanInput}
+                onChange={(event) => setScanInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleScannedLookup(scanInput);
+                  }
+                }}
+                className="h-10 w-full rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-50 outline-none transition placeholder:text-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+              />
+            </label>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => void handleScannedLookup(scanInput)}
+                disabled={isScanLookupPending}
+                className="h-10 flex-1 whitespace-nowrap rounded-lg bg-amber-600 px-3 text-xs font-semibold text-gray-950 transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-700 disabled:text-amber-100 md:flex-none"
+              >
+                {isScanLookupPending ? "Scanning..." : "Scan Ticket"}
+              </button>
+            </div>
           </div>
 
-          {isScannerExpanded ? (
-            <>
-              <div className="mt-4 grid gap-3 xl:grid-cols-[16rem_minmax(0,1fr)_auto] xl:items-end">
-                <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-400">
-                  Scan Behavior
-                  <select
-                    value={scanBehavior}
-                    onChange={(event) => setScanBehavior(event.target.value === "auto" ? "auto" : "review")}
-                    className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-semibold normal-case tracking-normal text-gray-100 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
-                  >
-                    <option value="review">Review Before Check-In</option>
-                    <option value="auto">Check In Immediately</option>
-                  </select>
-                </label>
-                <label className="min-w-0 flex-1">
-                  <span className="sr-only">Scan Ticket</span>
-                  <input
-                    ref={scanInputRef}
-                    type="text"
-                    inputMode="text"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    value={scanInput}
-                    onChange={(event) => setScanInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void handleScannedLookup(scanInput);
-                      }
-                    }}
-                    placeholder="Scan Ticket Code"
-                    className="min-h-12 w-full rounded-xl border border-gray-700 bg-gray-900 px-4 text-lg font-semibold text-gray-50 outline-none transition placeholder:text-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
-                  />
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleScannedLookup(scanInput)}
-                    disabled={isScanLookupPending}
-                    className="min-h-12 rounded-xl bg-amber-600 px-5 text-base font-semibold text-gray-950 transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-700 disabled:text-amber-100"
-                  >
-                    {isScanLookupPending ? "Scanning..." : "Scan Ticket"}
-                  </button>
-                  {scanState.kind !== "idle" ? (
-                    <button
-                      type="button"
-                      onClick={() => resetScanState()}
-                      className="min-h-12 rounded-xl border border-gray-700 bg-gray-900 px-5 text-sm font-semibold text-gray-100 transition hover:bg-gray-800"
-                    >
-                      Scan Again
-                    </button>
-                  ) : null}
+          {scanState.kind !== "idle" ? (
+            <div className="mt-3 border-t border-gray-700/80 pt-3" data-testid="door-scanner-result">
+              {scanState.kind === "invalid" ? (
+                <div className="rounded-xl border border-rose-800 bg-rose-500/10 px-3 py-3 text-sm text-rose-200">
+                  <p className="font-semibold text-rose-100">Invalid Ticket Code</p>
+                  <p className="mt-1">This scan did not match the expected StageFlow ticket-code format for Door Mode.</p>
+                  <button type="button" onClick={() => resetScanState()} className="mt-2 rounded-lg border border-rose-700/70 px-3 py-2 text-sm font-semibold">Dismiss</button>
                 </div>
-              </div>
+              ) : null}
 
-              <div className="mt-4">
-            {scanState.kind === "invalid" ? (
-              <div className="rounded-2xl border border-rose-800 bg-rose-500/10 px-4 py-5 text-sm text-rose-200">
-                <p className="text-base font-semibold text-rose-100">Invalid Ticket Code</p>
-                <p className="mt-1">This scan did not match the expected StageFlow ticket-code format for Door Mode.</p>
-              </div>
-            ) : null}
-
-            {scanState.kind === "not_found" ? (
-              <div className="rounded-2xl border border-amber-800 bg-amber-500/10 px-4 py-5 text-sm text-amber-100">
-                <p className="text-base font-semibold text-amber-50">Ticket Not Found</p>
-                <p className="mt-1">This code does not match a reservation for this show.</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => resetScanState()}
-                    className="rounded-lg border border-amber-700/70 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20"
-                  >
-                    Scan Again
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.requestAnimationFrame(() => guestSearchRef.current?.focus())}
-                    className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-semibold text-gray-100 transition hover:bg-gray-800"
-                  >
-                    Search Manually
-                  </button>
+              {scanState.kind === "not_found" ? (
+                <div className="rounded-xl border border-amber-800 bg-amber-500/10 px-3 py-3 text-sm text-amber-100">
+                  <p className="font-semibold text-amber-50">Ticket Not Found</p>
+                  <p className="mt-1">This code does not match a reservation for this show.</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => resetScanState()} className="rounded-lg border border-amber-700/70 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20">Dismiss</button>
+                    <button type="button" onClick={() => window.requestAnimationFrame(() => guestSearchRef.current?.focus())} className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-semibold text-gray-100 transition hover:bg-gray-800">Search Manually</button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
 
-            {scanState.kind === "error" ? (
-              <div className="rounded-2xl border border-rose-800 bg-rose-500/10 px-4 py-5 text-sm text-rose-200">
-                <p className="text-base font-semibold text-rose-100">Scan Failed</p>
-                <p className="mt-1">{scanState.message}</p>
-              </div>
-            ) : null}
+              {scanState.kind === "error" ? (
+                <div className="rounded-xl border border-rose-800 bg-rose-500/10 px-3 py-3 text-sm text-rose-200">
+                  <p className="font-semibold text-rose-100">Scan Failed</p>
+                  <p className="mt-1">{scanState.message}</p>
+                  <button type="button" onClick={() => resetScanState()} className="mt-2 rounded-lg border border-rose-700/70 px-3 py-2 text-sm font-semibold">Dismiss</button>
+                </div>
+              ) : null}
 
-            {scanState.kind === "found" ? (
-              <article className={`rounded-[24px] border px-4 py-5 shadow-sm shadow-slate-950/10 sm:px-5 ${
-                scannedReservationQuantities?.isFullyCheckedIn
-                  ? "border-amber-700/70 bg-amber-500/10"
-                  : "border-emerald-800/70 bg-emerald-500/10"
-              }`}>
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                        {scannedTicket
-                          ? scannedReservationQuantities?.isFullyCheckedIn
-                            ? "Already Checked In"
-                            : (scannedReservationQuantities?.checkedInCount ?? 0) > 0
-                              ? "Ready To Check In"
-                              : "Ready To Check In"
-                          : "Reservation Found"}
-                      </p>
-                      <h3 className="mt-1 text-2xl font-semibold text-gray-50 sm:text-3xl">
-                        {scanState.lookup.reservation.customerName}
-                      </h3>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full border border-sky-700/70 bg-sky-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-sky-200">
-                        {scannedTicket
-                          ? checkInAdmissionLabel(scannedTicket.ticket_type, scannedTicket.notes)
-                          : scanState.lookup.reservation.admissionLabel}
-                      </span>
-                      <span className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-200">
-                        {scanState.lookup.reservation.ticketCount} Ticket{scanState.lookup.reservation.ticketCount === 1 ? "" : "s"}
-                      </span>
-                      {scannedTicket && scannedReservationQuantities ? (
-                        <span className="rounded-full border border-emerald-800/70 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-200">
-                          {scannedReservationQuantities.checkedInCount} / {scannedReservationQuantities.totalEligibleTickets} checked in
+              {scanState.kind === "found" ? (
+                <article className={`rounded-xl border px-3 py-3 shadow-sm shadow-slate-950/10 ${
+                  scannedReservationQuantities?.isFullyCheckedIn
+                    ? "border-amber-700/70 bg-amber-500/10"
+                    : "border-emerald-800/70 bg-emerald-500/10"
+                }`}>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400">
+                          {scannedTicket && scannedReservationQuantities?.isFullyCheckedIn ? "Already Checked In" : "Ready To Check In"}
+                        </p>
+                        <h3 className="text-xl font-semibold text-gray-50 sm:text-2xl">{scanState.lookup.reservation.customerName}</h3>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded-full border border-sky-700/70 bg-sky-500/10 px-2.5 py-1 font-semibold uppercase tracking-[0.12em] text-sky-200">
+                          {scannedTicket ? checkInAdmissionLabel(scannedTicket.ticket_type, scannedTicket.notes) : scanState.lookup.reservation.admissionLabel}
                         </span>
+                        <span className="rounded-full border border-gray-700 bg-gray-900 px-2.5 py-1 font-semibold uppercase tracking-[0.12em] text-gray-200">
+                          {scanState.lookup.reservation.ticketCount} Ticket{scanState.lookup.reservation.ticketCount === 1 ? "" : "s"}
+                        </span>
+                        {scannedTicket && scannedReservationQuantities ? (
+                          <span className="rounded-full border border-emerald-800/70 bg-emerald-500/10 px-2.5 py-1 font-semibold uppercase tracking-[0.12em] text-emerald-200">
+                            {scannedReservationQuantities.checkedInCount} / {scannedReservationQuantities.totalEligibleTickets} checked in
+                          </span>
+                        ) : null}
+                        {scanState.lookup.reservation.seatLabels.length > 0 ? (
+                          <span className="font-medium text-gray-200"><span className="font-semibold text-gray-50">Seats:</span> {scanState.lookup.reservation.seatLabels.join(", ")}</span>
+                        ) : null}
+                      </div>
+                      {!scannedTicket ? (
+                        <p className="mt-2 text-sm text-amber-100">This reservation does not currently have a Door Mode check-in record. Run Prepare Check-In List before scanning it at the door.</p>
                       ) : null}
                     </div>
 
-                    {scanState.lookup.reservation.seatLabels.length > 0 ? (
-                      <p className="text-sm text-gray-200">
-                        <span className="font-semibold text-gray-50">Seats:</span>{" "}
-                        {scanState.lookup.reservation.seatLabels.join(", ")}
-                      </p>
-                    ) : null}
-
-                    {!scannedTicket ? (
-                      <p className="text-sm text-amber-100">
-                        This reservation was found, but it does not currently have a Door Mode check-in record. Run Prepare Check-In List before scanning it at the door.
-                      </p>
-                    ) : null}
+                    <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
+                      <button type="button" onClick={() => resetScanState()} className="min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800">Dismiss</button>
+                      <button type="button" onClick={handleSearchScannedGuest} className="min-h-10 rounded-lg border border-sky-800/80 bg-sky-500/[0.07] px-3 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/10">Search Manually</button>
+                      {scannedTicket ? (
+                        <>
+                          {scannedReservationQuantities?.isMultiTicket ? (
+                            <button type="button" onClick={() => void handleAdjustTicketCheckIn(scannedTicket, scannedReservationQuantities.remainingTickets)} disabled={Boolean(activeActionId) || scannedReservationQuantities.isFullyCheckedIn} className="min-h-10 rounded-lg border border-emerald-700 bg-emerald-500/10 px-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40">Check In All</button>
+                          ) : null}
+                          <button type="button" onClick={() => void handleAdjustTicketCheckIn(scannedTicket, 1)} disabled={Boolean(activeActionId) || scannedReservationQuantities?.isFullyCheckedIn} className="min-h-10 rounded-lg bg-emerald-700 px-4 text-sm font-bold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40">{scannedReservationQuantities?.isMultiTicket ? "+1 Check In" : "Check In"}</button>
+                          <button type="button" onClick={() => void handleAdjustTicketCheckIn(scannedTicket, -1)} disabled={Boolean(activeActionId) || (scannedReservationQuantities?.checkedInCount ?? 0) <= 0} className="min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40">-1 Undo</button>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
-
-                  <div className="flex w-full flex-col gap-2 lg:w-64">
-                    <button
-                      type="button"
-                      onClick={() => resetScanState()}
-                      className="rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800"
-                    >
-                      Scan Again
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSearchScannedGuest}
-                      className="rounded-xl border border-sky-800/80 bg-sky-500/[0.07] px-4 py-3 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/10"
-                    >
-                      Search Manually
-                    </button>
-                    {scannedTicket ? (
-                      <>
-                        {scannedReservationQuantities?.isMultiTicket ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleAdjustTicketCheckIn(scannedTicket, scannedReservationQuantities.remainingTickets)}
-                            disabled={Boolean(activeActionId) || scannedReservationQuantities.isFullyCheckedIn}
-                            className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Check In All
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void handleAdjustTicketCheckIn(scannedTicket, 1)}
-                          disabled={Boolean(activeActionId) || scannedReservationQuantities?.isFullyCheckedIn}
-                          className="rounded-xl bg-emerald-700 px-4 py-4 text-base font-bold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
-                        >
-                          {scannedReservationQuantities?.isMultiTicket ? "+1 Check In" : "Check In"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleAdjustTicketCheckIn(scannedTicket, -1)}
-                          disabled={Boolean(activeActionId) || (scannedReservationQuantities?.checkedInCount ?? 0) <= 0}
-                          className="rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          -1 Undo
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              </article>
-            ) : null}
-              </div>
-            </>
+                </article>
+              ) : null}
+            </div>
           ) : null}
         </section>
-
         <section className="sticky top-3 z-20 border-y border-gray-700 bg-slate-900/95 px-2.5 py-2 shadow-sm shadow-slate-950/20 backdrop-blur" data-testid="door-operational-toolbar">
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
             <div className="flex w-full gap-2 md:min-w-[280px] md:max-w-[380px] md:flex-1">

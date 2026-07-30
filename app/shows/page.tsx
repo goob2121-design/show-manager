@@ -129,6 +129,14 @@ function ShieldIcon() {
   );
 }
 
+function DoorModeIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4.5 17.25h11M6.25 17.25V3.75h7.5v13.5M11.5 10h.01" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function CopyIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
@@ -2522,13 +2530,31 @@ export default function ShowsDashboardPage() {
                             </div>
                           </div>
 
-                          <Link
-                            href={`/admin/${currentShow.slug}`}
-                            className="inline-flex w-fit items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_24px_rgba(5,150,105,0.22)] transition hover:bg-emerald-600"
-                          >
-                            <DashboardIcon><ShieldIcon /></DashboardIcon>
-                            Open Admin Portal
-                          </Link>
+                          <div className="grid w-full gap-3 sm:w-auto sm:min-w-[250px]">
+                            <Link
+                              href={`/admin/${currentShow.slug}/door`}
+                              aria-label={`Open Door Mode for ${currentShow.name}`}
+                              className="group flex min-h-20 w-full items-center gap-3 rounded-2xl border border-emerald-400/35 bg-emerald-700 px-4 py-3 text-left text-white shadow-[0_0_28px_rgba(5,150,105,0.28)] transition hover:border-emerald-300/60 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                            >
+                              <DashboardIcon className="h-10 w-10 rounded-xl bg-white/10 text-emerald-100">
+                                <DoorModeIcon />
+                              </DashboardIcon>
+                              <span className="min-w-0">
+                                <span className="block text-base font-semibold">Door Mode</span>
+                                <span className="block text-sm text-emerald-100">Live Ticket Check-In</span>
+                              </span>
+                              <span className="ml-auto text-xl text-emerald-100 transition group-hover:translate-x-0.5" aria-hidden="true">
+                                &rarr;
+                              </span>
+                            </Link>
+                            <Link
+                              href={`/admin/${currentShow.slug}`}
+                              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[rgba(255,255,255,0.09)]"
+                            >
+                              <DashboardIcon><ShieldIcon /></DashboardIcon>
+                              Open Admin Portal
+                            </Link>
+                          </div>
                         </div>
 
                         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
