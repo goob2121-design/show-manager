@@ -134,9 +134,9 @@ create table if not exists public.guest_profiles (
   planned_song_count integer,
   backup_song_count integer,
   appearance_notes text,
-  guest_token text,
   portal_opened_at timestamptz,
   last_reminder_sent_at timestamptz,
+  house_band_backing_guest boolean not null default false,
   is_confirmed boolean not null default false,
   permission_granted boolean not null default false,
   created_at timestamptz not null default now()
@@ -470,9 +470,6 @@ alter table public.mc_sponsor_reads enable row level security;
 create unique index if not exists guest_profiles_show_id_name_unique
   on public.guest_profiles(show_id, lower(name));
 
-create unique index if not exists guest_profiles_guest_token_unique
-  on public.guest_profiles(guest_token)
-  where guest_token is not null;
 
 insert into storage.buckets (id, name, public)
 values ('guest-photos', 'guest-photos', true)

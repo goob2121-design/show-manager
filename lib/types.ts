@@ -155,9 +155,9 @@ export type GuestProfile = {
   planned_song_count: number | null;
   backup_song_count: number | null;
   appearance_notes: string | null;
-  guest_token: string | null;
   portal_opened_at: string | null;
   last_reminder_sent_at: string | null;
+  house_band_backing_guest: boolean;
   is_confirmed: boolean;
   permission_granted: boolean;
   created_at: string;
@@ -520,6 +520,7 @@ export type GuestProfileFormState = {
   instagram: string;
   website: string;
   permissionGranted: boolean;
+  houseBandBackingGuest: boolean;
 };
 
 export type ShowDetailsFormState = {

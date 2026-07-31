@@ -98,33 +98,22 @@ export async function getGuestPortalMetadataBySlug(slug: string) {
   const supabase = await createServerSupabaseClient();
 
   if (uuidPattern.test(slug)) {
+    // guest_profiles.id is the canonical private Guest Portal identifier.
     const { data: guestProfile, error: guestProfileError } = await supabase
       .from("guest_profiles")
       .select("id, name, show_id")
-      .eq("guest_token", slug)
+      .eq("id", slug)
       .maybeSingle();
 
     if (guestProfileError) {
       throw guestProfileError;
     }
 
-    const fallbackGuestProfileById = await supabase
-      .from("guest_profiles")
-      .select("id, name, show_id")
-      .eq("id", slug)
-      .maybeSingle();
-
-    if (fallbackGuestProfileById.error) {
-      throw fallbackGuestProfileById.error;
-    }
-
-    const fallbackGuestProfile = guestProfile ?? fallbackGuestProfileById.data;
-
-    if (fallbackGuestProfile) {
+    if (guestProfile) {
       const { data: showRecord, error: showError } = await supabase
         .from("shows")
         .select("name, slug")
-        .eq("id", fallbackGuestProfile.show_id)
+        .eq("id", guestProfile.show_id)
         .maybeSingle();
 
       if (showError) {
@@ -132,7 +121,7 @@ export async function getGuestPortalMetadataBySlug(slug: string) {
       }
 
       return {
-        guestName: fallbackGuestProfile.name?.trim() || null,
+        guestName: guestProfile.name?.trim() || null,
         showName: showRecord?.name?.trim() || null,
         showSlug: showRecord?.slug?.trim() || null,
       } satisfies GuestPortalMetadata;

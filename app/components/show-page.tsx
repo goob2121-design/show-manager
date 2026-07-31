@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -41,6 +41,8 @@ import { SHOW_LEGACY_PAID_ORDER_IMPORT } from "@/app/components/tickets/ticket-s
 import { GuestListTicketEntries } from "@/app/components/tickets/guest-list-ticket-entries";
 import { TicketsCheckInPanel } from "@/app/components/tickets/tickets-check-in-panel";
 import { getGreetingName } from "@/lib/getGreetingName";
+import { getGuestReminderMissingItems } from "@/lib/guest-reminder";
+import { GuestReminderPreviewDialog, type GuestReminderPreview } from "@/app/components/guest-reminder-preview-dialog";
 import { checkInAdmissionLabel } from "@/lib/check-in-ticket-classification";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "@/app/available-seats/path";
@@ -262,6 +264,7 @@ const initialGuestProfileFormState: GuestProfileFormState = {
   instagram: "",
   website: "",
   permissionGranted: false,
+  houseBandBackingGuest: false,
 };
 
 const initialShowDetailsFormState: ShowDetailsFormState = {
@@ -1726,6 +1729,7 @@ function buildGuestProfileFormStateFromProfile(profile: GuestProfile): GuestProf
     instagram: profile.instagram ?? "",
     website: profile.website ?? "",
     permissionGranted: profile.permission_granted,
+    houseBandBackingGuest: profile.house_band_backing_guest,
   };
 }
 
@@ -3644,7 +3648,7 @@ function buildGuestProfileRecord(
     planned_song_count?: number | null;
     backup_song_count?: number | null;
     appearance_notes?: string | null;
-    guest_token?: string | null;
+    house_band_backing_guest?: boolean;
     is_confirmed?: boolean;
     permission_granted: boolean;
   },
@@ -3667,9 +3671,9 @@ function buildGuestProfileRecord(
     planned_song_count: profilePayload.planned_song_count ?? overrides?.planned_song_count ?? null,
     backup_song_count: profilePayload.backup_song_count ?? overrides?.backup_song_count ?? null,
     appearance_notes: profilePayload.appearance_notes ?? overrides?.appearance_notes ?? null,
-    guest_token: profilePayload.guest_token ?? null,
     portal_opened_at: overrides?.portal_opened_at ?? null,
     last_reminder_sent_at: overrides?.last_reminder_sent_at ?? null,
+    house_band_backing_guest: profilePayload.house_band_backing_guest ?? overrides?.house_band_backing_guest ?? false,
     is_confirmed: profilePayload.is_confirmed ?? overrides?.is_confirmed ?? false,
     permission_granted: profilePayload.permission_granted,
     created_at: overrides?.created_at ?? new Date().toISOString(),
@@ -3997,8 +4001,8 @@ function buildAdminShowUrl(showSlug: string) {
   return siteBaseUrl ? `${siteBaseUrl}${adminPath}` : adminPath;
 }
 
-function buildGuestPrivatePortalUrl(guestIdentifier: string) {
-  const guestPath = `/guest/${encodeURIComponent(guestIdentifier)}`;
+function buildGuestPrivatePortalUrl(guestProfileId: string) {
+  const guestPath = `/guest/${encodeURIComponent(guestProfileId)}`;
   const siteBaseUrl = getSiteBaseUrl();
 
   return siteBaseUrl ? `${siteBaseUrl}${guestPath}` : guestPath;
@@ -4011,35 +4015,9 @@ function buildBandRehearsalUrl(showSlug: string) {
   return siteBaseUrl ? `${siteBaseUrl}${bandPath}` : bandPath;
 }
 
-function buildGuestReminderEmailText(profile: GuestProfile) {
-  const guestIdentifier = profile.guest_token ?? profile.id;
-  const guestLink = buildGuestPrivatePortalUrl(guestIdentifier);
-  const greetingName = getGreetingName(profile.name, profile.greeting_name);
-  const greeting = `Hello ${greetingName},`;
-
-  return `Subject: Cumberland Mountain Music Show Guest Portal Reminder
-
-${greeting}
-
-Just a quick reminder to complete or update your Cumberland Mountain Music Show guest portal information when you get a chance.
-
-Your private guest portal link is below:
-
-${guestLink}
-
-This link is unique to you, and you can use it anytime to revisit the portal, submit songs, update artist information, upload or link materials, and review show-day details.
-
-Please make sure your song selections and artist information are submitted as soon as possible so we can prepare for the show.
-
-Thanks again - we're looking forward to having you with us!
-
-- Bryan Turner
-Cumberland Mountain Music Show`;
-}
-
 function buildGuestReminderTextMessage(profile: GuestProfile) {
-  const guestIdentifier = profile.guest_token ?? profile.id;
-  const guestLink = buildGuestPrivatePortalUrl(guestIdentifier);
+  const guestProfileId = profile.id;
+  const guestLink = buildGuestPrivatePortalUrl(guestProfileId);
   const greetingName = getGreetingName(profile.name, profile.greeting_name);
   const greeting = `Hey ${greetingName},`;
 
@@ -6527,7 +6505,10 @@ export function ShowPage({
   const [copiedLiveModeLink, setCopiedLiveModeLink] = useState(false);
   const [copiedGuestSongsLink, setCopiedGuestSongsLink] = useState(false);
   const [liveModeLinkFallbackUrl, setLiveModeLinkFallbackUrl] = useState<string | null>(null);
-  const [copiedGuestReminderEmailId, setCopiedGuestReminderEmailId] = useState<string | null>(null);
+  const [activeGuestReminderId, setActiveGuestReminderId] = useState<string | null>(null);
+  const [guestReminderMessage, setGuestReminderMessage] = useState<string | null>(null);
+  const [guestReminderPreview, setGuestReminderPreview] = useState<GuestReminderPreview | null>(null);
+  const [guestReminderNote, setGuestReminderNote] = useState("");
   const [copiedGuestShortTextId, setCopiedGuestShortTextId] = useState<string | null>(null);
   const [selectedCompTicketIds, setSelectedCompTicketIds] = useState<string[]>([]);
   const [isTicketImportOpen, setIsTicketImportOpen] = useState(false);
@@ -12288,6 +12269,7 @@ export function ShowPage({
         photo_url: photoUrl,
         is_confirmed: existingProfile?.is_confirmed ?? false,
         permission_granted: guestProfileFormState.permissionGranted,
+        house_band_backing_guest: guestProfileFormState.houseBandBackingGuest,
       };
 
       if (existingProfile) {
@@ -12303,7 +12285,6 @@ export function ShowPage({
         const updatedProfile = buildGuestProfileRecord(profilePayload, {
           ...existingProfile,
           id: existingProfile.id,
-          guest_token: existingProfile.guest_token,
           created_at: existingProfile.created_at,
           portal_opened_at: existingProfile.portal_opened_at,
           last_reminder_sent_at: existingProfile.last_reminder_sent_at,
@@ -12336,7 +12317,6 @@ export function ShowPage({
         const insertedProfile = buildGuestProfileRecord(
           {
             ...profilePayload,
-            guest_token: null,
             is_confirmed: false,
           },
         );
@@ -16055,11 +16035,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
   async function handleCopyGuestProfileLink(profile: GuestProfile) {
     try {
-      const guestIdentifier = profile.guest_token ?? profile.id;
+      const guestProfileId = profile.id;
       const guestUrl =
         typeof window === "undefined"
-          ? `/guest/${guestIdentifier}`
-          : `${window.location.origin}/guest/${guestIdentifier}`;
+          ? `/guest/${guestProfileId}`
+          : `${window.location.origin}/guest/${guestProfileId}`;
 
       await navigator.clipboard.writeText(guestUrl);
       setActionError(null);
@@ -16075,22 +16055,51 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
   }
 
-  async function handleCopyGuestReminderEmail(profile: GuestProfile) {
+  async function handleOpenGuestReminderPreview(profile: GuestProfile) {
+    if (!show || !profile.email?.trim()) return;
+    setActiveGuestReminderId(profile.id);
+    setActionError(null);
     try {
-      await navigator.clipboard.writeText(buildGuestReminderEmailText(profile));
-      setActionError(null);
-      setCopiedGuestReminderEmailId(profile.id);
-
-      window.setTimeout(() => {
-        setCopiedGuestReminderEmailId((currentProfileId) =>
-          currentProfileId === profile.id ? null : currentProfileId,
-        );
-      }, 1800);
+      const response = await fetch(`/api/admin/shows/${show.id}/guest-reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: show.slug, guestProfileId: profile.id, action: "preview" }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; preview?: GuestReminderPreview };
+      if (!response.ok || !payload.success || !payload.preview) throw new Error(payload.error || "Unable to preview reminder email.");
+      setGuestReminderNote("");
+      setGuestReminderPreview(payload.preview);
     } catch (error) {
       setActionError(getErrorMessage(error));
+    } finally {
+      setActiveGuestReminderId(null);
     }
   }
 
+  async function handleSendGuestReminder() {
+    if (!show || !guestReminderPreview) return;
+    setActiveGuestReminderId(guestReminderPreview.guestProfileId);
+    setActionError(null);
+    setGuestReminderMessage(null);
+    try {
+      const response = await fetch(`/api/admin/shows/${show.id}/guest-reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: show.slug, guestProfileId: guestReminderPreview.guestProfileId, action: "send", additionalNote: guestReminderNote }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; sentAt?: string };
+      if (!response.ok || !payload.success || !payload.sentAt) throw new Error(payload.error || "Unable to send reminder email.");
+      setGuestProfiles((profiles) => profiles.map((item) => item.id === guestReminderPreview.guestProfileId ? { ...item, last_reminder_sent_at: payload.sentAt! } : item));
+      setGuestReminderPreview(null);
+      setGuestReminderNote("");
+      setGuestReminderMessage("Reminder email sent successfully.");
+      window.setTimeout(() => setGuestReminderMessage(null), 4000);
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setActiveGuestReminderId(null);
+    }
+  }
   async function handleCopyGuestShortText(profile: GuestProfile) {
     try {
       await navigator.clipboard.writeText(buildGuestReminderTextMessage(profile));
@@ -16109,11 +16118,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
   function handleOpenGuestProfileLink(profile: GuestProfile) {
     try {
-      const guestIdentifier = profile.guest_token ?? profile.id;
+      const guestProfileId = profile.id;
       const guestUrl =
         typeof window === "undefined"
-          ? `/guest/${guestIdentifier}`
-          : `${window.location.origin}/guest/${guestIdentifier}`;
+          ? `/guest/${guestProfileId}`
+          : `${window.location.origin}/guest/${guestProfileId}`;
 
       if (typeof window !== "undefined") {
         window.open(guestUrl, "_blank", "noopener,noreferrer");
@@ -16232,7 +16241,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         instagram: null,
         website: null,
         photo_url: null,
-        guest_token: null,
         is_confirmed: false,
         permission_granted: false,
       });
@@ -25571,6 +25579,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </div>
               </div>
 
+            {guestReminderPreview ? (
+              <GuestReminderPreviewDialog
+                preview={guestReminderPreview}
+                note={guestReminderNote}
+                isSending={activeGuestReminderId === guestReminderPreview.guestProfileId}
+                onNoteChange={setGuestReminderNote}
+                onCancel={() => { setGuestReminderPreview(null); setGuestReminderNote(""); }}
+                onSend={() => void handleSendGuestReminder()}
+              />
+            ) : null}
+            {guestReminderMessage ? <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{guestReminderMessage}</div> : null}
             <SectionLoadWarning message={dataSectionErrors.guestProfiles} />
 
             {editingGuestProfileId ? (
@@ -25722,6 +25741,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </label>
 
                 <label className="flex items-start gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700">
+                  <input type="checkbox" name="houseBandBackingGuest" checked={guestProfileFormState.houseBandBackingGuest} onChange={handleGuestProfileChange} className="mt-1" />
+                  <span><strong>House Band Backing Guest</strong><br />Ask for song selections only when the house band is backing this guest.</span>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700">
                   <input
                     type="checkbox"
                     name="permissionGranted"
@@ -25780,6 +25803,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   const submittedSongsForProfile = pendingSongs.filter((song) =>
                     isGuestSongForProfile(song, profile.name),
                   );
+                  const guestMissingItems = getGuestReminderMissingItems(profile, submittedSongsForProfile.length);
+                  const guestReadiness = !profile.email?.trim()
+                    ? { label: "NO EMAIL", className: "bg-rose-100 text-rose-800" }
+                    : guestMissingItems.length === 0
+                      ? { label: "COMPLETE", className: "bg-emerald-100 text-emerald-800" }
+                      : { label: "MISSING INFO", className: "bg-amber-200 text-amber-900" };
                   const isGuestAppearanceDetailsOpen =
                     openGuestAppearanceDetailsById[profile.id] ?? false;
 
@@ -25798,6 +25827,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             <h3 className="text-lg font-semibold text-stone-900">
                               {profile.name || "Unnamed guest"}
                             </h3>
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold tracking-[0.12em] ${guestReadiness.className}`} title={guestReadiness.label === "COMPLETE" ? "Everything required has been received." : guestReadiness.label === "MISSING INFO" ? "One or more required items are missing." : "Guest has no email address."}>
+                              {guestReadiness.label}
+                            </span>
                             <span
                               className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
                                 profile.permission_granted
@@ -25855,9 +25887,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             {profile.email ? <p>Email: {profile.email}</p> : null}
                             {profile.full_bio ? <p>Full bio: {profile.full_bio}</p> : null}
                             {openedAtLabel ? <p>Opened: {openedAtLabel}</p> : null}
-                            {lastReminderLabel ? (
-                              <p>Last reminder: {lastReminderLabel}</p>
-                            ) : null}
+                            <p>Last Reminder: {lastReminderLabel ?? "Never"}</p>
                             {guestPortalStatus.submittedSongsCount > 0 ? (
                               <p>
                                 Submitted songs: {guestPortalStatus.submittedSongsCount}
@@ -26141,13 +26171,16 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
                           <button
                             type="button"
-                            onClick={() => handleCopyGuestReminderEmail(profile)}
-                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                            onClick={() => void handleOpenGuestReminderPreview(profile)}
+                            disabled={!profile.email?.trim() || activeGuestReminderId === profile.id}
+                            title={profile.email?.trim() ? "Send a reminder listing only missing items." : "Guest email address required."}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {copiedGuestReminderEmailId === profile.id
-                              ? "Reminder Email Copied!"
-                              : "Copy Reminder Email"}
+                            {activeGuestReminderId === profile.id ? "Loading Preview..." : "Send Reminder Email"}
                           </button>
+                          {!profile.email?.trim() ? (
+                            <span className="self-center text-xs font-medium text-amber-700">This guest does not have an email address on file.</span>
+                          ) : null}
 
                           <button
                             type="button"
@@ -27351,7 +27384,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             </button>
                             {expandedAdminSongPerformanceSetup[song.id] ? (
                               <div className="border-t border-sky-200 px-4 py-4">
-                                <p className="text-xs font-semibold text-sky-900/70">These fields save to this show's setlist entry and local Live Mode automation settings.</p>
+                                <p className="text-xs font-semibold text-sky-900/70">These fields save to this show&apos;s setlist entry and local Live Mode automation settings.</p>
                                 <div className="mt-4 flex flex-col gap-4">
                                   {currentShowSetlistEntries.map((entry) => {
                                     const draft = adminSongLiveSetupDrafts[entry.id] ?? buildAdminSongLiveSetupDraft(entry);

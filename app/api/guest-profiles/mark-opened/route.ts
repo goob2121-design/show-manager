@@ -5,7 +5,6 @@ export const runtime = "nodejs";
 
 type MarkGuestOpenedRequestBody = {
   guestProfileId?: unknown;
-  guestToken?: unknown;
 };
 
 function createServiceRoleSupabaseClient() {
@@ -48,20 +47,20 @@ export async function POST(request: Request) {
     const body = (await request.json()) as MarkGuestOpenedRequestBody;
     const guestProfileId =
       typeof body.guestProfileId === "string" ? body.guestProfileId.trim() : "";
-    const guestToken = typeof body.guestToken === "string" ? body.guestToken.trim() : "";
 
-    if (!guestProfileId && !guestToken) {
+    if (!guestProfileId) {
       return NextResponse.json(
-        { success: false, error: "guestProfileId or guestToken is required." },
+        { success: false, error: "guestProfileId is required." },
         { status: 400 },
       );
     }
 
     const supabase = createServiceRoleSupabaseClient();
-    const profileLookupQuery = supabase.from("guest_profiles").select("id, portal_opened_at");
-    const { data: guestProfile, error: guestProfileError } = guestProfileId
-      ? await profileLookupQuery.eq("id", guestProfileId).maybeSingle()
-      : await profileLookupQuery.eq("guest_token", guestToken).maybeSingle();
+    const { data: guestProfile, error: guestProfileError } = await supabase
+      .from("guest_profiles")
+      .select("id, portal_opened_at")
+      .eq("id", guestProfileId)
+      .maybeSingle();
 
     if (guestProfileError) {
       logGuestPortalOpenedError(

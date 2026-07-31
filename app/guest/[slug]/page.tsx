@@ -63,22 +63,14 @@ export default async function GuestShowPage({
 
   if (uuidPattern.test(slug)) {
     const supabase = await createServerSupabaseClient();
-    const { data: guestProfile, error: guestProfileError } = await supabase
+    // guest_profiles.id is the canonical private Guest Portal identifier.
+    const { data: guestProfile } = await supabase
       .from("guest_profiles")
       .select("id, show_id")
-      .eq("guest_token", slug)
+      .eq("id", slug)
       .maybeSingle();
 
-    const fallbackGuestProfile =
-      guestProfile ?? (
-        await supabase
-          .from("guest_profiles")
-          .select("id, show_id")
-          .eq("id", slug)
-          .maybeSingle()
-      ).data;
-
-    if (fallbackGuestProfile) {
+    if (guestProfile) {
       try {
         const headerStore = await headers();
         const protocol = headerStore.get("x-forwarded-proto") ?? "http";
@@ -94,7 +86,7 @@ export default async function GuestShowPage({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            guestProfileId: fallbackGuestProfile.id,
+            guestProfileId: guestProfile.id,
           }),
           cache: "no-store",
         });
@@ -147,7 +139,7 @@ export default async function GuestShowPage({
       const { data: showRecord, error: showError } = await supabase
         .from("shows")
         .select("slug")
-        .eq("id", fallbackGuestProfile.show_id)
+        .eq("id", guestProfile.show_id)
         .maybeSingle();
 
       if (showError || !showRecord?.slug) {
@@ -168,7 +160,7 @@ export default async function GuestShowPage({
           showSlug={showRecord.slug}
           initialRole="guest"
           showRoleToggle={false}
-          lockedGuestProfileId={fallbackGuestProfile.id}
+          lockedGuestProfileId={guestProfile.id}
           isPrivateGuestPortal
         />
       );
