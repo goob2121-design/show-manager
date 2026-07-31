@@ -214,6 +214,18 @@ export async function deliverOfficialTicketEmail(
       publicOrigin: options.requestOrigin,
     });
     if (result.success) {
+      const ticketEmailedAt = new Date().toISOString();
+      const { error: trackingError } = await supabase
+        .from("show_reserved_seating_links")
+        .update({ ticket_emailed_at: ticketEmailedAt })
+        .eq("id", link.id);
+      if (trackingError) {
+        console.error("Official ticket email was sent, but delivery timestamp tracking failed.", {
+          reservationId: link.id,
+          reservationToken: link.selection_token,
+          error: trackingError.message,
+        });
+      }
       console.info("Official ticket email sent.", { reservationId: link.id, resendId: result.resendId });
     } else {
       console.error("Official ticket email failed.", { reservationId: link.id, error: result.error });

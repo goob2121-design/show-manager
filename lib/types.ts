@@ -443,6 +443,7 @@ export type McSpecialSegment = {
 
 export type ReservedSeatingLinkMode = "customer" | "manual" | "imported" | "comp";
 export type ReservedSeatCategory = "paid_reserved" | "comp" | "guest";
+export type ReservedSeatPreference = "customer_select" | "auto_assign";
 
 export type ShowReservedSeatingLink = {
   id: string;
@@ -458,6 +459,7 @@ export type ShowReservedSeatingLink = {
   last_email_error: string | null;
   email_attempt_count: number;
   last_email_attempt_at: string | null;
+  ticket_emailed_at: string | null;
   selection_mode: ReservedSeatingLinkMode | string;
   is_complimentary: boolean;
   source_note: string | null;
@@ -465,6 +467,7 @@ export type ShowReservedSeatingLink = {
   source_order_id: string | null;
   source_import_key: string | null;
   seat_category: ReservedSeatCategory | string;
+  seat_preference: ReservedSeatPreference;
   created_at: string;
 };
 

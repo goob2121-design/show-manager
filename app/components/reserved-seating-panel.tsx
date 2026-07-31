@@ -66,7 +66,7 @@ type LinkWithSeats = ShowReservedSeatingLink & {
 };
 
 type CopyFeedbackTarget = "subject" | "body" | "link" | null;
-type ReservedSeatListFilter = "all" | ReservedSeatCategory;
+type ReservedSeatListFilter = "all" | "auto_assign" | ReservedSeatCategory;
 type ReservedSeatEmailStatus = ReservedSeatEmailTrackingSummary & {
   reservedSeatingLinkId: string;
   attempts: number;
@@ -234,6 +234,7 @@ export function ReservedSeatingPanel({
   const [emailStatuses, setEmailStatuses] = useState<Record<string, ReservedSeatEmailStatus>>({});
   const [emailTrackingRequestState, setEmailTrackingRequestState] = useState<ReservedSeatEmailTrackingRequestState>("loading");
   const [ticketCodeActionId, setTicketCodeActionId] = useState<string | null>(null);
+  const [postAssignmentPromptLinkId, setPostAssignmentPromptLinkId] = useState<string | null>(null);
   const supabase = useMemo(() => createClient(), []);
 
   async function loadReservedSeatEmailStatuses(nextLinks: ShowReservedSeatingLink[]) {
@@ -430,14 +431,16 @@ export function ReservedSeatingPanel({
 
   const linksWithSeats = useMemo<LinkWithSeats[]>(
     () =>
-      links.map((link) => ({
-        ...link,
-        seatIds: sortReservedSeatIds(
-          assignments
-            .filter((assignment) => assignment.seating_link_id === link.id && assignment.assignment_type === "customer")
-            .map((assignment) => assignment.seat_id),
-        ),
-      })),
+      links
+        .map((link) => ({
+          ...link,
+          seatIds: sortReservedSeatIds(
+            assignments
+              .filter((assignment) => assignment.seating_link_id === link.id && assignment.assignment_type === "customer")
+              .map((assignment) => assignment.seat_id),
+          ),
+        }))
+        .sort((left, right) => Number(right.seat_preference === "auto_assign") - Number(left.seat_preference === "auto_assign")),
     [assignments, links],
   );
 
@@ -452,8 +455,31 @@ export function ReservedSeatingPanel({
   );
 
   const filteredLinksWithSeats = useMemo(
-    () => linksWithSeats.filter((link) => seatListFilter === "all" || normalizeReservedSeatCategory(link.seat_category, link.is_complimentary) === seatListFilter),
+    () => linksWithSeats.filter((link) => {
+      if (seatListFilter === "all") return true;
+      if (seatListFilter === "auto_assign") return link.seat_preference === "auto_assign";
+      return normalizeReservedSeatCategory(link.seat_category, link.is_complimentary) === seatListFilter;
+    }),
     [linksWithSeats, seatListFilter],
+  );
+  const seatPreferenceCounts = useMemo(() => ({
+    autoAssignRequested: linksWithSeats.filter((link) => link.seat_preference === "auto_assign" && link.seatIds.length === 0).length,
+    customerSelecting: linksWithSeats.filter((link) => link.seat_preference !== "auto_assign" && link.seatIds.length === 0).length,
+    seatsAssigned: linksWithSeats.reduce((count, link) => count + link.seatIds.length, 0),
+  }), [linksWithSeats]);
+  const readinessSummary = useMemo(() => {
+    const autoAssignWaiting = linksWithSeats.filter((link) => link.seat_preference === "auto_assign" && link.seatIds.length === 0);
+    const assignedNotEmailed = linksWithSeats.filter((link) => link.seatIds.length > 0 && !link.ticket_emailed_at);
+    const ready = linksWithSeats.filter((link) => link.seatIds.length > 0 && Boolean(link.ticket_emailed_at));
+    return {
+      autoAssignWaiting: { reservations: autoAssignWaiting.length, seats: autoAssignWaiting.reduce((count, link) => count + link.ticket_count, 0) },
+      assignedNotEmailed: { reservations: assignedNotEmailed.length, seats: assignedNotEmailed.reduce((count, link) => count + link.seatIds.length, 0) },
+      ready: { reservations: ready.length, seats: ready.reduce((count, link) => count + link.seatIds.length, 0) },
+    };
+  }, [linksWithSeats]);
+  const postAssignmentPromptLink = useMemo(
+    () => linksWithSeats.find((link) => link.id === postAssignmentPromptLinkId) ?? null,
+    [linksWithSeats, postAssignmentPromptLinkId],
   );
   const missingTicketCodeCount = useMemo(
     () => linksWithSeats.filter((link) => !link.scan_token).length,
@@ -578,8 +604,12 @@ export function ReservedSeatingPanel({
       const result = await response.json() as { success?: boolean; error?: string; message?: string };
       if (!response.ok || !result.success) throw new Error(result.error || "Unable to resend the official ticket email.");
       setStatusMessage(result.message || "Official ticket email resent.");
+      setPostAssignmentPromptLinkId(null);
+      await loadReservedSeating();
+      return true;
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to resend the official ticket email."));
+      return false;
     } finally {
       setActiveActionId(null);
     }
@@ -663,8 +693,12 @@ export function ReservedSeatingPanel({
         }
 
         const assignedLabel = getReservedSeatCategoryLabel(normalizeReservedSeatCategory(manualAssignLink.seat_category, manualAssignLink.is_complimentary));
+        const completedReservation = manualAssignLink.seatIds.length + 1 >= manualAssignLink.ticket_count;
         setStatusMessage(`${assignedLabel} ${formatReservedSeatLabel(seatId)} assigned to ${manualAssignLink.customer_name}.`);
         await loadReservedSeating();
+        if (completedReservation && !manualAssignLink.ticket_emailed_at) {
+          setPostAssignmentPromptLinkId(manualAssignLink.id);
+        }
         onAssignmentsChange?.();
         return;
       }
@@ -728,6 +762,39 @@ export function ReservedSeatingPanel({
       window.open(getCustomerLinkUrl(link.selection_token), "_blank", "noopener,noreferrer");
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to open this seat-selection link."));
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
+  async function handleRemoveAutoAssign(link: LinkWithSeats) {
+    if (link.seat_preference !== "auto_assign" || link.seatIds.length > 0) {
+      return;
+    }
+
+    setActiveActionId(`remove-auto-assign-${link.id}`);
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch("/api/reserved-seating/preference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: link.selection_token, preference: "customer_select" }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || "Unable to remove the Auto Assign request.");
+      }
+
+      setLinks((currentLinks) => currentLinks.map((currentLink) => (
+        currentLink.id === link.id
+          ? { ...currentLink, seat_preference: "customer_select" }
+          : currentLink
+      )));
+      setStatusMessage(`${link.customer_name} is now selecting their own seats.`);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to remove the Auto Assign request."));
     } finally {
       setActiveActionId(null);
     }
@@ -855,6 +922,39 @@ export function ReservedSeatingPanel({
           >
             Print Selected Seat Cards
           </Link>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3" aria-label="Reserved seating preference summary">
+        <div className="rounded-2xl border border-fuchsia-400/30 bg-fuchsia-500/15 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-fuchsia-100">Auto Assign Requested</p>
+          <p className="mt-1 text-3xl font-black text-white">{seatPreferenceCounts.autoAssignRequested}</p>
+        </div>
+        <div className="rounded-2xl border border-sky-400/25 bg-sky-500/10 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100">Customer Selecting Seats</p>
+          <p className="mt-1 text-3xl font-black text-white">{seatPreferenceCounts.customerSelecting}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100">Seats Already Assigned</p>
+          <p className="mt-1 text-3xl font-black text-white">{seatPreferenceCounts.seatsAssigned}</p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-3" aria-label="Reserved seating readiness summary">
+        <div className="rounded-2xl border border-rose-400/30 bg-rose-500/15 px-4 py-3">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-100">🔴 Auto Assign Requests Waiting</p>
+          <p className="mt-2 text-lg font-black text-white">{readinessSummary.autoAssignWaiting.reservations} Reservations</p>
+          <p className="text-sm font-semibold text-rose-100">{readinessSummary.autoAssignWaiting.seats} Seats</p>
+        </div>
+        <div className="rounded-2xl border border-amber-300/35 bg-amber-400/15 px-4 py-3">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-100">🟡 Assigned but Tickets Not Emailed</p>
+          <p className="mt-2 text-lg font-black text-white">{readinessSummary.assignedNotEmailed.reservations} Reservations</p>
+          <p className="text-sm font-semibold text-amber-100">{readinessSummary.assignedNotEmailed.seats} Seats</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-100">🟢 Ready</p>
+          <p className="mt-2 text-lg font-black text-white">{readinessSummary.ready.reservations} Reservations</p>
+          <p className="text-sm font-semibold text-emerald-100">{readinessSummary.ready.seats} Seats</p>
         </div>
       </div>
 
@@ -1178,6 +1278,7 @@ export function ReservedSeatingPanel({
         <div className="mt-4 flex flex-wrap gap-2">
           {[
             { value: "all", label: "All Seats" },
+            { value: "auto_assign", label: "Show Auto Assign Requests Only" },
             { value: "paid_reserved", label: "Paid Reserved Seats" },
             { value: "comp", label: "Sponsor / General Comps" },
             { value: "guest", label: "Guest Comps" },
@@ -1242,6 +1343,12 @@ export function ReservedSeatingPanel({
                         <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                           {link.ticket_count} seat{link.ticket_count === 1 ? "" : "s"}
                         </span>
+                        <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] shadow-sm ${link.seat_preference === "auto_assign" ? "border-fuchsia-300/60 bg-fuchsia-500/25 text-fuchsia-50 shadow-fuchsia-950/30" : "border-white/10 bg-white/[0.05] text-slate-200"}`}>
+                          {link.seat_preference === "auto_assign" ? "🤝 Auto Assign Requested" : "Customer Selecting Seats"}
+                        </span>
+                        {link.seatIds.length > 0 && !link.ticket_emailed_at ? (
+                          <span className="rounded-full border border-amber-300/50 bg-amber-400/20 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-amber-100 shadow-sm shadow-amber-950/30">🟡 Tickets Not Yet Emailed</span>
+                        ) : null}
                         {emailStatusDisplay.showCompactBadge ? (
                           <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${emailStatusToneClasses}`}>
                             <span aria-hidden="true">{emailStatusDisplay.statusIcon}</span>
@@ -1328,7 +1435,9 @@ export function ReservedSeatingPanel({
                             </span>
                           ))
                         ) : (
-                          <span className="text-sm text-slate-400">No seats selected yet.</span>
+                          <span className={`text-sm ${link.seat_preference === "auto_assign" ? "font-bold text-fuchsia-200" : "text-slate-400"}`}>
+                            {link.seat_preference === "auto_assign" ? "Waiting for Auto Assignment" : "No seats selected yet."}
+                          </span>
                         )}
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1407,6 +1516,16 @@ export function ReservedSeatingPanel({
                       >
                         Open Link
                       </button>
+                      {link.seat_preference === "auto_assign" && link.seatIds.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRemoveAutoAssign(link)}
+                          disabled={activeActionId === `remove-auto-assign-${link.id}`}
+                          className="rounded-xl border border-fuchsia-300/40 bg-fuchsia-500/15 px-4 py-2.5 text-sm font-bold text-fuchsia-100 transition hover:bg-fuchsia-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {activeActionId === `remove-auto-assign-${link.id}` ? "Removing..." : "Remove Auto Assign"}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => setManualAssignLinkId((current) => (current === link.id ? null : link.id))}
@@ -1438,6 +1557,19 @@ export function ReservedSeatingPanel({
           </div>
         )}
       </div>
+      {postAssignmentPromptLink && !postAssignmentPromptLink.ticket_emailed_at ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="seats-assigned-title">
+          <div className="w-full max-w-md rounded-3xl border border-white/12 bg-[#0b1627] p-6 text-slate-100 shadow-2xl">
+            <h2 id="seats-assigned-title" className="text-2xl font-black text-white">Seats Assigned</h2>
+            <p className="mt-4 text-slate-200">Seats were assigned successfully.</p>
+            <p className="mt-2 text-slate-300">Would you like to email the tickets now?</p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => void handleResendOfficialTicketEmail(postAssignmentPromptLink)} disabled={activeActionId === `ticket-email-${postAssignmentPromptLink.id}`} className="rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60">{activeActionId === `ticket-email-${postAssignmentPromptLink.id}` ? "Emailing..." : "Email Tickets"}</button>
+              <button type="button" onClick={() => setPostAssignmentPromptLinkId(null)} className="rounded-xl border border-white/15 bg-white/[0.06] px-4 py-3 font-semibold text-white hover:bg-white/[0.1]">Not Now</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

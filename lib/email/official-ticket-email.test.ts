@@ -61,3 +61,29 @@ test("customer and authenticated admin resend call the same helper without regen
     assert.doesNotMatch(source, /tryGenerateReservationScanToken|generateReservationScanToken|\.insert\(/);
   }
 });
+
+test("successful official ticket delivery records the latest emailed timestamp", async () => {
+  const source = await readFile(officialEmailUrl, "utf8");
+  const successIndex = source.indexOf("if (result.success)");
+  const trackingIndex = source.indexOf("ticket_emailed_at: ticketEmailedAt", successIndex);
+  const logIndex = source.indexOf('console.info("Official ticket email sent."', trackingIndex);
+
+  assert.ok(successIndex >= 0 && trackingIndex > successIndex && logIndex > trackingIndex);
+  assert.match(source, /new Date\(\)\.toISOString\(\)/);
+  assert.match(source, /from\("show_reserved_seating_links"\)[\s\S]*update\(\{ ticket_emailed_at: ticketEmailedAt \}\)/);
+});
+
+test("timestamp tracking failure is logged without changing successful email delivery", async () => {
+  const source = await readFile(officialEmailUrl, "utf8");
+  const trackingErrorBlock = source.slice(
+    source.indexOf("if (trackingError)"),
+    source.indexOf('console.info("Official ticket email sent."'),
+  );
+
+  assert.match(trackingErrorBlock, /delivery timestamp tracking failed/);
+  assert.match(trackingErrorBlock, /reservationId: link\.id/);
+  assert.match(trackingErrorBlock, /reservationToken: link\.selection_token/);
+  assert.match(trackingErrorBlock, /error: trackingError\.message/);
+  assert.doesNotMatch(trackingErrorBlock, /throw|return/);
+  assert.match(source, /return \{ \.\.\.result, reservationId: link\.id \}/);
+});

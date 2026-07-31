@@ -78,6 +78,10 @@ test("includes encoded HTTPS directions, parking, and questions while preserving
   assert.match(email.html, /info@cumberlandmountainmusic\.com/);
   assert.match(email.text, /info@cumberlandmountainmusic\.com/);
   assert.match(email.html, />Select Your Reserved Seats<\/a>/);
+  assert.match(email.html, />Assign My Seats For Me<\/a>/);
+  assert.match(email.html, /\?preference=auto/);
+  assert.match(email.html, /keep your group together whenever possible/);
+  assert.match(email.text, /Assign My Seats For Me:/);
   assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
   assert.match(email.text, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
 });

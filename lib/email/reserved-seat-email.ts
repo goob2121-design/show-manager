@@ -154,6 +154,7 @@ export function buildReservedSeatEmail(input: ReservedSeatEmailInput, logoSrc: s
   ].map(([label, value]) => `<tr><td style="padding:6px 12px 6px 0;color:#64748b;font-size:14px;vertical-align:top;">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:14px;font-weight:600;vertical-align:top;">${value}</td></tr>`).join("");
   const directionsUrl = buildGoogleMapsDirectionsUrl(input.venueName, input.venueAddress);
   const safeDirectionsUrl = directionsUrl ? escapeHtml(directionsUrl) : "";
+  const safeAutoAssignUrl = escapeHtml(`${input.seatSelectionUrl.replace(/\/$/, "")}?preference=auto`);
   const directionsHtml = safeDirectionsUrl
     ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:24px 0;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;"><tr><td style="padding:18px;"><h2 style="margin:0 0 12px;color:#071426;font-size:18px;line-height:1.3;">Directions</h2><table role="presentation" cellspacing="0" cellpadding="0"><tr><td style="border:1px solid #0f3b5f;border-radius:5px;"><a href="${safeDirectionsUrl}" style="display:inline-block;padding:11px 18px;color:#0f3b5f;font-size:14px;font-weight:700;text-decoration:none;">Get Directions</a></td></tr></table><h2 style="margin:20px 0 8px;color:#071426;font-size:18px;line-height:1.3;">Parking Information</h2><p style="margin:0;color:#334155;font-size:14px;line-height:1.6;">${safe.parkingInformation}</p></td></tr></table>`
     : `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:24px 0;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;"><tr><td style="padding:18px;"><h2 style="margin:0 0 8px;color:#071426;font-size:18px;line-height:1.3;">Parking Information</h2><p style="margin:0;color:#334155;font-size:14px;line-height:1.6;">${safe.parkingInformation}</p></td></tr></table>`;
@@ -163,6 +164,12 @@ export function buildReservedSeatEmail(input: ReservedSeatEmailInput, logoSrc: s
     : "";
 
   const html = `<!doctype html><html><body style="margin:0;background:#e2e8f0;font-family:Arial,sans-serif;color:#0f172a;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#e2e8f0;"><tr><td align="center" style="padding:24px 12px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:8px;overflow:hidden;"><tr><td align="center" style="background:#071426;padding:24px;">${logoSrc ? `<img src="${escapeHtml(logoSrc)}" alt="Cumberland Mountain Music Show" width="260" height="156" style="display:block;width:100%;max-width:260px;height:auto;border:0;"><div style="margin-top:10px;color:#fbbf24;font-size:16px;font-weight:700;">The Cumberland Mountain Music Show</div>` : `<div style="color:#fbbf24;font-size:20px;font-weight:700;">The Cumberland Mountain Music Show</div>`}</td></tr><tr><td style="padding:32px 28px;"><h1 style="margin:0 0 8px;text-align:center;color:#071426;font-size:28px;line-height:1.2;">Thank You for Your Purchase!</h1><p style="margin:0 0 22px;text-align:center;color:#a36b12;font-size:13px;font-weight:700;line-height:1.4;">Big-Time Show &bull; Small-Town Hospitality</p><p style="margin:0 0 18px;font-size:18px;font-weight:700;line-height:1.5;color:#071426;">Hi ${safe.customerName},</p><p style="margin:0 0 18px;font-size:16px;line-height:1.6;">Thank you for purchasing ${reservedSeatPurchaseText(count)} for ${RESERVED_SEAT_EMAIL_EVENT_NAME}. We&#39;re looking forward to seeing you on ${safe.customerShowDate}!</p><p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Your payment has been received successfully. Click the button below to choose your reserved seats.</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;"><tr><td style="padding:18px;"><table role="presentation" cellspacing="0" cellpadding="0">${detailRows}</table></td></tr></table>${ticketCodeSection.html}${seatSelectionCodeReminder}<table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:32px auto 30px;"><tr><td bgcolor="#d89b2b" style="border-radius:5px;"><a href="${safe.seatSelectionUrl}" style="display:inline-block;padding:15px 24px;color:#071426;font-size:16px;font-weight:700;text-decoration:none;">Select Your Reserved Seats</a></td></tr></table><p style="margin:0 0 18px;text-align:center;color:#334155;font-size:14px;line-height:1.5;">Your private seat-selection link will remain available until the day of the show.</p><p style="margin:0 0 8px;text-align:center;color:#475569;font-size:13px;line-height:1.5;">If the button does not work, use this private link:</p><p style="margin:0 0 22px;text-align:center;font-size:13px;line-height:1.5;word-break:break-all;"><a href="${safe.seatSelectionUrl}" style="color:#075985;">${safe.seatSelectionUrl}</a></p><p style="margin:0 0 18px;font-size:16px;line-height:1.6;"><strong>${seatSelectionInstruction(count)}</strong> Once your seats are confirmed, they will be reserved for you.</p>${directionsHtml}<p style="margin:0 0 18px;font-size:16px;line-height:1.6;">If you prefer not to select your seats, that's perfectly fine too. We'll be happy to reserve seats for you and have them ready when you arrive.</p><h2 style="margin:24px 0 8px;color:#071426;font-size:20px;line-height:1.3;">Questions?</h2><p style="margin:0;font-size:16px;line-height:1.6;">Simply reply to this email or contact us at <a href="mailto:info@cumberlandmountainmusic.com" style="color:#075985;font-weight:700;">info@cumberlandmountainmusic.com</a>. We&#39;re happy to help.</p></td></tr><tr><td align="center" style="background:#071426;padding:32px 24px;color:#cbd5e1;font-size:13px;line-height:1.8;"><strong style="color:#ffffff;">The Cumberland Mountain Music Show</strong><br>Big-Time Show, Small-Town Hospitality<br><a href="https://www.cumberlandmountainmusic.com" style="color:#fbbf24;font-size:15px;font-weight:700;">www.cumberlandmountainmusic.com</a></td></tr></table></td></tr></table></body></html>`;
+
+  const autoAssignHtml = `<table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:-18px auto 16px;"><tr><td bgcolor="#0f3b5f" style="border-radius:5px;"><a href="${safeAutoAssignUrl}" style="display:inline-block;padding:13px 22px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">Assign My Seats For Me</a></td></tr></table><p style="margin:0 auto 24px;max-width:500px;text-align:center;color:#334155;font-size:14px;line-height:1.6;">If you don&#39;t care where you sit, we&#39;ll choose the best available seats for your party and keep your group together whenever possible.</p>`;
+  const htmlWithSeatPreference = html.replace(
+    '<p style="margin:0 0 18px;text-align:center;color:#334155;font-size:14px;line-height:1.5;">Your private seat-selection link',
+    `${autoAssignHtml}<p style="margin:0 0 18px;text-align:center;color:#334155;font-size:14px;line-height:1.5;">Your private seat-selection link`,
+  );
 
   const text = [
     "Thank You for Your Purchase!",
@@ -188,6 +195,10 @@ export function buildReservedSeatEmail(input: ReservedSeatEmailInput, logoSrc: s
     "Select Your Reserved Seats:",
     input.seatSelectionUrl.trim(),
     "",
+    "Assign My Seats For Me:",
+    `${input.seatSelectionUrl.replace(/\/$/, "")}?preference=auto`,
+    "If you don't care where you sit, we'll choose the best available seats for your party and keep your group together whenever possible.",
+    "",
     "Your private seat-selection link will remain available until the day of the show.",
     "",
     `${seatSelectionInstruction(count)} Once your seats are confirmed, they will be reserved for you.`,
@@ -206,7 +217,7 @@ export function buildReservedSeatEmail(input: ReservedSeatEmailInput, logoSrc: s
     "www.cumberlandmountainmusic.com",
   ].join("\n");
 
-  return { subject, html, text };
+  return { subject, html: htmlWithSeatPreference, text };
 }
 
 export async function sendReservedSeatEmail(input: ReservedSeatEmailInput): Promise<ReservedSeatEmailResult> {

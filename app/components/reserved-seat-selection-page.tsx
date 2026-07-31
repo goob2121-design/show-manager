@@ -70,6 +70,8 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const [ticketEmailMessage, setTicketEmailMessage] = useState<string | null>(null);
   const [ticketEmailMessageTone, setTicketEmailMessageTone] = useState<"success" | "warning">("success");
   const [isPhoneTicketMode, setIsPhoneTicketMode] = useState(false);
+  const [seatPreference, setSeatPreference] = useState(seatingLink.seat_preference ?? "customer_select");
+  const [isSavingPreference, setIsSavingPreference] = useState(false);
   const isAlreadySubmitted = hasSubmitted;
 
   useEffect(() => {
@@ -89,6 +91,38 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
       window.removeEventListener("popstate", syncPhoneMode);
     };
   }, [isAlreadySubmitted]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("preference") === "auto" && linkAssignments.length === 0 && !isAlreadySubmitted) {
+      void saveSeatPreference("auto_assign");
+    }
+  // This one-time email-link action is intentionally keyed to the reservation loaded by the page.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function saveSeatPreference(preference: "customer_select" | "auto_assign") {
+    setIsSavingPreference(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch("/api/reserved-seating/preference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: seatingLink.selection_token, preference }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to save your seat preference.");
+      setSeatPreference(preference);
+      if (preference === "customer_select") {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("preference");
+        window.history.replaceState({}, "", url);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save your seat preference.");
+    } finally {
+      setIsSavingPreference(false);
+    }
+  }
   function openPhoneTicket() {
     const url = new URL(window.location.href);
     url.searchParams.delete("print");
@@ -260,6 +294,25 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const ticketCoverageMessage = seatingLink.ticket_count === 1
     ? "One code covers the ticket in this reservation."
     : `One code covers all ${seatingLink.ticket_count} tickets in this reservation.`;
+
+  if (seatPreference === "auto_assign" && linkAssignments.length === 0 && !isAlreadySubmitted) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,_#08111f,_#03060c)] px-4 py-10 text-slate-100">
+        <section className="w-full max-w-xl rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-center shadow-2xl sm:p-10">
+          <p className="text-4xl" aria-hidden="true">🤝</p>
+          <h1 className="mt-3 text-3xl font-black text-white">Auto Assignment Requested</h1>
+          <p className="mt-5 text-xl font-bold text-fuchsia-100">Thank you!</p>
+          <p className="mt-3 leading-7 text-slate-200">We&apos;ll choose the best available seats for your party before the show.</p>
+          <p className="mt-3 leading-7 text-slate-300">You do not need to select seats unless you change your mind.</p>
+          {errorMessage ? <p className="mt-5 rounded-xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{errorMessage}</p> : null}
+          <div className="mt-7 grid gap-3 sm:grid-cols-2">
+            <button type="button" onClick={() => void saveSeatPreference("customer_select")} disabled={isSavingPreference} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-[#071426] hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60">{isSavingPreference ? "Saving..." : "Choose My Own Seats Instead"}</button>
+            <a href="https://www.cumberlandmountainmusic.com/show-dates" className="rounded-xl border border-white/15 bg-white/[0.06] px-5 py-3 font-semibold text-white hover:bg-white/[0.1]">Return</a>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="confirmation-print-root min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 pb-28 text-slate-100 sm:px-6 sm:py-8 sm:pb-8">
@@ -581,6 +634,13 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             </aside>
 
             <div className="order-2 w-full max-w-full overflow-hidden xl:order-1">
+              {!isAlreadySubmitted && linkAssignments.length === 0 ? (
+                <section className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-4 text-center">
+                  <h2 className="text-xl font-bold text-white">Don&apos;t care where you sit?</h2>
+                  <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-300">If you don&apos;t care where you sit, we&apos;ll choose the best available seats for your party and keep your group together whenever possible.</p>
+                  <button type="button" onClick={() => void saveSeatPreference("auto_assign")} disabled={isSavingPreference} className="mt-4 rounded-xl bg-amber-400 px-4 py-2.5 font-bold text-[#071426] hover:bg-amber-300 disabled:opacity-60">{isSavingPreference ? "Saving..." : "Assign My Seats For Me"}</button>
+                </section>
+              ) : null}
               <ReservedSeatMap
                 seatStates={seatStates}
                 onSeatClick={handleSeatClick}
