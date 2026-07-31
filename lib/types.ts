@@ -455,11 +455,11 @@ export type ShowReservedSeatingLink = {
   scan_token: string | null;
   submitted_at: string | null;
   sent_at: string | null;
+  ticket_emailed_at: string | null;
   resend_email_id: string | null;
   last_email_error: string | null;
   email_attempt_count: number;
   last_email_attempt_at: string | null;
-  ticket_emailed_at: string | null;
   selection_mode: ReservedSeatingLinkMode | string;
   is_complimentary: boolean;
   source_note: string | null;

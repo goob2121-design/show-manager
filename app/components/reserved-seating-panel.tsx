@@ -25,6 +25,7 @@ import {
   buildReservedSeatingMessageSubject,
 } from "@/lib/reserved-seat-generated-message";
 import { tryGenerateReservationScanToken } from "@/lib/reservation-scan-tokens";
+import { getOfficialTicketReadiness } from "@/lib/official-ticket-readiness";
 import { createClient } from "@/lib/supabase/client";
 import type { ReservedSeatCategory, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -1330,6 +1331,7 @@ export function ReservedSeatingPanel({
                 requestState: emailTrackingRequestState,
               });
               const emailStatusToneClasses = getEmailStatusToneClasses(emailStatusDisplay.statusTone);
+              const officialTicketReadiness = getOfficialTicketReadiness(link.ticket_emailed_at);
               return (
                 <article key={link.id} className={`rounded-2xl border p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : "border-white/10 bg-slate-950/30"}`}>
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1346,8 +1348,10 @@ export function ReservedSeatingPanel({
                         <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] shadow-sm ${link.seat_preference === "auto_assign" ? "border-fuchsia-300/60 bg-fuchsia-500/25 text-fuchsia-50 shadow-fuchsia-950/30" : "border-white/10 bg-white/[0.05] text-slate-200"}`}>
                           {link.seat_preference === "auto_assign" ? "🤝 Auto Assign Requested" : "Customer Selecting Seats"}
                         </span>
-                        {link.seatIds.length > 0 && !link.ticket_emailed_at ? (
-                          <span className="rounded-full border border-amber-300/50 bg-amber-400/20 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-amber-100 shadow-sm shadow-amber-950/30">🟡 Tickets Not Yet Emailed</span>
+                        {link.seatIds.length > 0 ? (
+                          <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] shadow-sm ${officialTicketReadiness.ready ? "border-emerald-300/50 bg-emerald-500/20 text-emerald-100 shadow-emerald-950/30" : "border-amber-300/50 bg-amber-400/20 text-amber-100 shadow-amber-950/30"}`}>
+                            {officialTicketReadiness.label}
+                          </span>
                         ) : null}
                         {emailStatusDisplay.showCompactBadge ? (
                           <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${emailStatusToneClasses}`}>

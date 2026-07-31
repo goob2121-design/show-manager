@@ -65,25 +65,22 @@ test("customer and authenticated admin resend call the same helper without regen
 test("successful official ticket delivery records the latest emailed timestamp", async () => {
   const source = await readFile(officialEmailUrl, "utf8");
   const successIndex = source.indexOf("if (result.success)");
-  const trackingIndex = source.indexOf("ticket_emailed_at: ticketEmailedAt", successIndex);
+  const trackingIndex = source.indexOf("await recordOfficialTicketEmailSuccess(supabase, link.id)", successIndex);
   const logIndex = source.indexOf('console.info("Official ticket email sent."', trackingIndex);
 
   assert.ok(successIndex >= 0 && trackingIndex > successIndex && logIndex > trackingIndex);
-  assert.match(source, /new Date\(\)\.toISOString\(\)/);
-  assert.match(source, /from\("show_reserved_seating_links"\)[\s\S]*update\(\{ ticket_emailed_at: ticketEmailedAt \}\)/);
+  assert.match(source, /update\(\{ ticket_emailed_at: emailedAt \}\)/);
 });
 
 test("timestamp tracking failure is logged without changing successful email delivery", async () => {
   const source = await readFile(officialEmailUrl, "utf8");
   const trackingErrorBlock = source.slice(
-    source.indexOf("if (trackingError)"),
-    source.indexOf('console.info("Official ticket email sent."'),
+    source.indexOf('console.error("Official ticket email delivery timestamp tracking failed."'),
+    source.indexOf('console.info("Official ticket email sent."', source.indexOf('console.error("Official ticket email delivery timestamp tracking failed."')),
   );
 
-  assert.match(trackingErrorBlock, /delivery timestamp tracking failed/);
   assert.match(trackingErrorBlock, /reservationId: link\.id/);
-  assert.match(trackingErrorBlock, /reservationToken: link\.selection_token/);
-  assert.match(trackingErrorBlock, /error: trackingError\.message/);
+  assert.match(trackingErrorBlock, /error:/);
   assert.doesNotMatch(trackingErrorBlock, /throw|return/);
   assert.match(source, /return \{ \.\.\.result, reservationId: link\.id \}/);
 });

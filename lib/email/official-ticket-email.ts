@@ -164,6 +164,18 @@ export async function sendOfficialTicketEmail(input: OfficialTicketEmailInput): 
   }
 }
 
+export async function recordOfficialTicketEmailSuccess(
+  supabase: SupabaseClient,
+  reservationId: string,
+  emailedAt = new Date().toISOString(),
+) {
+  const { error } = await supabase
+    .from("show_reserved_seating_links")
+    .update({ ticket_emailed_at: emailedAt })
+    .eq("id", reservationId);
+  if (error) throw error;
+  return emailedAt;
+}
 export async function deliverOfficialTicketEmail(
   supabase: SupabaseClient,
   reservationId: string,
@@ -214,19 +226,16 @@ export async function deliverOfficialTicketEmail(
       publicOrigin: options.requestOrigin,
     });
     if (result.success) {
-      const ticketEmailedAt = new Date().toISOString();
-      const { error: trackingError } = await supabase
-        .from("show_reserved_seating_links")
-        .update({ ticket_emailed_at: ticketEmailedAt })
-        .eq("id", link.id);
-      if (trackingError) {
-        console.error("Official ticket email was sent, but delivery timestamp tracking failed.", {
+      try {
+        const ticketEmailedAt = await recordOfficialTicketEmailSuccess(supabase, link.id);
+        console.info("Official ticket email sent.", { reservationId: link.id, resendId: result.resendId, ticketEmailedAt });
+      } catch (error) {
+        console.error("Official ticket email delivery timestamp tracking failed.", {
           reservationId: link.id,
-          reservationToken: link.selection_token,
-          error: trackingError.message,
+          error: error instanceof Error ? error.message : "Unknown timestamp update error",
         });
+        console.info("Official ticket email sent.", { reservationId: link.id, resendId: result.resendId });
       }
-      console.info("Official ticket email sent.", { reservationId: link.id, resendId: result.resendId });
     } else {
       console.error("Official ticket email failed.", { reservationId: link.id, error: result.error });
     }
