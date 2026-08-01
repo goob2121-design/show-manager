@@ -20626,7 +20626,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
         {shouldShowAdminCompTicketsTab ? (
           <TicketsCheckInPanel
-            showSlug={showSlug}
             activeSection={activeTicketWorkflowSection}
             isTotalsOpen={isTicketTotalsOpen}
             onToggleTotals={() => setIsTicketTotalsOpen((currentValue) => !currentValue)}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { AdmissionsSyncPreviewPanel } from "@/app/components/tickets/admissions-sync-preview-panel";
 import type { PrepareCheckInListResult } from "@/lib/prepare-check-in-list";
 
@@ -10,8 +11,11 @@ export type TicketSalesPanelProps = {
   showSlug: string;
   isTicketImportOpen: boolean;
   isManualTicketFormOpen: boolean;
+  isTotalsOpen: boolean;
+  totalsContent: ReactNode;
   onToggleTicketImport: () => void;
   onToggleManualTicketForm: () => void;
+  onToggleTotals: () => void;
   onCheckInListPrepared?: (result: PrepareCheckInListResult) => void | Promise<void>;
 };
 
@@ -20,8 +24,11 @@ export function TicketSalesPanel({
   showSlug,
   isTicketImportOpen,
   isManualTicketFormOpen,
+  isTotalsOpen,
+  totalsContent,
   onToggleTicketImport,
   onToggleManualTicketForm,
+  onToggleTotals,
   onCheckInListPrepared,
 }: TicketSalesPanelProps) {
   return (
@@ -30,7 +37,12 @@ export function TicketSalesPanel({
         <h3 className="text-base font-semibold text-stone-900">Ticket Sales &amp; Check-In</h3>
         <p className="text-sm text-stone-600">Manage ticket entries, prepare check-in, and open Door Mode.</p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <AdmissionsSyncPreviewPanel
+        showId={showId}
+        showSlug={showSlug}
+        onPrepared={onCheckInListPrepared}
+        headerActions={
+          <>
         {SHOW_LEGACY_PAID_ORDER_IMPORT ? (
           <button
             type="button"
@@ -53,8 +65,23 @@ export function TicketSalesPanel({
         >
           Open Door Mode / Door Check-In
         </Link>
-      </div>
-      <AdmissionsSyncPreviewPanel showId={showId} showSlug={showSlug} onPrepared={onCheckInListPrepared} />
+            <Link
+              href={`/admin/${encodeURIComponent(showSlug)}/square-integration`}
+              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            >
+              Square Integration
+            </Link>
+            <button
+              type="button"
+              onClick={onToggleTotals}
+              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+            >
+              {isTotalsOpen ? "Hide Totals" : "Show Totals"}
+            </button>
+          </>
+        }
+      />
+      {totalsContent}
     </div>
   );
 }

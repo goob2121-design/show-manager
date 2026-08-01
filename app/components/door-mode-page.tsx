@@ -21,6 +21,7 @@ import {
   isAdmissionFullyCheckedIn,
   normalizedDoorSearch,
   normalizeDoorReservedSeatIds,
+  paidAdmissionOperationalNote,
   visibleDoorModeNote,
   type RecentGuestCheckIn,
 } from "@/lib/door-mode-presentation";
@@ -188,6 +189,19 @@ function renderDoorModeNoteDetails(notes: string | null | undefined) {
     <details className="text-xs text-gray-500">
       <summary className="cursor-pointer font-medium text-gray-400">Details</summary>
       <p className="mt-1 whitespace-pre-wrap leading-5">{renderTextWithLinks(visibleNote)}</p>
+    </details>
+  );
+}
+
+function renderPaidAdmissionOperationalNote(notes: string | null | undefined) {
+  const operationalNote = paidAdmissionOperationalNote(notes);
+  if (!operationalNote) return null;
+  return (
+    <details className="group relative w-fit text-xs text-gray-400">
+      <summary className="cursor-pointer font-medium text-amber-200">Note</summary>
+      <p className="absolute left-0 z-20 mt-1 w-max max-w-[min(24rem,calc(100vw-3rem))] rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-gray-200 shadow-xl whitespace-pre-wrap leading-5">
+        {renderTextWithLinks(operationalNote)}
+      </p>
     </details>
   );
 }
@@ -671,6 +685,25 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
         Seats: {seatIds.join(", ")} <span className="ml-2 text-xs font-medium text-sky-300">View Seats</span>
       </button>
     );
+  }
+
+  function renderPaidAdmissionSeatStatus(item: ShowCompTicket) {
+    const seatLocationControl = renderSeatLocationControl(item);
+    if (seatLocationControl) return seatLocationControl;
+    if (checkInAdmissionLabel(item.ticket_type, item.notes) !== "Paid Reserved") return null;
+
+    return (
+      <p className="w-fit rounded-lg border border-amber-800/70 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
+        Waiting on Seat Selection
+      </p>
+    );
+  }
+  function renderPaidAdmissionMetadata(item: ShowCompTicket) {
+    const seatStatus = renderPaidAdmissionSeatStatus(item);
+    const operationalNote = renderPaidAdmissionOperationalNote(item.notes);
+    if (!seatStatus && !operationalNote) return null;
+
+    return <div className="flex flex-wrap items-center gap-2">{seatStatus}{operationalNote}</div>;
   }
 
   function pushRecentActivity(activity: DoorModeActivity) {
@@ -1541,7 +1574,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               </p>
             </div>
 
-            <div className="mt-4 grid gap-2.5 2xl:grid-cols-2">
+            <div className="mt-4 grid auto-rows-min items-start gap-2.5 2xl:grid-cols-2">
               {filteredPrepaidTickets.length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 px-4 py-5 text-sm text-gray-400">
                   No prepaid / online tickets for this show yet.
@@ -1550,7 +1583,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                 filteredPrepaidTickets.map((item) => (
                   <article
                     key={item.id}
-                    className={`rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${
+                    className={`self-start rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${
                       isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count)
                         ? "border-emerald-900/60 bg-emerald-500/[0.07] opacity-80 hover:border-emerald-800/70"
                         : "border-gray-700 bg-gray-800 hover:border-gray-600"
@@ -1573,8 +1606,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                             </span>
                           ) : null}
                         </div>
-                        {renderSeatLocationControl(item)}
-                        {renderDoorModeNoteDetails(item.notes)}
+                        {renderPaidAdmissionMetadata(item)}
                       </div>
 
                       <div className="grid gap-2 sm:grid-cols-3">
@@ -1671,7 +1703,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                   </p>
                 ) : (
                   filteredSpecialAdmissions.map((item) => (
-                    <article key={item.id} className={`rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? "border-emerald-900/60 bg-emerald-500/[0.07] opacity-80 hover:border-emerald-800/70" : "border-gray-700 bg-gray-800 hover:border-gray-600"}`}>
+                    <article key={item.id} className={`self-start rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? "border-emerald-900/60 bg-emerald-500/[0.07] opacity-80 hover:border-emerald-800/70" : "border-gray-700 bg-gray-800 hover:border-gray-600"}`}>
                       <div className="flex flex-col gap-4">
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">

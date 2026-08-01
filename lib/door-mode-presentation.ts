@@ -25,6 +25,19 @@ export function visibleDoorModeNote(notes: string | null | undefined) {
   return notes;
 }
 
+export function paidAdmissionOperationalNote(notes: string | null | undefined) {
+  const visibleNote = visibleDoorModeNote(notes);
+  if (!visibleNote) return null;
+
+  const operationalNote = visibleNote
+    .replace(/\s*\[Admission Type:\s*(reserved|general_admission)\]\s*/gi, " ")
+    .replace(/\s*Prepared from (paid reserved seating admission|unlinked paid reserved seat assignment)\.\s*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return operationalNote || null;
+}
+
 export function normalizedDoorSearch(value: string) {
   return value.trim().toLowerCase();
 }

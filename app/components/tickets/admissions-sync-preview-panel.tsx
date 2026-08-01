@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { AdmissionsPreviewClassification, AdmissionsPreviewDetail, AdmissionsSyncPreviewResult } from "@/lib/admissions-sync-preview";
 import {
   CHECK_IN_PREVIEW_FILTERS,
@@ -21,6 +21,7 @@ import type { PrepareCheckInListResult } from "@/lib/prepare-check-in-list";
 type AdmissionsSyncPreviewPanelProps = {
   showId: string;
   showSlug: string;
+  headerActions?: ReactNode;
   onPrepared?: (result: PrepareCheckInListResult) => void | Promise<void>;
 };
 
@@ -75,7 +76,7 @@ function PreviewRow({ item }: { item: AdmissionsPreviewDetail }) {
   );
 }
 
-export function AdmissionsSyncPreviewPanel({ showId, showSlug, onPrepared }: AdmissionsSyncPreviewPanelProps) {
+export function AdmissionsSyncPreviewPanel({ showId, showSlug, headerActions, onPrepared }: AdmissionsSyncPreviewPanelProps) {
   const [preview, setPreview] = useState<AdmissionsSyncPreviewResult | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -139,7 +140,8 @@ export function AdmissionsSyncPreviewPanel({ showId, showSlug, onPrepared }: Adm
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {headerActions}
         <button type="button" onClick={() => void loadPreview()} disabled={isPreviewLoading || isPreparing} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60">
           {isPreviewLoading ? "Building Preview..." : "Preview Check-In List"}
         </button>

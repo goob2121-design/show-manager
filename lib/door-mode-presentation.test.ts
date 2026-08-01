@@ -9,6 +9,7 @@ import {
   explicitSeatLabel,
   isAdmissionFullyCheckedIn,
   normalizeDoorReservedSeatIds,
+  paidAdmissionOperationalNote,
   parseDoorReservedSeatIds,
   visibleDoorModeNote,
 // @ts-expect-error Node's type-stripping test runner requires the TypeScript extension.
@@ -95,8 +96,9 @@ test("Door Mode removes visible stat cards but preserves dynamic header and oper
   assert.match(source, /View Totals/);
   assert.match(source, /handleAddDoorSale/);
   assert.match(source, /sponsor\.comp_tickets_checked_in/);
-  assert.equal((source.match(/fetch\(/g) ?? []).length, 1);
+  assert.equal((source.match(/fetch\(/g) ?? []).length, 2);
   assert.match(source, /door-seat-assignments\?slug=/);
+  assert.match(source, /door-scan-lookup/);
 });
 test("Door Mode uses compact search and a collapsed session-only Recent disclosure", async () => {
   const source = await readFile(doorModePath, "utf8");
@@ -243,9 +245,38 @@ test("Door Mode suppresses only the exact misleading legacy Square note", () => 
   );
 });
 
-test("Door Mode applies visible-note filtering only at Details rendering", async () => {
+test("paid admission cards suppress generated metadata but preserve manual operational notes", () => {
+  assert.equal(
+    paidAdmissionOperationalNote("[Admission Type: reserved] Prepared from paid reserved seating admission."),
+    null,
+  );
+  assert.equal(
+    paidAdmissionOperationalNote("[Admission Type: reserved] Prepared from paid reserved seating admission. Seat near the aisle."),
+    "Seat near the aisle.",
+  );
+  assert.equal(paidAdmissionOperationalNote("Call manager on arrival."), "Call manager on arrival.");
+  assert.equal(
+    paidAdmissionOperationalNote("[Admission Type: general_admission] Call manager on arrival."),
+    "Call manager on arrival.",
+  );
+});
+test("Door Mode applies scoped note filtering at card rendering", async () => {
   const source = await readFile(doorModePath, "utf8");
-  assert.equal((source.match(/renderDoorModeNoteDetails\(item\.notes\)/g) ?? []).length, 2);
+  assert.equal((source.match(/renderDoorModeNoteDetails\(item\.notes\)/g) ?? []).length, 1);
+  assert.match(source, /renderPaidAdmissionOperationalNote\(item\.notes\)/);
+  assert.match(source, /Waiting on Seat Selection/);
+  assert.match(source, /renderPaidAdmissionMetadata\(item\)/);
+  assert.match(source, /renderPaidAdmissionSeatStatus\(item\)/);
+  assert.match(source, /flex flex-wrap items-center gap-2/);
+  assert.match(source, /checkInAdmissionLabel\(item\.ticket_type, item\.notes\) !== "Paid Reserved"\) return null/);
+  assert.match(source, /Seats: \{seatIds\.join\(", "\)\}/);
+  assert.match(source, />View Seats<\/span>/);
+  assert.match(source, /grid auto-rows-min items-start gap-2\.5 2xl:grid-cols-2/);
+  assert.match(source, /self-start rounded-\[20px\] border p-3/);
+  assert.doesNotMatch(source, /self-start[^`]*(h-full|min-h-|h-\[)/);
+  assert.match(source, /filteredPrepaidTickets\.map\(\(item\) => \(/);
+  assert.match(source, /Check In All/);
+  assert.match(source, /\+1 Check In/);
   assert.match(source, /checkInAdmissionLabel\(item\.ticket_type, item\.notes\)/);
   assert.match(source, /admissionMatchesDoorSearch/);
   assert.match(source, /handleAdjustTicketCheckIn/);
