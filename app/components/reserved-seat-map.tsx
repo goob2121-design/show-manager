@@ -106,13 +106,49 @@ function getSeatButtonClasses(
 
 const [leftSectionConfig, rightSectionConfig] = RESERVED_SEATING_SECTION_CONFIGS;
 
+function getPublicSeatStatus(status: ReservedSeatMapSeatState["status"] | undefined) {
+  if (!status || status === "available") return "available";
+  if (status === "selected") return "selected";
+  if (status === "unavailable") return "unavailable";
+  return "taken";
+}
+
+function getSeatLabels(
+  seatId: string,
+  seatState: ReservedSeatMapSeatState | undefined,
+  showCustomerSeatDetails: boolean,
+) {
+  const seatLabel = seatState?.label ?? seatId;
+  const publicStatus = getPublicSeatStatus(seatState?.status);
+
+  if (showCustomerSeatDetails && seatState?.customerName) {
+    return {
+      title: `${seatLabel} - ${seatState.customerName}`,
+      ariaLabel: `Seat ${seatLabel}, assigned to ${seatState.customerName}`,
+    };
+  }
+
+  const titleStatus = publicStatus === "available"
+    ? "Available"
+    : publicStatus === "selected"
+      ? "Selected"
+      : publicStatus === "unavailable"
+        ? "Unavailable"
+        : "Taken";
+
+  return {
+    title: `${seatLabel} — ${titleStatus}`,
+    ariaLabel: `Seat ${seatLabel}, ${publicStatus}`,
+  };
+}
+
 export function ReservedSeatMap({
   seatStates,
   onSeatClick,
   title,
   helperText,
   includeSelectedLegend = true,
-  showCustomerSeatDetails = true,
+  showCustomerSeatDetails = false,
   legendVariant = "customer",
   chromeVariant = "stageflow",
   sizeVariant = "default",
@@ -229,17 +265,16 @@ export function ReservedSeatMap({
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
                         const seatId = `${leftSectionConfig.prefix}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
-                        const titleText =
-                          showCustomerSeatDetails && seatState?.customerName
-                            ? `${seatState.label} - ${seatState.customerName}`
-                            : seatState?.label;
+
+                        const seatLabels = getSeatLabels(seatId, seatState, showCustomerSeatDetails);
                         return (
                           <button
                             key={seatId}
                             type="button"
                             onClick={() => onSeatClick?.(seatId)}
                             disabled={Boolean(seatState?.disabled)}
-                            title={titleText}
+                            title={seatLabels.title}
+                            aria-label={seatLabels.ariaLabel}
                             tabIndex={onSeatClick ? undefined : -1}
                             className={`${isCompact ? "min-h-[1.35rem] rounded-[0.4rem] text-[0.58rem] sm:min-h-[1.5rem] sm:text-[0.64rem] lg:min-h-[1.55rem]" : "min-h-[2.25rem] rounded-[0.58rem] text-[0.78rem] sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem]"} aspect-square border px-0 font-bold leading-none transition ${onSeatClick ? "" : "cursor-default"} ${isSponsorPacket ? "packet-sponsor-seat-map" : ""} ${isSponsorPacket ? seatState?.status === "selected" ? "packet-sponsor-seat--selected" : "packet-sponsor-seat--neutral" : ""} ${getSeatButtonClasses(
                               seatState?.status ?? "available",
@@ -266,17 +301,16 @@ export function ReservedSeatMap({
                       {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
                         const seatId = `${rightSectionConfig.prefix}-${rowLabel}${seatNumber}`;
                         const seatState = seatStates[seatId];
-                        const titleText =
-                          showCustomerSeatDetails && seatState?.customerName
-                            ? `${seatState.label} - ${seatState.customerName}`
-                            : seatState?.label;
+
+                        const seatLabels = getSeatLabels(seatId, seatState, showCustomerSeatDetails);
                         return (
                           <button
                             key={seatId}
                             type="button"
                             onClick={() => onSeatClick?.(seatId)}
                             disabled={Boolean(seatState?.disabled)}
-                            title={titleText}
+                            title={seatLabels.title}
+                            aria-label={seatLabels.ariaLabel}
                             tabIndex={onSeatClick ? undefined : -1}
                             className={`${isCompact ? "min-h-[1.35rem] rounded-[0.4rem] text-[0.58rem] sm:min-h-[1.5rem] sm:text-[0.64rem] lg:min-h-[1.55rem]" : "min-h-[2.25rem] rounded-[0.58rem] text-[0.78rem] sm:min-h-[2rem] sm:text-xs lg:min-h-[2.05rem] xl:min-h-[2.2rem] xl:text-[0.8rem]"} aspect-square border px-0 font-bold leading-none transition ${onSeatClick ? "" : "cursor-default"} ${isSponsorPacket ? "packet-sponsor-seat-map" : ""} ${isSponsorPacket ? seatState?.status === "selected" ? "packet-sponsor-seat--selected" : "packet-sponsor-seat--neutral" : ""} ${getSeatButtonClasses(
                               seatState?.status ?? "available",

@@ -13,10 +13,12 @@ import {
 } from "@/lib/reserved-seating";
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
+type PublicSeatAssignment = Pick<ShowReservedSeatAssignment, "seat_id" | "seating_link_id" | "assignment_type">;
+
 type ReservedSeatSelectionPageProps = {
   show: Pick<ShowRecord, "name" | "show_date" | "show_start_time" | "venue" | "show_logo_url" | "ticket_code_format">;
   seatingLink: ShowReservedSeatingLink;
-  assignments: ShowReservedSeatAssignment[];
+  assignments: PublicSeatAssignment[];
 };
 
 function formatShowDate(showDate: string | null) {
@@ -168,7 +170,6 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             seatId: seat.seatId,
             label: seat.seatId,
             status,
-            customerName: assignment?.customer_name ?? null,
             disabled,
           },
         ];
@@ -644,6 +645,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
               <ReservedSeatMap
                 seatStates={seatStates}
                 onSeatClick={handleSeatClick}
+                showCustomerSeatDetails={false}
                 title="Select Your Seats"
                 helperText={
                   isAlreadySubmitted

@@ -3,6 +3,8 @@ import { ReservedSeatSelectionPage } from "@/app/components/reserved-seat-select
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
+type PublicSeatAssignment = Pick<ShowReservedSeatAssignment, "seat_id" | "seating_link_id" | "assignment_type">;
+
 export const runtime = "nodejs";
 
 type ReservedSeatingPageProps = {
@@ -31,14 +33,14 @@ export default async function ReservedSeatingPage({ params }: ReservedSeatingPag
       .maybeSingle(),
     supabase
       .from("show_reserved_seat_assignments")
-      .select("*")
+      .select("seat_id, seating_link_id, assignment_type")
       .eq("show_id", seatingLink.show_id)
       .order("created_at", { ascending: true }),
   ]);
 
   const typedShow = show as Pick<ShowRecord, "name" | "show_date" | "show_start_time" | "venue" | "show_logo_url" | "ticket_code_format"> | null;
   const typedSeatingLink = seatingLink as ShowReservedSeatingLink;
-  const typedAssignments = (assignments ?? []) as ShowReservedSeatAssignment[];
+  const typedAssignments = (assignments ?? []) as PublicSeatAssignment[];
 
   if (!typedShow) {
     notFound();

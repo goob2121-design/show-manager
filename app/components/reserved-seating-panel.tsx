@@ -1087,6 +1087,7 @@ export function ReservedSeatingPanel({
           onSeatClick={(seatId) => void handleSeatMapClick(seatId)}
           title="Venue Seat Map"
           legendVariant="admin"
+          showCustomerSeatDetails
           helperText={
             manualAssignLink
               ? "Manual assign mode: click green seats to assign them to the selected guest. Purple, orange, and red seats are already assigned. Gray seats are unavailable."
@@ -1577,6 +1578,5 @@ export function ReservedSeatingPanel({
     </section>
   );
 }
-
 
 
