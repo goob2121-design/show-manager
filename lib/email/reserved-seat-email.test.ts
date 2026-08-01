@@ -42,8 +42,8 @@ test("builds the revised plural reserved-seat message", () => {
   assert.match(email.html, /<h1 style="[^"]*text-align:center[^"]*">Thank You for Your Purchase!<\/h1>/);
   assert.match(email.html, /Big-Time Show &bull; Small-Town Hospitality/);
   assert.match(email.text, /Thank You for Your Purchase!/);
-  assert.match(email.html, /Thank you for purchasing 2 seats for The Cumberland Mountain Music Show\./);
-  assert.match(email.text, /Thank you for purchasing 2 seats for The Cumberland Mountain Music Show\./);
+  assert.match(email.html, /Thank you for reserving 2 seats for The Cumberland Mountain Music Show\./);
+  assert.match(email.text, /Thank you for reserving 2 seats for The Cumberland Mountain Music Show\./);
   assert.match(email.html, /looking forward to seeing you on Saturday, August 15, 2026!/);
   assert.match(email.text, /looking forward to seeing you on Saturday, August 15, 2026!/);
   assert.match(email.html, /The Cumberland Mountain Music Show/);
@@ -52,8 +52,14 @@ test("builds the revised plural reserved-seat message", () => {
   assert.match(email.text, /Your payment has been received successfully\./);
   assert.match(email.html, /Your private seat-selection link will remain available until the day of the show\./);
   assert.match(email.text, /Your private seat-selection link will remain available until the day of the show\./);
-  assert.match(email.html, /Please choose your 2 reserved seats using the button above\./);
-  assert.match(email.text, /Please choose your 2 reserved seats using the button above\./);
+  assert.match(email.html, /Your payment has been received successfully\. The next step is to choose your reserved seats\./);
+  assert.match(email.text, /Your payment has been received successfully\. The next step is to choose your reserved seats\./);
+  assert.doesNotMatch(email.html, /Please choose your .*reserved seats? using the button above\./);
+  assert.doesNotMatch(email.text, /Please choose your .*reserved seats? using the button above\./);
+  assert.doesNotMatch(email.html, /Once your seats are confirmed, they will be reserved for you\./);
+  assert.doesNotMatch(email.text, /Once your seats are confirmed, they will be reserved for you\./);
+  assert.doesNotMatch(email.html, /Your reserved seats have been purchased successfully/);
+  assert.doesNotMatch(email.text, /Your reserved seats have been purchased successfully/);
 });
 
 test("includes encoded HTTPS directions, parking, and questions while preserving seat links", () => {
@@ -81,6 +87,8 @@ test("includes encoded HTTPS directions, parking, and questions while preserving
   assert.match(email.html, /Need a little help choosing your seats\?/);
   assert.match(email.html, /Choose My Seats for Me<\/a>/);
   assert.match(email.html, /\?preference=auto/);
+  assert.match(email.html, /href="https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token"/);
+  assert.match(email.html, /href="https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token\?preference=auto"/);
   assert.ok(email.html.indexOf("Select Your Reserved Seats") < email.html.indexOf("Need a little help choosing your seats?"));
   const htmlOrder = [
     "Thank You for Your Purchase!",
@@ -117,9 +125,10 @@ test("uses singular ticket and seat-selection wording", () => {
   assert.match(email.html, /1 Reserved Seat/);
   assert.doesNotMatch(email.html, /1 Reserved Seats/);
   assert.match(email.text, /Tickets Purchased: 1 Reserved Seat/);
-  assert.match(email.text, /Thank you for purchasing 1 seat for The Cumberland Mountain Music Show\./);
-  assert.match(email.html, /Please choose your reserved seat using the button above\./);
-  assert.match(email.text, /Please choose your reserved seat using the button above\./);
+  assert.match(email.text, /Thank you for reserving 1 seat for The Cumberland Mountain Music Show\./);
+  assert.match(email.html, /Thank you for reserving 1 seat for The Cumberland Mountain Music Show\./);
+  assert.doesNotMatch(email.html, /Please choose your reserved seat using the button above\./);
+  assert.doesNotMatch(email.text, /Please choose your reserved seat using the button above\./);
 });
 
 test("email generation still succeeds when scan_token is null", () => {
