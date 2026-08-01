@@ -1004,10 +1004,10 @@ function SelectedReservedSeatCardsPrintView({
                   className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[42px] print:max-w-[124px]"
                 />
                 <div className="flex flex-1 flex-col items-center justify-center py-1.5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[11px]">
-                    Seat Reserved
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[13px]">
+                    Reserved Seating
                   </p>
-                  <h2 className="mt-1 text-[1.95rem] font-black tracking-[0.01em] text-stone-950 print:text-[30px] leading-none max-w-full">
+                  <h2 className="mt-2 max-w-full text-4xl font-black leading-none tracking-[0.01em] text-stone-950 print:text-[36px]">
                     {card.customer_name?.trim() || "Reserved Guest"}
                   </h2>
                   {reservedLink?.is_complimentary ? (
@@ -1020,24 +1020,13 @@ function SelectedReservedSeatCardsPrintView({
                       {reservedLink.source_note}
                     </p>
                   ) : null}
-                  <p className="mt-1.5 text-lg font-black tracking-[0.03em] text-stone-900 print:text-[18px]">{card.seat_id}</p>
-                  <p className="mt-1 text-sm font-semibold tracking-[0.12em] text-stone-600 print:text-[12px]">
+                  <p className="mt-3 text-2xl font-black tracking-[0.03em] text-stone-900 print:text-[26px]">{card.seat_id}</p>
+                  <p className="mt-1 text-base font-semibold tracking-[0.08em] text-stone-700 print:text-[17px]">
                     Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
                   </p>
-                    <p className="mt-1.5 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
+                    <p className="mt-2 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
                       {formatShowDate(show.show_date)}
                     </p>
-                  </div>
-                  <div className="w-full">
-                    <ReservationTicketCode
-                      scanToken={reservedLink?.scan_token}
-                      format={show.ticket_code_format}
-                      purchaserName={card.customer_name?.trim() || "Reserved Guest"}
-                      ticketCount={1}
-                      seatLabels={[card.seat_id]}
-                      compact
-                      printable
-                    />
                   </div>
                 </article>
               );

@@ -1,8 +1,5 @@
 import Link from "next/link";
 
-// Reserved Seating is the canonical home for backup cards; keep this duplicate entry point recoverable but hidden.
-const SHOW_DUPLICATE_BACKUP_GUEST_LIST_CARDS = false;
-
 export type TicketReportsPanelProps = {
   showSlug: string;
   onPrintCompList: () => void;
@@ -10,33 +7,25 @@ export type TicketReportsPanelProps = {
 };
 
 export function TicketReportsPanel({ showSlug, onPrintCompList, onExportCompListPdf }: TicketReportsPanelProps) {
+  const printLinkClass = "inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100";
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="grid gap-4">
         <div>
           <h3 className="text-base font-semibold text-stone-900">Reports &amp; Printouts</h3>
-          <p className="text-sm text-stone-600">Print front-door lists and backup sheets without digging through operational controls.</p>
+          <p className="text-sm text-stone-600">Print front-door lists, reserved-seat cards, and backup sheets without digging through operational controls.</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <Link
-            href={`/admin/${showSlug}/print/door-guest-list`}
-            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-          >
+          <Link href={`/admin/${showSlug}/print/door-guest-list`} className={printLinkClass}>
             Print Door Count List
           </Link>
-          {SHOW_DUPLICATE_BACKUP_GUEST_LIST_CARDS ? (
-            <Link
-              href={`/admin/${showSlug}/print/blank-seat-cards`}
-              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-            >
-              Print Back-Up / Guest List Cards
-            </Link>
-          ) : null}
-          <button
-            type="button"
-            onClick={onPrintCompList}
-            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-          >
+          <Link href={`/admin/${showSlug}/print/comp-reserved-seat-cards`} className={printLinkClass}>
+            Print Comp Reserved Seat Cards
+          </Link>
+          <Link href={`/admin/${showSlug}/print/blank-seat-cards`} className={printLinkClass}>
+            Print Back-Up / Blank Seat Cards
+          </Link>
+          <button type="button" onClick={onPrintCompList} className={printLinkClass}>
             Print Comp List
           </button>
           <button

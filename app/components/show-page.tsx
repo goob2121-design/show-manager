@@ -20643,7 +20643,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               },
             }}
             reservedSeatingPanelProps={{
-              showSlug,
               isReservedSeatingOpen,
               copiedPublicSeatAvailabilityLink,
               publicSeatAvailabilityUrl: buildPublicSeatAvailabilityUrl(),
@@ -20651,8 +20650,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               onToggleReservedSeating: () => setIsReservedSeatingOpen((currentValue) => !currentValue),
               onOpenPublicSeatAvailabilityPage: handleOpenPublicSeatAvailabilityPage,
               onCopyPublicSeatAvailabilityLink: () => void handleCopyPublicSeatAvailabilityLink(),
-              onPrintCompList: () => openSponsorCompListPrintWindow("print"),
-              onExportCompListPdf: () => openSponsorCompListPrintWindow("pdf"),
             }}
             sponsorCompPanelProps={{
               compRows: buildCompListReportRows(),
