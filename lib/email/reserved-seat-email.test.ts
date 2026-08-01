@@ -82,6 +82,30 @@ test("includes encoded HTTPS directions, parking, and questions while preserving
   assert.match(email.html, /Choose My Seats for Me<\/a>/);
   assert.match(email.html, /\?preference=auto/);
   assert.ok(email.html.indexOf("Select Your Reserved Seats") < email.html.indexOf("Need a little help choosing your seats?"));
+  const htmlOrder = [
+    "Thank You for Your Purchase!",
+    "Next Step: Choose Your Reserved Seats",
+    "Select Your Reserved Seats",
+    "Need a little help choosing your seats?",
+    "Reservation Details",
+    "Directions",
+    "Parking Information",
+    "Questions?",
+  ].map((label) => email.html.indexOf(label));
+  assert.ok(htmlOrder.every((index) => index >= 0));
+  assert.deepEqual(htmlOrder, [...htmlOrder].sort((left, right) => left - right));
+  const textOrder = [
+    "Thank You for Your Purchase!",
+    "Next Step: Choose Your Reserved Seats",
+    "Select Your Reserved Seats:",
+    "Need a little help choosing your seats?",
+    "Reservation Details:",
+    "Directions",
+    "Parking Information",
+    "Questions?",
+  ].map((label) => email.text.indexOf(label));
+  assert.ok(textOrder.every((index) => index >= 0));
+  assert.deepEqual(textOrder, [...textOrder].sort((left, right) => left - right));
   assert.match(email.html, /Your advance ticket purchase already guarantees your reserved seats\./);
   assert.match(email.text, /Need a little help choosing your seats\?/);
   assert.match(email.text, /Choose My Seats for Me:/);
@@ -127,6 +151,8 @@ test("email includes a ticket-code section when scan_token is present", () => {
   assert.doesNotMatch(email.html, /Ticket Code:/i);
   assert.doesNotMatch(email.text, /Ticket Code:/i);
   assert.match(email.html, /L-A1, L-A2/);
+  assert.ok(email.html.indexOf("Reservation Details") < email.html.indexOf("YOUR ENTRY CODE"));
+  assert.ok(email.html.indexOf("YOUR ENTRY CODE") < email.html.indexOf("Directions"));
 });
 
 test("uses the production sender and reply-to addresses", () => {
