@@ -16,6 +16,7 @@ import {
   buildTimedIdleMessages,
   chunkDoorWelcomeSeats,
   doorWelcomeGuestCount,
+  isSponsorIdleMessage,
   resolveTimedIdleWindow,
 } from "@/lib/door-welcome-presentation";
 
@@ -179,7 +180,7 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   const idleMessages = buildTimedIdleMessages(timedIdleWindow);
   const activeIdleIndex = idleMessageIndex % idleMessages.length;
   const activeIdleMessage = idleMessages[activeIdleIndex];
-  const isSponsorSlide = activeIdleMessage === "Thank You to Our Sponsors";
+  const isSponsorSlide = isSponsorIdleMessage(activeIdleMessage);
   const sponsorCycle = Math.floor(idleMessageIndex / idleMessages.length);
   const activeSponsorLogo = isSponsorSlide && sponsorLogos.length > 0
     ? sponsorLogos[sponsorCycle % sponsorLogos.length]

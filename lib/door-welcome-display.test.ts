@@ -139,7 +139,7 @@ test("idle rotation runs only while idle and exposes no totals or internal statu
   assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
   assert.match(source, /if \(welcome\) return;\s*const rotation = window\.setInterval/);
   assert.match(source, /const activeIdleIndex = idleMessageIndex % idleMessages\.length/);
-  assert.match(source, /Thank You to Our Sponsors/);
+  assert.match(source, /isSponsorIdleMessage/);
   assert.match(source, /buildTimedIdleMessages/);
   assert.doesNotMatch(source, /attendance|check-in statistics|Square status|running total/i);
 });
@@ -155,7 +155,8 @@ test("fullscreen, reduced motion, and BroadcastChannel behavior remain intact", 
 });
 test("Phase 1.3 replaces the idle CMMS logo only when a sponsor logo is available on the sponsor slide", async () => {
   const source = await readFile(displayPath, "utf8");
-  assert.match(source, /const isSponsorSlide = activeIdleMessage === "Thank You to Our Sponsors"/);
+  assert.match(source, /const isSponsorSlide = isSponsorIdleMessage\(activeIdleMessage\)/);
+  assert.match(source, /isSponsorIdleMessage/);
   assert.match(source, /const activeSponsorLogo = isSponsorSlide && sponsorLogos\.length > 0/);
   assert.match(source, /\{activeSponsorLogo \? \(/);
   assert.match(source, /src=\{activeSponsorLogo\.logoUrl\}/);
@@ -196,7 +197,7 @@ test("Phase 1.3 reuses the existing show read and established sponsor logo relat
 
 test("Phase 1.3 keeps the sponsor headline and all fixed supporting content centered", async () => {
   const source = await readFile(displayPath, "utf8");
-  assert.match(source, /"Thank You to Our Sponsors"/);
+  assert.match(source, /isSponsorIdleMessage/);
   assert.match(source, /<span>Big-Time Show<\/span>\s*<span>Small-Town Hospitality<\/span>/);
   assert.match(source, /showDate \? <p>\{showDate\}<\/p> : null/);
   assert.match(source, /showVenue \? <p>\{showVenue\}<\/p> : null/);

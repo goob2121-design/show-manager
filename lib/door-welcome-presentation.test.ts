@@ -4,10 +4,12 @@ import {
   BASE_IDLE_MESSAGES,
   DOORS_OPEN_SOON_HEADLINE,
   POST_SHOW_HEADLINE,
+  SPONSOR_IDLE_MESSAGES,
   WELCOME_DISPLAY_TIME_ZONE,
   buildTimedIdleMessages,
   chunkDoorWelcomeSeats,
   doorWelcomeGuestCount,
+  isSponsorIdleMessage,
   resolveTimedIdleWindow,
 // @ts-expect-error Node's type-stripping test runner requires the TypeScript extension.
 } from "./door-welcome-presentation.ts";
@@ -37,7 +39,31 @@ test("timed slides are additive and preserve the complete normal rotation", () =
   assert.ok(postShow.includes(POST_SHOW_HEADLINE));
   assert.ok(doors.includes("Thank You to Our Sponsors"));
   assert.ok(postShow.includes("Thank You to Our Sponsors"));
-  assert.equal(buildTimedIdleMessages("normal").length, 4);
+  assert.deepEqual(BASE_IDLE_MESSAGES, [
+    "Welcome to the Cumberland Mountain Music Show",
+    "Thank You to Our Sponsors",
+    "Enjoy Tonight's Show",
+    "Thank You for Supporting Live Music",
+    "Be Sure to Visit Our Concession Stand",
+    "Thanks for Spending Your Evening With Us",
+    "Proudly Supported By",
+    "Thank You for Being Part of the CMMS Family",
+  ]);
+  assert.deepEqual(SPONSOR_IDLE_MESSAGES, [
+    "Thank You to Our Sponsors",
+    "Proudly Supported By",
+  ]);
+  assert.equal(buildTimedIdleMessages("normal").length, 8);
+  assert.equal(doors.length, 9);
+  assert.equal(postShow.length, 9);
+  assert.equal(doors.at(-1), DOORS_OPEN_SOON_HEADLINE);
+  assert.equal(postShow.at(-1), POST_SHOW_HEADLINE);
+});
+
+test("both sponsor headlines use the shared deterministic sponsor-slide behavior", () => {
+  assert.equal(isSponsorIdleMessage("Thank You to Our Sponsors"), true);
+  assert.equal(isSponsorIdleMessage("Proudly Supported By"), true);
+  assert.equal(isSponsorIdleMessage("Enjoy Tonight's Show"), false);
 });
 
 test("seat labels remain canonical, ordered, and wrap after six", () => {

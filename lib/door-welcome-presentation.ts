@@ -5,12 +5,25 @@ export type TimedIdleWindow = "normal" | "doors-open-soon" | "post-show";
 export const BASE_IDLE_MESSAGES = [
   "Welcome to the Cumberland Mountain Music Show",
   "Thank You to Our Sponsors",
-  "Enjoy Tonight’s Show",
-  "We’re Glad You’re Here",
+  "Enjoy Tonight's Show",
+  "Thank You for Supporting Live Music",
+  "Be Sure to Visit Our Concession Stand",
+  "Thanks for Spending Your Evening With Us",
+  "Proudly Supported By",
+  "Thank You for Being Part of the CMMS Family",
+] as const;
+
+export const SPONSOR_IDLE_MESSAGES = [
+  "Thank You to Our Sponsors",
+  "Proudly Supported By",
 ] as const;
 
 export const DOORS_OPEN_SOON_HEADLINE = "Doors Open Soon";
 export const POST_SHOW_HEADLINE = "Thank You For Joining Us Tonight";
+
+export function isSponsorIdleMessage(message: string) {
+  return (SPONSOR_IDLE_MESSAGES as readonly string[]).includes(message);
+}
 
 export function resolveTimedIdleWindow(now: number | Date): TimedIdleWindow {
   const date = typeof now === "number" ? new Date(now) : now;
