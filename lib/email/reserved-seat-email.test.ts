@@ -78,10 +78,13 @@ test("includes encoded HTTPS directions, parking, and questions while preserving
   assert.match(email.html, /info@cumberlandmountainmusic\.com/);
   assert.match(email.text, /info@cumberlandmountainmusic\.com/);
   assert.match(email.html, />Select Your Reserved Seats<\/a>/);
-  assert.match(email.html, />Assign My Seats For Me<\/a>/);
+  assert.match(email.html, /Need a little help choosing your seats\?/);
+  assert.match(email.html, /Choose My Seats for Me<\/a>/);
   assert.match(email.html, /\?preference=auto/);
-  assert.match(email.html, /keep your group together whenever possible/);
-  assert.match(email.text, /Assign My Seats For Me:/);
+  assert.ok(email.html.indexOf("Select Your Reserved Seats") < email.html.indexOf("Need a little help choosing your seats?"));
+  assert.match(email.html, /Your advance ticket purchase already guarantees your reserved seats\./);
+  assert.match(email.text, /Need a little help choosing your seats\?/);
+  assert.match(email.text, /Choose My Seats for Me:/);
   assert.match(email.html, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
   assert.match(email.text, /https:\/\/stageflow\.cumberlandmountainmusic\.com\/reserved-seating\/private-token/);
 });

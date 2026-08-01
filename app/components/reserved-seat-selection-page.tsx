@@ -300,10 +300,9 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
       <main className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,_#08111f,_#03060c)] px-4 py-10 text-slate-100">
         <section className="w-full max-w-xl rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-center shadow-2xl sm:p-10">
           <p className="text-4xl" aria-hidden="true">🤝</p>
-          <h1 className="mt-3 text-3xl font-black text-white">Auto Assignment Requested</h1>
-          <p className="mt-5 text-xl font-bold text-fuchsia-100">Thank you!</p>
-          <p className="mt-3 leading-7 text-slate-200">We&apos;ll choose the best available seats for your party before the show.</p>
-          <p className="mt-3 leading-7 text-slate-300">You do not need to select seats unless you change your mind.</p>
+          <h1 className="mt-3 text-3xl font-black text-white">We&apos;ve Got It From Here!</h1>
+          <p className="mt-5 leading-7 text-slate-200">Thanks! We&apos;ll choose the best available seats for your party, keep everyone together whenever possible, and email your tickets with your assigned seat numbers once they&apos;re ready.</p>
+          <p className="mt-3 leading-7 text-slate-300">If you change your mind before your seats have been assigned, you can still return and choose your own seats.</p>
           {errorMessage ? <p className="mt-5 rounded-xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{errorMessage}</p> : null}
           <div className="mt-7 grid gap-3 sm:grid-cols-2">
             <button type="button" onClick={() => void saveSeatPreference("customer_select")} disabled={isSavingPreference} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-[#071426] hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60">{isSavingPreference ? "Saving..." : "Choose My Own Seats Instead"}</button>
@@ -636,9 +635,10 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
             <div className="order-2 w-full max-w-full overflow-hidden xl:order-1">
               {!isAlreadySubmitted && linkAssignments.length === 0 ? (
                 <section className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-4 text-center">
-                  <h2 className="text-xl font-bold text-white">Don&apos;t care where you sit?</h2>
-                  <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-300">If you don&apos;t care where you sit, we&apos;ll choose the best available seats for your party and keep your group together whenever possible.</p>
-                  <button type="button" onClick={() => void saveSeatPreference("auto_assign")} disabled={isSavingPreference} className="mt-4 rounded-xl bg-amber-400 px-4 py-2.5 font-bold text-[#071426] hover:bg-amber-300 disabled:opacity-60">{isSavingPreference ? "Saving..." : "Assign My Seats For Me"}</button>
+                  <h2 className="text-xl font-bold text-white">Need a little help choosing your seats?</h2>
+                  <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-300">If you&apos;d rather not choose your seats online, we&apos;re happy to take care of it for you.</p>
+                  <p className="mx-auto mt-2 max-w-3xl text-sm leading-6 text-slate-300">Your advance ticket purchase already guarantees your reserved seats. We&apos;ll choose the best available seats for your party, keep everyone together whenever possible, and email your tickets with your assigned seat numbers—so all you have to do is show up and enjoy the show!</p>
+                  <button type="button" onClick={() => void saveSeatPreference("auto_assign")} disabled={isSavingPreference} className="mt-4 rounded-xl bg-amber-400 px-4 py-2.5 font-bold text-[#071426] hover:bg-amber-300 disabled:opacity-60">{isSavingPreference ? "Saving..." : "🎟️ Choose My Seats for Me"}</button>
                 </section>
               ) : null}
               <ReservedSeatMap

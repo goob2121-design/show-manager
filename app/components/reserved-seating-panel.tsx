@@ -1320,8 +1320,8 @@ export function ReservedSeatingPanel({
             No reserved seating guests match this filter.
           </div>
         ) : (
-          <div className="mt-4 grid gap-3">
-            {filteredLinksWithSeats.map((link) => {
+          <div className="mt-4 grid gap-5">
+            {filteredLinksWithSeats.map((link, index) => {
               const status = getLinkStatus(link);
               const isManualAssigning = manualAssignLinkId === link.id;
               const linkSeatCategory = normalizeReservedSeatCategory(link.seat_category, link.is_complimentary);
@@ -1333,7 +1333,7 @@ export function ReservedSeatingPanel({
               const emailStatusToneClasses = getEmailStatusToneClasses(emailStatusDisplay.statusTone);
               const officialTicketReadiness = getOfficialTicketReadiness(link.ticket_emailed_at);
               return (
-                <article key={link.id} className={`rounded-2xl border p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : "border-white/10 bg-slate-950/30"}`}>
+                <article key={link.id} className={`rounded-2xl border border-l-2 p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : index % 2 === 0 ? "border-white/20 border-l-slate-500/60 bg-[#07111f] shadow-[0_10px_24px_rgba(2,6,23,0.22)]" : "border-white/25 border-l-slate-400/70 bg-[#142238] shadow-[0_10px_24px_rgba(2,6,23,0.28)]"}`}>
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">

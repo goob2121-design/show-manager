@@ -29,7 +29,10 @@ test("guest and admin surfaces expose preference controls without changing the s
     readFile(new URL("../app/components/reserved-seating-panel.tsx", import.meta.url), "utf8"),
     readFile(new URL("email/reserved-seat-email.ts", import.meta.url), "utf8"),
   ]);
-  assert.match(guestPage, /Assign My Seats For Me/);
+  assert.match(guestPage, /Need a little help choosing your seats\?/);
+  assert.match(guestPage, /Choose My Seats for Me/);
+  assert.match(guestPage, /We&apos;ve Got It From Here!/);
+  assert.match(guestPage, /email your tickets with your assigned seat numbers once they&apos;re ready/);
   assert.match(guestPage, /Choose My Own Seats Instead/);
   assert.match(guestPage, /seatPreference === "auto_assign" && linkAssignments\.length === 0 && !isAlreadySubmitted/);
   assert.match(adminPanel, /Auto Assign Requested/);

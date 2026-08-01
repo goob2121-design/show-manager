@@ -37,7 +37,8 @@ test("reserved seating readiness uses the official ticket email timestamp and ex
   assert.match(source, /🟢 Ready/);
   assert.match(source, /link\.seatIds\.length > 0 && !link\.ticket_emailed_at/);
   assert.match(source, /link\.seatIds\.length > 0 && Boolean\(link\.ticket_emailed_at\)/);
-  assert.match(source, /🟡 Tickets Not Yet Emailed/);
+  assert.match(source, /getOfficialTicketReadiness\(link\.ticket_emailed_at\)/);
+  assert.match(source, /officialTicketReadiness\.label/);
   assert.match(source, /Seats were assigned successfully\./);
   assert.match(source, /Would you like to email the tickets now\?/);
   assert.match(source, /handleResendOfficialTicketEmail\(postAssignmentPromptLink\)/);

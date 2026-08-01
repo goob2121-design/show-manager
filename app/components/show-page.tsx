@@ -6572,7 +6572,7 @@ export function ShowPage({
   const formHeading =
     viewMode === "guest" ? "Submit Your Song Choice" : "Suggest a Song for the Show";
   const portalLabel = getPortalLabel(viewMode);
-  const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band" || viewMode === "admin";
+  const shouldShowPortalLogo = viewMode === "guest" || viewMode === "band";
   const shouldUsePortalHero = shouldShowPortalLogo;
   const isAdminView = viewMode === "admin";
   const isBandView = viewMode === "band";
@@ -16840,8 +16840,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       ]
     : [];
 
-  const activeAdminTabLabel =
-    adminTabItems.find((tab) => tab.key === activeAdminTab)?.label ?? "Overview";
   const activeGuestTabLabel =
     guestTabItems.find((tab) => tab.key === activeGuestTab)?.label ?? "Welcome";
 
@@ -16870,16 +16868,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
   return (
     <main
       data-print-mode={printMode}
-      className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8"
+      className={`min-h-screen bg-stone-100 px-4 text-stone-900 sm:px-6 lg:px-8 ${isAdminView ? "py-3 sm:py-4" : "py-10"}`}
     >
-      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 print-shell">
+      <section className={`mx-auto flex w-full max-w-7xl flex-col rounded-3xl border border-stone-200 bg-white shadow-sm print-shell ${isAdminView ? "gap-3 p-4 sm:p-5" : "gap-6 p-6 sm:p-8"}`}>
         <AdminQuickNav slug={showSlug} currentView={viewMode} timelineMessages={quickNavTimelineMessages} />
 
         <header
           className={`print-hidden overflow-hidden ${
             shouldUsePortalHero
               ? "relative rounded-[28px] border border-white/10 shadow-sm"
-              : "flex flex-col gap-3 border-b border-stone-200 pb-5"
+              : isAdminView
+                ? ""
+                : "flex flex-col gap-3 border-b border-stone-200 pb-5"
           }`}
         >
           {shouldUsePortalHero ? (
@@ -16898,7 +16898,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               />
             </>
           ) : null}
-          <div className={`relative ${shouldUsePortalHero ? "px-4 py-4 text-white sm:px-5 sm:py-5 lg:px-6 lg:py-6" : "flex flex-col gap-3"}`}>
+          <div className={`relative ${shouldUsePortalHero ? "px-4 py-4 text-white sm:px-5 sm:py-5 lg:px-6 lg:py-6" : isAdminView ? "" : "flex flex-col gap-3"}`}>
             {shouldUsePortalHero ? (
               <div className="grid items-center gap-4 sm:gap-5 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-7 xl:grid-cols-[260px_minmax(0,1fr)]">
                 <div className="flex flex-col gap-2">
@@ -16944,6 +16944,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   </p>
                 </div>
               </div>
+            ) : isAdminView ? (
+              <h1 className="text-2xl font-semibold leading-tight tracking-tight text-stone-900 sm:text-[1.65rem]">
+                {show.name} <span className="font-normal text-stone-500">• {formatShowDate(show.show_date)} • Admin</span>
+              </h1>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {shouldShowPortalLogo ? (
@@ -17060,9 +17064,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         ) : null}
 
         {isAdminView ? (
-          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Admin Sections</h2>
+          <section className="print-hidden flex flex-col gap-2">
+            <div className="flex flex-col gap-0.5">
+              <h2 className="text-lg font-semibold">Admin Sections</h2>
               <p className="text-sm text-stone-600">
                 Jump straight to the part of the admin portal you want to work in.
               </p>
@@ -17091,9 +17095,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               ))}
             </div>
 
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-              Active section: <span className="font-semibold text-emerald-700">{activeAdminTabLabel}</span>
-            </div>
           </section>
         ) : null}
 
@@ -20675,6 +20676,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             onSectionSelect={(sectionKey) => {
               if (sectionKey === "reserved-seating") {
                 setActiveCompSeatAssignment(null);
+                setIsReservedSeatingOpen(true);
               }
               setActiveTicketWorkflowSection((currentValue) =>
                 currentValue === sectionKey
