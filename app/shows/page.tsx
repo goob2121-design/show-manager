@@ -2463,7 +2463,7 @@ export default function ShowsDashboardPage() {
             className="overflow-hidden rounded-[28px] border border-white/10 shadow-sm"
             style={{
               backgroundImage:
-                "linear-gradient(rgba(0,0,0,0.15), rgba(0,0,0,0.15)), url('/portal_bkg.png')",
+                "linear-gradient(rgba(0,0,0,0.15), rgba(0,0,0,0.15)), url('/portal_bkg-production-v2.png')",
               backgroundSize: "cover",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",
