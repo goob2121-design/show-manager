@@ -8,6 +8,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { SongEditorPanel } from "@/app/components/song-editor-panel";
+import { SponsorLibraryProfileFields } from "@/app/components/sponsor-library-profile-fields";
+import { CmmsReturnMailingLabelActions, SponsorMailingLabelBulkAction, SponsorMailingLabelButton } from "@/app/components/sponsor-mailing-label-actions";
+import { sponsorLocation, sponsorRecognitionName } from "@/lib/sponsor-library";
 import {
   buildBlockNoteDrafts,
   buildMcFlowItems,
@@ -610,6 +613,30 @@ const initialSponsorLibraryFormState: SponsorLibraryFormState = {
   defaultContribution: "",
   estimatedValue: "",
   recognitionNotes: "",
+  legalName: "",
+  recognitionName: "",
+  sponsorshipLevel: "",
+  sponsorSinceYear: "",
+  contactPerson: "",
+  contactTitle: "",
+  email: "",
+  phone: "",
+  mobilePhone: "",
+  preferredContactMethod: "none",
+  preferredContactNotes: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  facebookUrl: "",
+  instagramUrl: "",
+  standardSponsorshipAmount: "",
+  isInKind: false,
+  inKindDescription: "",
+  renewalDate: "",
+  notes: "",
+  lastContactedAt: "",
 };
 
 const initialSponsorDocumentFormState: SponsorDocumentFormState = {
@@ -1747,6 +1774,30 @@ function buildSponsorLibraryFormState(sponsor: SponsorLibraryEntry): SponsorLibr
         ? ""
         : formatNumericInputValue(sponsor.estimated_value),
     recognitionNotes: sponsor.recognition_notes ?? "",
+    legalName: sponsor.legal_name ?? "",
+    recognitionName: sponsor.recognition_name ?? "",
+    sponsorshipLevel: sponsor.sponsorship_level ?? "",
+    sponsorSinceYear: sponsor.sponsor_since_year?.toString() ?? "",
+    contactPerson: sponsor.contact_person ?? "",
+    contactTitle: sponsor.contact_title ?? "",
+    email: sponsor.email ?? "",
+    phone: sponsor.phone ?? "",
+    mobilePhone: sponsor.mobile_phone ?? "",
+    preferredContactMethod: sponsor.preferred_contact_method ?? "none",
+    preferredContactNotes: sponsor.preferred_contact_notes ?? "",
+    addressLine1: sponsor.address_line_1 ?? "",
+    addressLine2: sponsor.address_line_2 ?? "",
+    city: sponsor.city ?? "",
+    state: sponsor.state ?? "",
+    postalCode: sponsor.postal_code ?? "",
+    facebookUrl: sponsor.facebook_url ?? "",
+    instagramUrl: sponsor.instagram_url ?? "",
+    standardSponsorshipAmount: sponsor.standard_sponsorship_amount == null ? "" : formatNumericInputValue(sponsor.standard_sponsorship_amount),
+    isInKind: sponsor.is_in_kind ?? false,
+    inKindDescription: sponsor.in_kind_description ?? "",
+    renewalDate: sponsor.renewal_date ?? "",
+    notes: sponsor.notes ?? "",
+    lastContactedAt: sponsor.last_contacted_at ? sponsor.last_contacted_at.slice(0, 16) : "",
   };
 }
 
@@ -4877,6 +4928,29 @@ function normalizeSponsorLibraryEntry(
     proposal_generated_at: sponsor.proposal_generated_at ?? null,
     quote_generated_at: sponsor.quote_generated_at ?? null,
     receipt_generated_at: sponsor.receipt_generated_at ?? null,
+    contact_person: sponsor.contact_person ?? null,
+    contact_title: sponsor.contact_title ?? null,
+    email: sponsor.email ?? null,
+    phone: sponsor.phone ?? null,
+    mobile_phone: sponsor.mobile_phone ?? null,
+    preferred_contact_method: sponsor.preferred_contact_method ?? "none",
+    address_line_1: sponsor.address_line_1 ?? null,
+    address_line_2: sponsor.address_line_2 ?? null,
+    city: sponsor.city ?? null,
+    state: sponsor.state ?? null,
+    postal_code: sponsor.postal_code ?? null,
+    legal_name: sponsor.legal_name ?? null,
+    recognition_name: sponsor.recognition_name ?? null,
+    facebook_url: sponsor.facebook_url ?? null,
+    instagram_url: sponsor.instagram_url ?? null,
+    standard_sponsorship_amount: sponsor.standard_sponsorship_amount == null ? null : Number(sponsor.standard_sponsorship_amount),
+    is_in_kind: sponsor.is_in_kind ?? false,
+    in_kind_description: sponsor.in_kind_description ?? null,
+    sponsor_since_year: sponsor.sponsor_since_year ?? null,
+    renewal_date: sponsor.renewal_date ?? null,
+    notes: sponsor.notes ?? null,
+    last_contacted_at: sponsor.last_contacted_at ?? null,
+    preferred_contact_notes: sponsor.preferred_contact_notes ?? null,
   };
 }
 
@@ -9924,7 +9998,10 @@ export function ShowPage({
     event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
     mode: "new" | "edit",
   ) {
-    const { name, value } = event.target;
+    const { name } = event.target;
+    const value = event.target instanceof HTMLInputElement && event.target.type === "checkbox"
+      ? event.target.checked
+      : event.target.value;
     const setState = mode === "edit" ? setSponsorLibraryFormState : setNewSponsorLibraryFormState;
 
     setState((currentState) => ({
@@ -10252,6 +10329,30 @@ export function ShowPage({
       default_contribution: normalizeOptionalField(newSponsorLibraryFormState.defaultContribution),
       estimated_value: estimatedValue,
       recognition_notes: normalizeOptionalField(newSponsorLibraryFormState.recognitionNotes),
+      legal_name: normalizeOptionalField(newSponsorLibraryFormState.legalName),
+      recognition_name: normalizeOptionalField(newSponsorLibraryFormState.recognitionName),
+      sponsorship_level: normalizeOptionalField(newSponsorLibraryFormState.sponsorshipLevel),
+      sponsor_since_year: parseOptionalIntegerInput(newSponsorLibraryFormState.sponsorSinceYear),
+      contact_person: normalizeOptionalField(newSponsorLibraryFormState.contactPerson),
+      contact_title: normalizeOptionalField(newSponsorLibraryFormState.contactTitle),
+      email: normalizeOptionalField(newSponsorLibraryFormState.email),
+      phone: normalizeOptionalField(newSponsorLibraryFormState.phone),
+      mobile_phone: normalizeOptionalField(newSponsorLibraryFormState.mobilePhone),
+      preferred_contact_method: newSponsorLibraryFormState.preferredContactMethod,
+      preferred_contact_notes: normalizeOptionalField(newSponsorLibraryFormState.preferredContactNotes),
+      address_line_1: normalizeOptionalField(newSponsorLibraryFormState.addressLine1),
+      address_line_2: normalizeOptionalField(newSponsorLibraryFormState.addressLine2),
+      city: normalizeOptionalField(newSponsorLibraryFormState.city),
+      state: normalizeOptionalField(newSponsorLibraryFormState.state),
+      postal_code: normalizeOptionalField(newSponsorLibraryFormState.postalCode),
+      facebook_url: normalizeOptionalField(newSponsorLibraryFormState.facebookUrl),
+      instagram_url: normalizeOptionalField(newSponsorLibraryFormState.instagramUrl),
+      standard_sponsorship_amount: parseSponsorAmountInput(newSponsorLibraryFormState.standardSponsorshipAmount),
+      is_in_kind: newSponsorLibraryFormState.isInKind,
+      in_kind_description: normalizeOptionalField(newSponsorLibraryFormState.inKindDescription),
+      renewal_date: normalizeOptionalField(newSponsorLibraryFormState.renewalDate),
+      notes: normalizeOptionalField(newSponsorLibraryFormState.notes),
+      last_contacted_at: newSponsorLibraryFormState.lastContactedAt ? new Date(newSponsorLibraryFormState.lastContactedAt).toISOString() : null,
       logo_url: null as string | null,
     };
 
@@ -10323,6 +10424,30 @@ export function ShowPage({
       default_contribution: normalizeOptionalField(sponsorLibraryFormState.defaultContribution),
       estimated_value: estimatedValue,
       recognition_notes: normalizeOptionalField(sponsorLibraryFormState.recognitionNotes),
+      legal_name: normalizeOptionalField(sponsorLibraryFormState.legalName),
+      recognition_name: normalizeOptionalField(sponsorLibraryFormState.recognitionName),
+      sponsorship_level: normalizeOptionalField(sponsorLibraryFormState.sponsorshipLevel),
+      sponsor_since_year: parseOptionalIntegerInput(sponsorLibraryFormState.sponsorSinceYear),
+      contact_person: normalizeOptionalField(sponsorLibraryFormState.contactPerson),
+      contact_title: normalizeOptionalField(sponsorLibraryFormState.contactTitle),
+      email: normalizeOptionalField(sponsorLibraryFormState.email),
+      phone: normalizeOptionalField(sponsorLibraryFormState.phone),
+      mobile_phone: normalizeOptionalField(sponsorLibraryFormState.mobilePhone),
+      preferred_contact_method: sponsorLibraryFormState.preferredContactMethod,
+      preferred_contact_notes: normalizeOptionalField(sponsorLibraryFormState.preferredContactNotes),
+      address_line_1: normalizeOptionalField(sponsorLibraryFormState.addressLine1),
+      address_line_2: normalizeOptionalField(sponsorLibraryFormState.addressLine2),
+      city: normalizeOptionalField(sponsorLibraryFormState.city),
+      state: normalizeOptionalField(sponsorLibraryFormState.state),
+      postal_code: normalizeOptionalField(sponsorLibraryFormState.postalCode),
+      facebook_url: normalizeOptionalField(sponsorLibraryFormState.facebookUrl),
+      instagram_url: normalizeOptionalField(sponsorLibraryFormState.instagramUrl),
+      standard_sponsorship_amount: parseSponsorAmountInput(sponsorLibraryFormState.standardSponsorshipAmount),
+      is_in_kind: sponsorLibraryFormState.isInKind,
+      in_kind_description: normalizeOptionalField(sponsorLibraryFormState.inKindDescription),
+      renewal_date: normalizeOptionalField(sponsorLibraryFormState.renewalDate),
+      notes: normalizeOptionalField(sponsorLibraryFormState.notes),
+      last_contacted_at: sponsorLibraryFormState.lastContactedAt ? new Date(sponsorLibraryFormState.lastContactedAt).toISOString() : null,
       logo_url: null as string | null,
     };
 
@@ -23761,6 +23886,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     >
                       {isAddSponsorFormOpen ? "Hide Add Sponsor" : "Add Sponsor"}
                     </button>
+                    <SponsorMailingLabelBulkAction sponsors={sponsorLibrary} />
+                    <CmmsReturnMailingLabelActions />
                   </div>
 
                   <label
@@ -23782,106 +23909,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
                 {isAddSponsorFormOpen ? (
                   <form className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4" onSubmit={handleCreateSponsorLibraryEntry}>
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Sponsor Name
-                      <input
-                        type="text"
-                        name="name"
-                        value={newSponsorLibraryFormState.name}
-                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Business or organization name"
-                        required
-                      />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Short Message
-                      <textarea
-                        name="shortMessage"
-                        value={newSponsorLibraryFormState.shortMessage}
-                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Short sponsor thank-you or mention"
-                      />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Full Message
-                      <textarea
-                        name="fullMessage"
-                        value={newSponsorLibraryFormState.fullMessage}
-                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                        className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="Longer sponsor read for MC or printed packet"
-                      />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Website
-                      <input
-                        type="url"
-                        name="website"
-                        value={newSponsorLibraryFormState.website}
-                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                        className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="https://example.com"
-                      />
-                    </label>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Sponsor Type
-                        <select
-                          name="sponsorType"
-                          value={newSponsorLibraryFormState.sponsorType}
-                          onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        >
-                          <option value="">Optional</option>
-                          {sponsorTypeOptions.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                        Estimated Value
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          name="estimatedValue"
-                          value={newSponsorLibraryFormState.estimatedValue}
-                          onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                          placeholder="Optional dollar amount"
-                        />
-                      </label>
-                    </div>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Default Contribution
-                      <textarea
-                        name="defaultContribution"
-                        value={newSponsorLibraryFormState.defaultContribution}
-                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="What this sponsor usually provides"
-                      />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      Recognition Notes
-                      <textarea
-                        name="recognitionNotes"
-                        value={newSponsorLibraryFormState.recognitionNotes}
-                        onChange={(event) => handleSponsorLibraryChange(event, "new")}
-                        className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                        placeholder="How this sponsor should be thanked or described"
-                      />
-                    </label>
+                    <SponsorLibraryProfileFields
+                      value={newSponsorLibraryFormState}
+                      onChange={(event) => handleSponsorLibraryChange(event, "new")}
+                      sponsorTypeOptions={sponsorTypeOptions}
+                    />
 
                     <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                       Sponsor Logo
@@ -23937,6 +23969,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           const paymentStatus = sponsor.payment_status
                             ? formatSponsorPaymentStatusLabel(sponsor.payment_status)
                             : null;
+                          const recognitionName = sponsorRecognitionName(sponsor);
+                          const location = sponsorLocation(sponsor);
+                          const primaryPhone = sponsor.phone?.trim() || sponsor.mobile_phone?.trim() || null;
+                          const lastContacted = sponsor.last_contacted_at
+                            ? formatPortalStatusDateTime(sponsor.last_contacted_at)
+                            : null;
 
                           return (
                             <>
@@ -23951,7 +23989,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <h4 className="truncate text-base font-semibold text-stone-900">
-                                        {sponsor.name}
+                                        {recognitionName}
                                       </h4>
                                       {sponsorshipLevel ? (
                                         <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-semibold text-stone-700">
@@ -23968,6 +24006,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                           {paymentStatus}
                                         </span>
                                       ) : null}
+                                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${sponsor.is_in_kind ? "bg-violet-100 text-violet-800" : "bg-emerald-50 text-emerald-700"}`}>
+                                        {sponsor.is_in_kind ? "In-Kind" : "Cash"}
+                                      </span>
                                       {sponsor.is_archived ? (
                                         <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
                                           Archived
@@ -23978,11 +24019,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                       {sponsorshipAmount ? <span>{sponsorshipAmount}</span> : null}
                                       {estimatedValue ? <span>Estimated value: {estimatedValue}</span> : null}
                                       {sponsor.website ? <span className="truncate">{sponsor.website}</span> : null}
+                                      {sponsor.contact_person ? <span>Contact: {sponsor.contact_person}</span> : null}
+                                      {sponsor.email ? <a href={`mailto:${sponsor.email}`} className="font-medium text-emerald-700 underline">{sponsor.email}</a> : null}
+                                      {primaryPhone ? <a href={`tel:${primaryPhone}`} className="font-medium text-emerald-700 underline">{primaryPhone}</a> : null}
+                                      {location ? <span>{location}</span> : null}
+                                      {lastContacted ? <span>Last contacted: {lastContacted}</span> : null}
                                     </div>
                                   </div>
                                 </div>
 
                                 <div className="flex flex-wrap gap-2">
+                                  {sponsor.email ? (
+                                    <a href={`mailto:${sponsor.email}`} className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">Mail Sponsor</a>
+                                  ) : null}
+                                  <SponsorMailingLabelButton sponsor={sponsor} />
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -24056,100 +24106,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               </div>
                             </div>
 
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Sponsor Name
-                              <input
-                                type="text"
-                                name="name"
-                                value={sponsorLibraryFormState.name}
-                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                required
-                              />
-                            </label>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Short Message
-                              <textarea
-                                name="shortMessage"
-                                value={sponsorLibraryFormState.shortMessage}
-                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
-                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              />
-                            </label>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Full Message
-                              <textarea
-                                name="fullMessage"
-                                value={sponsorLibraryFormState.fullMessage}
-                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
-                                className="min-h-28 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              />
-                            </label>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Website
-                              <input
-                                type="url"
-                                name="website"
-                                value={sponsorLibraryFormState.website}
-                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
-                                className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              />
-                            </label>
-
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Sponsor Type
-                                <select
-                                  name="sponsorType"
-                                  value={sponsorLibraryFormState.sponsorType}
-                                  onChange={(event) => handleSponsorLibraryChange(event, "edit")}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                >
-                                  <option value="">Optional</option>
-                                  {sponsorTypeOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                Estimated Value
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  name="estimatedValue"
-                                  value={sponsorLibraryFormState.estimatedValue}
-                                  onChange={(event) => handleSponsorLibraryChange(event, "edit")}
-                                  className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                                  placeholder="Optional dollar amount"
-                                />
-                              </label>
-                            </div>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Default Contribution
-                              <textarea
-                                name="defaultContribution"
-                                value={sponsorLibraryFormState.defaultContribution}
-                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
-                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              />
-                            </label>
-
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              Recognition Notes
-                              <textarea
-                                name="recognitionNotes"
-                                value={sponsorLibraryFormState.recognitionNotes}
-                                onChange={(event) => handleSponsorLibraryChange(event, "edit")}
-                                className="min-h-24 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-                              />
-                            </label>
+                            <SponsorLibraryProfileFields
+                              value={sponsorLibraryFormState}
+                              onChange={(event) => handleSponsorLibraryChange(event, "edit")}
+                              sponsorTypeOptions={sponsorTypeOptions}
+                            />
 
                             <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                               Replace Sponsor Logo
