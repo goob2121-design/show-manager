@@ -97,6 +97,13 @@ test("admin route is authenticated and packet includes personalized one-page RSV
   assert.match(packet, /Your Sponsor ID/);
   assert.match(packet, /pageNumberFor\("rsvp"\)/);
   assert.match(packet, /min-h-\[11in\]/);
+  assert.ok(packet.includes("Sponsor RSVP &amp; Reserved Seating"));
+  assert.ok(packet.includes("https://www.cumberlandmountainmusic.com/sponsor-rsvp"));
+  assert.ok(packet.includes("The process only takes about a minute."));
+  assert.ok(packet.includes("packet-rsvp-letter-note"));
+  assert.ok(packet.includes("complete RSVP instructions on the final page of this packet"));
+  assert.ok(packet.includes("packet-rsvp-qr mx-auto mt-4 h-44 w-44 object-contain"));
+  assert.ok(packet.includes("packet-rsvp-page { font-size: 10.25pt"));
   assert.match(qrRoute, /QRCode\.toBuffer\(target/);
   assert.match(qrRoute, /sponsor-rsvp\?code=/);
 });
