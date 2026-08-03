@@ -44,6 +44,7 @@ const EMPTY_SOURCES: PacketSources = { shows: [], sponsors: [], showSponsors: []
 type SponsorPacketPresentationSections = {
   coverPage: boolean;
   coverWatermark: boolean;
+  showSponsorLogoOnCover: boolean;
   personalizedLetter: boolean;
   tableOfContents: boolean;
   assemblyChecklist: boolean;
@@ -56,6 +57,7 @@ type SponsorPacketPresentationSections = {
 const DEFAULT_PRESENTATION_SECTIONS: SponsorPacketPresentationSections = {
   coverPage: false,
   coverWatermark: false,
+  showSponsorLogoOnCover: true,
   personalizedLetter: true,
   tableOfContents: false,
   assemblyChecklist: false,
@@ -486,6 +488,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
               {([
                 ["coverPage", "Cover Page"],
                 ["coverWatermark", "Subtle Cover Watermark"],
+                ["showSponsorLogoOnCover", "Show Sponsor Logo on Cover"],
                 ["personalizedLetter", "Personalized Letter"],
                 ["tableOfContents", "Table of Contents"],
                 ["assemblyChecklist", "Packet Assembly Checklist"],
@@ -562,7 +565,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
               <div className="packet-prepared-card mt-12 w-full max-w-xl rounded-2xl border border-stone-300 bg-stone-50/70 px-10 py-7 text-left shadow-sm">
                 <p className="text-center text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Prepared Especially For</p>
                 <p className="packet-cover-sponsor-name mt-3 text-center text-2xl font-semibold">{draft.sponsorName}</p>
-                {draft.sponsorLogoUrl ? <Image src={draft.sponsorLogoUrl} alt={`${draft.sponsorName} logo`} width={280} height={140} unoptimized className="packet-cover-panel-logo mx-auto mt-5 max-h-[8.5rem] max-w-full w-auto object-contain" /> : null}
+                {presentationSections.showSponsorLogoOnCover && draft.sponsorLogoUrl ? <Image src={draft.sponsorLogoUrl} alt={`${draft.sponsorName} logo`} width={280} height={140} unoptimized className="packet-cover-panel-logo mx-auto mt-5 max-h-[8.5rem] max-w-full w-auto object-contain" /> : null}
                 {draft.contactPerson ? <dl className="packet-cover-contact mt-5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-2 border-t border-stone-200 pt-4 text-sm">
                   <dt className="font-semibold text-stone-600">Contact Person</dt><dd>{draft.contactPerson}</dd>
                 </dl> : null}

@@ -63,6 +63,9 @@ test("builder uses SELECT-only reads, printable pages, optional sections, and no
   assert.match(source, /window\.print\(\)/);
   assert.match(source, /draft\.sections\.specialGuest/);
   assert.match(source, /draft\.sections\.complimentaryTickets/);
+  assert.match(source, /showSponsorLogoOnCover: true/);
+  assert.match(source, /\["showSponsorLogoOnCover", "Show Sponsor Logo on Cover"\]/);
+  assert.match(source, /presentationSections\.showSponsorLogoOnCover && draft\.sponsorLogoUrl/);
 });
 
 test("Sponsors area links to the builder without replacing existing sponsor printing", async () => {
