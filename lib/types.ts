@@ -165,6 +165,7 @@ export type GuestProfile = {
 
 export type SponsorLibraryEntry = {
   id: string;
+  sponsor_code?: string | null;
   name: string;
   short_message: string | null;
   full_message: string | null;

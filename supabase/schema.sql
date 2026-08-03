@@ -192,6 +192,40 @@ alter table public.sponsor_library
   add column if not exists last_contacted_at timestamptz,
   add column if not exists preferred_contact_notes text;
 
+-- Sponsor RSVP Phase 1. Sponsor IDs are permanent, opaque public identifiers.
+create or replace function public.generate_sponsor_code()
+returns text language plpgsql set search_path = public as $$
+declare allowed_letters constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ'; candidate text;
+begin
+  perform pg_advisory_xact_lock(hashtext('sponsor_library_sponsor_code'));
+  loop
+    candidate := substr(allowed_letters, 1 + floor(random() * length(allowed_letters))::integer, 1)
+      || substr(allowed_letters, 1 + floor(random() * length(allowed_letters))::integer, 1)
+      || lpad(floor(random() * 100)::integer::text, 2, '0');
+    exit when not exists (select 1 from public.sponsor_library where sponsor_code = candidate);
+  end loop;
+  return candidate;
+end;
+$$;
+alter table public.sponsor_library add column if not exists sponsor_code text;
+update public.sponsor_library set sponsor_code = public.generate_sponsor_code() where sponsor_code is null;
+alter table public.sponsor_library alter column sponsor_code set default public.generate_sponsor_code();
+alter table public.sponsor_library alter column sponsor_code set not null;
+create unique index if not exists sponsor_library_sponsor_code_unique_idx on public.sponsor_library(sponsor_code);
+
+create table if not exists public.sponsor_show_rsvps (
+  id uuid primary key default gen_random_uuid(),
+  sponsor_id uuid not null references public.sponsor_library(id) on delete cascade,
+  show_id uuid not null references public.shows(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'attending', 'not_attending')),
+  guest_count integer check (guest_count is null or guest_count >= 0),
+  note text,
+  responded_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (sponsor_id, show_id),
+  check ((status = 'attending' and guest_count is not null and guest_count > 0) or status <> 'attending')
+);
 create table if not exists public.potential_sponsors (
   id uuid primary key default gen_random_uuid(),
   business_name text not null,

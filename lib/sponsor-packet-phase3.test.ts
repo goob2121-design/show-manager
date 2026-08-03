@@ -50,9 +50,31 @@ test("flyer and business-card insert pages are independently optional", async ()
 test("missing sponsor, guest, and venue images render no empty placeholder", async () => {
   const source = await readFile(componentPath, "utf8");
   assert.match(source, /draft\.sponsorLogoUrl \? <Image/);
-  assert.match(source, /draft\.guestPhotoUrl \? <Image/);
+  assert.doesNotMatch(source, /src=\{draft\.sponsorLogoUrl \|\| "\/cmms-logo\.png"\}/);
+  assert.match(source, /value=\{draft\.guestPhotoUrl\}/);
+  assert.doesNotMatch(source, /<Image src=\{draft\.guestPhotoUrl\}/);
   assert.match(source, /venuePhotoUrl \? <Image/);
   assert.doesNotMatch(source, /No sponsor logo|No guest photo|No venue photo/);
+});
+
+test("cover keeps the large CMMS identity and enlarges a sponsor logo only inside the prepared panel", async () => {
+  const source = await readFile(componentPath, "utf8");
+  assert.match(source, /<Image src="\/cmms-logo\.png"[^\n]*width=\{720\} height=\{432\}[^\n]*packet-cover-cmms-logo[^\n]*h-64[^\n]*object-contain/);
+  assert.match(source, /Prepared Especially For/);
+  assert.match(source, /draft\.sponsorLogoUrl \? <Image src=\{draft\.sponsorLogoUrl\}[^\n]*width=\{280\} height=\{140\}[^\n]*packet-cover-panel-logo[^\n]*max-h-\[8\.5rem\][^\n]*object-contain/);
+  assert.match(source, /\.packet-cover-panel-logo \{[^}]*max-width: 86%[^}]*max-height: 1\.3in[^}]*object-fit: contain/);
+});
+
+test("cover print budget keeps wide, tall, square, no-logo, and long text cases on one page", async () => {
+  const source = await readFile(componentPath, "utf8");
+  assert.match(source, /\.packet-cover-page \{ box-sizing: border-box[^}]*height: 9\.3in[^}]*min-height: 9\.3in[^}]*max-height: 9\.3in[^}]*break-inside: avoid/);
+  assert.match(source, /\.packet-cover-cmms-logo \{[^}]*max-width: 82%[^}]*max-height: 2\.15in[^}]*object-fit: contain/);
+  assert.match(source, /\.packet-cover-panel-logo \{[^}]*max-width: 86%[^}]*max-height: 1\.3in[^}]*object-fit: contain/);
+  assert.match(source, /packet-cover-sponsor-name[^\n]*overflow-wrap: anywhere/);
+  assert.match(source, /packet-cover-contact[^\n]*overflow-wrap: anywhere/);
+  assert.match(source, /packet-cover-page \.packet-prepared-card \{[^}]*margin-top: 0\.22in[^}]*padding: 0\.16in 0\.34in/);
+  assert.match(source, /\.packet-cover-page \.packet-footer \{[^}]*flex: 0 0 auto[^}]*break-inside: avoid/);
+  assert.equal((source.match(/packet-page packet-cover-page/g) ?? []).length, 1);
 });
 
 test("every generated page uses the CMMS footer and print-safe page rules", async () => {

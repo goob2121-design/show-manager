@@ -9,6 +9,7 @@ import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { SongEditorPanel } from "@/app/components/song-editor-panel";
 import { SponsorLibraryProfileFields } from "@/app/components/sponsor-library-profile-fields";
+import { SponsorRsvpAdminPanel } from "@/app/components/sponsor-rsvp-admin-panel";
 import { CmmsReturnMailingLabelActions, SponsorMailingLabelBulkAction, SponsorMailingLabelButton } from "@/app/components/sponsor-mailing-label-actions";
 import { sponsorLocation, sponsorRecognitionName } from "@/lib/sponsor-library";
 import {
@@ -23941,6 +23942,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     </div>
                   </form>
                 ) : null}
+
+                <SponsorRsvpAdminPanel showId={show.id} showSlug={show.slug} />
 
                 {visibleSponsorLibrary.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">

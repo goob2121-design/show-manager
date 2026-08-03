@@ -50,6 +50,7 @@ type SponsorPacketPresentationSections = {
   eventFlyerPlaceholder: boolean;
   businessCardPlaceholder: boolean;
   reservedSeatLocationMap: boolean;
+  sponsorRsvp: boolean;
 };
 
 const DEFAULT_PRESENTATION_SECTIONS: SponsorPacketPresentationSections = {
@@ -61,6 +62,7 @@ const DEFAULT_PRESENTATION_SECTIONS: SponsorPacketPresentationSections = {
   eventFlyerPlaceholder: false,
   businessCardPlaceholder: false,
   reservedSeatLocationMap: true,
+  sponsorRsvp: true,
 };
 
 const sectionOptions: Array<{ key: SponsorPacketSectionKey; label: string }> = [
@@ -165,7 +167,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
         assignmentsResult,
       ] = await Promise.all([
         supabase.from("shows").select("id, slug, name, show_date").order("show_date", { ascending: false }),
-        supabase.from("sponsor_library").select("id, name").order("name"),
+        supabase.from("sponsor_library").select("id, name, sponsor_code").order("name"),
         supabase.from("shows").select("id, venue, venue_address, show_start_time"),
         supabase.from("sponsor_library").select("id, logo_url"),
         supabase.from("sponsor_library").select("id, recognition_notes"),
@@ -328,6 +330,8 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
   const reservedSeatSummary = buildSponsorPacketSeatSummary(draft.seatLabels.split(",").map((seatLabel) => seatLabel.trim()).filter(Boolean));
   const hasMailingAddress = Boolean(draft.sponsorName || draft.contactPerson || mailingLines.length > 0);
   const selectedShowName = sources.shows.find((show) => show.id === draft.showId)?.name || "Cumberland Mountain Music Show";
+  const sponsorCode = sources.sponsors.find((sponsor) => sponsor.id === draft.sponsorId)?.sponsor_code?.trim() ?? "";
+  const sponsorRsvpQr = sponsorCode ? `/api/sponsor-rsvp/qr?code=${encodeURIComponent(sponsorCode)}` : "";
   const hasShowPage = draft.sections.showInformation || draft.sections.specialGuest || draft.sections.venueDirections || draft.sections.bandInformation || draft.sections.sponsorRecognition || draft.sections.contactInformation;
   const hasTicketPage = Boolean(draft.includeTickets && ticketParagraph && (draft.sections.complimentaryTickets || (draft.sections.reservedSeating && draft.admissionType === "reserved")));
   const showReservedSeatSummary = draft.includeTickets && draft.admissionType === "reserved" && draft.sections.reservedSeating && reservedSeatSummary.validSeatIds.length > 0;
@@ -347,6 +351,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
     presentationSections.coverPage ? "cover" : null,
     presentationSections.personalizedLetter ? "letter" : null,
     hasShowPage ? "show" : null,
+    presentationSections.sponsorRsvp && sponsorCode ? "rsvp" : null,
     hasTicketPage ? "tickets" : null,
     presentationSections.eventFlyerPlaceholder ? "flyer" : null,
     presentationSections.businessCardPlaceholder ? "business-card" : null,
@@ -361,6 +366,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
     presentationSections.personalizedLetter ? { label: "Letter", page: "letter" } : null,
     draft.sections.showInformation ? { label: "Show Information", page: "show" } : null,
     draft.sections.specialGuest && (draft.guestName || draft.guestBio) ? { label: "Featured Guest", page: "show" } : null,
+    presentationSections.sponsorRsvp && sponsorCode ? { label: "Sponsor RSVP", page: "rsvp" } : null,
     draft.sections.bandInformation && (draft.bandHeading || draft.bandDescription || draft.bandMembers.some((member) => member.included)) ? { label: "CMMS Band", page: "show" } : null,
     hasTicketPage && draft.sections.reservedSeating && draft.admissionType === "reserved" ? { label: "Reserved Seating", page: "tickets" } : null,
     hasTicketPage && draft.sections.complimentaryTickets ? { label: "Complimentary Tickets", page: "tickets" } : null,
@@ -405,6 +411,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
           .packet-show-page { font-size: 10pt !important; line-height: 1.34 !important; }
           .packet-show-page .show-sections { gap: 0.62rem !important; margin-top: 0.9rem !important; }
           .packet-show-page .packet-section-heading { color: #0f5c53 !important; border-color: #0f5c53 !important; font-size: 16pt !important; font-weight: 700 !important; line-height: 1.15 !important; margin-bottom: 0.1rem; padding-bottom: 0.12rem; }
+          .packet-show-page .packet-featured-guest-body { margin-top: 0.3rem !important; }
           .packet-ticket-page { font-size: 9.85pt !important; line-height: 1.28 !important; }
           .packet-ticket-page .packet-ticket-content { margin-top: 0.5rem !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; }
           .packet-ticket-seat-summary,
@@ -425,6 +432,18 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
           .packet-cover-page .packet-cover-label { color: #23433d !important; opacity: 1 !important; -webkit-text-fill-color: #23433d !important; }
           .packet-cover-page .packet-cover-title { color: #111111 !important; font-weight: 800 !important; opacity: 1 !important; -webkit-text-fill-color: #111111 !important; }
           .packet-cover-page .packet-cover-title-underline { background: #b68a2c !important; }
+          .packet-cover-page { box-sizing: border-box !important; height: 9.3in !important; min-height: 9.3in !important; max-height: 9.3in !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+          .packet-cover-content { min-height: 0 !important; justify-content: flex-start !important; }
+          .packet-cover-cmms-logo { width: auto !important; height: auto !important; max-width: 82% !important; max-height: 2.15in !important; object-fit: contain !important; }
+          .packet-cover-page .packet-cover-divider { margin-top: 0.16in !important; }
+          .packet-cover-page .packet-cover-label { margin-top: 0.16in !important; }
+          .packet-cover-page .packet-cover-title { margin-top: 0.05in !important; }
+          .packet-cover-page .packet-cover-event { margin-top: 0.18in !important; }
+          .packet-cover-page .packet-prepared-card { margin-top: 0.22in !important; padding: 0.16in 0.34in !important; }
+          .packet-cover-panel-logo { width: auto !important; height: auto !important; max-width: 86% !important; max-height: 1.3in !important; object-fit: contain !important; }
+          .packet-cover-page .packet-cover-sponsor-name { overflow-wrap: anywhere; line-height: 1.15 !important; }
+          .packet-cover-page .packet-cover-contact { margin-top: 0.12in !important; padding-top: 0.12in !important; overflow-wrap: anywhere; }
+          .packet-cover-page .packet-footer { flex: 0 0 auto !important; margin-top: 0.12in !important; break-inside: avoid !important; page-break-inside: avoid !important; }
         }
         .packet-page { display: flex; flex-direction: column; line-height: 1.65; position: relative; border: 1px solid #d6d3d1; box-shadow: 0 18px 45px rgba(41, 37, 36, 0.18); }
         .packet-footer { min-height: 5.5rem; }
@@ -460,6 +479,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
                 ["eventFlyerPlaceholder", "Event Flyer Placeholder"],
                 ["businessCardPlaceholder", "Business Card Placeholder"],
                 ["reservedSeatLocationMap", "Include Reserved Seat Location Map"],
+                ["sponsorRsvp", "Sponsor RSVP Page"],
               ] as const).map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={presentationSections[key]} onChange={(event) => setPresentationSections((current) => ({ ...current, [key]: event.target.checked }))} /> {label}</label>)}
             </div>
             <p className="text-xs text-stone-500">These print-layout choices are temporary for this browser session and do not change the saved packet draft. The table of contents appears only when the packet has more than two other printed pages.</p>
@@ -515,27 +535,28 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
 
         <section className="packet-preview-shell grid gap-5 rounded-2xl border border-stone-300 bg-stone-200 p-3 shadow-inner" aria-label="Sponsor packet live preview">
           {presentationSections.coverPage ? <article className="packet-page packet-cover-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-stone-900 shadow-lg">
-            <div className="flex flex-1 flex-col items-center justify-center text-center">
-              <div className="relative flex w-full justify-center">{presentationSections.coverWatermark ? <Image src="/cmms-logo.png" alt="" aria-hidden="true" width={760} height={456} className="pointer-events-none absolute left-1/2 top-1/2 w-[95%] -translate-x-1/2 -translate-y-1/2 opacity-[0.035] grayscale" /> : null}<Image src="/cmms-logo.png" alt="Cumberland Mountain Music Show" width={720} height={432} className="relative z-10 h-64 max-w-full w-auto object-contain" /></div>
-              <div className="mt-12 h-px w-24 bg-emerald-800" />
+            <div className="packet-cover-content flex min-h-0 flex-1 flex-col items-center justify-start text-center">
+              <div className="relative flex w-full justify-center">{presentationSections.coverWatermark ? <Image src="/cmms-logo.png" alt="" aria-hidden="true" width={760} height={456} className="pointer-events-none absolute left-1/2 top-1/2 w-[95%] -translate-x-1/2 -translate-y-1/2 opacity-[0.035] grayscale" /> : null}<Image src="/cmms-logo.png" alt="Cumberland Mountain Music Show" width={720} height={432} className="packet-cover-cmms-logo relative z-10 h-64 max-w-full w-auto object-contain" /></div>
+              <div className="packet-cover-divider mt-12 h-px w-24 bg-emerald-800" />
               <p className="packet-cover-label mt-8 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-800">Cumberland Mountain Music Show</p>
               <h2 className="packet-cover-title packet-heading mt-3 text-4xl font-bold text-stone-900 print:text-[#111111]">Sponsor Appreciation Packet</h2>
               <div className="packet-cover-title-underline mt-3 h-[3px] w-36 rounded-full bg-amber-700/80" />
-              <p className="mt-8 text-xl font-semibold">{selectedShowName}</p>
-              <p className="mt-2 text-base text-stone-600">{formatSponsorPacketDate(draft.showDate)}</p>
-              <p className="mt-1 text-base text-stone-600">{draft.venueName}</p>
+              <div className="packet-cover-event mt-8">
+                <p className="text-xl font-semibold">{selectedShowName}</p>
+                <p className="mt-2 text-base text-stone-600">{formatSponsorPacketDate(draft.showDate)}</p>
+                <p className="mt-1 text-base text-stone-600">{draft.venueName}</p>
+              </div>
               <div className="packet-prepared-card mt-12 w-full max-w-xl rounded-2xl border border-stone-300 bg-stone-50/70 px-10 py-7 text-left shadow-sm">
                 <p className="text-center text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Prepared Especially For</p>
-                <p className="mt-3 text-center text-2xl font-semibold">{draft.sponsorName}</p>
-                {draft.sponsorLogoUrl ? <Image src={draft.sponsorLogoUrl} alt={`${draft.sponsorName} logo`} width={200} height={100} unoptimized className="mx-auto mt-4 max-h-24 w-auto rounded-xl border border-stone-200 bg-white object-contain p-2" /> : null}
-                {draft.contactPerson ? <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 border-t border-stone-200 pt-4 text-sm">
+                <p className="packet-cover-sponsor-name mt-3 text-center text-2xl font-semibold">{draft.sponsorName}</p>
+                {draft.sponsorLogoUrl ? <Image src={draft.sponsorLogoUrl} alt={`${draft.sponsorName} logo`} width={280} height={140} unoptimized className="packet-cover-panel-logo mx-auto mt-5 max-h-[8.5rem] max-w-full w-auto object-contain" /> : null}
+                {draft.contactPerson ? <dl className="packet-cover-contact mt-5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-2 border-t border-stone-200 pt-4 text-sm">
                   <dt className="font-semibold text-stone-600">Contact Person</dt><dd>{draft.contactPerson}</dd>
                 </dl> : null}
               </div>
             </div>
             <PacketFooter page={pageNumberFor("cover")} total={totalPages} />
           </article> : null}
-
           {showTableOfContents ? <article className="packet-page packet-contents-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-stone-900 shadow-lg">
             <header className="border-b-2 border-emerald-800 pb-4"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">Sponsor Packet</p><h2 className="packet-heading text-3xl font-semibold">Table of Contents</h2></header>
             <ol className="mt-10 grid gap-4">{tableOfContentsItems.map((item) => <li key={`${item.label}-${item.page}`} className="packet-keep flex items-end gap-3"><span className="font-semibold">{item.label}</span><span className="mb-1 flex-1 border-b border-dotted border-stone-400" aria-hidden="true" /><span>Page {pageNumberFor(item.page)}</span></li>)}</ol>
@@ -556,7 +577,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
             <header className="border-b-2 border-emerald-800 pb-3"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">Sponsor Packet</p><h2 className="packet-heading text-3xl font-semibold">{selectedShowName}</h2></header>
             <div className="show-sections mt-6 grid gap-5">
               {draft.sections.showInformation ? <section className="packet-keep"><h3 className="packet-heading packet-section-heading border-b border-teal-500/50 pb-1.5 text-2xl font-semibold">Show Information</h3><p className="mt-3"><strong>Date:</strong> {formatSponsorPacketDate(draft.showDate)}</p>{draft.doorsTime ? <p><strong>Doors:</strong> {formatSponsorPacketTime(draft.doorsTime)}</p> : null}{draft.showTime ? <p><strong>Show:</strong> {formatSponsorPacketTime(draft.showTime)}</p> : null}<p><strong>Venue:</strong> {draft.venueName}</p></section> : null}
-              {draft.sections.specialGuest && (draft.guestName || draft.guestBio) ? <section className="packet-keep"><h3 className="packet-heading packet-section-heading border-b border-teal-500/50 pb-1.5 text-2xl font-semibold">Featured Guest</h3><div className="mt-3 flex gap-5">{draft.guestPhotoUrl ? <Image src={draft.guestPhotoUrl} alt="" width={144} height={144} unoptimized className="h-36 w-36 rounded-xl border border-stone-200 object-cover p-1" /> : null}<div>{draft.guestName ? <p className="text-lg font-semibold">{draft.guestName}</p> : null}{draft.guestBio ? <PacketParagraphs value={draft.guestBio} /> : null}</div></div></section> : null}
+              {draft.sections.specialGuest && (draft.guestName || draft.guestBio) ? <section className="packet-keep"><h3 className="packet-heading packet-section-heading border-b border-teal-500/50 pb-1.5 text-2xl font-semibold">Featured Guest</h3><div className="packet-featured-guest-body mt-3">{draft.guestName ? <p className="text-lg font-semibold">{draft.guestName}</p> : null}{draft.guestBio ? <PacketParagraphs value={draft.guestBio} /> : null}</div></section> : null}
               {draft.sections.venueDirections ? <section className="packet-keep"><h3 className="packet-heading packet-section-heading border-b border-teal-500/50 pb-1.5 text-2xl font-semibold">Venue Information</h3><div className="mt-3 flex gap-5">{venuePhotoUrl ? <Image src={venuePhotoUrl} alt="Venue" width={180} height={120} unoptimized className="h-32 w-48 rounded-xl border border-stone-200 object-cover p-1" /> : null}<div><p className="font-semibold">{draft.venueName || DEFAULT_VENUE_NAME}</p><p className="whitespace-pre-line">{draft.venueAddress || DEFAULT_VENUE_ADDRESS}</p><p className="mt-2"><span className="font-semibold">Venue information and directions:</span><br />www.cumberlandmountainmusic.com/venue</p></div></div></section> : null}
               {draft.sections.bandInformation && (draft.bandHeading || draft.bandDescription || draft.bandMembers.some((member) => member.included)) ? <section className="packet-keep"><h3 className="packet-heading packet-section-heading border-b border-teal-500/50 pb-1.5 text-2xl font-semibold">{draft.bandHeading || "The CMMS Band"}</h3>{draft.bandDescription ? <div className="mt-3"><PacketParagraphs value={draft.bandDescription} /></div> : null}<div className="mt-3 grid gap-2">{draft.bandMembers.filter((member) => member.included).map((member, index) => <p key={member.sourceId ?? `${member.name}-${index}`}><strong>{member.name}</strong>{member.role ? ` — ${member.role}` : ""}</p>)}</div></section> : null}
               {draft.sections.sponsorRecognition && draft.sponsorRecognition ? <section className="packet-keep"><h3 className="packet-heading packet-section-heading border-b border-teal-500/50 pb-1.5 text-2xl font-semibold">Your Sponsorship Recognition</h3><div className="mt-3"><PacketParagraphs value={draft.sponsorRecognition} /></div></section> : null}
@@ -566,6 +587,11 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
             <PacketFooter page={pageNumberFor("show")} total={totalPages} />
           </article> : null}
 
+          {presentationSections.sponsorRsvp && sponsorCode ? <article className="packet-page packet-rsvp-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-[11pt] leading-7 text-stone-900 shadow-lg">
+            <header className="border-b-2 border-emerald-800 pb-4 text-center"><Image src="/cmms-logo.png" alt="Cumberland Mountain Music Show" width={300} height={180} className="mx-auto h-24 w-auto object-contain" /><h2 className="packet-heading mt-3 text-3xl font-semibold">Sponsor RSVP</h2></header>
+            <section className="mt-7 text-center"><h3 className="packet-heading text-2xl font-semibold">Will you be joining us for the Cumberland Mountain Music Show?</h3><div className="mx-auto mt-5 max-w-2xl space-y-3 text-left"><p>Thank you for supporting the Cumberland Mountain Music Show. Your sponsorship means a great deal to us and helps make this event possible.</p><p>If you won’t be able to attend, that is absolutely no problem. We completely understand and truly appreciate your support whether you are able to join us or not.</p><p>We simply ask that you let us know so we can make those reserved seats available to other guests who would enjoy the show.</p></div><div className="packet-keep mt-7 rounded-2xl border border-stone-300 bg-stone-50 p-5"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Your Sponsor ID</p><p className="mt-2 text-5xl font-black tracking-[0.22em] text-stone-950">{sponsorCode}</p>{sponsorRsvpQr ? <Image src={sponsorRsvpQr} alt="QR code for the Sponsor RSVP page" width={210} height={210} unoptimized className="mx-auto mt-5 h-44 w-44 object-contain" /> : null}<p className="mt-4 font-semibold">stageflow.cumberlandmountainmusic.com/sponsor-rsvp</p><p className="mt-2">Scan the QR code or visit the web address and enter your Sponsor ID.</p></div></section>
+            <PacketFooter page={pageNumberFor("rsvp")} total={totalPages} />
+          </article> : null}
           {hasTicketPage ? <article className="packet-page packet-ticket-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-[11pt] leading-7 text-stone-900 shadow-lg"><header className="border-b-2 border-emerald-800 pb-3"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">Complimentary Admission</p><h2 className="packet-heading text-3xl font-semibold">Ticket Information</h2></header><section className="packet-ticket-content packet-keep mt-8 rounded-xl border border-stone-300 p-6"><p>{ticketParagraph}</p>{showReservedSeatSummary ? <div className="packet-ticket-seat-summary mt-5 rounded-xl border border-amber-300/70 bg-amber-50/60 p-4"><p className="packet-ticket-seat-summary-heading text-xs font-semibold uppercase tracking-[0.18em] text-amber-900">Your Reserved Seats</p><div className="mt-1 grid gap-1">{reservedSeatSummary.groups.map((group) => <p key={`${group.section}-${group.rowLabel}`} className="packet-paragraph"><strong>{group.sectionLabel}</strong><span className="packet-ticket-seat-separator mx-2 text-stone-400">•</span>Row {group.rowLabel}<span className="packet-ticket-seat-separator mx-2 text-stone-400">•</span>{group.seatNumbers.length === 1 ? "Seat" : "Seats"} {group.seatNumbers.join(", ")}</p>)}</div><p className="packet-ticket-seat-ids mt-2 text-sm text-stone-600"><strong>Seat IDs:</strong> {reservedSeatSummary.validSeatIds.map((seatId, index) => <span key={seatId}>{index > 0 ? <span className="packet-ticket-seat-separator"> • </span> : null}<span className="packet-ticket-seat-id-value">{seatId}</span></span>)}</p></div> : null}{draft.sections.reservedSeating && draft.admissionType === "reserved" && reservedSeatSummary.validSeatIds.length === 0 ? <p className="mt-3 text-stone-700">Reserved seating is included. Seat information will be provided separately.</p> : null}{showReservedSeatMap ? <div className="packet-ticket-seat-map packet-keep mt-4"><div className="packet-ticket-map-heading"><p className="packet-heading text-lg font-semibold text-stone-900">Reserved Seat Location Map</p><p className="packet-ticket-map-caption text-sm text-stone-600">{draft.sponsorName ? `Highlighted seats are reserved for ${draft.sponsorName}.` : "Highlighted seats are your reserved seats."}</p></div><div className="packet-seat-map-frame overflow-hidden rounded-xl border border-stone-300 bg-stone-50 p-3"><ReservedSeatMap seatStates={reservedSeatMapStates} showCustomerSeatDetails={false} includeSelectedLegend={false} legendVariant="sponsor-packet" chromeVariant="sponsor-packet" sizeVariant="compact" /></div></div> : null}{draft.seatInstructions ? <div className="mt-3"><PacketParagraphs value={draft.seatInstructions} /></div> : null}{draft.ticketEnclosureNote ? <div className="mt-2"><PacketParagraphs value={draft.ticketEnclosureNote} /></div> : null}</section><PacketFooter page={pageNumberFor("tickets")} total={totalPages} /></article> : null}
 
           {presentationSections.eventFlyerPlaceholder ? <article className="packet-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-stone-900 shadow-lg"><div className="flex flex-1 items-center justify-center"><div className="w-full rounded-2xl border-2 border-dashed border-stone-300 p-16 text-center"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Insert Location</p><h2 className="packet-heading mt-3 text-3xl font-semibold">Event Flyer</h2><p className="mt-3 text-stone-600">Place the current Cumberland Mountain Music Show event flyer here.</p></div></div><PacketFooter page={pageNumberFor("flyer")} total={totalPages} /></article> : null}

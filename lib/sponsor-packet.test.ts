@@ -49,7 +49,7 @@ test("ticket wording handles singular, plural, reserved, general admission, and 
 test("builder uses SELECT-only reads, printable pages, optional sections, and no private fields", async () => {
   const source = await readFile(componentPath, "utf8");
   assert.match(source, /\.from\("shows"\)\.select/);
-  assert.match(source, /\.from\("sponsor_library"\)\.select\("id, name"\)/);
+  assert.match(source, /\.from\("sponsor_library"\)\.select\("id, name, sponsor_code"\)/);
   assert.doesNotMatch(source, /is_archived/);
   assert.match(source, /sponsorLogosResult\.error \? \[\]/);
   assert.match(source, /guestPhotosResult\.error \? \[\]/);

@@ -8,17 +8,18 @@ const routePath = new URL("../app/api/admin/shows/[showId]/sponsor-packet/route.
 
 async function source() { return readFile(componentPath, "utf8"); }
 
-test("cover uses a dramatically larger centered CMMS logo without an empty sponsor placeholder", async () => {
+test("cover keeps the large centered CMMS logo and conditionally shows a larger sponsor panel logo", async () => {
   const value = await source();
-  assert.match(value, /width=\{720\}/);
-  assert.match(value, /height=\{432\}/);
-  assert.match(value, /h-64 max-w-full w-auto object-contain/);
-  assert.match(value, /relative flex w-full justify-center/);
+  assert.match(value, /src="\/cmms-logo\.png"[^\n]*width=\{720\} height=\{432\}[^\n]*packet-cover-cmms-logo[^\n]*h-64[^\n]*object-contain/);
+  assert.match(value, /draft\.sponsorLogoUrl \? <Image src=\{draft\.sponsorLogoUrl\}/);
+  assert.match(value, /width=\{280\}/);
+  assert.match(value, /height=\{140\}/);
+  assert.match(value, /packet-cover-panel-logo[^\n]*max-h-\[8\.5rem\][^\n]*object-contain/);
   assert.match(value, /packet-cover-page/);
   assert.match(value, /packet-cover-label mt-8 text-xs font-semibold uppercase tracking-\[0\.24em\] text-emerald-800/);
   assert.match(value, /packet-cover-title packet-heading mt-3 text-4xl font-bold text-stone-900 print:text-\[#111111\]/);
   assert.match(value, /packet-cover-title-underline mt-3 h-\[3px\] w-36 rounded-full bg-amber-700\/80/);
-  assert.match(value, /draft\.sponsorLogoUrl \? <Image/);
+  assert.doesNotMatch(value, /src=\{draft\.sponsorLogoUrl \|\| "\/cmms-logo\.png"\}/);
   assert.doesNotMatch(value, /Sponsor logo unavailable/);
 });
 

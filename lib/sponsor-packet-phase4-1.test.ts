@@ -48,9 +48,18 @@ test("standard show information uses compact readable one-page rules without cli
   assert.match(value, /packet-show-page/);
   assert.match(value, /line-height: 1\.34 !important/);
   assert.match(value, /show-sections \{ gap: 0\.62rem/);
+  assert.match(value, /packet-featured-guest-body \{ margin-top: 0\.3rem !important/);
   assert.doesNotMatch(value, /overflow: hidden[^\n]*packet-show-page/);
 });
 
+test("show information keeps featured guest text but omits its image and placeholder", async () => {
+  const value = await source();
+  assert.match(value, />Featured Guest<\/h3><div className="packet-featured-guest-body mt-3">/);
+  assert.match(value, /draft\.guestName \? <p className="text-lg font-semibold">\{draft\.guestName\}<\/p>/);
+  assert.match(value, /draft\.guestBio \? <PacketParagraphs value=\{draft\.guestBio\} \/>/);
+  assert.doesNotMatch(value, /<Image src=\{draft\.guestPhotoUrl\}/);
+  assert.doesNotMatch(value, /guest photo unavailable|guest image placeholder/i);
+});
 test("screen headings use accessible teal while print headings remain dark", async () => {
   const value = await source();
   assert.match(value, /packet-section-heading \{ color: #0e7490; \}/);
