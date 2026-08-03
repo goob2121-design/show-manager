@@ -40,12 +40,30 @@ test("public lookup is neutral, narrow, show-specific, and requires identity con
   assert.match(route, /We couldn't find that Sponsor ID/);
   assert.match(route, /select\("id,name,recognition_name,sponsor_code"\)/);
   assert.doesNotMatch(route, /email|phone|address_line|payment|ticket|seat_assignment/);
-  assert.match(route, /eq\("sponsor_id", sponsor\.id\)\.eq\("show_id", show\.id\)/);
+  assert.match(route, /eq\("sponsor_id", sponsor\.id\)[\s\S]*?eq\("show_id", show\.id\)/);
   assert.match(page, /Is this your organization\?/);
   assert.match(page, /Yes, Continue/);
   assert.match(page, /useSearchParams/);
 });
 
+test("valid Sponsor ID lookup uses sponsor_code without the unavailable archive column", async () => {
+  const route = await readFile(publicRoutePath, "utf8");
+  assert.match(route, /\.eq\("sponsor_code", code\)[\s\S]*?\.maybeSingle\(\)/);
+  assert.doesNotMatch(route, /\.eq\("is_archived"/);
+  assert.doesNotMatch(route, /sponsor_library\.is_archived/);
+  assert.match(route, /Sponsor lookup completed/);
+  assert.match(route, /sponsor: \{ publicName: found\.sponsor\.recognition_name\?\.trim\(\) \|\| found\.sponsor\.name \}/);
+});
+
+test("Supabase failures retain safe server-side error diagnostics", async () => {
+  const route = await readFile(publicRoutePath, "utf8");
+  assert.match(route, /code: error\.code \?\? null/);
+  assert.match(route, /message: error\.message \?\? null/);
+  assert.match(route, /details: error\.details \?\? null/);
+  assert.match(route, /hint: error\.hint \?\? null/);
+  assert.match(route, /logSupabaseError\("Sponsor lookup", error\)/);
+  assert.doesNotMatch(route, /SERVICE_ROLE.*console|console.*SERVICE_ROLE/);
+});
 test("public page uses CMMS branding, exact entry guidance, and mobile-first controls", async () => {
   const page = await readFile(publicPagePath, "utf8");
   assert.match(page, /Cumberland Mountain Music Show/);
