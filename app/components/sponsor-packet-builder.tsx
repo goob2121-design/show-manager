@@ -404,10 +404,11 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
           .packet-page .text-stone-700,
           .packet-page .text-slate-400,
           .packet-page .text-slate-500 { color: #333333 !important; }
-          .packet-letter-page { font-size: 10.35pt !important; line-height: 1.46 !important; }
+          .packet-letter-page { width: 7.2in !important; max-width: 7.2in !important; min-height: 9.7in !important; font-size: 11pt !important; line-height: 1.42 !important; }
           .packet-letter-page .letter-content { gap: 0.45rem !important; }
           .packet-letter-page .letter-contact-block { margin-top: 1rem !important; }
           .packet-letter-page .packet-rsvp-letter-note { margin-top: 0.12rem !important; padding: 0.12rem 0 0.12rem 0.45rem !important; }
+          .packet-letter-page .packet-footer { display: none !important; }
           .packet-rsvp-page { font-size: 10.25pt !important; line-height: 1.42 !important; }
           .packet-rsvp-page .packet-rsvp-header { padding-bottom: 0.16in !important; }
           .packet-rsvp-page .packet-rsvp-logo { height: 0.78in !important; }

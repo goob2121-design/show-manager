@@ -35,8 +35,8 @@ test("saved custom letter remains unchanged when applied to the revised default"
 test("letter page uses its own compact one-page strategy and keeps signature together", async () => {
   const value = await source();
   assert.match(value, /packet-letter-page/);
-  assert.match(value, /font-size: 10\.35pt !important/);
-  assert.match(value, /line-height: 1\.46 !important/);
+  assert.match(value, /font-size: 11pt !important/);
+  assert.match(value, /line-height: 1\.42 !important/);
   assert.match(value, /letter-content \{ gap: 0\.45rem/);
   assert.match(value, /letter-contact-block \{ margin-top: 1rem !important/);
   assert.match(value, /packet-signature \{ break-inside: avoid/);
