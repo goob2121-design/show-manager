@@ -1,12 +1,13 @@
 ﻿"use client";
 
-import { Fragment } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
 import {
   RESERVED_SEATING_ROW_LABELS,
   RESERVED_SEATING_SECTION_CONFIGS,
   RESERVED_SEATING_SEAT_NUMBERS,
   RESERVED_SEATING_VENUE,
 } from "@/lib/reserved-seating";
+import { getInitialSeatMapScrollLeft } from "@/lib/reserved-seat-map-scroll";
 
 export type ReservedSeatMapSeatState = {
   seatId: string;
@@ -26,6 +27,7 @@ type ReservedSeatMapProps = {
   legendVariant?: "customer" | "public" | "admin" | "door-readonly" | "sponsor-packet";
   chromeVariant?: "stageflow" | "cmms-public" | "sponsor-packet";
   sizeVariant?: "default" | "compact";
+  initialMobileView?: "center-aisle";
 };
 
 const customerLegendItems = [
@@ -152,7 +154,10 @@ export function ReservedSeatMap({
   legendVariant = "customer",
   chromeVariant = "stageflow",
   sizeVariant = "default",
+  initialMobileView,
 }: ReservedSeatMapProps) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const hasAppliedInitialMobileView = useRef(false);
   const visibleLegendItems = legendVariant === "door-readonly"
     ? doorReadOnlyLegendItems
     : legendVariant === "sponsor-packet"
@@ -169,9 +174,34 @@ export function ReservedSeatMap({
   const isSponsorPacket = chromeVariant === "sponsor-packet";
   const isCompact = sizeVariant === "compact";
 
+  useLayoutEffect(() => {
+    if (initialMobileView !== "center-aisle" || hasAppliedInitialMobileView.current) return;
+    if (!window.matchMedia("(max-width: 1023px)").matches) return;
+
+    const scroller = scrollerRef.current;
+    const aisle = scroller?.querySelector<HTMLElement>("[data-seat-map-center-aisle='true']");
+    if (!scroller || !aisle || scroller.clientWidth === 0 || scroller.scrollWidth === 0) return;
+
+    const scrollerRect = scroller.getBoundingClientRect();
+    const aisleRect = aisle.getBoundingClientRect();
+    const toContentCenter = (rect: DOMRect) => rect.left - scrollerRect.left + scroller.scrollLeft + rect.width / 2;
+    const selectedSeatCenters = Array.from(
+      scroller.querySelectorAll<HTMLElement>("[data-seat-map-selected='true']"),
+      (seat) => toContentCenter(seat.getBoundingClientRect()),
+    );
+
+    hasAppliedInitialMobileView.current = true;
+    scroller.scrollLeft = getInitialSeatMapScrollLeft({
+      viewportWidth: scroller.clientWidth,
+      contentWidth: scroller.scrollWidth,
+      aisleCenter: toContentCenter(aisleRect),
+      selectedSeatCenters,
+    });
+  }, [initialMobileView]);
+
   return (
     <>
-      {isSponsorPacket ? <style jsx global>{`
+      <style jsx global>{`
         @media print {
           .packet-sponsor-seat--selected,
           .packet-sponsor-seat-legend {
@@ -203,7 +233,7 @@ export function ReservedSeatMap({
             print-color-adjust: exact !important;
           }
         }
-      `}</style> : null}
+      `}</style>
       <div
         className={isSponsorPacket
         ? "w-full max-w-full overflow-hidden text-[#050505] shadow-none"
@@ -225,11 +255,43 @@ export function ReservedSeatMap({
       ) : null}
 
       <div className={`w-full max-w-full overflow-hidden ${isSponsorPacket ? (isCompact ? "p-0" : "p-0") : isCompact ? "p-2.5 sm:p-3" : "p-3 sm:p-4 lg:p-5"}`}>
-        <p className={isSponsorPacket ? "mb-3 text-xs font-medium text-stone-500 sm:hidden" : isCmmsPublic ? "mb-3 text-xs font-medium text-[#d9d0c2] sm:hidden" : "mb-3 text-xs font-medium text-slate-300 sm:hidden"}>
-          Swipe left or right to view all seats.
+        {initialMobileView === "center-aisle" ? (
+          <p
+            className={isCmmsPublic
+              ? "pointer-events-none mx-auto mb-3 w-full max-w-full overflow-hidden rounded-lg border border-[rgba(200,155,60,0.42)] bg-[rgba(200,155,60,0.1)] px-3 py-2 text-center text-[#f5f1e8] lg:hidden"
+              : "pointer-events-none mx-auto mb-3 w-full max-w-full overflow-hidden rounded-lg border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-center text-slate-100 lg:hidden"}
+          >
+            Swipe left or right to view all seats.
+          </p>
+        ) : !isSponsorPacket ? (
+          <div
+            aria-label="This auditorium has two seating sections: left and right, separated by a center aisle. Swipe the seating chart below left or right to view both sides."
+            className={isCmmsPublic
+              ? "pointer-events-none mx-auto mb-3 w-full max-w-full overflow-hidden rounded-lg border border-[rgba(200,155,60,0.42)] bg-[rgba(200,155,60,0.1)] px-3 py-2 text-center text-[#f5f1e8] lg:hidden"
+              : "pointer-events-none mx-auto mb-3 w-full max-w-full overflow-hidden rounded-lg border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-center text-slate-100 lg:hidden"}
+          >
+            <p aria-hidden="true" className="text-xs leading-snug text-[#d9d0c2]">
+              This auditorium has <strong className="font-extrabold text-[#d6af45]">TWO</strong> seating sections: <strong className="font-extrabold text-[#d6af45]">LEFT</strong> and <strong className="font-extrabold text-[#d6af45]">RIGHT</strong>, separated by a center aisle.
+            </p>
+            <p aria-hidden="true" className="mt-1.5 text-sm font-semibold leading-snug">
+              ⬇️ Swipe the seating chart <strong className="font-extrabold text-[#d6af45]">BELOW</strong> left or right to view <strong className="font-extrabold text-[#d6af45]">BOTH</strong> sides. ⬇️
+            </p>
+          </div>
+        ) : null}
+        <p
+          aria-label="Swipe left or right to view both sides of the auditorium."
+          className={isSponsorPacket
+            ? "mx-auto mb-3 max-w-full rounded-lg border border-[#8a6524]/50 bg-[#1c140b]/5 px-3 py-2 text-center text-base font-bold leading-snug text-stone-700 break-words sm:text-sm sm:font-semibold lg:mb-2 lg:border-transparent lg:bg-transparent lg:py-1 lg:text-xs lg:font-medium"
+            : isCmmsPublic
+            ? "mx-auto mb-2 hidden max-w-full rounded-lg border border-[rgba(200,155,60,0.16)] bg-transparent px-3 py-1 text-center text-xs font-medium leading-snug text-[#f5f1e8] break-words lg:block"
+            : "mx-auto mb-2 hidden max-w-full rounded-lg border border-white/10 bg-transparent px-3 py-1 text-center text-xs font-medium leading-snug text-slate-100 break-words lg:block"}
+        >
+          <span aria-hidden="true">⬅️ Swipe left or right to view </span>
+          <strong aria-hidden="true" className={isSponsorPacket ? "text-[#8a6524]" : isCmmsPublic ? "text-[#d6af45]" : "text-amber-300"}>BOTH sides</strong>
+          <span aria-hidden="true"> of the auditorium ➡️</span>
         </p>
 
-        <div className="w-full max-w-full overflow-x-auto overscroll-x-contain touch-pan-x pb-2 [-webkit-overflow-scrolling:touch]">
+        <div ref={scrollerRef} className="w-full max-w-full overflow-x-auto overscroll-x-contain touch-pan-x pb-2 [-webkit-overflow-scrolling:touch]">
           <div
             className={isSponsorPacket
               ? "min-w-[620px] bg-white p-1.5 sm:min-w-[700px] sm:p-2 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[45rem] lg:p-2"
@@ -271,6 +333,7 @@ export function ReservedSeatMap({
                           <button
                             key={seatId}
                             type="button"
+                            data-seat-map-selected={seatState?.status === "selected" ? "true" : undefined}
                             onClick={() => onSeatClick?.(seatId)}
                             disabled={Boolean(seatState?.disabled)}
                             title={seatLabels.title}
@@ -288,7 +351,7 @@ export function ReservedSeatMap({
                       })}
                     </div>
 
-                    <div className={isSponsorPacket ? "relative flex items-center justify-center overflow-hidden rounded-[0.7rem] border border-dashed border-stone-400 bg-stone-50 px-1 text-center" : isCmmsPublic ? "relative flex items-center justify-center overflow-hidden rounded-[0.8rem] border border-dashed border-[rgba(200,155,60,0.12)] bg-[#080b10] px-1 text-center" : "relative flex items-center justify-center overflow-hidden rounded-[0.8rem] border border-dashed border-slate-700/80 bg-slate-950/40 px-1 text-center"}>
+                    <div data-seat-map-center-aisle={rowIndex === 0 ? "true" : undefined} className={isSponsorPacket ? "relative flex items-center justify-center overflow-hidden rounded-[0.7rem] border border-dashed border-stone-400 bg-stone-50 px-1 text-center" : isCmmsPublic ? "relative flex items-center justify-center overflow-hidden rounded-[0.8rem] border border-dashed border-[rgba(200,155,60,0.12)] bg-[#080b10] px-1 text-center" : "relative flex items-center justify-center overflow-hidden rounded-[0.8rem] border border-dashed border-slate-700/80 bg-slate-950/40 px-1 text-center"}>
                       <div className="absolute inset-y-1/2 left-1 right-1 h-px -translate-y-1/2 bg-white/12" />
                       <span className={isSponsorPacket ? "relative bg-stone-50 px-1 text-[8px] font-bold uppercase tracking-[0.2em] text-[#444444] sm:text-[9px]" : isCmmsPublic ? "relative bg-[#0b0f14] px-1 text-[8px] font-bold uppercase tracking-[0.2em] text-[#bda883] sm:text-[9px] xl:text-[10px]" : "relative bg-[#0b1220] px-1 text-[8px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:text-[9px] xl:text-[10px]"}>
                         {RESERVED_SEATING_VENUE.aisleLabelRows.includes(rowIndex as 0 | 4 | 7)
@@ -307,6 +370,7 @@ export function ReservedSeatMap({
                           <button
                             key={seatId}
                             type="button"
+                            data-seat-map-selected={seatState?.status === "selected" ? "true" : undefined}
                             onClick={() => onSeatClick?.(seatId)}
                             disabled={Boolean(seatState?.disabled)}
                             title={seatLabels.title}
