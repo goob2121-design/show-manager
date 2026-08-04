@@ -5,6 +5,30 @@ type InitialSeatMapScrollInput = {
   selectedSeatCenters?: number[];
 };
 
+type InitialSeatMapMeasurement = {
+  viewportWidth: number;
+  contentWidth: number;
+  aisleWidth: number;
+  aisleLeft: number;
+  aisleRight: number;
+  mapLeft: number;
+  mapRight: number;
+  target: number;
+};
+
+export function isValidInitialSeatMapMeasurement(measurement: InitialSeatMapMeasurement) {
+  const values = Object.values(measurement);
+  return values.every(Number.isFinite)
+    && measurement.viewportWidth > 0
+    && measurement.contentWidth > measurement.viewportWidth
+    && measurement.aisleWidth > 0
+    && measurement.mapRight > measurement.mapLeft
+    && measurement.aisleLeft >= measurement.mapLeft
+    && measurement.aisleRight <= measurement.mapRight
+    && measurement.target >= 0
+    && measurement.target <= measurement.contentWidth - measurement.viewportWidth;
+}
+
 function centeredScrollLeft(targetCenter: number, viewportWidth: number, contentWidth: number) {
   return Math.min(
     Math.max(targetCenter - viewportWidth / 2, 0),

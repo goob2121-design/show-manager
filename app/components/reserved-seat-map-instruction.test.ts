@@ -15,13 +15,27 @@ test("customer seat map opts into the mobile center-aisle start exclusively", ()
   assert.doesNotMatch(doorSource, /initialMobileView/);
 });
 
-test("initial mobile positioning measures the aisle once without overriding later scrolling", () => {
+test("initial mobile positioning retries invalid Safari layout measurements", () => {
   assert.match(seatMapSource, /window\.matchMedia\("\(max-width: 1023px\)"\)\.matches/);
   assert.match(seatMapSource, /hasAppliedInitialMobileView\.current/);
+  assert.match(seatMapSource, /const maxAttempts = 4/);
+  assert.match(seatMapSource, /requestAnimationFrame[\s\S]*requestAnimationFrame/);
+  assert.match(seatMapSource, /scheduleAttempt\(50\)/);
+  assert.match(seatMapSource, /isValidInitialSeatMapMeasurement/);
+  assert.match(seatMapSource, /contentWidth: scroller\.scrollWidth/);
+  assert.match(seatMapSource, /scroller\.scrollLeft = target/);
   assert.match(seatMapSource, /getBoundingClientRect\(\)/);
   assert.match(seatMapSource, /data-seat-map-center-aisle/);
+  assert.match(seatMapSource, /data-seat-map-content/);
   assert.match(seatMapSource, /data-seat-map-selected/);
   assert.match(seatMapSource, /selectedSeatCenters/);
+});
+
+test("initial positioning stops after success or user interaction and never follows seat rerenders", () => {
+  assert.match(seatMapSource, /hasAppliedInitialMobileView\.current = true/);
+  assert.match(seatMapSource, /hasCancelledInitialMobileView\.current = true/);
+  assert.match(seatMapSource, /\["touchstart", "pointerdown", "wheel", "scroll"\]/);
+  assert.match(seatMapSource, /cancelScheduledWork\(\)/);
   assert.match(seatMapSource, /\}, \[initialMobileView\]\);/);
   assert.doesNotMatch(seatMapSource, /onScroll=/);
 });

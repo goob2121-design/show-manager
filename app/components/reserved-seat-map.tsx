@@ -7,7 +7,7 @@ import {
   RESERVED_SEATING_SEAT_NUMBERS,
   RESERVED_SEATING_VENUE,
 } from "@/lib/reserved-seating";
-import { getInitialSeatMapScrollLeft } from "@/lib/reserved-seat-map-scroll";
+import { getInitialSeatMapScrollLeft, isValidInitialSeatMapMeasurement } from "@/lib/reserved-seat-map-scroll";
 
 export type ReservedSeatMapSeatState = {
   seatId: string;
@@ -158,6 +158,7 @@ export function ReservedSeatMap({
 }: ReservedSeatMapProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const hasAppliedInitialMobileView = useRef(false);
+  const hasCancelledInitialMobileView = useRef(false);
   const visibleLegendItems = legendVariant === "door-readonly"
     ? doorReadOnlyLegendItems
     : legendVariant === "sponsor-packet"
@@ -175,28 +176,100 @@ export function ReservedSeatMap({
   const isCompact = sizeVariant === "compact";
 
   useLayoutEffect(() => {
-    if (initialMobileView !== "center-aisle" || hasAppliedInitialMobileView.current) return;
+    if (initialMobileView !== "center-aisle" || hasAppliedInitialMobileView.current || hasCancelledInitialMobileView.current) return;
     if (!window.matchMedia("(max-width: 1023px)").matches) return;
 
-    const scroller = scrollerRef.current;
-    const aisle = scroller?.querySelector<HTMLElement>("[data-seat-map-center-aisle='true']");
-    if (!scroller || !aisle || scroller.clientWidth === 0 || scroller.scrollWidth === 0) return;
+    const scroller = scrollerRef.current!;
+    if (!scroller) return;
 
-    const scrollerRect = scroller.getBoundingClientRect();
-    const aisleRect = aisle.getBoundingClientRect();
-    const toContentCenter = (rect: DOMRect) => rect.left - scrollerRect.left + scroller.scrollLeft + rect.width / 2;
-    const selectedSeatCenters = Array.from(
-      scroller.querySelectorAll<HTMLElement>("[data-seat-map-selected='true']"),
-      (seat) => toContentCenter(seat.getBoundingClientRect()),
-    );
+    const maxAttempts = 4;
+    let attemptCount = 0;
+    let isStopped = false;
+    let retryTimer: number | null = null;
+    let firstFrame: number | null = null;
+    let secondFrame: number | null = null;
 
-    hasAppliedInitialMobileView.current = true;
-    scroller.scrollLeft = getInitialSeatMapScrollLeft({
-      viewportWidth: scroller.clientWidth,
-      contentWidth: scroller.scrollWidth,
-      aisleCenter: toContentCenter(aisleRect),
-      selectedSeatCenters,
-    });
+    const cancelScheduledWork = () => {
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      if (firstFrame !== null) window.cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
+      retryTimer = null;
+      firstFrame = null;
+      secondFrame = null;
+    };
+
+    const interactionEvents = ["touchstart", "pointerdown", "wheel", "scroll"] as const;
+    function detachInteractionListeners() {
+      interactionEvents.forEach((eventName) => scroller.removeEventListener(eventName, stopForUserInteraction));
+    }
+    function stopForUserInteraction() {
+      hasCancelledInitialMobileView.current = true;
+      isStopped = true;
+      cancelScheduledWork();
+      detachInteractionListeners();
+    }
+    interactionEvents.forEach((eventName) => scroller.addEventListener(eventName, stopForUserInteraction, { passive: true }));
+
+    const measureAndApply = () => {
+      if (isStopped || hasAppliedInitialMobileView.current || hasCancelledInitialMobileView.current) return;
+      attemptCount += 1;
+
+      const aisle = scroller.querySelector<HTMLElement>("[data-seat-map-center-aisle='true']");
+      const seatMap = scroller.querySelector<HTMLElement>("[data-seat-map-content='true']");
+      const scrollerRect = scroller.getBoundingClientRect();
+      const aisleRect = aisle?.getBoundingClientRect();
+      const seatMapRect = seatMap?.getBoundingClientRect();
+
+      if (aisle && seatMap && aisleRect && seatMapRect) {
+        const toContentCenter = (rect: DOMRect) => rect.left - scrollerRect.left + scroller.scrollLeft + rect.width / 2;
+        const selectedSeatCenters = Array.from(
+          scroller.querySelectorAll<HTMLElement>("[data-seat-map-selected='true']"),
+          (seat) => seat.getBoundingClientRect(),
+        ).filter((rect) => rect.width > 0).map(toContentCenter);
+        const target = getInitialSeatMapScrollLeft({
+          viewportWidth: scroller.clientWidth,
+          contentWidth: scroller.scrollWidth,
+          aisleCenter: toContentCenter(aisleRect),
+          selectedSeatCenters,
+        });
+
+        if (isValidInitialSeatMapMeasurement({
+          viewportWidth: scroller.clientWidth,
+          contentWidth: scroller.scrollWidth,
+          aisleWidth: aisleRect.width,
+          aisleLeft: aisleRect.left,
+          aisleRight: aisleRect.right,
+          mapLeft: seatMapRect.left,
+          mapRight: seatMapRect.right,
+          target,
+        })) {
+          hasAppliedInitialMobileView.current = true;
+          isStopped = true;
+          cancelScheduledWork();
+          detachInteractionListeners();
+          scroller.scrollLeft = target;
+          return;
+        }
+      }
+
+      if (attemptCount < maxAttempts && !isStopped) scheduleAttempt(50);
+    };
+
+    function scheduleAttempt(delay: number) {
+      retryTimer = window.setTimeout(() => {
+        firstFrame = window.requestAnimationFrame(() => {
+          secondFrame = window.requestAnimationFrame(measureAndApply);
+        });
+      }, delay);
+    }
+
+    scheduleAttempt(0);
+
+    return () => {
+      isStopped = true;
+      cancelScheduledWork();
+      detachInteractionListeners();
+    };
   }, [initialMobileView]);
 
   return (
@@ -293,6 +366,7 @@ export function ReservedSeatMap({
 
         <div ref={scrollerRef} className="w-full max-w-full overflow-x-auto overscroll-x-contain touch-pan-x pb-2 [-webkit-overflow-scrolling:touch]">
           <div
+            data-seat-map-content="true"
             className={isSponsorPacket
               ? "min-w-[620px] bg-white p-1.5 sm:min-w-[700px] sm:p-2 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[45rem] lg:p-2"
               : isCmmsPublic

@@ -32,3 +32,32 @@ test("prioritizes existing selected seats only when aisle centering would hide a
     selectedSeatCenters: [300],
   }), 270);
 });
+
+test("rejects Safari's incomplete first-pass measurements and accepts a later valid layout", async () => {
+  const { isValidInitialSeatMapMeasurement } = await scrollModulePromise;
+  const delayedLayout = {
+    viewportWidth: 0,
+    contentWidth: 0,
+    aisleWidth: 0,
+    aisleLeft: 0,
+    aisleRight: 0,
+    mapLeft: 0,
+    mapRight: 0,
+    target: Number.NaN,
+  };
+  const completedLayout = {
+    viewportWidth: 320,
+    contentWidth: 900,
+    aisleWidth: 48,
+    aisleLeft: 426,
+    aisleRight: 474,
+    mapLeft: 0,
+    mapRight: 900,
+    target: 290,
+  };
+
+  assert.equal(isValidInitialSeatMapMeasurement(delayedLayout), false);
+  assert.equal(isValidInitialSeatMapMeasurement(completedLayout), true);
+  assert.equal(isValidInitialSeatMapMeasurement({ ...completedLayout, contentWidth: 320 }), false);
+  assert.equal(isValidInitialSeatMapMeasurement({ ...completedLayout, aisleRight: 920 }), false);
+});
