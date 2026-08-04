@@ -160,7 +160,7 @@ type AdminTab =
   | "show-details";
 type BandTab = "setlist" | "songs" | "rehearsal" | "itinerary" | "promo-materials";
 type GuestTab = "welcome" | "songs" | "artist-info" | "itinerary" | "promo-materials";
-type SponsorAdminTab = "library" | "show";
+type SponsorAdminTab = "library" | "current-show" | "rsvp" | "print";
 type FinanceAdminSubTab = "reporting" | "payouts";
 type SetlistSectionConfig = {
   key: SetSection;
@@ -216,9 +216,19 @@ const sponsorAdminTabItems: Array<{
     description: "Reusable sponsors saved for any show.",
   },
   {
-    key: "show",
-    label: "This Show's Sponsors",
+    key: "current-show",
+    label: "Current Show",
     description: "Assignments, ordering, and placement for this event.",
+  },
+  {
+    key: "rsvp",
+    label: "Sponsor RSVP",
+    description: "Responses, guest counts, notes, and Sponsor IDs.",
+  },
+  {
+    key: "print",
+    label: "Print Center",
+    description: "Packets, labels, sponsor lists, and show printouts.",
   },
 ];
 
@@ -11119,7 +11129,7 @@ export function ShowPage({
     setEditingShowSponsorId(sponsorId);
     setEditingShowSponsorFormState(buildShowSponsorAssignmentFormState(sponsorToEdit));
     setActiveAdminTab("sponsors");
-    setActiveSponsorAdminTab("show");
+    setActiveSponsorAdminTab("current-show");
   }
 
   function cancelEditingShowSponsor() {
@@ -23408,27 +23418,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
         {isAdminView && activeAdminTab === "sponsors" ? (
           <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex flex-col gap-1">
-                <h2 className="text-xl font-semibold">Sponsor Management</h2>
-                <p className="text-sm text-stone-600">
-                  Store sponsors once, then assign and order them for this show.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  href={`/admin/${show.slug}/sponsor-packet`}
-                  className="w-fit rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                >
-                  Sponsor Packet Builder
-                </Link>
-                <Link
-                  href={`/admin/${show.slug}/print/sponsors`}
-                  className="w-fit rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                >
-                  Print Sponsor Rundown
-                </Link>
-              </div>
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Sponsor Management</h2>
+              <p className="text-sm text-stone-600">
+                Manage reusable sponsors, current-show assignments, RSVPs, and sponsor printing.
+              </p>
             </div>
 
             <SectionLoadWarning
@@ -23439,13 +23433,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               }
             />
 
-            <div className="flex flex-wrap gap-2 rounded-2xl bg-stone-100 p-2">
+            <div role="tablist" aria-label="Sponsor Management sections" className="flex max-w-full flex-wrap gap-2 overflow-x-auto rounded-2xl bg-stone-100 p-2">
               {sponsorAdminTabItems.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
+                  role="tab"
+                  id={`sponsor-tab-${tab.key}`}
+                  aria-selected={activeSponsorAdminTab === tab.key}
+                  aria-controls={`sponsor-tabpanel-${tab.key}`}
+                  tabIndex={activeSponsorAdminTab === tab.key ? 0 : -1}
                   onClick={() => setActiveSponsorAdminTab(tab.key)}
-                  className={`flex min-w-[12rem] flex-1 flex-col rounded-xl px-4 py-3 text-left transition ${
+                  className={`flex min-w-[10.5rem] flex-1 flex-col rounded-xl px-4 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${
                     activeSponsorAdminTab === tab.key
                       ? "bg-white text-stone-900 shadow-sm"
                       : "bg-transparent text-stone-600 hover:bg-white/80 hover:text-stone-900"
@@ -23461,7 +23460,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
             <div className="grid gap-6">
               {activeSponsorAdminTab === "library" ? (
-                <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                <section role="tabpanel" id="sponsor-tabpanel-library" aria-labelledby="sponsor-tab-library" className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
                 <div className="flex flex-col gap-1">
                   <h3 className="text-lg font-semibold text-stone-900">Sponsor Library</h3>
                   <p className="text-sm text-stone-600">
@@ -23887,8 +23886,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     >
                       {isAddSponsorFormOpen ? "Hide Add Sponsor" : "Add Sponsor"}
                     </button>
-                    <SponsorMailingLabelBulkAction sponsors={sponsorLibrary} />
-                    <CmmsReturnMailingLabelActions />
                   </div>
 
                   <label
@@ -23943,7 +23940,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   </form>
                 ) : null}
 
-                <SponsorRsvpAdminPanel showId={show.id} showSlug={show.slug} />
 
                 {visibleSponsorLibrary.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
@@ -24035,7 +24031,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   {sponsor.email ? (
                                     <a href={`mailto:${sponsor.email}`} className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">Mail Sponsor</a>
                                   ) : null}
-                                  <SponsorMailingLabelButton sponsor={sponsor} />
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -24430,23 +24425,23 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </section>
               ) : null}
 
-              {activeSponsorAdminTab === "show" ? (
-                <section className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+              <div
+                role="tabpanel"
+                id="sponsor-tabpanel-rsvp"
+                aria-labelledby="sponsor-tab-rsvp"
+                hidden={activeSponsorAdminTab !== "rsvp"}
+                className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5"
+              >
+                <SponsorRsvpAdminPanel showId={show.id} showSlug={show.slug} />
+              </div>
+
+              {activeSponsorAdminTab === "current-show" ? (
+                <section role="tabpanel" id="sponsor-tabpanel-current-show" aria-labelledby="sponsor-tab-current-show" className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
                 <div className="flex flex-col gap-1">
                   <h3 className="text-lg font-semibold text-stone-900">Sponsors for This Show</h3>
                   <p className="text-sm text-stone-600">
                     Assign reusable sponsors, then order and place them for this event.
                   </p>
-                </div>
-
-                <div className="flex justify-start">
-                  <button
-                    type="button"
-                    onClick={handlePrintShowSponsorLogoSheet}
-                    className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                  >
-                    Print Sponsor Logo Sheet
-                  </button>
                 </div>
 
                 <div className="flex justify-start">
@@ -24872,6 +24867,48 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     ))}
                   </div>
                 )}
+                </section>
+              ) : null}
+
+              {activeSponsorAdminTab === "print" ? (
+                <section role="tabpanel" id="sponsor-tabpanel-print" aria-labelledby="sponsor-tab-print" className="grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-lg font-semibold text-stone-900">Sponsor Print Center</h3>
+                    <p className="text-sm text-stone-600">Sponsor packets, mailing labels, return labels, and current-show sponsor printouts.</p>
+                  </div>
+
+                  <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                    <h4 className="text-base font-semibold text-stone-900">Sponsor Packets</h4>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href={`/admin/${show.slug}/sponsor-packet`} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">Sponsor Packet Builder</Link>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                    <h4 className="text-base font-semibold text-stone-900">Mailing Labels</h4>
+                    <div className="mt-3"><SponsorMailingLabelBulkAction sponsors={sponsorLibrary} /></div>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {activeSponsorLibrary.map((sponsor) => (
+                        <div key={sponsor.id} className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+                          <span className="min-w-0 truncate text-sm font-medium text-stone-800">{sponsorRecognitionName(sponsor)}</span>
+                          <SponsorMailingLabelButton sponsor={sponsor} />
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                    <h4 className="text-base font-semibold text-stone-900">CMMS Return Labels</h4>
+                    <div className="mt-3"><CmmsReturnMailingLabelActions /></div>
+                  </section>
+
+                  <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                    <h4 className="text-base font-semibold text-stone-900">Lists / Exports</h4>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href={`/admin/${show.slug}/print/sponsors`} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">Print Sponsor Rundown</Link>
+                      <button type="button" onClick={handlePrintShowSponsorLogoSheet} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">Print Sponsor Logo Sheet</button>
+                    </div>
+                  </section>
                 </section>
               ) : null}
             </div>
