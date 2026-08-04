@@ -646,7 +646,6 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 seatStates={seatStates}
                 onSeatClick={handleSeatClick}
                 showCustomerSeatDetails={false}
-                initialMobileView="center-aisle"
                 title="Select Your Seats"
                 helperText={
                   isAlreadySubmitted
