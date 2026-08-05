@@ -197,10 +197,20 @@ export async function AvailableSeatsView({ show }: AvailableSeatsViewProps) {
         </section>
 
         <section className="rounded-[1.5rem] border border-[rgba(200,155,60,0.24)] bg-[rgba(200,155,60,0.08)] px-4 py-4 text-sm text-[#f5f1e8] shadow-[0_18px_34px_rgba(0,0,0,0.18)] sm:px-5 sm:text-[15px]">
-          <p className="font-semibold text-[#fffaf1]">Reserved Seating Notice</p>
-          <p className="mt-2 leading-7 text-[#e5dccf]">
-            Reserved seating is available for this show. After purchasing tickets, a seat selection link will be sent to the email address used during checkout. Please allow up to 24 hours to receive your link. Because our reserved seating is personally managed rather than fully automated, requests are processed in the order they are received, allowing us to take a few moments to ensure everything is accurate and running smoothly. If you do not receive your link within 24 hours, please contact us and we&apos;ll be happy to help. If you prefer not to select your seats, that&apos;s perfectly fine too-we&apos;ll be happy to reserve seats for you and have them ready when you arrive.
-          </p>
+          <p className="font-semibold text-[#fffaf1]">Reserved Seating Information</p>
+          <div className="mt-2 space-y-3 leading-7 text-[#e5dccf]">
+            <p>Reserved seating is included with your advance ticket purchase.</p>
+            <p>
+              After completing your order, you&apos;ll <strong>automatically receive an email</strong> with a secure link to select your seats online at your convenience.
+            </p>
+            <p>
+              <strong>Using a mobile phone?</strong> Swipe the seating chart left or right to view <strong>both sides</strong> of the convention center seating before choosing your seats.
+            </p>
+            <p>
+              If you prefer not to choose your seats yourself, that&apos;s perfectly okay&mdash;<strong>we&apos;ll be happy to reserve seats for you</strong>.
+            </p>
+            <p>If you have any questions or don&apos;t receive your seat selection email, please check your spam folder, then contact us and we&apos;ll be glad to help.</p>
+          </div>
         </section>
 
         <section className="rounded-[1.6rem] border border-[rgba(200,155,60,0.16)] bg-[rgba(255,255,255,0.03)] p-3 shadow-[0_22px_40px_rgba(0,0,0,0.22)] sm:p-4">
