@@ -62,7 +62,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!profile) return NextResponse.json({ success: false, error: "Guest was not found." }, { status: 404 });
     if (!profile.email?.trim()) return NextResponse.json({ success: false, error: "This guest does not have an email address on file." }, { status: 400 });
 
-    const { count, error: songError } = await supabase.from("show_guest_songs").select("id", { count: "exact", head: true }).eq("show_id", showId).ilike("submitted_by_name", profile.name?.trim() ?? "");
+    const { count, error: songError } = await supabase.from("show_guest_songs").select("id", { count: "exact", head: true }).eq("show_id", showId).eq("is_placeholder", false).ilike("submitted_by_name", profile.name?.trim() ?? "");
     if (songError) throw songError;
     const missingItems = getGuestReminderMissingItems(profile, count ?? 0);
     const portalUrl = `${getStageFlowPublicUrl(request.nextUrl.origin)}/guest/${encodeURIComponent(profile.id)}`;

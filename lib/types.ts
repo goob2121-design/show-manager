@@ -106,6 +106,9 @@ export type ShowGuestSong = {
   notes?: string | null;
   lyrics?: string | null;
   submitted_by_name: string | null;
+  guest_profile_id?: string | null;
+  is_placeholder?: boolean;
+  placeholder_number?: number | null;
   created_at: string;
 };
 

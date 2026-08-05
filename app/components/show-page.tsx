@@ -101,6 +101,7 @@ import type {
   SongType,
   ViewMode,
 } from "@/lib/types";
+import { buildGuestSongPlaceholderRows } from "@/lib/guest-song-placeholders";
 
 type PendingSubmission = ShowGuestSong & {
   artist: string | null;
@@ -3767,7 +3768,7 @@ function getGuestProfilePortalStatus(
   submissions: PendingSubmission[],
 ): GuestPortalStatus {
   const submittedSongsCount = submissions.filter((song) =>
-    isGuestSongForProfile(song, profile.name),
+    !song.is_placeholder && isGuestSongForProfile(song, profile),
   ).length;
 
   if (submittedSongsCount > 0) {
@@ -3799,8 +3800,10 @@ function getGuestProfilePortalStatus(
   };
 }
 
-function isGuestSongForProfile(song: PendingSubmission, profileName: string | null | undefined) {
-  const normalizedProfileName = normalizeGuestProfileName(profileName ?? "");
+function isGuestSongForProfile(song: PendingSubmission, profile: Pick<GuestProfile, "id" | "name">) {
+  if (song.guest_profile_id) return song.guest_profile_id === profile.id;
+
+  const normalizedProfileName = normalizeGuestProfileName(profile.name ?? "");
 
   if (!normalizedProfileName) {
     return false;
@@ -6327,6 +6330,7 @@ export function ShowPage({
   const [mcSponsorReads, setMcSponsorReads] = useState<McSponsorRead[]>([]);
   const [mcSpecialSegments, setMcSpecialSegments] = useState<McSpecialSegment[]>([]);
   const [pendingSongs, setPendingSongs] = useState<PendingSubmission[]>([]);
+  const [guestPlaceholderCounts, setGuestPlaceholderCounts] = useState<Record<string, number>>({});
   const [songLibrary, setSongLibrary] = useState<SongLibrarySong[]>([]);
   const [rehearsalEntries, setRehearsalEntries] = useState<RehearsalEntryWithSong[]>([]);
   const [rehearsalRecordings, setRehearsalRecordings] = useState<RehearsalRecording[]>([]);
@@ -7235,7 +7239,7 @@ export function ShowPage({
   const submittedGuestSongsCount = useMemo(
     () =>
       pendingSongs.filter(
-        (song) => normalizeSubmittedByRole(song.submitted_by_role) === "guest",
+        (song) => !song.is_placeholder && normalizeSubmittedByRole(song.submitted_by_role) === "guest",
       ).length,
     [pendingSongs],
   );
@@ -13971,6 +13975,52 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
   }
 
+  async function handleCreateGuestSongPlaceholders(profile: GuestProfile) {
+    if (!show) {
+      setActionError("The show is not loaded yet.");
+      return;
+    }
+
+    const quantity = guestPlaceholderCounts[profile.id] ?? 3;
+    let placeholderRows;
+
+    try {
+      placeholderRows = buildGuestSongPlaceholderRows({
+        showId: show.id,
+        guestProfileId: profile.id,
+        guestDisplayName: profile.name ?? "",
+        quantity,
+        existingSongs: pendingSongs,
+      }).map((row) => ({ id: crypto.randomUUID(), ...row }));
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+      return;
+    }
+
+    setActionError(null);
+    setActivePendingActionId(`placeholders-${profile.id}`);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("show_guest_songs")
+        .insert(placeholderRows)
+        .select("*");
+
+      if (error) throw error;
+
+      const createdPlaceholders = ((data ?? []) as PendingSubmission[]).map((song) =>
+        normalizePendingSubmission(song as PendingSubmission),
+      );
+      setPendingSongs((currentSongs) => [...currentSongs, ...createdPlaceholders]);
+      setGuestPlaceholderCounts((currentCounts) => ({ ...currentCounts, [profile.id]: 3 }));
+    } catch (error) {
+      setActionError(getGuestSongSaveErrorMessage(error));
+    } finally {
+      setActivePendingActionId(null);
+    }
+  }
+
   async function handleDeleteFromSongPool(songId: string) {
     setActionError(null);
     setActivePendingActionId(songId);
@@ -14012,6 +14062,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       return;
     }
 
+    const setlistUsageCount = guestSongSetlistUsageCounts[songId] ?? 0;
+    if (songToDelete.is_placeholder && setlistUsageCount > 0) {
+      window.alert("Remove this placeholder from the setlist before deleting it.");
+      return;
+    }
+
     const shouldDelete = window.confirm(
       `Delete the guest song "${songToDelete.title}" for ${getDisplaySingerName(songToDelete.submitted_by_name)}?`,
     );
@@ -14036,7 +14092,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
 
     const relatedGuestSongs = pendingSongs.filter((song) =>
-      isGuestSongForProfile(song, profileToDelete.name),
+      isGuestSongForProfile(song, profileToDelete),
     );
     const shouldDelete = window.confirm(
       `Delete guest profile "${profileToDelete.name || "Unnamed guest"}"? This will also delete ${relatedGuestSongs.length} submitted song${
@@ -15208,17 +15264,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
     const nextSortOrder =
       rehearsalEntries.reduce((maxSortOrder, entry) => Math.max(maxSortOrder, entry.sort_order), 0) + 1;
-    const matchedLibrarySong =
-      songLibrary.find((song) => song.title.trim().toLowerCase() === selectedGuestSong.title.trim().toLowerCase()) ??
-      null;
-    const normalizedNotes = [
-      selectedGuestSong.submitted_by_name?.trim()
-        ? `Guest: ${selectedGuestSong.submitted_by_name.trim()}`
-        : null,
-      normalizeOptionalField(selectedGuestSong.notes ?? ""),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
+    const matchedLibrarySong = selectedGuestSong.is_placeholder
+      ? null
+      : songLibrary.find((song) => song.title.trim().toLowerCase() === selectedGuestSong.title.trim().toLowerCase()) ??
+        null;
+    const normalizedNotes = selectedGuestSong.is_placeholder
+      ? ""
+      : [
+          selectedGuestSong.submitted_by_name?.trim()
+            ? `Guest: ${selectedGuestSong.submitted_by_name.trim()}`
+            : null,
+          normalizeOptionalField(selectedGuestSong.notes ?? ""),
+        ]
+          .filter(Boolean)
+          .join("\n\n");
 
     setActiveRehearsalActionId("create-guest");
     setRehearsalErrorMessage(null);
@@ -15235,7 +15294,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           key: matchedLibrarySong ? null : selectedGuestSong.key ?? null,
           sung_by: matchedLibrarySong
             ? null
-            : selectedGuestSong.sung_by ?? selectedGuestSong.submitted_by_name ?? null,
+            : selectedGuestSong.is_placeholder
+              ? null
+              : selectedGuestSong.sung_by ?? selectedGuestSong.submitted_by_name ?? null,
           notes: normalizeOptionalField(normalizedNotes),
           section_label: null,
           sort_order: nextSortOrder,
@@ -16935,6 +16996,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
   const guestSubmittedSongs =
     viewMode === "guest"
       ? pendingSongs.filter((song) => {
+          if (song.is_placeholder) return false;
           if (normalizeSubmittedByRole(song.submitted_by_role) !== "guest") {
             return false;
           }
@@ -18029,7 +18091,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           {pendingSongs.map((song) => (
                             <option key={song.id} value={song.id}>
                               {sanitizeSongTitle(song.title)}
-                              {song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
+                              {song.is_placeholder ? " (Placeholder)" : ""}
+                              {!song.is_placeholder && song.submitted_by_name ? ` - ${song.submitted_by_name}` : ""}
                             </option>
                           ))}
                         </select>
@@ -25800,7 +25863,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     guestPortalStatus.lastReminderSentAt,
                   );
                   const submittedSongsForProfile = pendingSongs.filter((song) =>
-                    isGuestSongForProfile(song, profile.name),
+                    !song.is_placeholder && isGuestSongForProfile(song, profile),
                   );
                   const guestMissingItems = getGuestReminderMissingItems(profile, submittedSongsForProfile.length);
                   const guestReadiness = !profile.email?.trim()
@@ -26835,6 +26898,50 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
             </div>
             <SectionLoadWarning message={dataSectionErrors.guestSongs} />
 
+            {guestProfiles.length > 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+                <h3 className="text-base font-semibold text-stone-900">+ Add Guest Song Placeholders</h3>
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  {guestProfiles.map((profile) => {
+                    const placeholderCount = guestPlaceholderCounts[profile.id] ?? 3;
+                    const actionId = `placeholders-${profile.id}`;
+                    return (
+                      <div key={profile.id} className="rounded-xl border border-amber-200 bg-white p-3">
+                        <p className="text-sm font-semibold text-stone-900">{profile.name || "Unnamed guest"}</p>
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                          <label className="flex flex-1 flex-col gap-1 text-xs font-medium text-stone-700">
+                            How many guest-song placeholders?
+                            <input
+                              type="number"
+                              min={1}
+                              max={10}
+                              value={placeholderCount}
+                              onChange={(event) => {
+                                const nextCount = Number.parseInt(event.target.value, 10);
+                                setGuestPlaceholderCounts((currentCounts) => ({
+                                  ...currentCounts,
+                                  [profile.id]: Number.isFinite(nextCount) ? Math.min(10, Math.max(1, nextCount)) : 3,
+                                }));
+                              }}
+                              className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => void handleCreateGuestSongPlaceholders(profile)}
+                            disabled={activePendingActionId === actionId || !profile.name?.trim()}
+                            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {activePendingActionId === actionId ? "Creating..." : "Create Placeholders"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             {visibleGuestSongs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
                 No guest songs have been submitted for this show yet.
@@ -26899,9 +27006,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       ) : (
                         <>
                           <div className="flex flex-col gap-1">
-                            <h3 className="text-base font-semibold text-stone-900">
-                              {song.title}
-                            </h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-base font-semibold text-stone-900">{song.title}</h3>
+                              {song.is_placeholder ? (
+                                <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-900">
+                                  Placeholder
+                                </span>
+                              ) : null}
+                            </div>
                             <p className="text-sm text-stone-700">
                               {getDisplaySingerName(song.artist)}
                             </p>
@@ -26938,7 +27050,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
                           {canEditPoolSong() || viewMode === "admin" ? (
                             <div className="mt-4 flex flex-col gap-3">
-                              {canEditPoolSong() ? (
+                              {canEditPoolSong() && !song.is_placeholder ? (
                                 <div className="flex flex-col gap-3 sm:flex-row">
                                   <button
                                     type="button"
