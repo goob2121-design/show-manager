@@ -59,3 +59,29 @@ test("all existing scan result actions and Special Admissions remain wired", asy
   assert.ok(source.includes("Special Admissions &middot; {specialAdmissionCount}"));
   assert.ok(source.includes("handleAdjustTicketCheckIn(item, 1)"));
 });
+
+test("Special Admissions opens from the toolbar in a scrollable modal", async () => {
+  const source = await readFile(doorModeUrl, "utf8");
+  const paidDoorIndex = source.indexOf('data-testid="paid-door-compact-strip"');
+  const specialButtonIndex = source.indexOf(">Special Admissions ({specialAdmissionCount})</button>");
+  const sponsorButtonIndex = source.indexOf(">Sponsor Comps</button>");
+  const mainLayoutIndex = source.indexOf("<section>", sponsorButtonIndex);
+  const mainLayoutEndIndex = source.indexOf("</section>", mainLayoutIndex);
+  const modalIndex = source.indexOf("{isSpecialAdmissionsPanelOpen ? (", mainLayoutEndIndex);
+  const sponsorModalIndex = source.indexOf("{isSponsorCompPanelOpen ? (", modalIndex);
+
+  assert.ok(paidDoorIndex >= 0 && paidDoorIndex < specialButtonIndex);
+  assert.ok(specialButtonIndex < sponsorButtonIndex);
+  assert.equal(source.indexOf('data-testid="paid-door-compact-strip"', paidDoorIndex + 1), -1);
+  assert.ok(source.includes("setIsSpecialAdmissionsPanelOpen(true)"));
+  assert.ok(source.includes("setIsSpecialAdmissionsPanelOpen(false)"));
+  assert.ok(mainLayoutIndex > sponsorButtonIndex);
+  assert.equal(source.slice(mainLayoutIndex, mainLayoutEndIndex).includes("paid-door-compact-strip"), false);
+  assert.ok(modalIndex > mainLayoutEndIndex && modalIndex < sponsorModalIndex);
+  assert.ok(source.slice(modalIndex, sponsorModalIndex).includes('role="dialog"'));
+  assert.ok(source.slice(modalIndex, sponsorModalIndex).includes("max-w-3xl"));
+  assert.ok(source.slice(modalIndex, sponsorModalIndex).includes("flex-1 overflow-y-auto"));
+  assert.ok(source.slice(modalIndex, sponsorModalIndex).includes("filteredSpecialAdmissions.map((item)"));
+  assert.ok(source.slice(modalIndex, sponsorModalIndex).includes("handleAdjustTicketCheckIn(item, 1)"));
+  assert.ok(source.slice(modalIndex, sponsorModalIndex).includes("handleAdjustTicketCheckIn(item, -1)"));
+});

@@ -316,6 +316,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
   const [recentActivities, setRecentActivities] = useState<DoorModeActivity[]>([]);
   const [isTotalsPanelOpen, setIsTotalsPanelOpen] = useState(false);
+  const [isSpecialAdmissionsPanelOpen, setIsSpecialAdmissionsPanelOpen] = useState(false);
   const [isSponsorCompPanelOpen, setIsSponsorCompPanelOpen] = useState(false);
   const [sponsorCompCustomAmounts, setSponsorCompCustomAmounts] = useState<Record<string, string>>({});
   const [currentTime, setCurrentTime] = useState(() => new Date());
@@ -1518,17 +1519,40 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2 md:ml-auto md:justify-end">
-              <button type="button" aria-label="Sponsor Comp Tickets" onClick={() => setIsSponsorCompPanelOpen(true)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-amber-700/70 bg-amber-500/10 px-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20">Sponsor Comps</button>
-              <div ref={printMenuRef} className="relative">
-                <button type="button" aria-expanded={isPrintMenuOpen} aria-haspopup="menu" onClick={() => setIsPrintMenuOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Print <span aria-hidden="true">&#9662;</span></button>
-                {isPrintMenuOpen ? (
-                  <div role="menu" className="absolute left-0 z-30 mt-2 grid min-w-56 overflow-hidden rounded-xl border border-gray-700 bg-gray-800 p-1.5 shadow-2xl sm:left-auto sm:right-0">
-                    <Link role="menuitem" href={`/admin/${show.slug}/print/door-guest-list`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Door Guest List</Link>
-                    <Link role="menuitem" href={`/admin/${show.slug}/print/reserved-seat-cards`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Reserved Seat Cards</Link>
-                    <Link role="menuitem" href={`/admin/${show.slug}/print/blank-seat-cards`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Blank Seat Cards</Link>
-                  </div>
-                ) : null}
+              <div data-testid="paid-door-compact-strip" className="flex min-h-10 flex-wrap items-center justify-center gap-1.5 rounded-lg border border-emerald-900/60 bg-gray-800 px-2 py-1 shadow-sm shadow-slate-950/10">
+                <span className="text-sm font-semibold text-gray-50">Paid Door Tickets</span>
+                <span className="text-xs font-semibold text-emerald-200">Current: {doorPaidTickets}</span>
+                <span className="text-[11px] font-medium text-gray-400">{formatCurrency(DOOR_TICKET_PRICE)} each</span>
+                {[1, 2, 5].map((quantity) => (
+                  <button
+                    key={`door-plus-${quantity}`}
+                    type="button"
+                    onClick={() => void handleAddDoorSale(quantity)}
+                    disabled={Boolean(activeActionId)}
+                    className="min-h-8 rounded-md bg-emerald-700 px-2.5 text-sm font-semibold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
+                  >
+                    +{quantity}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => void handleSubtractDoorSale()}
+                  disabled={Boolean(activeActionId) || doorPaidTickets <= 0}
+                  className="min-h-8 rounded-md border border-gray-700 bg-gray-700 px-2.5 text-sm font-semibold text-gray-100 transition hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  -1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleUndoLastAction()}
+                  disabled={Boolean(activeActionId) || recentActivities.length === 0}
+                  className="min-h-8 rounded-md border border-sky-800/80 bg-sky-500/[0.07] px-2.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Undo Last
+                </button>
               </div>
+              <button type="button" aria-label={`Special Admissions (${specialAdmissionCount})`} onClick={() => setIsSpecialAdmissionsPanelOpen(true)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-violet-700/70 bg-violet-500/10 px-3 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/20">Special Admissions ({specialAdmissionCount})</button>
+              <button type="button" aria-label="Sponsor Comp Tickets" onClick={() => setIsSponsorCompPanelOpen(true)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-amber-700/70 bg-amber-500/10 px-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20">Sponsor Comps</button>
               <button
                 type="button"
                 aria-label="Open Welcome Display"
@@ -1542,6 +1566,16 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               >
                 Open Welcome Display
               </button>
+              <div ref={printMenuRef} className="relative">
+                <button type="button" aria-expanded={isPrintMenuOpen} aria-haspopup="menu" onClick={() => setIsPrintMenuOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Print <span aria-hidden="true">&#9662;</span></button>
+                {isPrintMenuOpen ? (
+                  <div role="menu" className="absolute left-0 z-30 mt-2 grid min-w-56 overflow-hidden rounded-xl border border-gray-700 bg-gray-800 p-1.5 shadow-2xl sm:left-auto sm:right-0">
+                    <Link role="menuitem" href={`/admin/${show.slug}/print/door-guest-list`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Door Guest List</Link>
+                    <Link role="menuitem" href={`/admin/${show.slug}/print/reserved-seat-cards`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Reserved Seat Cards</Link>
+                    <Link role="menuitem" href={`/admin/${show.slug}/print/blank-seat-cards`} onClick={() => setIsPrintMenuOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-100 hover:bg-gray-800">Blank Seat Cards</Link>
+                  </div>
+                ) : null}
+              </div>
               <button type="button" aria-label="View Totals" onClick={() => setIsTotalsPanelOpen(true)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Totals</button>
               <div className="relative">
                 <button type="button" aria-label="Recent Check-Ins" aria-expanded={isRecentCheckInsOpen} aria-controls="door-recent-check-ins" onClick={() => setIsRecentCheckInsOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Recent ({recentGuestCheckIns.length})</button>
@@ -1565,7 +1599,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             <p className="mt-2 rounded-lg border border-dashed border-gray-700 bg-gray-900/50 px-3 py-2 text-xs text-gray-300">No matching prepaid or special-admission guests.</p>
           ) : null}
         </section>
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,0.72fr)]">
+        <section>
           <div className="rounded-[28px] border border-gray-700 bg-gray-800 p-5 sm:p-6">
             <div className="flex flex-col gap-1">
               <h2 className="border-l-4 border-sky-500 pl-3 text-xl font-semibold text-gray-50">Prepaid / Online Check-In &middot; {prepaidAdmissionCount}</h2>
@@ -1649,105 +1683,6 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3">
-            <div data-testid="paid-door-compact-strip" className="flex flex-col gap-3 rounded-[20px] border border-emerald-900/60 bg-gray-800 px-3 py-3 shadow-sm shadow-slate-950/10 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h2 className="border-l-4 border-emerald-600 pl-3 text-base font-semibold text-gray-50 sm:text-lg">Paid Door Tickets</h2>
-                <span className="text-sm font-semibold text-emerald-200">Current: {doorPaidTickets}</span>
-                <span className="text-xs font-medium text-gray-400">{formatCurrency(DOOR_TICKET_PRICE)} each</span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center xl:justify-end">
-                {[1, 2, 5].map((quantity) => (
-                  <button
-                    key={`door-plus-${quantity}`}
-                    type="button"
-                    onClick={() => void handleAddDoorSale(quantity)}
-                    disabled={Boolean(activeActionId)}
-                    className="min-h-11 rounded-lg bg-emerald-700 px-4 text-base font-semibold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
-                  >
-                    +{quantity}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => void handleSubtractDoorSale()}
-                  disabled={Boolean(activeActionId) || doorPaidTickets <= 0}
-                  className="min-h-11 rounded-lg border border-gray-700 bg-gray-700 px-4 text-base font-semibold text-gray-100 transition hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  -1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleUndoLastAction()}
-                  disabled={Boolean(activeActionId) || recentActivities.length === 0}
-                  className="col-span-2 min-h-11 rounded-lg border border-sky-800/80 bg-sky-500/[0.07] px-4 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
-                >
-                  Undo Last
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-[28px] border border-gray-700 bg-gray-800 p-5 sm:p-6">
-              <div className="flex flex-col gap-1">
-                <h2 className="border-l-4 border-violet-500 pl-3 text-xl font-semibold text-gray-50">Special Admissions &middot; {specialAdmissionCount}</h2>
-                <p className="text-sm text-gray-300">
-                  Named, non-sponsor guest, band, media, volunteer, staff, and other admissions.
-                </p>
-              </div>
-
-              <div className="mt-5 grid gap-4">
-                {filteredSpecialAdmissions.length === 0 ? (
-                  <p className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 px-4 py-5 text-sm text-gray-400">
-                    No special admissions for this show yet.
-                  </p>
-                ) : (
-                  filteredSpecialAdmissions.map((item) => (
-                    <article key={item.id} className={`self-start rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? "border-emerald-900/60 bg-emerald-500/[0.07] opacity-80 hover:border-emerald-800/70" : "border-gray-700 bg-gray-800 hover:border-gray-600"}`}>
-                      <div className="flex flex-col gap-4">
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-xl font-semibold text-gray-50 sm:text-2xl">{item.guest_name}</h3>
-                            <span className="rounded-full border border-gray-700 bg-gray-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-300">
-                              {checkInAdmissionLabel(item.ticket_type, item.notes)}
-                            </span>
-                            <span className="rounded-full border border-amber-700 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">
-                              {item.checked_in_count} / {item.ticket_count} checked in
-                            </span>
-                            {isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? (
-                              <span className="rounded-full border border-emerald-700/70 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200">Checked In</span>
-                            ) : null}
-                          </div>
-                          {item.email ? <p className="text-sm text-gray-300">{item.email}</p> : null}
-                          {renderSeatLocationControl(item)}
-                          {renderDoorModeNoteDetails(item.notes)}
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <button
-                            type="button"
-                            onClick={() => void handleAdjustTicketCheckIn(item, 1)}
-                            disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
-                            className="rounded-2xl bg-emerald-700 px-5 py-5 text-xl font-semibold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
-                          >
-                            +1 Check In
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleAdjustTicketCheckIn(item, -1)}
-                            disabled={Boolean(activeActionId) || item.checked_in_count <= 0}
-                            className="rounded-2xl border border-gray-700 bg-gray-800 px-5 py-5 text-xl font-semibold text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            -1 Undo
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
         </section>
 
         {isTotalsPanelOpen ? (
@@ -1821,6 +1756,81 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                       ))
                     )}
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isSpecialAdmissionsPanelOpen ? (
+          <div className="fixed inset-0 z-40 flex items-start justify-end bg-slate-950/70 p-3 sm:p-6">
+            <div role="dialog" aria-modal="true" aria-labelledby="special-admissions-modal-title" className="flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-gray-700 bg-gray-800 shadow-lg shadow-slate-950/25">
+              <div className="flex items-center justify-between border-b border-gray-700 px-5 py-4 sm:px-6">
+                <div>
+                  <h2 id="special-admissions-modal-title" className="border-l-4 border-violet-500 pl-3 text-xl font-semibold text-gray-50">Special Admissions &middot; {specialAdmissionCount}</h2>
+                  <p className="text-sm text-gray-400">
+                    Named, non-sponsor guest, band, media, volunteer, staff, and other admissions.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSpecialAdmissionsPanelOpen(false)}
+                  className="rounded-2xl border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-semibold text-gray-100 transition hover:bg-gray-700"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+                <div className="grid gap-4">
+                  {filteredSpecialAdmissions.length === 0 ? (
+                    <p className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 px-4 py-5 text-sm text-gray-400">
+                      No special admissions for this show yet.
+                    </p>
+                  ) : (
+                    filteredSpecialAdmissions.map((item) => (
+                      <article key={item.id} className={`self-start rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? "border-emerald-900/60 bg-emerald-500/[0.07] opacity-80 hover:border-emerald-800/70" : "border-gray-700 bg-gray-800 hover:border-gray-600"}`}>
+                        <div className="flex flex-col gap-4">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-xl font-semibold text-gray-50 sm:text-2xl">{item.guest_name}</h3>
+                              <span className="rounded-full border border-gray-700 bg-gray-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-300">
+                                {checkInAdmissionLabel(item.ticket_type, item.notes)}
+                              </span>
+                              <span className="rounded-full border border-amber-700 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">
+                                {item.checked_in_count} / {item.ticket_count} checked in
+                              </span>
+                              {isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count) ? (
+                                <span className="rounded-full border border-emerald-700/70 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200">Checked In</span>
+                              ) : null}
+                            </div>
+                            {item.email ? <p className="text-sm text-gray-300">{item.email}</p> : null}
+                            {renderSeatLocationControl(item)}
+                            {renderDoorModeNoteDetails(item.notes)}
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleAdjustTicketCheckIn(item, 1)}
+                              disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
+                              className="rounded-2xl bg-emerald-700 px-5 py-5 text-xl font-semibold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
+                            >
+                              +1 Check In
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleAdjustTicketCheckIn(item, -1)}
+                              disabled={Boolean(activeActionId) || item.checked_in_count <= 0}
+                              className="rounded-2xl border border-gray-700 bg-gray-800 px-5 py-5 text-xl font-semibold text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              -1 Undo
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
