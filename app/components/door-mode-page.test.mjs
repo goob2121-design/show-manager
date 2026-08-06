@@ -60,6 +60,18 @@ test("all existing scan result actions and Special Admissions remain wired", asy
   assert.ok(source.includes("handleAdjustTicketCheckIn(item, 1)"));
 });
 
+test("prepaid cards reserve the seat row when no seats are assigned", async () => {
+  const source = await readFile(doorModeUrl, "utf8");
+  const seatStatusIndex = source.indexOf("function renderPaidAdmissionSeatStatus");
+  const metadataIndex = source.indexOf("function renderPaidAdmissionMetadata", seatStatusIndex);
+  const seatStatusSource = source.slice(seatStatusIndex, metadataIndex);
+
+  assert.ok(seatStatusSource.includes("if (seatLocationControl) return seatLocationControl"));
+  assert.ok(seatStatusSource.includes("Seats: Not selected yet"));
+  assert.equal(seatStatusSource.includes("View Seats"), false);
+  assert.equal(seatStatusSource.includes("onClick"), false);
+});
+
 test("Special Admissions opens from the toolbar in a scrollable modal", async () => {
   const source = await readFile(doorModeUrl, "utf8");
   const paidDoorIndex = source.indexOf('data-testid="paid-door-compact-strip"');

@@ -691,11 +691,10 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   function renderPaidAdmissionSeatStatus(item: ShowCompTicket) {
     const seatLocationControl = renderSeatLocationControl(item);
     if (seatLocationControl) return seatLocationControl;
-    if (checkInAdmissionLabel(item.ticket_type, item.notes) !== "Paid Reserved") return null;
 
     return (
-      <p className="w-fit rounded-lg border border-amber-800/70 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
-        Waiting on Seat Selection
+      <p className="inline-flex w-fit items-center rounded-lg border border-gray-700 bg-gray-900/40 px-3 py-2 text-sm font-medium text-gray-400">
+        Seats: Not selected yet
       </p>
     );
   }
