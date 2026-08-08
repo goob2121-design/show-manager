@@ -1248,6 +1248,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       return;
     }
 
+    setPendingLyricsAutoStart(true);
     setLyricsOpen(true);
   };
 
@@ -1549,7 +1550,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       );
       const shouldAutoStart = savedAutoStartScroll
         ? savedAutoStartScroll === "true"
-        : lyricsAutoStartScroll;
+        : currentSong.lyricsAutoStartScroll ?? lyricsAutoStartScroll;
 
       console.log(`Auto Start setting for song: ${shouldAutoStart}`);
 
@@ -2307,10 +2308,10 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
           >
             <div
               className={`${
-                lyricsControlsHidden ? "relative block text-center" : "flex items-center justify-between gap-4"
+                lyricsControlsHidden ? "grid grid-cols-2 items-center gap-2 text-center" : "flex items-center justify-between gap-4"
               } pb-4 ${lyricsReadingMode ? "border-b border-stone-200" : "border-b border-white/10"}`}
             >
-              <div className={lyricsControlsHidden ? "mx-auto max-w-5xl px-24" : undefined}>
+              <div className={lyricsControlsHidden ? "contents" : undefined}>
                 {!lyricsControlsHidden ? (
                   <p
                     className={`text-xs font-semibold uppercase tracking-[0.24em] ${
@@ -2321,21 +2322,21 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                   </p>
                 ) : null}
                 <h3
-                  className={`${lyricsControlsHidden ? "text-4xl font-black sm:text-5xl lg:text-6xl" : "mt-2 text-2xl font-bold"} ${
+                  className={`${lyricsControlsHidden ? "order-1 col-span-2 text-4xl font-black sm:text-5xl lg:text-6xl" : "mt-2 text-2xl font-bold"} ${
                     lyricsReadingMode ? "text-stone-950" : "text-white"
                   }`}
                 >
                   {currentSong.title}
                 </h3>
                 <p
-                  className={`${lyricsControlsHidden ? "mt-3 text-2xl font-black sm:text-3xl" : "mt-2 text-lg font-bold"} ${
+                  className={`${lyricsControlsHidden ? "order-3 col-span-2 mt-1 text-2xl font-black sm:text-3xl" : "mt-2 text-lg font-bold"} ${
                     lyricsReadingMode ? "text-emerald-800" : "text-emerald-200"
                   }`}
                 >
                   Key: {currentSong.key?.trim() || "-"}
                 </p>
               </div>
-              <div className={lyricsControlsHidden ? "absolute right-0 top-0 flex items-center justify-end gap-2" : "flex flex-wrap items-center justify-end gap-2"}>
+              <div className={lyricsControlsHidden ? "contents" : "flex flex-wrap items-center justify-end gap-2"}>
                 {!lyricsControlsHidden ? (
                   <>
                     <button
@@ -2393,7 +2394,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                         startLyricsAutoScroll(true);
                       }
                     }}
-                    className={`mx-auto flex min-h-[4.5rem] w-fit min-w-[20rem] max-w-full flex-col items-center justify-center rounded-[1.5rem] px-8 py-3.5 text-center text-xl font-black uppercase tracking-[0.12em] shadow-[0_22px_55px_-32px_rgba(16,185,129,0.9)] transition sm:min-h-[5rem] sm:min-w-[24rem] sm:px-10 sm:text-2xl ${
+                    className={`${lyricsControlsHidden ? "order-2 col-span-2" : ""} mx-auto flex min-h-[4.5rem] w-fit min-w-[20rem] max-w-full flex-col items-center justify-center rounded-[1.5rem] px-8 py-3.5 text-center text-xl font-black uppercase tracking-[0.12em] shadow-[0_22px_55px_-32px_rgba(16,185,129,0.9)] transition sm:min-h-[5rem] sm:min-w-[24rem] sm:px-10 sm:text-2xl ${
                     lyricsAutoScrollStatus === "running"
                       ? lyricsReadingMode
                         ? "border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100"
@@ -2512,7 +2513,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 <button
                   type="button"
                   onClick={() => setLyricsControlsHidden((currentValue) => !currentValue)}
-                  className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
+                  className={`${lyricsControlsHidden ? "order-4 w-full justify-self-end" : ""} rounded-full px-3 py-2 text-sm font-semibold transition ${
                     lyricsReadingMode
                       ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
                       : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
@@ -2526,7 +2527,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     stopLyricsAutoScroll();
                     setLyricsOpen(false);
                   }}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  className={`${lyricsControlsHidden ? "order-4 w-full justify-self-start" : ""} rounded-full px-4 py-2 text-sm font-semibold transition ${
                     lyricsReadingMode
                       ? "border border-stone-300 bg-stone-100 text-stone-900 hover:bg-stone-200"
                       : "border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"

@@ -109,7 +109,10 @@ test("Door Mode uses compact search and a collapsed session-only Recent disclosu
   assert.match(source, /aria-controls="door-recent-check-ins"/);
   assert.match(source, /Recent \(\{recentGuestCheckIns\.length\}\)/);
   assert.match(source, /useState<RecentGuestCheckIn\[\]>\(\[\]\)/);
-  assert.match(source, /setTimeout\(\(\) => setCheckInConfirmation\(null\), 3500\)/);
+  assert.match(source, /setTimeout\(\(\) => setStatusMessage\(null\), 4000\)/);
+  assert.match(source, /return \(\) => window\.clearTimeout\(timeout\)/);
+  assert.doesNotMatch(source, /checkInConfirmation/);
+  assert.match(source, /<div aria-live="polite" aria-atomic="true">\s*\{statusMessage \? \(/);
   assert.ok(source.indexOf('placeholder="Search guests..."') < source.indexOf("Prepaid / Online Check-In"));
 });
 test("Door Mode toolbar is compact on desktop and safely stacked on mobile", async () => {

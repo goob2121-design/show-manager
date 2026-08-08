@@ -329,7 +329,6 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [guestSearch, setGuestSearch] = useState("");
   const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
   const [isRecentCheckInsOpen, setIsRecentCheckInsOpen] = useState(false);
-  const [checkInConfirmation, setCheckInConfirmation] = useState<string | null>(null);
   const [recentGuestCheckIns, setRecentGuestCheckIns] = useState<RecentGuestCheckIn[]>([]);
   const [seatView, setSeatView] = useState<DoorSeatView | null>(null);
   const [seatIdsByTicketId, setSeatIdsByTicketId] = useState<Record<string, string[]>>({});
@@ -491,10 +490,10 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   }, [isPrintMenuOpen]);
 
   useEffect(() => {
-    if (!checkInConfirmation) return;
-    const timeout = window.setTimeout(() => setCheckInConfirmation(null), 3500);
+    if (!statusMessage) return;
+    const timeout = window.setTimeout(() => setStatusMessage(null), 4000);
     return () => window.clearTimeout(timeout);
-  }, [checkInConfirmation]);
+  }, [statusMessage]);
 
   useEffect(() => {
     if (!seatView) return;
@@ -1223,7 +1222,6 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       const previousCheckedInCount = item.checked_in_count;
       if (delta > 0) {
         const checkedInByAction = updatedTicket.checked_in_count - previousCheckedInCount;
-        setCheckInConfirmation(`${item.guest_name} checked in - ${updatedTicket.checked_in_count} / ${item.ticket_count}`);
         setRecentGuestCheckIns((current) => addRecentGuestCheckIn(current, {
           id: `${item.id}-${Date.now()}`,
           guestName: item.guest_name,
@@ -1360,15 +1358,11 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             </div>
           </div>
         </section>
-        {statusMessage ? (
-          <div className="rounded-2xl border border-emerald-800 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-            {statusMessage}
-          </div>
-        ) : null}
-
         <div aria-live="polite" aria-atomic="true">
-          {checkInConfirmation ? (
-            <div className="rounded-2xl border border-emerald-700 bg-emerald-500/15 px-4 py-3 text-sm font-semibold text-emerald-100 shadow-lg">{checkInConfirmation}</div>
+          {statusMessage ? (
+            <div className="rounded-2xl border border-emerald-800 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+              {statusMessage}
+            </div>
           ) : null}
         </div>
 
