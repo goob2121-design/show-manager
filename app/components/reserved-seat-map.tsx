@@ -26,6 +26,8 @@ type ReservedSeatMapProps = {
   legendVariant?: "customer" | "public" | "admin" | "door-readonly" | "sponsor-packet";
   chromeVariant?: "stageflow" | "cmms-public" | "sponsor-packet";
   sizeVariant?: "default" | "compact";
+  presentationVariant?: "default" | "customer-display";
+  showSwipeHint?: boolean;
 };
 
 const customerLegendItems = [
@@ -152,6 +154,8 @@ export function ReservedSeatMap({
   legendVariant = "customer",
   chromeVariant = "stageflow",
   sizeVariant = "default",
+  presentationVariant = "default",
+  showSwipeHint = true,
 }: ReservedSeatMapProps) {
   const visibleLegendItems = legendVariant === "door-readonly"
     ? doorReadOnlyLegendItems
@@ -168,6 +172,7 @@ export function ReservedSeatMap({
   const isCmmsPublic = chromeVariant === "cmms-public";
   const isSponsorPacket = chromeVariant === "sponsor-packet";
   const isCompact = sizeVariant === "compact";
+  const isCustomerDisplay = presentationVariant === "customer-display";
 
   return (
     <>
@@ -205,7 +210,9 @@ export function ReservedSeatMap({
         }
       `}</style>
       <div
-        className={isSponsorPacket
+        className={isCustomerDisplay
+        ? "w-full max-w-full overflow-hidden bg-transparent text-slate-100 shadow-none"
+        : isSponsorPacket
         ? "w-full max-w-full overflow-hidden text-[#050505] shadow-none"
         : isCmmsPublic
         ? "w-full max-w-full overflow-hidden rounded-[1.6rem] border border-[rgba(200,155,60,0.16)] bg-[linear-gradient(180deg,rgba(10,14,21,0.98),rgba(6,9,15,0.98))] text-[#f5f1e8] shadow-[0_20px_44px_rgba(0,0,0,0.28)]"
@@ -224,8 +231,8 @@ export function ReservedSeatMap({
         </div>
       ) : null}
 
-      <div className={`w-full max-w-full overflow-hidden ${isSponsorPacket ? (isCompact ? "p-0" : "p-0") : isCompact ? "p-2.5 sm:p-3" : "p-3 sm:p-4 lg:p-5"}`}>
-        {!isSponsorPacket ? (
+      <div className={`w-full max-w-full overflow-hidden ${isCustomerDisplay ? "p-0" : isSponsorPacket ? (isCompact ? "p-0" : "p-0") : isCompact ? "p-2.5 sm:p-3" : "p-3 sm:p-4 lg:p-5"}`}>
+        {showSwipeHint && !isSponsorPacket ? (
           <div
             aria-label="This auditorium has two seating sections: left and right, separated by a center aisle. Swipe the seating chart below left or right to view both sides."
             className={isCmmsPublic
@@ -240,6 +247,7 @@ export function ReservedSeatMap({
             </p>
           </div>
         ) : null}
+        {showSwipeHint ? (
         <p
           aria-label="Swipe left or right to view both sides of the auditorium."
           className={isSponsorPacket
@@ -252,6 +260,7 @@ export function ReservedSeatMap({
           <strong aria-hidden="true" className={isSponsorPacket ? "text-[#8a6524]" : isCmmsPublic ? "text-[#d6af45]" : "text-amber-300"}>BOTH sides</strong>
           <span aria-hidden="true"> of the auditorium ➡️</span>
         </p>
+        ) : null}
 
         <div className="w-full max-w-full overflow-x-auto overscroll-x-contain touch-pan-x pb-2 [-webkit-overflow-scrolling:touch]">
           <div
@@ -259,6 +268,8 @@ export function ReservedSeatMap({
               ? "min-w-[620px] bg-white p-1.5 sm:min-w-[700px] sm:p-2 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[45rem] lg:p-2"
               : isCmmsPublic
               ? "min-w-[900px] rounded-[1.1rem] border border-[rgba(200,155,60,0.14)] bg-[radial-gradient(circle_at_top_center,_rgba(200,155,60,0.09),_transparent_36%),linear-gradient(180deg,_#0d1016,_#080b10)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5"
+              : isCustomerDisplay
+              ? "min-w-[900px] rounded-[1.2rem] bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5"
               : "min-w-[900px] rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5"}
           >
             <div className={isSponsorPacket ? "mx-auto max-w-[44rem]" : "mx-auto max-w-[62rem]"}>

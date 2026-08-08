@@ -5,6 +5,8 @@ import {
   DOOR_WELCOME_IDLE_TIMEOUT_MS,
   DOOR_WELCOME_WINDOW_NAME,
   createDoorWelcomeEvent,
+  createDoorWelcomeSeatViewClearEvent,
+  createDoorWelcomeSeatViewEvent,
   doorWelcomeChannelName,
   doorWelcomeProgressText,
   openDoorWelcomeDisplay,
@@ -137,7 +139,7 @@ test("reserved seats are conditional, wrap safely, and receive one subtle entran
 test("idle rotation runs only while idle and exposes no totals or internal status", async () => {
   const source = await readFile(displayPath, "utf8");
   assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
-  assert.match(source, /if \(welcome\) return;\s*const rotation = window\.setInterval/);
+  assert.match(source, /if \(welcome \|\| seatView\) return;\s*const rotation = window\.setInterval/);
   assert.match(source, /const activeIdleIndex = idleMessageIndex % idleMessages\.length/);
   assert.match(source, /isSponsorIdleMessage/);
   assert.match(source, /buildTimedIdleMessages/);
@@ -264,4 +266,31 @@ test("active welcome tightens by viewport height without changing idle presentat
   assert.match(source, /line\.join\(" • "\)/);
   assert.match(source, /motion-safe:animate-\[guest-welcome-in_300ms_ease-out\]/);
   assert.match(source, /prefers-reduced-motion: reduce/);
+});
+test("View Seats controls the customer map on demand while normal welcomes keep seat labels only", async () => {
+  const source = await readFile(displayPath, "utf8");
+  const doorSource = await readFile(doorModePath, "utf8");
+  const seatViewEvent = createDoorWelcomeSeatViewEvent({
+    showSlug: "august-show",
+    displayName: "Pamela Blevins",
+    assignedSeatLabels: ["R-A1", "R-A2"],
+    admissionCategory: "Paid Reserved",
+  });
+  const clearEvent = createDoorWelcomeSeatViewClearEvent("august-show");
+
+  assert.equal(seatViewEvent.messageType, "seat-view");
+  assert.deepEqual(seatViewEvent.assignedSeatLabels, ["R-A1", "R-A2"]);
+  assert.equal(clearEvent.messageType, "seat-view-clear");
+  assert.ok(source.includes("{seatView ? ("));
+  assert.equal(source.includes("{welcomeSeatIds.length > 0 ? ("), false);
+  assert.ok(source.includes("chunkDoorWelcomeSeats(welcome.assignedSeatLabels)"));
+  assert.ok(source.includes('status: highlightedSeatIds.has(seat.seatId) ? "selected" : "unavailable"'));
+  assert.ok(source.includes('legendVariant="door-readonly"'));
+  assert.ok(source.includes('showSwipeHint={false}'));
+  assert.ok(source.includes('showCustomerSeatDetails={false}'));
+  assert.ok(source.includes("setSeatView(null)"));
+  assert.ok(doorSource.includes("createDoorWelcomeSeatViewEvent"));
+  assert.ok(doorSource.includes("createDoorWelcomeSeatViewClearEvent"));
+  assert.ok(doorSource.includes("setSeatView({"));
+  assert.ok(doorSource.includes('data-testid="door-seat-dialog"'));
 });

@@ -1,15 +1,21 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ReservedSeatMap, type ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeDoorReservedSeatIds } from "@/lib/door-mode-presentation";
+import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
 import type { ShowRecord } from "@/lib/types";
 import {
   DOOR_WELCOME_EVENT_VERSION,
   DOOR_WELCOME_IDLE_TIMEOUT_MS,
   DOOR_WELCOME_MESSAGE_TYPE,
+  DOOR_WELCOME_SEAT_VIEW_CLEAR_MESSAGE_TYPE,
+  DOOR_WELCOME_SEAT_VIEW_MESSAGE_TYPE,
   doorWelcomeChannelName,
   type DoorWelcomeEvent,
+  type DoorWelcomeSeatViewEvent,
 } from "@/lib/door-welcome-display";
 import {
   POST_SHOW_HEADLINE,
@@ -24,6 +30,7 @@ const DISPLAY_TRANSITION_MS = 250;
 const IDLE_ROTATION_INTERVAL_MS = 15_000;
 const HERO_LOGO_CONTAINER_CLASS = "mx-auto flex h-[min(38vh,26rem)] w-[min(68vw,52rem)] items-center justify-center p-[clamp(0.125rem,0.5vw,0.5rem)]";
 const HERO_LOGO_IMAGE_CLASS = "h-full w-full object-contain motion-safe:animate-[logo-swap-in_400ms_ease-out]";
+const DOOR_WELCOME_RESERVED_SEAT_IDS = RESERVED_SEAT_DEFINITIONS.map((seat) => seat.seatId);
 type WelcomeSponsorLogo = {
   name: string;
   logoUrl: string;
@@ -65,12 +72,32 @@ function isDoorWelcomeEvent(value: unknown, showSlug: string): value is DoorWelc
     Array.isArray(event.assignedSeatLabels);
 }
 
+function isDoorWelcomeSeatViewEvent(value: unknown, showSlug: string): value is DoorWelcomeSeatViewEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<DoorWelcomeSeatViewEvent>;
+  return event.version === DOOR_WELCOME_EVENT_VERSION &&
+    event.messageType === DOOR_WELCOME_SEAT_VIEW_MESSAGE_TYPE &&
+    event.showSlug === showSlug &&
+    typeof event.displayName === "string" &&
+    event.displayName.length > 0 &&
+    Array.isArray(event.assignedSeatLabels) &&
+    event.assignedSeatLabels.length > 0;
+}
+
+function isDoorWelcomeSeatViewClearEvent(value: unknown, showSlug: string) {
+  if (!value || typeof value !== "object") return false;
+  const event = value as { version?: unknown; messageType?: unknown; showSlug?: unknown };
+  return event.version === DOOR_WELCOME_EVENT_VERSION &&
+    event.messageType === DOOR_WELCOME_SEAT_VIEW_CLEAR_MESSAGE_TYPE &&
+    event.showSlug === showSlug;
+}
 export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   const [show, setShow] = useState<Pick<ShowRecord, "show_date" | "venue"> | null>(null);
   const [nextShowDate, setNextShowDate] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [sponsorLogos, setSponsorLogos] = useState<WelcomeSponsorLogo[]>([]);
   const [welcome, setWelcome] = useState<DoorWelcomeEvent | null>(null);
+  const [seatView, setSeatView] = useState<DoorWelcomeSeatViewEvent | null>(null);
   const [isWelcomeExiting, setIsWelcomeExiting] = useState(false);
   const [idleMessageIndex, setIdleMessageIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -134,7 +161,16 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
     try {
       channel = new BroadcastChannel(doorWelcomeChannelName(showSlug));
       channel.onmessage = (message: MessageEvent<unknown>) => {
+        if (isDoorWelcomeSeatViewEvent(message.data, showSlug)) {
+          setSeatView(message.data);
+          return;
+        }
+        if (isDoorWelcomeSeatViewClearEvent(message.data, showSlug)) {
+          setSeatView(null);
+          return;
+        }
         if (!isDoorWelcomeEvent(message.data, showSlug)) return;
+        setSeatView(null);
         setIdleMessageIndex(0);
         setIsWelcomeExiting(false);
         setWelcome(message.data);
@@ -162,12 +198,12 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   }, [welcome]);
 
   useEffect(() => {
-    if (welcome) return;
+    if (welcome || seatView) return;
     const rotation = window.setInterval(() => {
       setIdleMessageIndex((current) => current + 1);
     }, IDLE_ROTATION_INTERVAL_MS);
     return () => window.clearInterval(rotation);
-  }, [welcome]);
+  }, [seatView, welcome]);
 
 
   useEffect(() => {
@@ -185,7 +221,27 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   const activeSponsorLogo = isSponsorSlide && sponsorLogos.length > 0
     ? sponsorLogos[sponsorCycle % sponsorLogos.length]
     : null;
-  const showWelcome = Boolean(welcome) && !isWelcomeExiting;
+  const showSeatView = Boolean(seatView);
+  const showWelcome = Boolean(welcome) && !isWelcomeExiting && !showSeatView;
+  const hideIdlePresentation = showWelcome || showSeatView;
+  const seatViewIds = useMemo(
+    () => normalizeDoorReservedSeatIds(seatView?.assignedSeatLabels ?? [], DOOR_WELCOME_RESERVED_SEAT_IDS),
+    [seatView],
+  );
+  const seatViewStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
+    const highlightedSeatIds = new Set(seatViewIds);
+    return Object.fromEntries(
+      RESERVED_SEAT_DEFINITIONS.map((seat) => [
+        seat.seatId,
+        {
+          seatId: seat.seatId,
+          label: seat.seatId,
+          status: highlightedSeatIds.has(seat.seatId) ? "selected" : "unavailable",
+          disabled: true,
+        },
+      ]),
+    ) as Record<string, ReservedSeatMapSeatState>;
+  }, [seatViewIds]);
   const showDate = formatDisplayDate(show?.show_date);
   const showVenue = show?.venue?.trim() || null;
 
@@ -204,9 +260,9 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
 
       <div className="relative z-10 grid h-full w-full max-w-[90rem] place-items-center">
         <section
-          aria-hidden={showWelcome}
+          aria-hidden={hideIdlePresentation}
           className={`col-start-1 row-start-1 mx-auto flex max-h-full w-full flex-col items-center justify-center gap-[clamp(0.75rem,2.2vh,1.75rem)] text-center transition-opacity duration-[250ms] ease-out motion-reduce:transition-none ${
-            showWelcome ? "pointer-events-none opacity-0" : "opacity-100"
+            hideIdlePresentation ? "pointer-events-none opacity-0" : "opacity-100"
           }`}
         >
           <div className={HERO_LOGO_CONTAINER_CLASS} aria-live="off">
@@ -307,9 +363,51 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
                 </div>
               </div>
             ) : null}
+
             <p className="active-welcome-enjoy mx-auto mt-[clamp(1rem,3vh,2.5rem)] w-full text-center text-[clamp(1.1rem,2vw,1.9rem)] font-medium tracking-wide text-[#e2bc59]">
               Enjoy the Show!
             </p>
+          </section>
+        ) : null}
+
+        {seatView ? (
+          <section
+            key={seatView.timestamp}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="customer-seat-view col-start-1 row-start-1 mx-auto flex max-h-full w-full flex-col items-center justify-center gap-[clamp(0.35rem,1.1vh,0.75rem)] text-center motion-safe:animate-[guest-welcome-in_250ms_ease-out]"
+          >
+            <Image
+              src="/cmms-logo.png"
+              alt="Cumberland Mountain Music Show"
+              width={900}
+              height={415}
+              priority
+              className="customer-seat-view-logo mx-auto h-auto max-h-[12vh] w-[clamp(10rem,24vw,20rem)] object-contain"
+            />
+            <p className="text-[clamp(1rem,1.8vw,1.6rem)] font-semibold uppercase tracking-[0.16em] text-[#e2bc59]">
+              Reserved Seat Location for
+            </p>
+            <h1 className="max-w-[94vw] text-balance text-[clamp(2rem,5vw,4.75rem)] font-bold leading-none tracking-[-0.025em] [overflow-wrap:anywhere]">
+              {seatView.displayName}
+            </h1>
+            <p className="mb-[-0.2rem] text-[clamp(1.1rem,2.2vw,2rem)] font-semibold text-white/90">
+              Seats: {seatViewIds.join(" • ")}
+            </p>
+            <div aria-hidden="true" className="customer-seat-view-map mx-auto w-[min(96vw,100rem)] max-w-none overflow-hidden text-left">
+              <div className="active-welcome-seat-map-scale">
+                <ReservedSeatMap
+                  seatStates={seatViewStates}
+                  includeSelectedLegend={false}
+                  showCustomerSeatDetails={false}
+                  legendVariant="door-readonly"
+                  sizeVariant="compact"
+                  presentationVariant="customer-display"
+                  showSwipeHint={false}
+                />
+              </div>
+            </div>
           </section>
         ) : null}
       </div>
@@ -341,9 +439,17 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        .active-welcome-seat-map-scale {
+          width: 94.34%;
+          zoom: 1.06;
+        }
         @media (max-height: 800px) {
           .active-welcome-layout {
             gap: clamp(0.35rem, 1.2vh, 0.7rem) !important;
+          }
+          .active-welcome-seat-map-scale {
+            width: 128.206%;
+            zoom: 0.78;
           }
           .active-welcome-logo {
             max-height: 18vh !important;
@@ -376,6 +482,10 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
         @media (max-height: 680px) {
           .active-welcome-layout {
             gap: clamp(0.2rem, 0.8vh, 0.45rem) !important;
+          }
+          .active-welcome-seat-map-scale {
+            width: 161.291%;
+            zoom: 0.62;
           }
           .active-welcome-logo {
             max-height: 14vh !important;

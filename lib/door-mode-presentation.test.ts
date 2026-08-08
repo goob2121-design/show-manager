@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
@@ -194,6 +194,7 @@ test("Door Mode seat dialog is canonical, accessible, focus-safe, and read-only"
   assert.match(source, /inert=\{Boolean\(seatView\)\}/);
   assert.match(source, /<ReservedSeatMap/);
   assert.match(source, /legendVariant="door-readonly"/);
+  assert.match(source, /showSwipeHint=\{false\}/);
   assert.match(source, /showCustomerSeatDetails=\{false\}/);
   assert.match(source, /Reserved Seats: \{seatView\.seatIds\.join\(", "\)\}/);
   const dialogSource = source.slice(source.indexOf('data-testid="door-seat-dialog"'));

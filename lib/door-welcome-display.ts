@@ -1,5 +1,7 @@
 export const DOOR_WELCOME_EVENT_VERSION = 1 as const;
 export const DOOR_WELCOME_MESSAGE_TYPE = "guest-welcome" as const;
+export const DOOR_WELCOME_SEAT_VIEW_MESSAGE_TYPE = "seat-view" as const;
+export const DOOR_WELCOME_SEAT_VIEW_CLEAR_MESSAGE_TYPE = "seat-view-clear" as const;
 export const DOOR_WELCOME_IDLE_TIMEOUT_MS = 10_000;
 export const DOOR_WELCOME_WINDOW_NAME = "stageflow-door-welcome-display";
 
@@ -16,6 +18,27 @@ export type DoorWelcomeEvent = {
   timestamp: number;
 };
 
+export type DoorWelcomeSeatViewEvent = {
+  version: typeof DOOR_WELCOME_EVENT_VERSION;
+  messageType: typeof DOOR_WELCOME_SEAT_VIEW_MESSAGE_TYPE;
+  showSlug: string;
+  displayName: string;
+  assignedSeatLabels: string[];
+  admissionCategory: string;
+  timestamp: number;
+};
+
+export type DoorWelcomeSeatViewClearEvent = {
+  version: typeof DOOR_WELCOME_EVENT_VERSION;
+  messageType: typeof DOOR_WELCOME_SEAT_VIEW_CLEAR_MESSAGE_TYPE;
+  showSlug: string;
+  timestamp: number;
+};
+
+export type DoorWelcomeChannelEvent =
+  | DoorWelcomeEvent
+  | DoorWelcomeSeatViewEvent
+  | DoorWelcomeSeatViewClearEvent;
 export function doorWelcomeChannelName(showSlug: string) {
   return `stageflow-door-welcome:${showSlug}`;
 }
@@ -30,9 +53,29 @@ export function createDoorWelcomeEvent(input: Omit<DoorWelcomeEvent, "version" |
   } satisfies DoorWelcomeEvent;
 }
 
+export function createDoorWelcomeSeatViewEvent(
+  input: Omit<DoorWelcomeSeatViewEvent, "version" | "messageType" | "timestamp">,
+) {
+  return {
+    version: DOOR_WELCOME_EVENT_VERSION,
+    messageType: DOOR_WELCOME_SEAT_VIEW_MESSAGE_TYPE,
+    timestamp: Date.now(),
+    ...input,
+    assignedSeatLabels: [...input.assignedSeatLabels],
+  } satisfies DoorWelcomeSeatViewEvent;
+}
+
+export function createDoorWelcomeSeatViewClearEvent(showSlug: string) {
+  return {
+    version: DOOR_WELCOME_EVENT_VERSION,
+    messageType: DOOR_WELCOME_SEAT_VIEW_CLEAR_MESSAGE_TYPE,
+    showSlug,
+    timestamp: Date.now(),
+  } satisfies DoorWelcomeSeatViewClearEvent;
+}
 export function publishDoorWelcomeEvent(
   showSlug: string,
-  event: DoorWelcomeEvent,
+  event: DoorWelcomeChannelEvent,
   BroadcastChannelConstructor: typeof BroadcastChannel | null | undefined =
     typeof BroadcastChannel === "undefined" ? undefined : BroadcastChannel,
 ) {

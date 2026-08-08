@@ -29,6 +29,8 @@ import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
 import type { DoorModeSeatAssignment } from "@/lib/door-mode-seat-assignments";
 import {
   createDoorWelcomeEvent,
+  createDoorWelcomeSeatViewClearEvent,
+  createDoorWelcomeSeatViewEvent,
   openDoorWelcomeDisplay,
   publishDoorWelcomeEvent,
 } from "@/lib/door-welcome-display";
@@ -658,6 +660,12 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
   function closeSeatView() {
     const trigger = seatView?.trigger;
+    if (
+      seatView &&
+      !publishDoorWelcomeEvent(showSlug, createDoorWelcomeSeatViewClearEvent(showSlug))
+    ) {
+      setWelcomeDisplayWarning("Welcome Display messaging is unavailable in this browser. Check-in is unaffected.");
+    }
     setSeatView(null);
     window.requestAnimationFrame(() => trigger?.focus());
   }
@@ -674,12 +682,26 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
         type="button"
         aria-label={`View seats ${seatIds.join(" and ")} for ${item.guest_name}`}
         onClick={(event) => {
+          const admissionLabel = checkInAdmissionLabel(item.ticket_type, item.notes);
           setSeatView({
             guestName: item.guest_name,
-            admissionLabel: checkInAdmissionLabel(item.ticket_type, item.notes),
+            admissionLabel,
             seatIds,
             trigger: event.currentTarget,
           });
+          if (
+            !publishDoorWelcomeEvent(
+              showSlug,
+              createDoorWelcomeSeatViewEvent({
+                showSlug,
+                displayName: item.guest_name,
+                assignedSeatLabels: seatIds,
+                admissionCategory: admissionLabel,
+              }),
+            )
+          ) {
+            setWelcomeDisplayWarning("Welcome Display messaging is unavailable in this browser. Check-in is unaffected.");
+          }
         }}
         className="inline-flex w-fit items-center rounded-lg border border-sky-800/70 bg-sky-500/[0.07] px-3 py-2 text-sm font-semibold text-sky-200 transition hover:border-sky-700 hover:bg-sky-500/10 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
       >
@@ -2004,6 +2026,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                 includeSelectedLegend={false}
                 showCustomerSeatDetails={false}
                 legendVariant="door-readonly"
+                showSwipeHint={false}
               />
             </div>
           </section>
