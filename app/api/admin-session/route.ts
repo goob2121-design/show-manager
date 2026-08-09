@@ -27,3 +27,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: "Unable to create admin session." }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  const slug = new URL(request.url).searchParams.get("slug")?.trim() ?? "";
+  if (!slug) return NextResponse.json({ success: false, error: "Show slug is required." }, { status: 400 });
+
+  const response = NextResponse.json({ success: true });
+  response.cookies.set(getAdminSessionCookieName(slug), "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+  return response;
+}

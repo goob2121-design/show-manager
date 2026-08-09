@@ -143,10 +143,13 @@ export function AdminQuickNav({
     };
   }, []);
 
-  function handleLogout() {
+  async function handleLogout() {
     clearAllAdminAccess();
-
-    window.location.href = currentView === "dashboard" ? "/shows" : `/admin/${slug}`;
+    try {
+      await fetch(`/api/admin-session?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
+    } finally {
+      window.location.href = currentView === "dashboard" ? "/shows" : `/admin/${slug}`;
+    }
   }
 
   if (!isVisible) {
@@ -169,7 +172,7 @@ export function AdminQuickNav({
   return (
     <nav
       aria-label="Admin quick navigation"
-      className="print-hidden rounded-2xl border border-stone-200 bg-stone-50/90 px-3 py-2 dark:border-stone-700 dark:bg-stone-900/70"
+      className="print-hidden rounded-2xl border border-slate-700 bg-slate-900/70 px-3 py-2"
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 text-xs font-medium text-stone-500 [-ms-overflow-style:none] [scrollbar-width:none] dark:text-stone-400 [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
@@ -217,7 +220,7 @@ export function AdminQuickNav({
           </Link>
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-100 sm:min-h-0 sm:py-1.5"
           >
             <NavIcon><LogoutIcon /></NavIcon>
