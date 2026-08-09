@@ -3781,6 +3781,16 @@ function getGuestProfilePortalStatus(
     };
   }
 
+  if (!profile.house_band_backing_guest) {
+    return {
+      key: "optional",
+      label: "Songs optional",
+      openedAt: profile.portal_opened_at,
+      lastReminderSentAt: profile.last_reminder_sent_at,
+      submittedSongsCount,
+    };
+  }
+
   if (profile.portal_opened_at) {
     return {
       key: "opened",
@@ -6170,7 +6180,7 @@ type ShowPageProps = {
 };
 
 type GuestPortalStatus = {
-  key: "not-opened" | "opened" | "submitted";
+  key: "not-opened" | "opened" | "submitted" | "optional";
   label: string;
   openedAt: string | null;
   lastReminderSentAt: string | null;
@@ -7246,7 +7256,9 @@ export function ShowPage({
   const guestsMissingSongsCount = useMemo(
     () =>
       guestProfiles.filter(
-        (profile) => getGuestProfilePortalStatus(profile, pendingSongs).submittedSongsCount === 0,
+        (profile) =>
+          profile.house_band_backing_guest &&
+          getGuestProfilePortalStatus(profile, pendingSongs).submittedSongsCount === 0,
       ).length,
     [guestProfiles, pendingSongs],
   );
@@ -16930,6 +16942,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         portalGuestProfiles.find((profile) => profile.id === selectedGuestProfileId) ??
         autoSelectedGuestProfile
       : null;
+  const requiresHouseBandBacking = selectedGuestProfile?.house_band_backing_guest ?? true;
   const privateGuestGreeting = isPrivateGuestPortal
     ? `Hello ${getGreetingName(selectedGuestProfile?.name, selectedGuestProfile?.greeting_name)},`
     : null;
@@ -16958,20 +16971,25 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         intro: formattedGuestShowDate
           ? `We're excited to have you as part of the Cumberland Mountain Music Show on ${formattedGuestShowDate}!`
           : "We're excited to have you as part of the Cumberland Mountain Music Show!",
-        summary:
-          "This portal contains everything you'll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes.",
+        summary: requiresHouseBandBacking
+          ? "This portal contains everything you'll need to prepare for the show, including song submissions, artist information, itinerary details, and show-day notes."
+          : "This portal contains everything you'll need to prepare for the show, including artist information, itinerary details, show-day notes, and optional song submissions.",
         portalSections: [
-          "Songs \u2014 Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare.",
+          requiresHouseBandBacking
+            ? "Songs \u2014 Submit your song selections, MP3s, YouTube links, charts, lyrics, or notes that may help the band prepare."
+            : "Songs \u2014 Song submission is optional. You may still share selections or reference materials if they would be useful.",
           "Artist Info \u2014 Add your bio, hometown, photo, social media links, and other information for promo materials and introductions.",
           "Itinerary \u2014 Contains show-day details including call times, arrival information, show schedule, and other important notes.",
         ],
         showInformation: [
           "Our shows typically consist of approximately 45 minutes of music, followed by a short intermission, and then another 45 minutes to finish the evening.",
           "Guest performers are generally scheduled for 2 songs per set, and we ask that you have an additional song prepared if needed.",
-          "Our house band has limited rehearsal time, so familiar songs are always helpful. Original material is absolutely welcome, and charts, MP3s, YouTube links, lyrics, or arrangement notes are always appreciated.",
+          requiresHouseBandBacking
+            ? "Our house band has limited rehearsal time, so familiar songs are always helpful. Original material is absolutely welcome, and charts, MP3s, YouTube links, lyrics, or arrangement notes are always appreciated."
+            : null,
           "Concessions are usually available before the show, including pizza, hot dogs, water, soft drinks, and coffee. There are also several restaurants within walking distance of the Cumberland Gap Convention Center.",
           "Guests are welcome to bring merchandise to sell during the event.",
-        ],
+        ].filter((detail): detail is string => Boolean(detail)),
         stageAndSoundInformation: [
           "Our shows typically use a traditional acoustic-style microphone setup featuring multiple condenser microphones for a natural, intimate live sound that works especially well for bluegrass, gospel, and acoustic music.",
           "Because of this setup, floor monitors are sometimes limited in order to maintain the best possible sound quality and reduce feedback. In many cases, performers work directly around the microphones much like a traditional live acoustic stage setup.",
@@ -25849,7 +25867,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     Boolean(profile.short_bio?.trim()),
                     hasHometown,
                     hasSocialLinks,
-                    hasSubmittedSongs,
+                    !profile.house_band_backing_guest || hasSubmittedSongs,
                   ];
                   const profileCompletion = Math.round(
                     (readinessChecks.filter(Boolean).length / readinessChecks.length) * 100,
@@ -25910,7 +25928,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             ) : null}
                             <span
                               className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
-                                guestPortalStatus.key === "submitted"
+                                guestPortalStatus.key === "submitted" || guestPortalStatus.key === "optional"
                                   ? "bg-emerald-100 text-emerald-800"
                                   : guestPortalStatus.key === "opened"
                                     ? "bg-sky-100 text-sky-800"
@@ -25985,7 +26003,13 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <p>{profile.short_bio?.trim() ? "Bio: Yes" : "Bio: No"}</p>
                               <p>{profile.photo_url?.trim() ? "Photo: Yes" : "Photo: No"}</p>
                               <p>{hasSocialLinks ? "Social Links: Yes" : "Social Links: No"}</p>
-                              <p>{hasSubmittedSongs ? "Songs Submitted: Yes" : "Songs Submitted: No"}</p>
+                              <p>
+                                {!profile.house_band_backing_guest
+                                  ? "Songs Required: No"
+                                  : hasSubmittedSongs
+                                    ? "Songs Submitted: Yes"
+                                    : "Songs Submitted: No"}
+                              </p>
                             </div>
                           </div>
 
@@ -26319,7 +26343,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               <div className="flex flex-col gap-1">
                 <h2 className="text-xl font-semibold">Song Submission</h2>
                 <p className="text-sm text-stone-600">
-                  Choose a guest here, then review and submit songs for that guest.
+                  {requiresHouseBandBacking
+                    ? "Choose a guest here, then review and submit songs for that guest."
+                    : "Song submission is optional for this guest. You may still review or share songs if useful."}
                 </p>
               </div>
 
@@ -26335,10 +26361,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
 
             <div className="rounded-2xl border border-emerald-900/30 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-4 py-4 text-sm leading-7 text-slate-100 sm:px-5">
               <p>
-                Our house band has limited rehearsal time, so familiar songs are always helpful.
-                Original material is absolutely welcome, but if the song may not be familiar to
-                the band, please include anything that can help us prepare - an MP3, YouTube link,
-                chart, key notes, arrangement notes, or lyrics.
+                {requiresHouseBandBacking
+                  ? "Our house band has limited rehearsal time, so familiar songs are always helpful. Original material is absolutely welcome, but if the song may not be familiar to the band, please include anything that can help us prepare - an MP3, YouTube link, chart, key notes, arrangement notes, or lyrics."
+                  : "You do not need to submit songs for house-band preparation. This section remains available if you would like to share optional song or reference material."}
               </p>
             </div>
 
@@ -26376,7 +26401,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 <p className="mt-4 text-sm text-stone-500">
                   {portalGuestProfiles.length > 1 && !selectedGuestProfile
                     ? "Choose a guest above to see that guest's submitted songs."
-                    : "No songs submitted yet. The first song will appear here after it is sent."}
+                    : requiresHouseBandBacking
+                      ? "No songs submitted yet. The first song will appear here after it is sent."
+                      : "No optional songs have been submitted."}
                 </p>
               ) : (
                 <div className="mt-4 flex flex-col gap-3">
@@ -26583,7 +26610,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   <p className="mt-4 text-sm text-stone-500">
                     {guestProfiles.length > 1 && !selectedGuestProfile
                       ? "Choose a guest to view that guest's submitted songs."
-                      : "No songs submitted yet. The first song will appear here after it is sent."}
+                      : requiresHouseBandBacking
+                      ? "No songs submitted yet. The first song will appear here after it is sent."
+                      : "No optional songs have been submitted."}
                   </p>
                 ) : (
                   <div className="mt-4 flex flex-col gap-3">
@@ -26716,10 +26745,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     detailsStartCollapsed
                     detailsGuidance={
                       <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
-                        Our house band has limited rehearsal time, so familiar songs are always
-                        helpful. Original material is absolutely welcome, but if the song may not
-                        be familiar to the band, please include anything that can help us prepare -
-                        an MP3, YouTube link, chart, key notes, arrangement notes, or lyrics.
+                        {requiresHouseBandBacking
+                          ? "Our house band has limited rehearsal time, so familiar songs are always helpful. Original material is absolutely welcome, but if the song may not be familiar to the band, please include anything that can help us prepare - an MP3, YouTube link, chart, key notes, arrangement notes, or lyrics."
+                          : "Song submission is optional for this guest. Share a song or reference material only if it would be useful."}
                       </div>
                     }
                     showChartUrl
