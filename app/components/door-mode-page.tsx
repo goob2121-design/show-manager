@@ -332,6 +332,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [recentGuestCheckIns, setRecentGuestCheckIns] = useState<RecentGuestCheckIn[]>([]);
   const [seatView, setSeatView] = useState<DoorSeatView | null>(null);
   const [seatIdsByTicketId, setSeatIdsByTicketId] = useState<Record<string, string[]>>({});
+  const [sponsorReservedProjectionTicketIds, setSponsorReservedProjectionTicketIds] = useState<Set<string>>(() => new Set());
   const [scanInput, setScanInput] = useState("");
   const [scanState, setScanState] = useState<DoorScanState>({ kind: "idle" });
   const [scanBehavior, setScanBehavior] = useState<DoorScanBehavior>(() => {
@@ -399,6 +400,11 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       }
       setSeatIdsByTicketId(Object.fromEntries(
         seatAssignments.map((assignment) => [assignment.projectedTicketId, assignment.seatIds]),
+      ));
+      setSponsorReservedProjectionTicketIds(new Set(
+        seatAssignments
+          .filter((assignment) => assignment.isSponsorReservedProjection)
+          .map((assignment) => assignment.projectedTicketId),
       ));
 
       const { data: showSponsorData, error: showSponsorError } = await supabase
@@ -593,8 +599,12 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   );
   const compAndOtherTickets = useMemo(
     () =>
-      compTickets.filter((item) => checkInTicketDestination(item.ticket_type, item.notes) === "special_admissions"),
-    [compTickets],
+      compTickets.filter(
+        (item) =>
+          checkInTicketDestination(item.ticket_type, item.notes) === "special_admissions" &&
+          !(item.ticket_type === "complimentary" && sponsorReservedProjectionTicketIds.has(item.id)),
+      ),
+    [compTickets, sponsorReservedProjectionTicketIds],
   );
 
   const filteredPrepaidTickets = useMemo(
@@ -1824,7 +1834,20 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                             {renderDoorModeNoteDetails(item.notes)}
                           </div>
 
-                          <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleAdjustTicketCheckIn(
+                                  item,
+                                  item.ticket_count - item.checked_in_count,
+                                )
+                              }
+                              disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
+                              className="rounded-2xl border border-emerald-700 bg-emerald-500/10 px-4 py-5 text-base font-semibold text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              Check In All
+                            </button>
                             <button
                               type="button"
                               onClick={() => void handleAdjustTicketCheckIn(item, 1)}
@@ -1894,6 +1917,11 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                     {sponsorsWithCompTickets.map((sponsor) => {
                       const remainingComps = sponsor.comp_ticket_allowance - sponsor.comp_tickets_checked_in;
                       const customAmountValue = sponsorCompCustomAmounts[sponsor.id] ?? "";
+                      const sponsorName = getSponsorCardName(sponsor);
+                      const sponsorReservedTicket = compTickets.find((ticket) =>
+                        sponsorReservedProjectionTicketIds.has(ticket.id) &&
+                        ticket.guest_name.trim().toLowerCase() === sponsorName.trim().toLowerCase(),
+                      ) ?? null;
 
                       return (
                         <article
@@ -1927,14 +1955,24 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                               </div>
                             </div>
 
-                            <div className="grid gap-2 sm:grid-cols-3">
+                            {sponsorReservedTicket ? renderSeatLocationControl(sponsorReservedTicket) : null}
+
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <button
+                                type="button"
+                                onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, remainingComps)}
+                                disabled={Boolean(activeActionId) || remainingComps <= 0}
+                                className="rounded-xl border border-amber-700/70 bg-amber-500/10 px-3 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Check In All
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => void handleAdjustSponsorCompCheckIn(sponsor, 1)}
-                                disabled={Boolean(activeActionId)}
+                                disabled={Boolean(activeActionId) || remainingComps <= 0}
                                 className="rounded-xl bg-amber-600 px-3 py-3 text-sm font-semibold text-gray-50 transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-900 disabled:opacity-40"
                               >
-                                Check In 1
+                                +1 Check In
                               </button>
                               <div className="flex gap-2 sm:col-span-2">
                                 <input
@@ -1954,7 +1992,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                                 <button
                                   type="button"
                                   onClick={() => void handleCheckInCustomSponsorCompAmount(sponsor)}
-                                  disabled={Boolean(activeActionId)}
+                                  disabled={Boolean(activeActionId) || remainingComps <= 0}
                                   className="rounded-xl border border-amber-700/70 bg-amber-500/10 px-3 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   Check In Custom

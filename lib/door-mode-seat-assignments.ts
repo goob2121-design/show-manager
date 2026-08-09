@@ -3,6 +3,7 @@
 export type DoorModeSeatAssignment = {
   projectedTicketId: string;
   seatIds: string[];
+  isSponsorReservedProjection: boolean;
 };
 
 type ProjectionSourceRow = {
@@ -13,6 +14,15 @@ type ProjectionSourceRow = {
 type DirectReservedLinkRow = {
   id: string;
   source_ticket_id: string | null;
+  customer_name?: string | null;
+  is_complimentary?: boolean;
+  source_note?: string | null;
+};
+
+type SponsorNameRow = {
+  comp_ticket_allowance: number | null;
+  custom_note: string | null;
+  sponsor: { name: string | null } | { name: string | null }[] | null;
 };
 
 type SeatAssignmentRow = {
@@ -25,10 +35,25 @@ export function buildDoorModeSeatAssignments(
   directLinks: DirectReservedLinkRow[],
   assignments: SeatAssignmentRow[],
   canonicalSeatIds: readonly string[],
+  sponsors: SponsorNameRow[] = [],
 ): DoorModeSeatAssignment[] {
   const ticketIdsByLinkId = new Map<string, Set<string>>();
   const seatIdsByTicketId = new Map<string, Set<string>>();
+  const sponsorProjectionTicketIds = new Set<string>();
   const canonicalPosition = new Map(canonicalSeatIds.map((seatId, index) => [seatId, index]));
+  const projectedTicketIdByLinkId = new Map(
+    projections.map((projection) => [projection.source_id, projection.projected_ticket_id]),
+  );
+  const sponsorNames = new Set(
+    sponsors
+      .filter((sponsor) => (sponsor.comp_ticket_allowance ?? 0) > 0)
+      .flatMap((sponsor) => {
+        const librarySponsor = Array.isArray(sponsor.sponsor) ? sponsor.sponsor[0] : sponsor.sponsor;
+        return [librarySponsor?.name, sponsor.custom_note]
+          .map((name) => name?.trim().toLowerCase() ?? "")
+          .filter(Boolean);
+      }),
+  );
 
   function registerOwnership(linkId: string, ticketId: string) {
     const ticketIds = ticketIdsByLinkId.get(linkId) ?? new Set<string>();
@@ -42,6 +67,12 @@ export function buildDoorModeSeatAssignments(
   }
   for (const link of directLinks) {
     if (link.source_ticket_id) registerOwnership(link.id, link.source_ticket_id);
+
+    const projectedTicketId = projectedTicketIdByLinkId.get(link.id);
+    if (!projectedTicketId || !link.is_complimentary) continue;
+    const sourceIdentifiesSponsor = /(?:\[comp type:\s*sponsor\]|\bsponsor comp\b)/i.test(link.source_note ?? "");
+    const sponsorNameMatches = sponsorNames.has(link.customer_name?.trim().toLowerCase() ?? "");
+    if (sourceIdentifiesSponsor || sponsorNameMatches) sponsorProjectionTicketIds.add(projectedTicketId);
   }
 
   for (const assignment of assignments) {
@@ -56,6 +87,7 @@ export function buildDoorModeSeatAssignments(
     seatIds: [...seatIds].sort(
       (left, right) => canonicalPosition.get(left)! - canonicalPosition.get(right)!,
     ),
+    isSponsorReservedProjection: sponsorProjectionTicketIds.has(projectedTicketId),
   }));
 }
 
@@ -73,10 +105,15 @@ export async function loadDoorModeSeatAssignments(
 
   const { data: directLinkData, error: directLinkError } = await supabase
     .from("show_reserved_seating_links")
-    .select("id, source_ticket_id")
-    .eq("show_id", showId)
-    .not("source_ticket_id", "is", null);
+    .select("id, source_ticket_id, customer_name, is_complimentary, source_note")
+    .eq("show_id", showId);
   if (directLinkError) throw directLinkError;
+
+  const { data: sponsorData, error: sponsorError } = await supabase
+    .from("show_sponsors")
+    .select("comp_ticket_allowance, custom_note, sponsor:sponsor_library(name)")
+    .eq("show_id", showId);
+  if (sponsorError) throw sponsorError;
 
   const projections = (projectionData ?? []) as ProjectionSourceRow[];
   const directLinks = (directLinkData ?? []) as DirectReservedLinkRow[];
@@ -98,5 +135,6 @@ export async function loadDoorModeSeatAssignments(
     directLinks,
     (assignmentData ?? []) as SeatAssignmentRow[],
     canonicalSeatIds,
+    (sponsorData ?? []) as SponsorNameRow[],
   );
 }
