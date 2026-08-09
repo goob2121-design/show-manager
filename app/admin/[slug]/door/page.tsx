@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
-import { AdminGate } from "@/app/components/admin-gate";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { DoorModePage } from "@/app/components/door-mode-page";
+import { resolveDoorAccess } from "@/lib/door-access";
+import { getAdminSessionCookieName } from "@/lib/admin-session";
+import { getDoorStaffSessionCookieName } from "@/lib/door-staff-session";
 import { getShowNameBySlug } from "@/lib/route-metadata";
 
 export async function generateMetadata({
@@ -28,10 +32,13 @@ export default async function AdminDoorModePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const store = await cookies();
+  const accessRole = resolveDoorAccess({
+    slug,
+    adminCookieValue: store.get(getAdminSessionCookieName(slug))?.value,
+    doorStaffCookieValue: store.get(getDoorStaffSessionCookieName(slug))?.value,
+  });
+  if (!accessRole) redirect(`/admin/${slug}/door/login`);
 
-  return (
-    <AdminGate slug={slug}>
-      <DoorModePage showSlug={slug} />
-    </AdminGate>
-  );
+  return <DoorModePage showSlug={slug} accessRole={accessRole} />;
 }

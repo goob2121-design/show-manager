@@ -1,7 +1,9 @@
 ﻿import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAdminSessionCookieName, verifyAdminSessionCookieValue } from "@/lib/admin-session";
+import { getAdminSessionCookieName } from "@/lib/admin-session";
+import { resolveDoorAccess } from "@/lib/door-access";
+import { getDoorStaffSessionCookieName } from "@/lib/door-staff-session";
 import { loadDoorModeSeatAssignments } from "@/lib/door-mode-seat-assignments";
 import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
 
@@ -32,12 +34,14 @@ export async function GET(request: Request, context: DoorSeatAssignmentsRouteCon
     }
 
     const cookieStore = await cookies();
-    const hasAdminAccess = verifyAdminSessionCookieValue(
+    const accessRole = resolveDoorAccess({
       slug,
-      cookieStore.get(getAdminSessionCookieName(slug))?.value,
-    );
-    if (!hasAdminAccess) {
-      return NextResponse.json({ success: false, error: "Admin access is required." }, { status: 401 });
+      showId,
+      adminCookieValue: cookieStore.get(getAdminSessionCookieName(slug))?.value,
+      doorStaffCookieValue: cookieStore.get(getDoorStaffSessionCookieName(slug))?.value,
+    });
+    if (!accessRole) {
+      return NextResponse.json({ success: false, error: "Door Mode access is required." }, { status: 401 });
     }
 
     const assignments = await loadDoorModeSeatAssignments(

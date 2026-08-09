@@ -43,6 +43,7 @@ const DOOR_RESERVED_SEAT_IDS = RESERVED_SEAT_DEFINITIONS.map((seat) => seat.seat
 
 type DoorModePageProps = {
   showSlug: string;
+  accessRole?: "admin" | "door_staff";
 };
 
 type DoorModeActivity = {
@@ -312,7 +313,7 @@ function SponsorLogoThumbnail({
   );
 }
 
-export function DoorModePage({ showSlug }: DoorModePageProps) {
+export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePageProps) {
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [compTickets, setCompTickets] = useState<ShowCompTicket[]>([]);
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
@@ -1339,6 +1340,11 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
     }
   }
 
+  async function handleDoorStaffLogout() {
+    await fetch(`/api/door-staff-session?slug=${encodeURIComponent(showSlug)}`, { method: "DELETE" }).catch(() => null);
+    window.location.assign(`/admin/${encodeURIComponent(showSlug)}/door/login`);
+  }
+
   if (isLoading) {
     return (
       <main className="min-h-screen bg-gray-900 px-4 py-8 text-gray-100 sm:px-6 lg:px-8">
@@ -1354,9 +1360,15 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
       <main className="min-h-screen bg-gray-900 px-4 py-8 text-gray-100 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl rounded-[28px] border border-rose-900 bg-gray-800 p-8">
           <p className="text-lg font-semibold text-rose-300">Show not found.</p>
-          <Link href="/admin" className="mt-4 inline-flex text-sm font-medium text-emerald-300 underline">
-            Back to Admin
-          </Link>
+          {accessRole === "admin" ? (
+            <Link href="/admin" className="mt-4 inline-flex text-sm font-medium text-emerald-300 underline">
+              Back to Admin
+            </Link>
+          ) : (
+            <Link href={`/admin/${encodeURIComponent(showSlug)}/door/login`} className="mt-4 inline-flex text-sm font-medium text-emerald-300 underline">
+              Return to Door Staff Login
+            </Link>
+          )}
         </div>
       </main>
     );
@@ -1379,7 +1391,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
                 <span>{formatShowDate(show.show_date)}</span>
                 {show.venue?.trim() ? <span>{show.venue}</span> : null}
-                <Link href={`/admin/${show.slug}`} className="text-xs font-medium text-gray-500 transition hover:text-gray-300">&larr; Back to Admin</Link>
+                {accessRole === "admin" ? <Link href={`/admin/${show.slug}`} className="text-xs font-medium text-gray-500 transition hover:text-gray-300">&larr; Back to Admin</Link> : null}
               </div>
             </div>
             <div className="text-left lg:text-center">
@@ -1388,6 +1400,11 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
             </div>
             <div className="flex items-center gap-3 lg:justify-self-end">
               <p className="text-lg font-semibold text-gray-200 sm:text-xl">Door Check-In</p>
+              {accessRole === "door_staff" ? (
+                <button type="button" onClick={() => void handleDoorStaffLogout()} className="min-h-9 rounded-lg border border-slate-600 bg-slate-800 px-3 text-xs font-semibold text-slate-200 transition hover:bg-slate-700">
+                  Log Out
+                </button>
+              ) : null}
               <div aria-label="Connected" className="flex min-h-9 items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-500/5 px-3">
                 <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
                 <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">Connected</span>
@@ -1618,6 +1635,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
               >
                 Open Welcome Display
               </button>
+              {accessRole === "admin" ? (
               <div ref={printMenuRef} className="relative">
                 <button type="button" aria-expanded={isPrintMenuOpen} aria-haspopup="menu" onClick={() => setIsPrintMenuOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Print <span aria-hidden="true">&#9662;</span></button>
                 {isPrintMenuOpen ? (
@@ -1628,6 +1646,7 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                   </div>
                 ) : null}
               </div>
+              ) : null}
               <button type="button" aria-label="View Totals" onClick={() => setIsTotalsPanelOpen(true)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Totals</button>
               <div className="relative">
                 <button type="button" aria-label="Recent Check-Ins" aria-expanded={isRecentCheckInsOpen} aria-controls="door-recent-check-ins" onClick={() => setIsRecentCheckInsOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700">Recent ({recentGuestCheckIns.length})</button>

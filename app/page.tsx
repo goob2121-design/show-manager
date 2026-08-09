@@ -1,7 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
+import { loadDefaultAvailableSeatsShow } from "@/app/available-seats/shared";
 
-export default function Home() {
+export default async function Home() {
+  const currentShow = await loadDefaultAvailableSeatsShow().catch(() => null);
   return (
     <main className="relative isolate min-h-dvh overflow-hidden bg-black text-white">
       <Image
@@ -43,15 +45,25 @@ export default function Home() {
             </p>
 
             <div className="mt-9 flex flex-col items-start gap-5">
-              <Link
-                href="/shows"
-                className="group relative inline-flex min-h-16 items-center justify-center overflow-hidden rounded-full bg-gradient-to-r from-emerald-300 via-cyan-200 to-indigo-300 px-9 py-4 text-base font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_0_42px_-12px_rgba(45,212,191,0.95),0_24px_70px_-38px_rgba(79,70,229,0.9)] transition hover:scale-[1.015] focus:outline-none focus:ring-2 focus:ring-cyan-100 focus:ring-offset-2 focus:ring-offset-black"
-              >
-                <span className="absolute inset-0 translate-x-[-120%] bg-gradient-to-r from-transparent via-white/55 to-transparent transition duration-700 group-hover:translate-x-[120%]" />
-                <span className="relative">ENTER STAGEFLOW</span>
-              </Link>
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+                <Link
+                  href="/shows"
+                  className="group relative inline-flex min-h-16 items-center justify-center overflow-hidden rounded-full bg-gradient-to-r from-emerald-300 via-cyan-200 to-indigo-300 px-9 py-4 text-base font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_0_42px_-12px_rgba(45,212,191,0.95),0_24px_70px_-38px_rgba(79,70,229,0.9)] transition hover:scale-[1.015] focus:outline-none focus:ring-2 focus:ring-cyan-100 focus:ring-offset-2 focus:ring-offset-black"
+                >
+                  <span className="absolute inset-0 translate-x-[-120%] bg-gradient-to-r from-transparent via-white/55 to-transparent transition duration-700 group-hover:translate-x-[120%]" />
+                  <span className="relative">ENTER STAGEFLOW</span>
+                </Link>
+                {currentShow?.slug ? (
+                  <Link
+                    href={`/admin/${encodeURIComponent(currentShow.slug)}/door/login`}
+                    className="inline-flex min-h-12 items-center justify-center rounded-full border border-cyan-100/55 bg-black/25 px-6 py-3 text-sm font-bold uppercase tracking-[0.14em] text-cyan-50 shadow-[0_12px_35px_-22px_rgba(34,211,238,0.75)] transition hover:border-cyan-100 hover:bg-cyan-50/10 focus:outline-none focus:ring-2 focus:ring-cyan-100 focus:ring-offset-2 focus:ring-offset-black"
+                  >
+                    DOOR STAFF LOGIN
+                  </Link>
+                ) : null}
+              </div>
               <p className="max-w-2xl text-sm font-medium leading-6 text-slate-300 drop-shadow-[0_8px_18px_rgba(0,0,0,0.75)] sm:text-base">
-                Public links for Band, Guest, MC, Live Mode, and Door Mode continue to work directly.
+                Public links for Band, Guest, MC, and Live Mode continue to work directly.
               </p>
             </div>
           </div>

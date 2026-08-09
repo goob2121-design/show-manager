@@ -9,7 +9,8 @@ import {
   type DoorModeScanLookupTicket,
 } from "@/lib/door-mode-scan";
 import { getAdminSessionCookieName } from "@/lib/admin-session";
-import { validateReservedSeatEmailStatusAccess } from "@/lib/reserved-seat-email-status-auth";
+import { resolveDoorAccess } from "@/lib/door-access";
+import { getDoorStaffSessionCookieName } from "@/lib/door-staff-session";
 import type { ShowReservedSeatingLink } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -92,20 +93,23 @@ export async function POST(request: Request, context: DoorScanLookupRouteContext
 
     const cookieStore = await cookies();
     const show = showData as { id: string; slug: string } | null;
-    const access = validateReservedSeatEmailStatusAccess({
-      requestedShowId: showId,
-      requestedSlug,
-      canonicalShow: show ? { id: show.id, slug: show.slug } : null,
-      cookieValue: show?.slug ? cookieStore.get(getAdminSessionCookieName(show.slug))?.value : undefined,
+    if (!show || show.slug !== requestedSlug) {
+      return NextResponse.json({ success: false, error: "Show not found." } satisfies DoorModeScanLookupResponse, { status: 404 });
+    }
+    const accessRole = resolveDoorAccess({
+      slug: show.slug,
+      showId: show.id,
+      adminCookieValue: cookieStore.get(getAdminSessionCookieName(show.slug))?.value,
+      doorStaffCookieValue: cookieStore.get(getDoorStaffSessionCookieName(show.slug))?.value,
     });
-    if (!access.ok) {
-      return NextResponse.json({ success: false, error: access.error } satisfies DoorModeScanLookupResponse, { status: access.status });
+    if (!accessRole) {
+      return NextResponse.json({ success: false, error: "Door Mode access is required." } satisfies DoorModeScanLookupResponse, { status: 401 });
     }
 
     const { data: linkData, error: linkError } = await supabase
       .from("show_reserved_seating_links")
       .select("id, show_id, customer_name, ticket_count, is_complimentary, seat_category, source_ticket_id, submitted_at")
-      .eq("show_id", access.showId)
+      .eq("show_id", show.id)
       .eq("scan_token", normalizedToken)
       .maybeSingle();
     if (linkError) throw linkError;
@@ -119,9 +123,9 @@ export async function POST(request: Request, context: DoorScanLookupRouteContext
       supabase
         .from("show_reserved_seat_assignments")
         .select("seat_id")
-        .eq("show_id", access.showId)
+        .eq("show_id", show.id)
         .eq("seating_link_id", link.id),
-      loadLookupTicket(supabase, access.showId, link),
+      loadLookupTicket(supabase, show.id, link),
     ]);
     if (assignmentError) throw assignmentError;
 

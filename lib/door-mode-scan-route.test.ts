@@ -8,9 +8,10 @@ test("door scan lookup route is authenticated, POST-only, and uses direct scan_t
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /export async function POST/);
-  assert.match(source, /validateReservedSeatEmailStatusAccess/);
+  assert.match(source, /resolveDoorAccess/);
+  assert.match(source, /getDoorStaffSessionCookieName/);
   assert.match(source, /\.eq\("scan_token", normalizedToken\)/);
-  assert.match(source, /\.eq\("show_id", access\.showId\)/);
+  assert.match(source, /\.eq\("show_id", show\.id\)/);
   assert.doesNotMatch(source, /\.update\(/);
   assert.doesNotMatch(source, /\.insert\(/);
   assert.doesNotMatch(source, /\.delete\(/);

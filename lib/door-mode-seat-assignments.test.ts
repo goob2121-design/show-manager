@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
@@ -120,7 +120,8 @@ test("seat lookup and route are authenticated, private, and SELECT-only", async 
   assert.match(lookupSource, /from\("show_reserved_seat_assignments"\)/);
   assert.match(lookupSource, /select\("seating_link_id, seat_id"\)/);
   assert.doesNotMatch(lookupSource, /\.insert\(|\.update\(|\.upsert\(|\.delete\(|\.rpc\(/);
-  assert.match(routeSource, /verifyAdminSessionCookieValue/);
+  assert.match(routeSource, /resolveDoorAccess/);
+  assert.match(routeSource, /getDoorStaffSessionCookieName/);
   assert.match(routeSource, /export async function GET/);
   assert.doesNotMatch(routeSource, /export async function (POST|PUT|PATCH|DELETE)/);
   assert.doesNotMatch(routeSource, /guest_name|customer_name|email|payment|order_id|seat_selection_token/i);
