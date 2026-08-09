@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChangeEvent, ReactNode } from "react";
+import { useId, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { SongTempo, SongType } from "@/lib/types";
 
 export type SharedSongEditorState = {
@@ -295,6 +295,38 @@ function SongEditorDetailFields({
   songIntroNotesField,
   songIntroNotesPlaceholder,
 }: SongEditorDetailFieldsProps) {
+const lyricsFieldId = useId();
+  const lyricsTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [lyricsPasteStatus, setLyricsPasteStatus] = useState<string | null>(null);
+  const lyricsSearchQuery = [formState.title?.trim(), formState.sungBy?.trim(), "lyrics"]
+    .filter(Boolean)
+    .join(" ");
+  const lyricsSearchUrl = formState.title?.trim()
+    ? `https://www.google.com/search?q=${encodeURIComponent(lyricsSearchQuery)}`
+    : null;
+
+  async function handlePasteLyrics() {
+    setLyricsPasteStatus(null);
+    try {
+      if (!navigator.clipboard?.readText) {
+        throw new Error("Clipboard access is unavailable.");
+      }
+      const clipboardText = await navigator.clipboard.readText();
+      if (!clipboardText) {
+        setLyricsPasteStatus("Clipboard is empty.");
+        return;
+      }
+      const textarea = lyricsTextareaRef.current;
+      if (!textarea) return;
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      valueSetter?.call(textarea, clipboardText);
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      textarea.focus();
+      setLyricsPasteStatus("Lyrics pasted. Save when ready.");
+    } catch {
+      setLyricsPasteStatus("Could not access the clipboard. Please paste into the Lyrics field manually.");
+    }
+  }
   return (
     <>
       {customTitleField ? (
@@ -353,16 +385,44 @@ function SongEditorDetailFields({
       ) : null}
 
       {showLyrics ? (
-        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-          Lyrics
+        <div className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label htmlFor={lyricsFieldId}>Lyrics</label>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {lyricsSearchUrl ? (
+                <a
+                  href={lyricsSearchUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+                >
+                  Find Lyrics
+                </a>
+              ) : (
+                <span className="cursor-not-allowed rounded-lg border border-stone-200 bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-400">
+                  Find Lyrics
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => void handlePasteLyrics()}
+                className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 transition hover:bg-stone-100"
+              >
+                Paste Lyrics
+              </button>
+            </div>
+          </div>
+          {lyricsPasteStatus ? <p className="text-xs text-stone-600" role="status" aria-live="polite">{lyricsPasteStatus}</p> : null}
           <textarea
+            id={lyricsFieldId}
+            ref={lyricsTextareaRef}
             name="lyrics"
             value={formState.lyrics ?? ""}
             onChange={onChange}
             className="min-h-40 rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
             placeholder="Optional lyrics"
           />
-        </label>
+        </div>
       ) : null}
     </>
   );
