@@ -91,3 +91,13 @@ test("Sponsor Comps Check In All uses only the remainder and preserves custom, u
   assert.match(sponsorModal, /handleAdjustSponsorCompCheckIn\(sponsor, -1\)/);
   assert.match(sponsorModal, /renderSeatLocationControl\(sponsorReservedTicket\)/);
 });
+
+test("Door Mode fullscreen control follows Welcome Display Fullscreen API behavior", () => {
+  assert.match(source, /document\.documentElement\.requestFullscreen\(\)/);
+  assert.match(source, /document\.exitFullscreen\(\)/);
+  assert.match(source, /document\.addEventListener\("fullscreenchange", handleFullscreenChange\)/);
+  assert.match(source, /document\.removeEventListener\("fullscreenchange", handleFullscreenChange\)/);
+  assert.match(source, /\{isFullscreen \? "Exit Full Screen" : "Full Screen"\}/);
+  assert.match(source, /\{fullscreenSupported \? \(/);
+  assert.match(source, /Browser or device policy may deny fullscreen; Door Mode remains fully usable\./);
+});

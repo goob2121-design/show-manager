@@ -329,6 +329,8 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   const [guestSearch, setGuestSearch] = useState("");
   const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
   const [isRecentCheckInsOpen, setIsRecentCheckInsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenSupported, setFullscreenSupported] = useState(false);
   const [recentGuestCheckIns, setRecentGuestCheckIns] = useState<RecentGuestCheckIn[]>([]);
   const [seatView, setSeatView] = useState<DoorSeatView | null>(null);
   const [seatIdsByTicketId, setSeatIdsByTicketId] = useState<Record<string, string[]>>({});
@@ -441,6 +443,18 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
   useEffect(() => {
     void loadDoorModeData();
   }, [loadDoorModeData]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setFullscreenSupported(typeof document.documentElement.requestFullscreen === "function");
+    });
+    const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -862,6 +876,19 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
 
     setGuestSearch(scanState.lookup.reservation.customerName);
     window.requestAnimationFrame(() => guestSearchRef.current?.focus());
+  }
+
+  async function toggleFullscreen() {
+    if (!fullscreenSupported) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      // Browser or device policy may deny fullscreen; Door Mode remains fully usable.
+    }
   }
 
   function publishWelcome(input: Parameters<typeof createDoorWelcomeEvent>[0]) {
@@ -1618,6 +1645,16 @@ export function DoorModePage({ showSlug }: DoorModePageProps) {
                   </div>
                 ) : null}
               </div>
+              {fullscreenSupported ? (
+                <button
+                  type="button"
+                  onClick={() => void toggleFullscreen()}
+                  aria-label={isFullscreen ? "Exit Door Mode full screen" : "Open Door Mode full screen"}
+                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700"
+                >
+                  {isFullscreen ? "Exit Full Screen" : "Full Screen"}
+                </button>
+              ) : null}
             </div>
           </div>
           {hasActiveGuestSearch && filteredPrepaidTickets.length === 0 && filteredSpecialAdmissions.length === 0 ? (
