@@ -17,6 +17,16 @@ const SCROLL_DELAYS = [0, 3, 5, 10, 15, 20];
 const INTRO_DELAYS = [0, 10, 20, 30, 45, 60, 90];
 const SPEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const FONT_SIZES = [18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42];
+const PERFORMANCE_SETUP_SELECT = `
+  id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, performance_flow, song_intro_notes, intro_auto_open_lyrics, intro_auto_open_delay, lyrics_auto_start_scroll, lyrics_auto_scroll_speed, lyrics_auto_scroll_delay, lyrics_font_size, lyrics_reading_mode, created_at,
+  library_song:song_id (id, title, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics, default_intro_auto_open_lyrics, default_intro_auto_open_delay, default_lyrics_auto_start_scroll, default_lyrics_auto_scroll_speed, default_lyrics_auto_scroll_delay, default_lyrics_font_size, default_lyrics_reading_mode),
+  guest_song:guest_song_id (id, title, key, sung_by, tempo, song_type, lyrics, submitted_by_name)
+`;
+const LEGACY_PERFORMANCE_SETUP_SELECT = `
+  id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, performance_flow, song_intro_notes, created_at,
+  library_song:song_id (id, title, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics),
+  guest_song:guest_song_id (id, title, key, sung_by, tempo, song_type, lyrics, submitted_by_name)
+`;
 
 type SectionKey = "set1" | "set2" | "encore" | "other";
 type Status = "ready" | "attention" | "missing" | "na";
@@ -34,6 +44,16 @@ type SetupSong = {
   lyrics: string | null; performanceFlow: string; songIntroNotes: string; initialSettings: Partial<Settings>;
 };
 type Settings = { autoStart: boolean; speed: number; delay: number; fontSize: number; reading: boolean; introAuto: boolean; introDelay: number };
+type SettingsKey = keyof Settings;
+const SETTINGS_DATABASE_FIELDS: Record<SettingsKey, string> = {
+  autoStart: "lyrics_auto_start_scroll",
+  speed: "lyrics_auto_scroll_speed",
+  delay: "lyrics_auto_scroll_delay",
+  fontSize: "lyrics_font_size",
+  reading: "lyrics_reading_mode",
+  introAuto: "intro_auto_open_lyrics",
+  introDelay: "intro_auto_open_delay",
+};
 
 function first<T>(value: T | T[] | null | undefined): T | null { return Array.isArray(value) ? value[0] ?? null : value ?? null; }
 function sec(value: string | null | undefined): SectionKey { return value === "set1" || value === "set2" || value === "encore" ? value : "other"; }
@@ -42,9 +62,11 @@ function key(base: string, id: string) { return `${base}_${id}`; }
 function read(base: string, id: string) { return window.localStorage.getItem(key(base, id)) ?? window.localStorage.getItem(base); }
 function readBool(base: string, id: string, fallback: boolean) { const value = read(base, id); return value === null ? fallback : value === "true"; }
 function readNum(base: string, id: string, fallback: number) { const value = read(base, id); const parsed = value ? Number.parseInt(value, 10) : Number.NaN; return Number.isFinite(parsed) ? parsed : fallback; }
-function write(id: string, base: string, value: string | number | boolean) { window.localStorage.setItem(key(base, id), String(value)); }
+function write(id: string, base: string, value: string | number | boolean | undefined) { if (value === undefined) return; window.localStorage.setItem(key(base, id), String(value)); }
 function loadSettings(id: string): Settings { return { autoStart: readBool(AUTOSTART_KEY, id, false), speed: readNum(SPEED_KEY, id, 4), delay: readNum(DELAY_KEY, id, 3), fontSize: readNum(FONT_KEY, id, 28), reading: readBool(MODE_KEY, id, false), introAuto: readBool(INTRO_ENABLED_KEY, id, false), introDelay: readNum(INTRO_DELAY_KEY, id, 0) }; }
 function saveSettings(id: string, s: Settings) { write(id, AUTOSTART_KEY, s.autoStart); write(id, SPEED_KEY, s.speed); write(id, DELAY_KEY, s.delay); write(id, FONT_KEY, s.fontSize); write(id, MODE_KEY, s.reading); write(id, INTRO_ENABLED_KEY, s.introAuto); write(id, INTRO_DELAY_KEY, s.introDelay); }
+function mergeDefinedSettings(saved: Settings, initial: Partial<Settings>): Settings { return { autoStart: initial.autoStart ?? saved.autoStart, speed: initial.speed ?? saved.speed, delay: initial.delay ?? saved.delay, fontSize: initial.fontSize ?? saved.fontSize, reading: initial.reading ?? saved.reading, introAuto: initial.introAuto ?? saved.introAuto, introDelay: initial.introDelay ?? saved.introDelay }; }
+function databaseSettingsUpdate(changes: Partial<Settings>) { const payload: Record<string, boolean | number> = {}; for (const settingKey of Object.keys(changes) as SettingsKey[]) { const value = changes[settingKey]; if (value !== undefined) payload[SETTINGS_DATABASE_FIELDS[settingKey]] = value; } return payload; }
 function normalize(row: Row, songNumber: number): SetupSong { const lib = first(row.library_song); const guest = first(row.guest_song); const section = sec(row.section); return { id: row.id, section, songNumber, sourceType: row.source_type, songId: row.song_id, guestSongId: row.guest_song_id, title: resolveSongTitle(row), key: resolveSongKey(row), lead: resolveLeadVocal(row), songType: lib?.song_type ?? guest?.song_type ?? null, lyrics: resolveSongLyrics(row), performanceFlow: resolvePerformanceFlow(row)?.trim() || "", songIntroNotes: resolveSongIntroNotes(row)?.trim() || "", initialSettings: { autoStart: row.lyrics_auto_start_scroll ?? lib?.default_lyrics_auto_start_scroll ?? undefined, speed: row.lyrics_auto_scroll_speed ?? lib?.default_lyrics_auto_scroll_speed ?? undefined, delay: row.lyrics_auto_scroll_delay ?? lib?.default_lyrics_auto_scroll_delay ?? undefined, fontSize: row.lyrics_font_size ?? lib?.default_lyrics_font_size ?? undefined, reading: row.lyrics_reading_mode ?? lib?.default_lyrics_reading_mode ?? undefined, introAuto: row.intro_auto_open_lyrics ?? lib?.default_intro_auto_open_lyrics ?? undefined, introDelay: row.intro_auto_open_delay ?? lib?.default_intro_auto_open_delay ?? undefined } }; }
 function status(song: SetupSong, s: Settings): Status { const hasLyrics = Boolean(song.lyrics?.trim()); const hasFlow = Boolean(song.performanceFlow.trim()); const hasIntro = Boolean(song.songIntroNotes.trim()); if (song.songType === "instrumental" && !hasLyrics && !s.introAuto) return "na"; if (!hasLyrics) return "missing"; if (s.introAuto && !hasIntro) return "missing"; if (!hasFlow || (s.introAuto && s.introDelay <= 0)) return "attention"; return "ready"; }
 function statusLabel(value: Status) { return value === "ready" ? "Ready" : value === "attention" ? "Needs Attention" : value === "missing" ? "Missing Content" : "Not Applicable"; }
@@ -75,11 +97,12 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
         const { data: showRow, error: showError } = await supabase.from("shows").select("*").eq("slug", showSlug).maybeSingle();
         if (showError) throw showError;
         if (!showRow) throw new Error("Show not found.");
-        const { data, error: rowError } = await supabase.from("setlist_entries").select(`
-          id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, performance_flow, song_intro_notes, created_at,
-          library_song:song_id (id, title, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics),
-          guest_song:guest_song_id (id, title, key, sung_by, tempo, song_type, lyrics, submitted_by_name)
-        `).eq("show_id", showRow.id);
+        let { data, error: rowError } = await supabase.from("setlist_entries").select(PERFORMANCE_SETUP_SELECT).eq("show_id", showRow.id);
+        if (rowError?.code === "42703") {
+          const legacyResult = await supabase.from("setlist_entries").select(LEGACY_PERFORMANCE_SETUP_SELECT).eq("show_id", showRow.id);
+          data = legacyResult.data;
+          rowError = legacyResult.error;
+        }
         if (rowError) throw rowError;
         const ordered = [...((data ?? []) as Row[])].sort((a, b) => {
           const sectionOrder: Record<SectionKey, number> = { set1: 0, set2: 1, encore: 2, other: 3 };
@@ -92,7 +115,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
         const nextSongs = ordered.map((row) => { const section = sec(row.section); counts[section] += 1; return normalize(row, counts[section]); });
         if (cancelled) return;
         setShow(showRow as ShowRecord); setSongs(nextSongs);
-        setSettings(nextSongs.reduce<Record<string, Settings>>((out, song) => { out[song.id] = { ...loadSettings(song.id), ...song.initialSettings }; return out; }, {}));
+        setSettings(nextSongs.reduce<Record<string, Settings>>((out, song) => { out[song.id] = mergeDefinedSettings(loadSettings(song.id), song.initialSettings); return out; }, {}));
         setFlowDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.performanceFlow; return out; }, {}));
         setIntroDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.songIntroNotes; return out; }, {}));
         setLyricsDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.lyrics ?? ""; return out; }, {}));
@@ -110,10 +133,26 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
   function updateSettings(id: string, updater: (current: Settings) => Settings) {
     setSettings((current) => { const next = updater(current[id] ?? loadSettings(id)); saveSettings(id, next); return { ...current, [id]: next }; });
   }
-  function bulk(label: string, updater: (current: Settings) => Settings, filter?: (song: SetupSong) => boolean) {
-    if (!window.confirm(`${label}? This updates saved Live Mode settings on this device.`)) return;
-    setSettings((current) => { const next = { ...current }; for (const song of songs) { if (filter && !filter(song)) continue; next[song.id] = updater(next[song.id] ?? loadSettings(song.id)); saveSettings(song.id, next[song.id]); } return next; });
-    setMessage(`${label} complete.`);
+  async function bulk(label: string, changes: Partial<Settings>) {
+    if (!window.confirm(label + "? This updates every setlist entry for this show.")) return;
+    setMessage(null); setError(null);
+    try {
+      const targetIds = songs.map((song) => song.id);
+      const payload = databaseSettingsUpdate(changes);
+      const { error: bulkError } = await createClient().from("setlist_entries").update(payload).in("id", targetIds);
+      if (bulkError) throw bulkError;
+      setSettings((current) => {
+        const next = { ...current };
+        for (const song of songs) {
+          next[song.id] = { ...(current[song.id] ?? loadSettings(song.id)), ...changes };
+          saveSettings(song.id, next[song.id]);
+        }
+        return next;
+      });
+      setMessage(label + " complete.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not complete " + label.toLowerCase() + ".");
+    }
   }
   async function saveText(song: SetupSong) {
     setSavingId(song.id); setMessage(null); setError(null);
@@ -162,7 +201,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
 
         <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/85">
           <h2 className="text-xl font-black">Defaults</h2>
-          <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Set preferred values, then apply them in bulk to this device's saved Live Mode settings.</p>
+          <p className="mt-1 text-sm text-stone-600 dark:text-slate-300">Set preferred values, then apply them across this show&apos;s setlist and saved Live Mode settings.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-4">
             <label className="text-sm font-bold">Font Size<select value={defaults.fontSize} onChange={(e) => setDefaults((c) => ({ ...c, fontSize: Number(e.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 dark:border-white/10 dark:bg-slate-950">{FONT_SIZES.map((v) => <option key={v} value={v}>{v}px</option>)}</select></label>
             <label className="text-sm font-bold">Reading Mode<select value={defaults.reading ? "reading" : "dark"} onChange={(e) => setDefaults((c) => ({ ...c, reading: e.target.value === "reading" }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 dark:border-white/10 dark:bg-slate-950"><option value="dark">Dark</option><option value="reading">Reading</option></select></label>
@@ -173,10 +212,10 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
             <label className="text-sm font-bold">Intro Delay<select value={defaults.introDelay} onChange={(e) => setDefaults((c) => ({ ...c, introDelay: Number(e.target.value) }))} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 dark:border-white/10 dark:bg-slate-950">{INTRO_DELAYS.map((v) => <option key={v} value={v}>{v === 0 ? "Off" : `${v}s`}</option>)}</select></label>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" onClick={() => bulk("Apply Defaults to All Songs", () => defaults)} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950">Apply Defaults to All Songs</button>
-            <button type="button" onClick={() => bulk("Apply Font Size to All Songs", (c) => ({ ...c, fontSize: defaults.fontSize }))} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Apply Font Size to All Songs</button>
-            <button type="button" onClick={() => bulk("Apply Reading Mode to All Songs", (c) => ({ ...c, reading: defaults.reading }))} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Apply Reading Mode to All Songs</button>
-            <button type="button" onClick={() => bulk("Apply Auto Scroll Settings to Songs with Lyrics", (c) => ({ ...c, autoStart: defaults.autoStart, speed: defaults.speed, delay: defaults.delay }), (song) => Boolean(song.lyrics?.trim()))} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-500/15 dark:text-emerald-100">Apply Auto Scroll Settings to All Songs</button>
+            <button type="button" onClick={() => void bulk("Apply Defaults to All Songs", defaults)} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950">Apply Defaults to All Songs</button>
+            <button type="button" onClick={() => void bulk("Apply Font Size to All Songs", { fontSize: defaults.fontSize })} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Apply Font Size to All Songs</button>
+            <button type="button" onClick={() => void bulk("Apply Reading Mode to All Songs", { reading: defaults.reading })} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Apply Reading Mode to All Songs</button>
+            <button type="button" onClick={() => void bulk("Apply Auto Scroll Settings to All Songs", { autoStart: defaults.autoStart, speed: defaults.speed, delay: defaults.delay })} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-500/15 dark:text-emerald-100">Apply Auto Scroll Settings to All Songs</button>
           </div>
         </section>
 
