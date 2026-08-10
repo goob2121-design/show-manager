@@ -19,11 +19,13 @@ import {
 } from "@/lib/door-welcome-display";
 import {
   POST_SHOW_HEADLINE,
-  buildTimedIdleMessages,
+  buildGuestIdleSlides,
+  buildTimedIdleSlides,
   chunkDoorWelcomeSeats,
   doorWelcomeGuestCount,
-  isSponsorIdleMessage,
+  isSponsorIdleSlide,
   resolveTimedIdleWindow,
+  type IdleSlide,
 } from "@/lib/door-welcome-presentation";
 
 const DISPLAY_TRANSITION_MS = 250;
@@ -36,7 +38,7 @@ type WelcomeSponsorLogo = {
   logoUrl: string;
 };
 
-type WelcomeShowRow = Pick<ShowRecord, "show_date" | "venue"> & {
+type WelcomeShowRow = Pick<ShowRecord, "id" | "show_date" | "venue"> & {
   show_sponsors?: Array<{
     placement_order: number;
     sponsor: { name: string; logo_url: string | null } | Array<{ name: string; logo_url: string | null }> | null;
@@ -96,6 +98,7 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   const [nextShowDate, setNextShowDate] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [sponsorLogos, setSponsorLogos] = useState<WelcomeSponsorLogo[]>([]);
+  const [guestSlides, setGuestSlides] = useState<IdleSlide[]>([]);
   const [welcome, setWelcome] = useState<DoorWelcomeEvent | null>(null);
   const [seatView, setSeatView] = useState<DoorWelcomeSeatViewEvent | null>(null);
   const [isWelcomeExiting, setIsWelcomeExiting] = useState(false);
@@ -122,7 +125,7 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
       const supabase = createClient();
       const { data } = await supabase
         .from("shows")
-        .select("show_date, venue, show_sponsors(placement_order, sponsor:sponsor_library(name, logo_url))")
+        .select("id, show_date, venue, show_sponsors(placement_order, sponsor:sponsor_library(name, logo_url))")
         .eq("slug", showSlug)
         .single();
       if (!active || !data) return;
@@ -138,6 +141,13 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
         })
         .filter((logo, index, items) => items.findIndex((item) => item.logoUrl === logo.logoUrl) === index);
       setSponsorLogos(logos);
+      const { data: guestProfiles, error: guestProfilesError } = await supabase
+        .from("guest_profiles")
+        .select("name, photo_url, is_confirmed, permission_granted")
+        .eq("show_id", normalizedShow.id);
+      if (active) {
+        setGuestSlides(guestProfilesError ? [] : buildGuestIdleSlides(guestProfiles ?? []));
+      }
       if (normalizedShow.show_date) {
         const { data: nextShow } = await supabase
           .from("shows")
@@ -213,11 +223,12 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
     return () => window.clearInterval(clock);
   }, []);
   const timedIdleWindow = resolveTimedIdleWindow(clockNow);
-  const idleMessages = buildTimedIdleMessages(timedIdleWindow);
-  const activeIdleIndex = idleMessageIndex % idleMessages.length;
-  const activeIdleMessage = idleMessages[activeIdleIndex];
-  const isSponsorSlide = isSponsorIdleMessage(activeIdleMessage);
-  const sponsorCycle = Math.floor(idleMessageIndex / idleMessages.length);
+  const idleSlides = buildTimedIdleSlides(timedIdleWindow, guestSlides);
+  const activeIdleIndex = idleMessageIndex % idleSlides.length;
+  const activeIdleSlide = idleSlides[activeIdleIndex];
+  const activeIdleHeadline = activeIdleSlide.kind === "guest" ? null : activeIdleSlide.headline;
+  const isSponsorSlide = isSponsorIdleSlide(activeIdleSlide);
+  const sponsorCycle = Math.floor(idleMessageIndex / idleSlides.length);
   const activeSponsorLogo = isSponsorSlide && sponsorLogos.length > 0
     ? sponsorLogos[sponsorCycle % sponsorLogos.length]
     : null;
@@ -266,7 +277,15 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
           }`}
         >
           <div className={HERO_LOGO_CONTAINER_CLASS} aria-live="off">
-            {activeSponsorLogo ? (
+            {activeIdleSlide.kind === "guest" && activeIdleSlide.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={activeIdleSlide.photoUrl}
+                src={activeIdleSlide.photoUrl}
+                alt={activeIdleSlide.name + " promotional photo"}
+                className="h-full w-full rounded-[2rem] object-contain motion-safe:animate-[logo-swap-in_400ms_ease-out]"
+              />
+            ) : activeSponsorLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 key={activeSponsorLogo.logoUrl}
@@ -292,13 +311,21 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
             aria-hidden="true"
             className="mx-auto flex min-h-[clamp(7rem,18vh,13rem)] w-full max-w-6xl flex-col items-center justify-center text-center motion-safe:animate-[idle-message-in_400ms_ease-out]"
           >
-            <p className="mx-auto text-balance text-[clamp(2rem,5.4vw,5.75rem)] font-bold leading-[1.08]">
-              {activeIdleMessage === "Welcome to the Cumberland Mountain Music Show" ? (
-                <>Welcome to the<br />Cumberland Mountain Music Show</>
-              ) : activeIdleMessage === POST_SHOW_HEADLINE ? (
-                <>{POST_SHOW_HEADLINE}<span className="mt-3 block text-[0.48em] font-semibold leading-snug">Please Drive Safely<br />We Hope to See You Again Soon</span></>
-              ) : activeIdleMessage}
-            </p>
+            {activeIdleSlide.kind === "guest" ? (
+              <div className="mx-auto flex flex-col items-center gap-3">
+                <p className="text-[clamp(1rem,2vw,1.75rem)] font-semibold uppercase tracking-[0.24em] text-[#e2bc59]">Special Guest</p>
+                <p className="max-w-[94vw] text-balance text-[clamp(2.25rem,5.8vw,6rem)] font-bold leading-[1.02] [overflow-wrap:anywhere]">{activeIdleSlide.name}</p>
+                <p className="text-[clamp(1rem,1.8vw,1.5rem)] font-medium tracking-wide text-white/75">Appearing Tonight</p>
+              </div>
+            ) : (
+              <p className="mx-auto text-balance text-[clamp(2rem,5.4vw,5.75rem)] font-bold leading-[1.08]">
+                {activeIdleHeadline === "Welcome to the Cumberland Mountain Music Show" ? (
+                  <>Welcome to the<br />Cumberland Mountain Music Show</>
+                ) : activeIdleHeadline === POST_SHOW_HEADLINE ? (
+                  <>{POST_SHOW_HEADLINE}<span className="mt-3 block text-[0.48em] font-semibold leading-snug">Please Drive Safely<br />We Hope to See You Again Soon</span></>
+                ) : activeIdleHeadline}
+              </p>
+            )}
           </div>
           <p className="mx-auto flex flex-col items-center gap-1 text-center text-[clamp(1.1rem,2.2vw,2.15rem)] font-semibold leading-snug tracking-wide text-[#e2bc59]">
             <span>Big-Time Show</span>
@@ -307,7 +334,7 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
           <div className="mx-auto flex min-h-[clamp(2.75rem,7vh,4.5rem)] w-full flex-col items-center justify-center text-center text-[clamp(0.95rem,1.6vw,1.45rem)] leading-relaxed text-white/70">
             {showDate ? <p>{showDate}</p> : null}
             {showVenue ? <p>{showVenue}</p> : null}
-            {activeIdleMessage === POST_SHOW_HEADLINE && nextShowDate ? (
+            {activeIdleHeadline === POST_SHOW_HEADLINE && nextShowDate ? (
               <p className="mt-1 font-semibold text-[#e2bc59]">See You {formatDisplayDate(nextShowDate)}</p>
             ) : null}
           </div>

@@ -2,6 +2,18 @@ export const WELCOME_DISPLAY_TIME_ZONE = "America/New_York";
 
 export type TimedIdleWindow = "normal" | "doors-open-soon" | "post-show";
 
+export type GuestIdleSlideSource = {
+  name: string | null;
+  photo_url: string | null;
+  is_confirmed: boolean;
+  permission_granted: boolean;
+};
+
+export type IdleSlide =
+  | { kind: "message"; headline: string }
+  | { kind: "guest"; name: string; photoUrl: string | null }
+  | { kind: "sponsor"; headline: string };
+
 export const BASE_IDLE_MESSAGES = [
   "Welcome to the Cumberland Mountain Music Show",
   "Thank You to Our Sponsors",
@@ -21,8 +33,22 @@ export const SPONSOR_IDLE_MESSAGES = [
 export const DOORS_OPEN_SOON_HEADLINE = "Doors Open Soon";
 export const POST_SHOW_HEADLINE = "Thank You For Joining Us Tonight";
 
-export function isSponsorIdleMessage(message: string) {
-  return (SPONSOR_IDLE_MESSAGES as readonly string[]).includes(message);
+function messageIdleSlide(headline: string): IdleSlide {
+  return (SPONSOR_IDLE_MESSAGES as readonly string[]).includes(headline)
+    ? { kind: "sponsor", headline }
+    : { kind: "message", headline };
+}
+
+export function buildGuestIdleSlides(profiles: readonly GuestIdleSlideSource[]): IdleSlide[] {
+  return profiles.flatMap((profile) => {
+    const name = profile.name?.trim();
+    if (!profile.is_confirmed || !profile.permission_granted || !name) return [];
+    return [{ kind: "guest", name, photoUrl: profile.photo_url?.trim() || null }];
+  });
+}
+
+export function isSponsorIdleSlide(slide: IdleSlide) {
+  return slide.kind === "sponsor";
 }
 
 export function resolveTimedIdleWindow(now: number | Date): TimedIdleWindow {
@@ -38,14 +64,14 @@ export function resolveTimedIdleWindow(now: number | Date): TimedIdleWindow {
   return "normal";
 }
 
-export function buildTimedIdleMessages(window: TimedIdleWindow) {
-  if (window === "doors-open-soon") {
-    return [...BASE_IDLE_MESSAGES, DOORS_OPEN_SOON_HEADLINE];
-  }
-  if (window === "post-show") {
-    return [...BASE_IDLE_MESSAGES, POST_SHOW_HEADLINE];
-  }
-  return [...BASE_IDLE_MESSAGES];
+export function buildTimedIdleSlides(window: TimedIdleWindow, guestSlides: readonly IdleSlide[] = []) {
+  const slides = BASE_IDLE_MESSAGES.map(messageIdleSlide);
+  guestSlides.forEach((guestSlide, index) => {
+    slides.splice(Math.min(1 + (index * 2), slides.length), 0, guestSlide);
+  });
+  if (window === "doors-open-soon") slides.push(messageIdleSlide(DOORS_OPEN_SOON_HEADLINE));
+  if (window === "post-show") slides.push(messageIdleSlide(POST_SHOW_HEADLINE));
+  return slides;
 }
 
 export function chunkDoorWelcomeSeats(labels: readonly string[], maximumPerLine = 6) {
