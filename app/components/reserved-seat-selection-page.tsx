@@ -315,7 +315,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   }
 
   return (
-    <main className="confirmation-print-root min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 pb-28 text-slate-100 sm:px-6 sm:py-8 sm:pb-8">
+    <main className="confirmation-print-root min-h-screen w-full max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.12),_transparent_26%),linear-gradient(180deg,_#08111f,_#050913_58%,_#03060c)] px-4 py-6 pb-40 text-slate-100 sm:px-6 sm:py-8 sm:pb-8">
       <style jsx global>{`
         @page {
           size: Letter portrait;
@@ -645,6 +645,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
               <ReservedSeatMap
                 seatStates={seatStates}
                 onSeatClick={handleSeatClick}
+                enableMobileSectionSelector
                 showCustomerSeatDetails={false}
                 title="Select Your Seats"
                 helperText={

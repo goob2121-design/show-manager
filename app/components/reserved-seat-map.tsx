@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import {
   RESERVED_SEATING_ROW_LABELS,
   RESERVED_SEATING_SECTION_CONFIGS,
@@ -28,6 +28,7 @@ type ReservedSeatMapProps = {
   sizeVariant?: "default" | "compact";
   presentationVariant?: "default" | "customer-display";
   showSwipeHint?: boolean;
+  enableMobileSectionSelector?: boolean;
 };
 
 const customerLegendItems = [
@@ -156,7 +157,9 @@ export function ReservedSeatMap({
   sizeVariant = "default",
   presentationVariant = "default",
   showSwipeHint = true,
+  enableMobileSectionSelector = false,
 }: ReservedSeatMapProps) {
+  const [mobileSection, setMobileSection] = useState<"left" | "right" | null>(null);
   const visibleLegendItems = legendVariant === "door-readonly"
     ? doorReadOnlyLegendItems
     : legendVariant === "sponsor-packet"
@@ -232,7 +235,35 @@ export function ReservedSeatMap({
       ) : null}
 
       <div className={`w-full max-w-full overflow-hidden ${isCustomerDisplay ? "p-0" : isSponsorPacket ? (isCompact ? "p-0" : "p-0") : isCompact ? "p-2.5 sm:p-3" : "p-3 sm:p-4 lg:p-5"}`}>
-        {showSwipeHint && !isSponsorPacket ? (
+        {enableMobileSectionSelector ? (
+          <div className="mb-3 lg:hidden">
+            <div className="mb-2.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-center">
+              <p className="text-sm font-bold text-white">Choose a seating section</p>
+              <p className="mt-1 text-xs leading-5 text-slate-300">
+                The room has a Left Section and Right Section separated by a center aisle. Choose a side below to view available seats.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Choose seating section">
+              <button
+                type="button"
+                aria-pressed={mobileSection === "left"}
+                onClick={() => setMobileSection("left")}
+                className={`rounded-lg border px-3 py-2.5 text-sm font-bold transition ${mobileSection === "left" ? "border-amber-300 bg-amber-400 text-stone-950 shadow-[0_0_16px_rgba(251,191,36,0.2)]" : "border-white/15 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"}`}
+              >
+                Left Section
+              </button>
+              <button
+                type="button"
+                aria-pressed={mobileSection === "right"}
+                onClick={() => setMobileSection("right")}
+                className={`rounded-lg border px-3 py-2.5 text-sm font-bold transition ${mobileSection === "right" ? "border-amber-300 bg-amber-400 text-stone-950 shadow-[0_0_16px_rgba(251,191,36,0.2)]" : "border-white/15 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"}`}
+              >
+                Right Section
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {showSwipeHint && !isSponsorPacket && !enableMobileSectionSelector ? (
           <div
             aria-label="This auditorium has two seating sections: left and right, separated by a center aisle. Swipe the seating chart below left or right to view both sides."
             className={isCmmsPublic
@@ -262,23 +293,41 @@ export function ReservedSeatMap({
         </p>
         ) : null}
 
-        <div className="w-full max-w-full overflow-x-auto overscroll-x-contain touch-pan-x pb-2 [-webkit-overflow-scrolling:touch]">
+        <div className={`w-full max-w-full pb-2 ${enableMobileSectionSelector ? "overflow-x-hidden lg:overflow-x-auto lg:overscroll-x-contain lg:touch-pan-x lg:[-webkit-overflow-scrolling:touch]" : "overflow-x-auto overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch]"}`}>
           <div
             className={isSponsorPacket
               ? "min-w-[620px] bg-white p-1.5 sm:min-w-[700px] sm:p-2 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[45rem] lg:p-2"
               : isCmmsPublic
-              ? "min-w-[900px] rounded-[1.1rem] border border-[rgba(200,155,60,0.14)] bg-[radial-gradient(circle_at_top_center,_rgba(200,155,60,0.09),_transparent_36%),linear-gradient(180deg,_#0d1016,_#080b10)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5"
+              ? `${enableMobileSectionSelector ? "min-w-0 sm:min-w-0" : "min-w-[900px] sm:min-w-[920px]"} rounded-[1.1rem] border border-[rgba(200,155,60,0.14)] bg-[radial-gradient(circle_at_top_center,_rgba(200,155,60,0.09),_transparent_36%),linear-gradient(180deg,_#0d1016,_#080b10)] p-2.5 sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5`
               : isCustomerDisplay
               ? "min-w-[900px] rounded-[1.2rem] bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5"
-              : "min-w-[900px] rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:min-w-[920px] sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5"}
+              : `${enableMobileSectionSelector ? "min-w-0 sm:min-w-0" : "min-w-[900px] sm:min-w-[920px]"} rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_center,_rgba(30,41,59,0.46),_transparent_40%),linear-gradient(180deg,_#0b1220,_#060c16)] p-2.5 sm:p-4 lg:mx-auto lg:min-w-0 lg:w-full lg:max-w-[70rem] lg:p-4 xl:p-5`}
           >
             <div className={isSponsorPacket ? "mx-auto max-w-[44rem]" : "mx-auto max-w-[62rem]"}>
+              {enableMobileSectionSelector && !mobileSection ? (
+                <div className="mx-auto flex min-h-32 w-full max-w-[28rem] items-center justify-center px-4 text-center lg:hidden">
+                  <p className="text-sm leading-6 text-slate-300">Select Left Section or Right Section above to view seats.</p>
+                </div>
+              ) : null}
+
+              {enableMobileSectionSelector && mobileSection ? (
+                <div className="mx-auto mb-2.5 flex w-full max-w-[28rem] flex-col items-center gap-0.5 rounded-[0.8rem] border border-[rgba(200,155,60,0.18)] bg-[radial-gradient(circle_at_top,_rgba(200,155,60,0.18),_transparent_42%),linear-gradient(180deg,_#4a331c,_#1d140d_62%,_#0d0907)] px-2 py-1.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_20px_rgba(0,0,0,0.22)] sm:py-2 lg:hidden">
+                    <div className="h-1 w-full rounded-full bg-[linear-gradient(90deg,transparent,rgba(251,191,36,0.45),transparent)]" />
+                    <p className="text-base font-black uppercase tracking-[0.2em] text-white sm:text-lg">
+                      {RESERVED_SEATING_VENUE.stageLabel}
+                    </p>
+                    <p className="text-[8px] font-semibold uppercase tracking-[0.18em] text-[#f0d486]/80 sm:text-[9px]">
+                      {RESERVED_SEATING_VENUE.frontLabel}
+                    </p>
+                </div>
+              ) : null}
+
               <div
-                className={isSponsorPacket
-                  ? "mx-auto mb-2.5 flex max-w-[32rem] flex-col items-center gap-0.5 rounded-[0.75rem] border border-[#8a6524] bg-[linear-gradient(180deg,_#6b4a23,_#2e1f0f_62%,_#15100b)] px-2.5 py-2 text-center shadow-none sm:mb-3 sm:px-3 sm:py-2.5"
+                className={`${enableMobileSectionSelector ? "hidden lg:flex" : "flex"} ${isSponsorPacket
+                  ? "mx-auto mb-2.5 max-w-[32rem] flex-col items-center gap-0.5 rounded-[0.75rem] border border-[#8a6524] bg-[linear-gradient(180deg,_#6b4a23,_#2e1f0f_62%,_#15100b)] px-2.5 py-2 text-center shadow-none sm:mb-3 sm:px-3 sm:py-2.5"
                   : isCmmsPublic
-                  ? "mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1 rounded-[1.05rem] border border-[rgba(200,155,60,0.18)] bg-[radial-gradient(circle_at_top,_rgba(200,155,60,0.18),_transparent_42%),linear-gradient(180deg,_#4a331c,_#1d140d_62%,_#0d0907)] px-3 py-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_14px_28px_rgba(0,0,0,0.26)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3"
-                  : "mx-auto mb-3 flex max-w-[48rem] flex-col items-center gap-1 rounded-[1.2rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3.5"}
+                  ? "mx-auto mb-3 max-w-[48rem] flex-col items-center gap-1 rounded-[1.05rem] border border-[rgba(200,155,60,0.18)] bg-[radial-gradient(circle_at_top,_rgba(200,155,60,0.18),_transparent_42%),linear-gradient(180deg,_#4a331c,_#1d140d_62%,_#0d0907)] px-3 py-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_14px_28px_rgba(0,0,0,0.26)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3"
+                  : "mx-auto mb-3 max-w-[48rem] flex-col items-center gap-1 rounded-[1.2rem] border border-amber-200/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.26),_transparent_38%),linear-gradient(180deg,_#5b3b22,_#2a190f_58%,_#110b08)] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_34px_rgba(0,0,0,0.35)] sm:mb-4 sm:gap-1.5 sm:px-4 sm:py-3.5"}`}
               >
                 <div className="h-1.5 w-full rounded-full bg-[linear-gradient(90deg,transparent,rgba(251,191,36,0.45),transparent)]" />
                 <p className={`${isCompact ? "text-[1rem] sm:text-[1.2rem] lg:text-[1.35rem]" : "text-[1.65rem] sm:text-[2rem] lg:text-[2.15rem]"} font-black uppercase tracking-[0.3em] text-white`}>
@@ -289,7 +338,63 @@ export function ReservedSeatMap({
                 </p>
               </div>
 
-              <div className={`${isCompact ? "grid-cols-[1.45rem_minmax(0,1fr)_2.3rem_minmax(0,1fr)_1.45rem] gap-x-1 gap-y-1 sm:grid-cols-[1.8rem_minmax(0,1fr)_3rem_minmax(0,1fr)_1.8rem] sm:gap-x-1.5 sm:gap-y-1.5 lg:grid-cols-[1.95rem_minmax(0,1fr)_3.55rem_minmax(0,1fr)_1.95rem]" : "grid-cols-[1.55rem_minmax(0,1fr)_2.8rem_minmax(0,1fr)_1.55rem] gap-x-1 gap-y-1 sm:grid-cols-[1.95rem_minmax(0,1fr)_3.65rem_minmax(0,1fr)_1.95rem] sm:gap-x-2 sm:gap-y-1.5 lg:grid-cols-[2.1rem_minmax(0,1fr)_4.25rem_minmax(0,1fr)_2.1rem] xl:grid-cols-[2.3rem_minmax(0,1fr)_4.6rem_minmax(0,1fr)_2.3rem]"} grid`}>
+              {enableMobileSectionSelector && mobileSection ? (
+                <div className="mx-auto w-full max-w-[28rem] lg:hidden">
+                  <p className={`mb-1 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-amber-200/80 ${mobileSection === "left" ? "text-right" : "text-left"}`}>
+                    {mobileSection === "left" ? "CENTER AISLE →" : "← CENTER AISLE"}
+                  </p>
+                  <div className="grid gap-y-0.5 sm:gap-y-1">
+                  {RESERVED_SEATING_ROW_LABELS.map((rowLabel) => {
+                    const mobileRowLabel = (
+                      <div className={isCmmsPublic ? "flex items-center justify-center text-[0.65rem] font-black uppercase tracking-[0.12em] text-[#efe5d6] sm:text-sm" : "flex items-center justify-center text-[0.65rem] font-black uppercase tracking-[0.12em] text-slate-200 sm:text-sm"}>
+                        {rowLabel}
+                      </div>
+                    );
+                    const mobileSeatGrid = (
+                      <div className="grid grid-cols-10 gap-0.5 sm:gap-1">
+                        {RESERVED_SEATING_SEAT_NUMBERS.map((seatNumber) => {
+                          const sectionConfig = mobileSection === "left" ? leftSectionConfig : rightSectionConfig;
+                          const seatId = `${sectionConfig.prefix}-${rowLabel}${seatNumber}`;
+                          const seatState = seatStates[seatId];
+                          const seatLabels = getSeatLabels(seatId, seatState, showCustomerSeatDetails);
+
+                          return (
+                            <button
+                              key={seatId}
+                              type="button"
+                              onClick={() => onSeatClick?.(seatId)}
+                              disabled={Boolean(seatState?.disabled)}
+                              title={seatLabels.title}
+                              aria-label={seatLabels.ariaLabel}
+                              tabIndex={onSeatClick ? undefined : -1}
+                              className={`${isCompact ? "rounded-[0.35rem] text-[0.52rem] sm:min-h-[1.5rem] sm:rounded-[0.4rem] sm:text-[0.64rem]" : "rounded-[0.42rem] text-[0.6rem] sm:min-h-[2rem] sm:rounded-[0.58rem] sm:text-xs"} aspect-square min-h-0 w-full border px-0 font-bold leading-none transition ${onSeatClick ? "" : "cursor-default"} ${getSeatButtonClasses(
+                                seatState?.status ?? "available",
+                                Boolean(seatState?.disabled),
+                                chromeVariant,
+                              )}`}
+                            >
+                              {seatNumber}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+
+                    return (
+                      <div
+                        key={`mobile-${mobileSection}-${rowLabel}`}
+                        className="grid grid-cols-[1.35rem_minmax(0,1fr)] gap-x-0.5 sm:grid-cols-[1.75rem_minmax(0,1fr)] sm:gap-x-1"
+                      >
+                        {mobileRowLabel}
+                        {mobileSeatGrid}
+                      </div>
+                    );
+                  })}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className={`${isCompact ? "grid-cols-[1.45rem_minmax(0,1fr)_2.3rem_minmax(0,1fr)_1.45rem] gap-x-1 gap-y-1 sm:grid-cols-[1.8rem_minmax(0,1fr)_3rem_minmax(0,1fr)_1.8rem] sm:gap-x-1.5 sm:gap-y-1.5 lg:grid-cols-[1.95rem_minmax(0,1fr)_3.55rem_minmax(0,1fr)_1.95rem]" : "grid-cols-[1.55rem_minmax(0,1fr)_2.8rem_minmax(0,1fr)_1.55rem] gap-x-1 gap-y-1 sm:grid-cols-[1.95rem_minmax(0,1fr)_3.65rem_minmax(0,1fr)_1.95rem] sm:gap-x-2 sm:gap-y-1.5 lg:grid-cols-[2.1rem_minmax(0,1fr)_4.25rem_minmax(0,1fr)_2.1rem] xl:grid-cols-[2.3rem_minmax(0,1fr)_4.6rem_minmax(0,1fr)_2.3rem]"} ${enableMobileSectionSelector ? "hidden lg:grid" : "grid"}`}>
                 {RESERVED_SEATING_ROW_LABELS.map((rowLabel, rowIndex) => (
                   <Fragment key={rowLabel}>
                     <div className={isSponsorPacket ? "flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-[#1f1f1f] sm:text-sm lg:text-base" : isCmmsPublic ? "flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-[#efe5d6] sm:text-base xl:text-lg" : "flex items-center justify-center text-xs font-black uppercase tracking-[0.16em] text-slate-200 sm:text-base xl:text-lg"}>
