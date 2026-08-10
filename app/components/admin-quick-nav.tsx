@@ -148,7 +148,7 @@ export function AdminQuickNav({
     try {
       await fetch(`/api/admin-session?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
     } finally {
-      window.location.href = currentView === "dashboard" ? "/shows" : `/admin/${slug}`;
+      window.location.href = "/";
     }
   }
 
