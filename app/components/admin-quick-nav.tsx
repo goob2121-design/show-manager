@@ -10,7 +10,7 @@ import {
 
 type AdminQuickNavProps = {
   slug: string;
-  currentView: "dashboard" | "admin" | "band" | "guest" | "mc" | "print-studio";
+  currentView: "dashboard" | "admin" | "band" | "guest" | "mc" | "print-studio" | "email-center";
   accessSlug?: string;
   timelineMessages?: string[];
   staticLinksOnly?: boolean;
@@ -78,10 +78,20 @@ function LogoutIcon() {
   );
 }
 
+function MailIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="4.5" width="14" height="11" rx="1.5" />
+      <path d="m4 6 6 4.5L16 6" />
+    </svg>
+  );
+}
+
 const quickNavLinks = [
   { key: "dashboard", label: "Dashboard", href: "/shows", icon: <HomeIcon /> },
   { key: "band", label: "Band", href: (slug: string) => `/band/${slug}`, icon: <MusicIcon />, requiresShow: true },
   { key: "print-studio", label: "Print Studio", href: "/print-studio", icon: <PrinterIcon /> },
+  { key: "email-center", label: "Email Center", href: (slug: string) => `/admin/${slug}/email-center`, icon: <MailIcon />, requiresShow: true },
 ] as const;
 const chartBuilderUrl = "https://charts.pinnaclestudiotn.com";
 type ScannerConnectionState = "checking" | "online" | "offline";
