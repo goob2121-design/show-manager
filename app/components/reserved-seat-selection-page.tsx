@@ -653,9 +653,15 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                     </span>
                   </button>
                   <div className={`${isMobileHelpExpanded ? "block" : "hidden"} sm:block`}>
+                    <div className="sm:hidden">
+                      <h2 className="text-xl font-bold text-white">Need help choosing your seats?</h2>
+                      <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-300">We&apos;ll choose the best available seats for your party and keep everyone together whenever possible. Your assigned seats will be emailed to you.</p>
+                    </div>
+                    <div className="hidden sm:block">
                   <h2 className="text-xl font-bold text-white">Need a little help choosing your seats?</h2>
                   <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-300">If you&apos;d rather not choose your seats online, we&apos;re happy to take care of it for you.</p>
                   <p className="mx-auto mt-2 max-w-3xl text-sm leading-6 text-slate-300">Your advance ticket purchase already guarantees your reserved seats. We&apos;ll choose the best available seats for your party, keep everyone together whenever possible, and email your tickets with your assigned seat numbers—so all you have to do is show up and enjoy the show!</p>
+                    </div>
                   <button type="button" onClick={() => void saveSeatPreference("auto_assign")} disabled={isSavingPreference} className="mt-4 rounded-xl bg-amber-400 px-4 py-2.5 font-bold text-[#071426] hover:bg-amber-300 disabled:opacity-60">{isSavingPreference ? "Saving..." : "🎟️ Choose My Seats for Me"}</button>
                   </div>
                 </section>

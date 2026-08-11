@@ -21,7 +21,7 @@ test("automatic mobile centering and its retry machinery are removed", () => {
   assert.doesNotMatch(seatMapSource, /scrollLeft\s*=/);
   assert.doesNotMatch(seatMapSource, /requestAnimationFrame|setTimeout|ResizeObserver/);
   assert.doesNotMatch(seatMapSource, /data-seat-map-(?:content|center-aisle|selected)/);
-  assert.doesNotMatch(seatMapSource, /useLayoutEffect|useRef/);
+  assert.doesNotMatch(seatMapSource, /useLayoutEffect/);
 });
 
 test("manual scrolling, dimensions, and seat selection hooks remain intact", () => {
@@ -72,6 +72,9 @@ test("mobile page prioritizes seat selection and collapses optional help", () =>
   assert.match(customerPageSource, /Don&apos;t want to choose\? We&apos;ll choose for you/);
   assert.match(customerPageSource, /aria-expanded=\{isMobileHelpExpanded\}/);
   assert.match(customerPageSource, /isMobileHelpExpanded \? "block" : "hidden"/);
+  assert.match(customerPageSource, /Need help choosing your seats\?/);
+  assert.match(customerPageSource, /Your assigned seats will be emailed to you\./);
+  assert.match(customerPageSource, /className="hidden sm:block"/);
   assert.match(customerPageSource, /saveSeatPreference\("auto_assign"\)/);
 });
 
@@ -88,4 +91,13 @@ test("section buttons retain their local state behavior and only notify the page
   assert.match(seatMapSource, /setMobileSection\("left"\);\s*onMobileSectionChange\?\.\("left"\);/);
   assert.match(seatMapSource, /setMobileSection\("right"\);\s*onMobileSectionChange\?\.\("right"\);/);
   assert.doesNotMatch(seatMapSource, /setSelectedSeatIds/);
+});
+
+test("mobile section changes gently reveal the existing Step 2 heading", () => {
+  assert.match(seatMapSource, /const stepTwoRef = useRef<HTMLDivElement>\(null\)/);
+  assert.match(seatMapSource, /ref=\{stepTwoRef\}[^>]*lg:hidden/);
+  assert.match(seatMapSource, /window\.matchMedia\("\(max-width: 1023px\)"\)\.matches/);
+  assert.match(seatMapSource, /stepTwoRef\.current\?\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/);
+  assert.match(seatMapSource, /\[enableMobileSectionSelector, mobileSection\]/);
+  assert.doesNotMatch(seatMapSource, /scrollLeft\s*=/);
 });

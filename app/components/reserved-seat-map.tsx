@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   RESERVED_SEATING_ROW_LABELS,
   RESERVED_SEATING_SECTION_CONFIGS,
@@ -162,6 +162,16 @@ export function ReservedSeatMap({
   enableMobileSectionSelector = false,
 }: ReservedSeatMapProps) {
   const [mobileSection, setMobileSection] = useState<"left" | "right" | null>(null);
+  const stepTwoRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!enableMobileSectionSelector || !mobileSection || !window.matchMedia("(max-width: 1023px)").matches) {
+      return;
+    }
+
+    stepTwoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [enableMobileSectionSelector, mobileSection]);
+
   const visibleLegendItems = legendVariant === "door-readonly"
     ? doorReadOnlyLegendItems
     : legendVariant === "sponsor-packet"
@@ -240,8 +250,8 @@ export function ReservedSeatMap({
         {enableMobileSectionSelector ? (
           <div className="mb-3 lg:hidden">
             <div className="mb-2.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-center">
-              <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-amber-300">Step 1</p>
-              <p className="mt-0.5 text-lg font-black uppercase tracking-[0.04em] text-white">Choose a Section</p>
+              <p className="text-lg font-black uppercase tracking-[0.2em] text-amber-300">Step 1</p>
+              <p className="mt-0.5 text-3xl font-black uppercase tracking-[0.04em] text-white">Choose a Section</p>
               <p className="mt-1 text-sm leading-5 text-slate-300">
                 The room has two seating sections separated by a center aisle. Choose Left or Right to view available seats.
               </p>
@@ -321,9 +331,9 @@ export function ReservedSeatMap({
 
               {enableMobileSectionSelector && mobileSection ? (
                 <>
-                  <div className="mx-auto mb-2.5 w-full max-w-[28rem] text-center lg:hidden">
-                    <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-amber-300">Step 2</p>
-                    <p className="mt-0.5 text-lg font-black uppercase tracking-[0.04em] text-white">Choose Your Seats</p>
+                  <div ref={stepTwoRef} className="mx-auto mb-2.5 w-full max-w-[28rem] text-center lg:hidden">
+                    <p className="text-lg font-black uppercase tracking-[0.2em] text-amber-300">Step 2</p>
+                    <p className="mt-0.5 text-3xl font-black uppercase tracking-[0.04em] text-white">Choose Your Seats</p>
                     <p className="mt-1 text-sm leading-5 text-slate-300">Tap any green seat to select it.</p>
                   </div>
                   <div className="mx-auto mb-2.5 flex w-full max-w-[28rem] flex-col items-center gap-0.5 rounded-[0.8rem] border border-[rgba(200,155,60,0.18)] bg-[radial-gradient(circle_at_top,_rgba(200,155,60,0.18),_transparent_42%),linear-gradient(180deg,_#4a331c,_#1d140d_62%,_#0d0907)] px-2 py-1.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_20px_rgba(0,0,0,0.22)] sm:py-2 lg:hidden">
