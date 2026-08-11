@@ -19,6 +19,7 @@ export type ReservedSeatMapSeatState = {
 type ReservedSeatMapProps = {
   seatStates: Record<string, ReservedSeatMapSeatState>;
   onSeatClick?: (seatId: string) => void;
+  onMobileSectionChange?: (section: "left" | "right") => void;
   title?: string;
   helperText?: string;
   includeSelectedLegend?: boolean;
@@ -148,6 +149,7 @@ function getSeatLabels(
 export function ReservedSeatMap({
   seatStates,
   onSeatClick,
+  onMobileSectionChange,
   title,
   helperText,
   includeSelectedLegend = true,
@@ -248,7 +250,10 @@ export function ReservedSeatMap({
               <button
                 type="button"
                 aria-pressed={mobileSection === "left"}
-                onClick={() => setMobileSection("left")}
+                onClick={() => {
+                  setMobileSection("left");
+                  onMobileSectionChange?.("left");
+                }}
                 className={`rounded-lg border px-3 py-2.5 text-sm font-bold transition ${mobileSection === "left" ? "border-amber-300 bg-amber-400 text-stone-950 shadow-[0_0_16px_rgba(251,191,36,0.2)]" : "border-white/15 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"}`}
               >
                 Left Section
@@ -256,7 +261,10 @@ export function ReservedSeatMap({
               <button
                 type="button"
                 aria-pressed={mobileSection === "right"}
-                onClick={() => setMobileSection("right")}
+                onClick={() => {
+                  setMobileSection("right");
+                  onMobileSectionChange?.("right");
+                }}
                 className={`rounded-lg border px-3 py-2.5 text-sm font-bold transition ${mobileSection === "right" ? "border-amber-300 bg-amber-400 text-stone-950 shadow-[0_0_16px_rgba(251,191,36,0.2)]" : "border-white/15 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"}`}
               >
                 Right Section

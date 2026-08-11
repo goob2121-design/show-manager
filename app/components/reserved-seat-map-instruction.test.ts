@@ -64,3 +64,28 @@ test("mobile stage stays centered and the fixed action bar has clearance", () =>
   assert.match(seatMapSource, /hidden lg:flex/);
   assert.match(customerPageSource, /py-6 pb-40 text-slate-100 sm:px-6 sm:py-8 sm:pb-8/);
 });
+
+test("mobile page prioritizes seat selection and collapses optional help", () => {
+  assert.match(customerPageSource, /<aside className="order-2[^\"]*sm:order-1[^\"]*xl:order-2/);
+  assert.match(customerPageSource, /<div className="order-1[^\"]*sm:order-2 xl:order-1">/);
+  assert.match(customerPageSource, /useState\(false\).*isMobileHelpExpanded|isMobileHelpExpanded, setIsMobileHelpExpanded/);
+  assert.match(customerPageSource, /Don&apos;t want to choose\? We&apos;ll choose for you/);
+  assert.match(customerPageSource, /aria-expanded=\{isMobileHelpExpanded\}/);
+  assert.match(customerPageSource, /isMobileHelpExpanded \? "block" : "hidden"/);
+  assert.match(customerPageSource, /saveSeatPreference\("auto_assign"\)/);
+});
+
+test("mobile action bar reflects section and seat progress without changing enablement", () => {
+  assert.match(customerPageSource, /onMobileSectionChange=\{\(\) => setHasSelectedMobileSection\(true\)\}/);
+  assert.match(customerPageSource, /Choose a Section Above/);
+  assert.match(customerPageSource, /Select Your Seat/);
+  assert.match(customerPageSource, /Continue \\u2014 \$\{selectedSeatIds\.length\} Seat/);
+  assert.match(customerPageSource, /selectedSeatIds\.length === 1 \? "" : "s"/);
+  assert.match(customerPageSource, /disabled=\{isSubmitting \|\| selectedSeatIds\.length === 0\}/);
+});
+
+test("section buttons retain their local state behavior and only notify the page", () => {
+  assert.match(seatMapSource, /setMobileSection\("left"\);\s*onMobileSectionChange\?\.\("left"\);/);
+  assert.match(seatMapSource, /setMobileSection\("right"\);\s*onMobileSectionChange\?\.\("right"\);/);
+  assert.doesNotMatch(seatMapSource, /setSelectedSeatIds/);
+});

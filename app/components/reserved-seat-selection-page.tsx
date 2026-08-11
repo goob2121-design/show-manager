@@ -74,6 +74,8 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const [isPhoneTicketMode, setIsPhoneTicketMode] = useState(false);
   const [seatPreference, setSeatPreference] = useState(seatingLink.seat_preference ?? "customer_select");
   const [isSavingPreference, setIsSavingPreference] = useState(false);
+  const [isMobileHelpExpanded, setIsMobileHelpExpanded] = useState(false);
+  const [hasSelectedMobileSection, setHasSelectedMobileSection] = useState(false);
   const isAlreadySubmitted = hasSubmitted;
 
   useEffect(() => {
@@ -536,7 +538,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
           </div>
 
           <div className="grid w-full max-w-full gap-6 overflow-x-hidden px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
-            <aside className="order-1 rounded-[1.75rem] border border-white/10 bg-slate-950/45 p-4 sm:p-5 xl:order-2 xl:sticky xl:top-6">
+            <aside className="order-2 rounded-[1.75rem] border border-white/10 bg-slate-950/45 p-4 sm:order-1 sm:p-5 xl:order-2 xl:sticky xl:top-6">
               <h2 className="text-lg font-semibold text-white">Selection Summary</h2>
               <p className="mt-1 text-sm text-slate-300">
                 {isAlreadySubmitted
@@ -633,18 +635,35 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
               )}
             </aside>
 
-            <div className="order-2 w-full max-w-full overflow-hidden xl:order-1">
+            <div className="order-1 w-full max-w-full overflow-hidden sm:order-2 xl:order-1">
               {!isAlreadySubmitted && linkAssignments.length === 0 ? (
-                <section className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-4 text-center">
+                <section className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-3 text-center sm:p-4">
+                  <button
+                    type="button"
+                    aria-expanded={isMobileHelpExpanded}
+                    onClick={() => setIsMobileHelpExpanded((isExpanded) => !isExpanded)}
+                    className="flex w-full items-center justify-between gap-3 text-left text-sm font-semibold text-amber-100 sm:hidden"
+                  >
+                    <span>Don&apos;t want to choose? We&apos;ll choose for you</span>
+                    <span
+                      aria-hidden="true"
+                      className={`text-base transition-transform ${isMobileHelpExpanded ? "rotate-180" : ""}`}
+                    >
+                      &#9662;
+                    </span>
+                  </button>
+                  <div className={`${isMobileHelpExpanded ? "block" : "hidden"} sm:block`}>
                   <h2 className="text-xl font-bold text-white">Need a little help choosing your seats?</h2>
                   <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-300">If you&apos;d rather not choose your seats online, we&apos;re happy to take care of it for you.</p>
                   <p className="mx-auto mt-2 max-w-3xl text-sm leading-6 text-slate-300">Your advance ticket purchase already guarantees your reserved seats. We&apos;ll choose the best available seats for your party, keep everyone together whenever possible, and email your tickets with your assigned seat numbers—so all you have to do is show up and enjoy the show!</p>
                   <button type="button" onClick={() => void saveSeatPreference("auto_assign")} disabled={isSavingPreference} className="mt-4 rounded-xl bg-amber-400 px-4 py-2.5 font-bold text-[#071426] hover:bg-amber-300 disabled:opacity-60">{isSavingPreference ? "Saving..." : "🎟️ Choose My Seats for Me"}</button>
+                  </div>
                 </section>
               ) : null}
               <ReservedSeatMap
                 seatStates={seatStates}
                 onSeatClick={handleSeatClick}
+                onMobileSectionChange={() => setHasSelectedMobileSection(true)}
                 enableMobileSectionSelector
                 showCustomerSeatDetails={false}
                 title="Select Your Seats"
@@ -790,11 +809,13 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
               disabled={isSubmitting || selectedSeatIds.length === 0}
               className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900 disabled:text-emerald-300"
             >
-              {selectedSeatIds.length === 0
-                ? "Select Seats To Continue"
-                : isSubmitting
-                  ? "Saving Seats..."
-                  : `Review ${selectedSeatIds.length} Selected Seat${selectedSeatIds.length === 1 ? "" : "s"}`}
+              {isSubmitting
+                ? "Saving Seats..."
+                : selectedSeatIds.length > 0
+                  ? `Continue \u2014 ${selectedSeatIds.length} Seat${selectedSeatIds.length === 1 ? "" : "s"} Selected`
+                  : hasSelectedMobileSection
+                    ? "Select Your Seat"
+                    : "Choose a Section Above"}
             </button>
           </div>
         ) : null}
