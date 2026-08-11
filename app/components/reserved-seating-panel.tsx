@@ -1335,6 +1335,51 @@ export function ReservedSeatingPanel({
               const officialTicketReadiness = getOfficialTicketReadiness(link.ticket_emailed_at);
               return (
                 <article key={link.id} className={`rounded-2xl border border-l-2 p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : index % 2 === 0 ? "border-white/20 border-l-slate-500/60 bg-[#07111f] shadow-[0_10px_24px_rgba(2,6,23,0.22)]" : "border-white/25 border-l-slate-400/70 bg-[#142238] shadow-[0_10px_24px_rgba(2,6,23,0.28)]"}`}>
+                  <details className="group">
+                    <summary className="flex cursor-pointer list-none flex-col gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 [&::-webkit-details-marker]:hidden sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h5 className="text-base font-semibold text-white">{link.customer_name}</h5>
+                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${status.classes}`}>{status.label}</span>
+                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getReservedSeatCategoryBadgeClasses(linkSeatCategory)}`}>
+                            {getReservedSeatCategoryLabel(linkSeatCategory)}
+                          </span>
+                          <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+                            {link.ticket_count} seat{link.ticket_count === 1 ? "" : "s"}
+                          </span>
+                          <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] shadow-sm ${link.seat_preference === "auto_assign" ? "border-fuchsia-300/60 bg-fuchsia-500/25 text-fuchsia-50 shadow-fuchsia-950/30" : "border-white/10 bg-white/[0.05] text-slate-200"}`}>
+                            {link.seat_preference === "auto_assign" ? "\u{1F91D} Auto Assign Requested" : "Customer Selecting Seats"}
+                          </span>
+                          {link.seatIds.length > 0 ? (
+                            <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] shadow-sm ${officialTicketReadiness.ready ? "border-emerald-300/50 bg-emerald-500/20 text-emerald-100 shadow-emerald-950/30" : "border-amber-300/50 bg-amber-400/20 text-amber-100 shadow-amber-950/30"}`}>
+                              {officialTicketReadiness.label}
+                            </span>
+                          ) : null}
+                          {emailStatusDisplay.showCompactBadge ? (
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${emailStatusToneClasses}`}>
+                              <span aria-hidden="true">{emailStatusDisplay.statusIcon}</span>
+                              {emailStatusDisplay.compactBadgeLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                          <span className="font-semibold text-slate-200">
+                            Seats: {link.seatIds.length > 0 ? link.seatIds.join(", ") : "Not selected yet"}
+                          </span>
+                          {link.scan_token ? (
+                            <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100">
+                              Ticket Code Ready
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center gap-2 self-start rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-slate-100 transition group-hover:bg-white/[0.1]">
+                        <span className="group-open:hidden">Expand Details</span>
+                        <span className="hidden group-open:inline">Collapse Details</span>
+                        <span aria-hidden="true" className="transition-transform group-open:rotate-180">&#9662;</span>
+                      </span>
+                    </summary>
+                    <div className="mt-4 border-t border-white/10 pt-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -1556,6 +1601,8 @@ export function ReservedSeatingPanel({
                       </button>
                     </div>
                   </div>
+                    </div>
+                  </details>
                 </article>
               );
             })}

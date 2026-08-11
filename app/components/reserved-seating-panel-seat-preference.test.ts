@@ -44,3 +44,25 @@ test("reserved seating readiness uses the official ticket email timestamp and ex
   assert.match(source, /handleResendOfficialTicketEmail\(postAssignmentPromptLink\)/);
   assert.match(source, /completedReservation && !manualAssignLink\.ticket_emailed_at/);
 });
+test("reserved seating guest cards default collapsed with all existing actions in details", async () => {
+  const source = await readFile(panelPath, "utf8");
+  const detailsStart = source.indexOf('<details className="group">');
+  const cardEnd = source.indexOf("</article>", detailsStart);
+  const detailsSource = source.slice(detailsStart, cardEnd);
+
+  assert.ok(detailsStart >= 0);
+  assert.ok(cardEnd > detailsStart);
+  assert.doesNotMatch(source, /<details className="group"\s+open/);
+  assert.match(detailsSource, /<summary/);
+  assert.match(detailsSource, /Seats: \{link\.seatIds\.length > 0 \? link\.seatIds\.join\(", "\) : "Not selected yet"\}/);
+  assert.match(detailsSource, /Ticket Code Ready/);
+  assert.match(detailsSource, /Expand Details/);
+  assert.match(detailsSource, /Collapse Details/);
+  assert.match(detailsSource, /handleSendSeatEmail\(link\)/);
+  assert.match(detailsSource, /handleResendOfficialTicketEmail\(link\)/);
+  assert.match(detailsSource, /handleCopyLink\(link\)/);
+  assert.match(detailsSource, /handleOpenLink\(link\)/);
+  assert.match(detailsSource, /setManualAssignLinkId/);
+  assert.match(detailsSource, /handleResetLink\(link\.id\)/);
+  assert.match(detailsSource, /handleDeleteLink\(link\.id\)/);
+});
