@@ -33,14 +33,18 @@ test("manual scrolling, dimensions, and seat selection hooks remain intact", () 
 test("public mobile chooser switches visual sections without changing shared seat state", () => {
   assert.match(customerPageSource, /enableMobileSectionSelector/);
   assert.match(seatMapSource, /useState<"left" \| "right" \| null>\(null\)/);
-  assert.match(seatMapSource, /Choose a seating section/);
-  assert.match(seatMapSource, /The room has a Left Section and Right Section separated by a center aisle\./);
+  assert.match(seatMapSource, />Step 1<\/p>/);
+  assert.match(seatMapSource, />Choose a Section<\/p>/);
+  assert.match(seatMapSource, /The room has two seating sections separated by a center aisle\. Choose Left or Right to view available seats\./);
   assert.match(seatMapSource, />\s*Left Section\s*<\/button>/);
   assert.match(seatMapSource, />\s*Right Section\s*<\/button>/);
   assert.match(seatMapSource, /aria-pressed=\{mobileSection === "left"\}/);
   assert.match(seatMapSource, /aria-pressed=\{mobileSection === "right"\}/);
   assert.match(seatMapSource, /enableMobileSectionSelector && !mobileSection/);
-  assert.match(seatMapSource, /Select Left Section or Right Section above to view seats\./);
+  assert.match(seatMapSource, /Choose a section above to see the seating chart\./);
+  assert.match(seatMapSource, />Step 2<\/p>/);
+  assert.match(seatMapSource, />Choose Your Seats<\/p>/);
+  assert.match(seatMapSource, /Tap any green seat to select it\./);
   assert.equal(seatMapSource.match(/enableMobileSectionSelector && mobileSection \? \(/g)?.length, 2);
   assert.match(seatMapSource, /overflow-x-hidden lg:overflow-x-auto/);
   assert.equal(seatMapSource.match(/enableMobileSectionSelector \? "min-w-0 sm:min-w-0"/g)?.length, 2);

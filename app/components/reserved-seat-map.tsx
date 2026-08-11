@@ -238,9 +238,10 @@ export function ReservedSeatMap({
         {enableMobileSectionSelector ? (
           <div className="mb-3 lg:hidden">
             <div className="mb-2.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-center">
-              <p className="text-sm font-bold text-white">Choose a seating section</p>
-              <p className="mt-1 text-xs leading-5 text-slate-300">
-                The room has a Left Section and Right Section separated by a center aisle. Choose a side below to view available seats.
+              <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-amber-300">Step 1</p>
+              <p className="mt-0.5 text-lg font-black uppercase tracking-[0.04em] text-white">Choose a Section</p>
+              <p className="mt-1 text-sm leading-5 text-slate-300">
+                The room has two seating sections separated by a center aisle. Choose Left or Right to view available seats.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2" role="group" aria-label="Choose seating section">
@@ -306,12 +307,18 @@ export function ReservedSeatMap({
             <div className={isSponsorPacket ? "mx-auto max-w-[44rem]" : "mx-auto max-w-[62rem]"}>
               {enableMobileSectionSelector && !mobileSection ? (
                 <div className="mx-auto flex min-h-32 w-full max-w-[28rem] items-center justify-center px-4 text-center lg:hidden">
-                  <p className="text-sm leading-6 text-slate-300">Select Left Section or Right Section above to view seats.</p>
+                  <p className="text-sm leading-6 text-slate-300">Choose a section above to see the seating chart.</p>
                 </div>
               ) : null}
 
               {enableMobileSectionSelector && mobileSection ? (
-                <div className="mx-auto mb-2.5 flex w-full max-w-[28rem] flex-col items-center gap-0.5 rounded-[0.8rem] border border-[rgba(200,155,60,0.18)] bg-[radial-gradient(circle_at_top,_rgba(200,155,60,0.18),_transparent_42%),linear-gradient(180deg,_#4a331c,_#1d140d_62%,_#0d0907)] px-2 py-1.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_20px_rgba(0,0,0,0.22)] sm:py-2 lg:hidden">
+                <>
+                  <div className="mx-auto mb-2.5 w-full max-w-[28rem] text-center lg:hidden">
+                    <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-amber-300">Step 2</p>
+                    <p className="mt-0.5 text-lg font-black uppercase tracking-[0.04em] text-white">Choose Your Seats</p>
+                    <p className="mt-1 text-sm leading-5 text-slate-300">Tap any green seat to select it.</p>
+                  </div>
+                  <div className="mx-auto mb-2.5 flex w-full max-w-[28rem] flex-col items-center gap-0.5 rounded-[0.8rem] border border-[rgba(200,155,60,0.18)] bg-[radial-gradient(circle_at_top,_rgba(200,155,60,0.18),_transparent_42%),linear-gradient(180deg,_#4a331c,_#1d140d_62%,_#0d0907)] px-2 py-1.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_20px_rgba(0,0,0,0.22)] sm:py-2 lg:hidden">
                     <div className="h-1 w-full rounded-full bg-[linear-gradient(90deg,transparent,rgba(251,191,36,0.45),transparent)]" />
                     <p className="text-base font-black uppercase tracking-[0.2em] text-white sm:text-lg">
                       {RESERVED_SEATING_VENUE.stageLabel}
@@ -319,7 +326,8 @@ export function ReservedSeatMap({
                     <p className="text-[8px] font-semibold uppercase tracking-[0.18em] text-[#f0d486]/80 sm:text-[9px]">
                       {RESERVED_SEATING_VENUE.frontLabel}
                     </p>
-                </div>
+                  </div>
+                </>
               ) : null}
 
               <div
