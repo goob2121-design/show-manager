@@ -86,6 +86,26 @@ test("prepaid guest cards use a compact two-column layout on smaller laptops", a
   assert.ok(prepaidSource.includes("handleAdjustTicketCheckIn(item, 1)"));
   assert.ok(prepaidSource.includes("handleAdjustTicketCheckIn(item, -1)"));
 });
+test("Search Guests presents prepaid, sponsor, and Special Admission sources without replacing normal empty-search content", async () => {
+  const source = await readFile(doorModeUrl, "utf8");
+  const searchResultsStart = source.indexOf('aria-label="Guest search results"');
+  const prepaidSectionStart = source.indexOf("Prepaid / Online Check-In", searchResultsStart);
+  const searchResultsSource = source.slice(searchResultsStart, prepaidSectionStart);
+
+  assert.ok(searchResultsStart >= 0 && prepaidSectionStart > searchResultsStart);
+  assert.ok(source.includes('placeholder="Search all guests, sponsors & admissions…"'));
+  assert.ok(source.includes("const filteredPrepaidTickets = useMemo("));
+  assert.ok(source.includes("const filteredSponsorComps = useMemo("));
+  assert.ok(source.includes("const filteredSpecialAdmissions = useMemo("));
+  assert.ok(searchResultsSource.includes(">Prepaid</span>"));
+  assert.ok(searchResultsSource.includes(">Sponsor</span>"));
+  assert.ok(searchResultsSource.includes(">Special Admission</span>"));
+  assert.ok(searchResultsSource.includes("setIsSponsorCompPanelOpen(true)"));
+  assert.ok(searchResultsSource.includes("setIsSpecialAdmissionsPanelOpen(true)"));
+  assert.ok(searchResultsSource.includes("door-prepaid-${item.id}"));
+  assert.ok(source.includes("{hasActiveGuestSearch ? ("));
+  assert.ok(source.includes("filteredPrepaidTickets.map((item) => ("));
+});
 test("Special Admissions opens from the toolbar in a scrollable modal", async () => {
   const source = await readFile(doorModeUrl, "utf8");
   const paidDoorIndex = source.indexOf('data-testid="paid-door-compact-strip"');

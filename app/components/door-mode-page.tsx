@@ -22,6 +22,7 @@ import {
   normalizedDoorSearch,
   normalizeDoorReservedSeatIds,
   paidAdmissionOperationalNote,
+  sponsorMatchesDoorSearch,
   visibleDoorModeNote,
   type RecentGuestCheckIn,
 } from "@/lib/door-mode-presentation";
@@ -635,7 +636,15 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     )),
     [compAndOtherTickets, guestSearch],
   );
+  const filteredSponsorComps = useMemo(
+    () => sponsorsWithCompTickets.filter((sponsor) =>
+      sponsorMatchesDoorSearch(getSponsorCardName(sponsor), guestSearch),
+    ),
+    [guestSearch, sponsorsWithCompTickets],
+  );
   const hasActiveGuestSearch = normalizedDoorSearch(guestSearch).length > 0;
+  const unifiedSearchResultCount =
+    filteredPrepaidTickets.length + filteredSponsorComps.length + filteredSpecialAdmissions.length;
   const prepaidAdmissionCount = prepaidTickets.reduce((sum, item) => sum + item.ticket_count, 0);
   const specialAdmissionCount = compAndOtherTickets.reduce((sum, item) => sum + item.ticket_count, 0);
   const doorSeatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
@@ -1581,7 +1590,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                 type="search"
                 value={guestSearch}
                 onChange={(event) => setGuestSearch(event.target.value)}
-                placeholder="Search guests..."
+                placeholder="Search all guests, sponsors & admissions…"
                 className="min-h-10 min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm text-gray-50 outline-none transition placeholder:text-gray-500 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30"
               />
               {hasActiveGuestSearch ? (
@@ -1677,8 +1686,46 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
               ) : null}
             </div>
           </div>
-          {hasActiveGuestSearch && filteredPrepaidTickets.length === 0 && filteredSpecialAdmissions.length === 0 ? (
-            <p className="mt-2 rounded-lg border border-dashed border-gray-700 bg-gray-900/50 px-3 py-2 text-xs text-gray-300">No matching prepaid or special-admission guests.</p>
+          {hasActiveGuestSearch ? (
+            <section className="mt-2 rounded-xl border border-gray-700 bg-gray-900/80 p-2.5" aria-label="Guest search results">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-300">Search Results</p>
+                <span className="text-xs text-gray-400">{unifiedSearchResultCount} found</span>
+              </div>
+              {unifiedSearchResultCount === 0 ? (
+                <p className="mt-2 rounded-lg border border-dashed border-gray-700 px-3 py-2 text-sm text-gray-300">No matching guests, sponsors, or admissions.</p>
+              ) : (
+                <div className="mt-2 grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+                  {filteredPrepaidTickets.map((item) => (
+                    <article key={`search-prepaid-${item.id}`} className="flex items-center gap-3 rounded-lg border border-sky-800/60 bg-sky-500/[0.06] px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5"><span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-sky-200">Prepaid</span><p className="truncate text-sm font-semibold text-gray-50">{item.guest_name}</p></div>
+                        <p className="mt-1 text-xs text-gray-300">{item.checked_in_count} / {item.ticket_count} checked in{(seatIdsByTicketId[item.id] ?? []).length > 0 ? ` · Seats ${(seatIdsByTicketId[item.id] ?? []).join(", ")}` : ""}</p>
+                      </div>
+                      <button type="button" onClick={() => document.getElementById(`door-prepaid-${item.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} className="rounded-lg border border-sky-700/70 px-2.5 py-2 text-xs font-semibold text-sky-100">View</button>
+                    </article>
+                  ))}
+                  {filteredSponsorComps.map((sponsor) => (
+                    <article key={`search-sponsor-${sponsor.id}`} className="flex items-center gap-3 rounded-lg border border-amber-800/60 bg-amber-500/[0.06] px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5"><span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-amber-200">Sponsor</span><p className="truncate text-sm font-semibold text-gray-50">{getSponsorCardName(sponsor)}</p></div>
+                        <p className="mt-1 text-xs text-gray-300">{sponsor.comp_tickets_checked_in} / {sponsor.comp_ticket_allowance} checked in</p>
+                      </div>
+                      <button type="button" onClick={() => setIsSponsorCompPanelOpen(true)} className="rounded-lg border border-amber-700/70 px-2.5 py-2 text-xs font-semibold text-amber-100">Open</button>
+                    </article>
+                  ))}
+                  {filteredSpecialAdmissions.map((item) => (
+                    <article key={`search-special-${item.id}`} className="flex items-center gap-3 rounded-lg border border-violet-800/60 bg-violet-500/[0.06] px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5"><span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-violet-200">Special Admission</span><p className="truncate text-sm font-semibold text-gray-50">{item.guest_name}</p></div>
+                        <p className="mt-1 text-xs text-gray-300">{checkInAdmissionLabel(item.ticket_type, item.notes)} · {item.checked_in_count} / {item.ticket_count} checked in{(seatIdsByTicketId[item.id] ?? []).length > 0 ? ` · Seats ${(seatIdsByTicketId[item.id] ?? []).join(", ")}` : ""}</p>
+                      </div>
+                      <button type="button" onClick={() => setIsSpecialAdmissionsPanelOpen(true)} className="rounded-lg border border-violet-700/70 px-2.5 py-2 text-xs font-semibold text-violet-100">Open</button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
           ) : null}
         </section>
         <section>
@@ -1699,6 +1746,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                 filteredPrepaidTickets.map((item) => (
                   <article
                     key={item.id}
+                    id={`door-prepaid-${item.id}`}
                     className={`self-start rounded-[20px] border p-3 shadow-sm shadow-slate-950/10 transition ${
                       isAdmissionFullyCheckedIn(item.checked_in_count, item.ticket_count)
                         ? "border-emerald-900/60 bg-emerald-500/[0.07] opacity-80 hover:border-emerald-800/70"
@@ -1971,7 +2019,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                   </p>
                 ) : (
                   <div className="grid gap-3">
-                    {sponsorsWithCompTickets.map((sponsor) => {
+                    {(hasActiveGuestSearch ? filteredSponsorComps : sponsorsWithCompTickets).map((sponsor) => {
                       const remainingComps = sponsor.comp_ticket_allowance - sponsor.comp_tickets_checked_in;
                       const customAmountValue = sponsorCompCustomAmounts[sponsor.id] ?? "";
                       const sponsorName = getSponsorCardName(sponsor);

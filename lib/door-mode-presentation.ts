@@ -1,4 +1,4 @@
-﻿export type DoorSearchableAdmission = {
+export type DoorSearchableAdmission = {
   guest_name: string;
   ticket_type: string | null;
   notes: string | null;
@@ -60,6 +60,10 @@ export function admissionMatchesDoorSearch(
     .some((value) => value!.toLowerCase().includes(normalizedQuery));
 }
 
+export function sponsorMatchesDoorSearch(sponsorName: string, query: string) {
+  const normalizedQuery = normalizedDoorSearch(query);
+  return !normalizedQuery || sponsorName.toLowerCase().includes(normalizedQuery);
+}
 export function addRecentGuestCheckIn(
   current: RecentGuestCheckIn[],
   action: RecentGuestCheckIn,

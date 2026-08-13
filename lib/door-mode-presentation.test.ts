@@ -11,6 +11,7 @@ import {
   normalizeDoorReservedSeatIds,
   paidAdmissionOperationalNote,
   parseDoorReservedSeatIds,
+  sponsorMatchesDoorSearch,
   visibleDoorModeNote,
 // @ts-expect-error Node's type-stripping test runner requires the TypeScript extension.
 } from "./door-mode-presentation.ts";
@@ -30,6 +31,12 @@ test("search matches special-admission categories and explicit seat labels", () 
   assert.equal(explicitSeatLabel(admission.notes), "L-C4, L-C5");
 });
 
+test("sponsor search uses the existing normalized case-insensitive behavior and preserves empty search", () => {
+  assert.equal(sponsorMatchesDoorSearch("Lincoln Memorial University", "memorial"), true);
+  assert.equal(sponsorMatchesDoorSearch("DeRoyal", "  DEROYAL  "), true);
+  assert.equal(sponsorMatchesDoorSearch("DeRoyal", "other"), false);
+  assert.equal(sponsorMatchesDoorSearch("DeRoyal", ""), true);
+});
 test("empty search restores all cards and recent guest check-ins stay bounded to five", () => {
   const admission = { guest_name: "Guest", ticket_type: "complimentary", notes: null };
   assert.equal(admissionMatchesDoorSearch(admission, "Guest Comp", "   "), true);
@@ -102,7 +109,7 @@ test("Door Mode removes visible stat cards but preserves dynamic header and oper
 });
 test("Door Mode uses compact search and a collapsed session-only Recent disclosure", async () => {
   const source = await readFile(doorModePath, "utf8");
-  assert.match(source, /placeholder="Search guests\.\.\."/);
+  assert.match(source, /placeholder="Search all guests, sponsors & admissions…"/);
   assert.doesNotMatch(source, /Search prepaid and special-admission guests by name/);
   assert.match(source, /useState\(false\)[\s\S]*isRecentCheckInsOpen|isRecentCheckInsOpen[\s\S]*useState\(false\)/);
   assert.match(source, /aria-expanded=\{isRecentCheckInsOpen\}/);
@@ -113,14 +120,14 @@ test("Door Mode uses compact search and a collapsed session-only Recent disclosu
   assert.match(source, /return \(\) => window\.clearTimeout\(timeout\)/);
   assert.doesNotMatch(source, /checkInConfirmation/);
   assert.match(source, /<div aria-live="polite" aria-atomic="true">\s*\{statusMessage \? \(/);
-  assert.ok(source.indexOf('placeholder="Search guests..."') < source.indexOf("Prepaid / Online Check-In"));
+  assert.ok(source.indexOf('placeholder="Search all guests, sponsors & admissions…"') < source.indexOf("Prepaid / Online Check-In"));
 });
 test("Door Mode toolbar is compact on desktop and safely stacked on mobile", async () => {
   const source = await readFile(doorModePath, "utf8");
   assert.match(source, /data-testid="door-operational-toolbar"/);
   assert.match(source, /flex flex-col gap-2 md:flex-row md:items-center/);
   assert.match(source, /flex w-full gap-2 md:min-w-\[280px\] md:max-w-\[380px\]/);
-  assert.match(source, /placeholder="Search guests\.\.\."/);
+  assert.match(source, /placeholder="Search all guests, sponsors & admissions…"/);
   assert.match(source, /aria-label="Clear guest search"/);
   assert.match(source, /setGuestSearch\(""\)/);
   assert.match(source, /aria-label="Sponsor Comp Tickets"/);

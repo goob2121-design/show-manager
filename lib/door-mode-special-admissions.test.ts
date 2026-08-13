@@ -46,7 +46,7 @@ test("Sponsor Comps remains sourced and rendered separately", () => {
   assert.match(source, /showSponsors\.filter/);
   assert.match(source, /\.from\("show_sponsors"\)/);
   assert.match(source, /Sponsor Comp Tickets/);
-  assert.match(source, /sponsorsWithCompTickets\.map\(\(sponsor\)/);
+  assert.match(source, /\(hasActiveGuestSearch \? filteredSponsorComps : sponsorsWithCompTickets\)\.map\(\(sponsor\)/);
 });
 
 test("Special Admissions Check In All sends only the remaining quantity", () => {
