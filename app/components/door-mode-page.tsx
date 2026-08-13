@@ -26,6 +26,7 @@ import {
   type RecentGuestCheckIn,
 } from "@/lib/door-mode-presentation";
 import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
+import { printDoorSeatMap } from "@/lib/door-seat-map-print";
 import type { DoorModeSeatAssignment } from "@/lib/door-mode-seat-assignments";
 import {
   createDoorWelcomeEvent,
@@ -2097,14 +2098,23 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                 <p className="mt-1 text-sm text-gray-300">{seatView.admissionLabel}</p>
                 <p className="mt-1 text-sm font-semibold text-amber-200">Reserved Seats: {seatView.seatIds.join(", ")}</p>
               </div>
-              <button
-                ref={seatDialogCloseButtonRef}
-                type="button"
-                onClick={closeSeatView}
-                className="min-h-10 rounded-lg border border-gray-700 bg-gray-700 px-4 text-sm font-semibold text-gray-50 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
-              >
-                Close
-              </button>
+              <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => printDoorSeatMap(seatView)}
+                  className="min-h-10 rounded-lg border border-sky-500/50 bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+                >
+                  Print Seat Map
+                </button>
+                <button
+                  ref={seatDialogCloseButtonRef}
+                  type="button"
+                  onClick={closeSeatView}
+                  className="min-h-10 rounded-lg border border-gray-700 bg-gray-700 px-4 text-sm font-semibold text-gray-50 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+                >
+                  Close
+                </button>
+              </div>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
               <ReservedSeatMap
