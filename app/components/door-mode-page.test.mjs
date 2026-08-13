@@ -72,6 +72,20 @@ test("prepaid cards reserve the seat row when no seats are assigned", async () =
   assert.equal(seatStatusSource.includes("onClick"), false);
 });
 
+test("prepaid guest cards use a compact two-column layout on smaller laptops", async () => {
+  const source = await readFile(doorModeUrl, "utf8");
+  const prepaidStart = source.indexOf("Prepaid / Online Check-In");
+  const totalsStart = source.indexOf("{isTotalsPanelOpen ? (", prepaidStart);
+  const prepaidSource = source.slice(prepaidStart, totalsStart);
+
+  assert.ok(prepaidStart >= 0 && totalsStart > prepaidStart);
+  assert.ok(prepaidSource.includes("min-[900px]:grid-cols-2"));
+  assert.ok(prepaidSource.includes("sm:grid-cols-3 min-[900px]:gap-1.5 2xl:gap-2"));
+  assert.ok(prepaidSource.includes("min-[900px]:px-2 min-[900px]:py-2.5"));
+  assert.ok(prepaidSource.includes("2xl:px-4 2xl:py-4 2xl:text-base"));
+  assert.ok(prepaidSource.includes("handleAdjustTicketCheckIn(item, 1)"));
+  assert.ok(prepaidSource.includes("handleAdjustTicketCheckIn(item, -1)"));
+});
 test("Special Admissions opens from the toolbar in a scrollable modal", async () => {
   const source = await readFile(doorModeUrl, "utf8");
   const paidDoorIndex = source.indexOf('data-testid="paid-door-compact-strip"');

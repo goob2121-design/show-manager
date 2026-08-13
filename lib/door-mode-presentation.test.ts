@@ -275,7 +275,9 @@ test("Door Mode applies scoped note filtering at card rendering", async () => {
   assert.match(source, /checkInAdmissionLabel\(item\.ticket_type, item\.notes\) !== "Paid Reserved"\) return null/);
   assert.match(source, /Seats: \{seatIds\.join\(", "\)\}/);
   assert.match(source, />View Seats<\/span>/);
-  assert.match(source, /grid auto-rows-min items-start gap-2\.5 2xl:grid-cols-2/);
+  assert.match(source, /grid auto-rows-min items-start gap-2\.5 min-\[900px\]:grid-cols-2/);
+  assert.match(source, /sm:grid-cols-3 min-\[900px\]:gap-1\.5 2xl:gap-2/);
+  assert.match(source, /min-\[900px\]:px-2 min-\[900px\]:py-2\.5/);
   assert.match(source, /self-start rounded-\[20px\] border p-3/);
   assert.doesNotMatch(source, /self-start[^`]*(h-full|min-h-|h-\[)/);
   assert.match(source, /filteredPrepaidTickets\.map\(\(item\) => \(/);

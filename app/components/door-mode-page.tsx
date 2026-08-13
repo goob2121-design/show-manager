@@ -1690,7 +1690,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
               </p>
             </div>
 
-            <div className="mt-4 grid auto-rows-min items-start gap-2.5 2xl:grid-cols-2">
+            <div className="mt-4 grid auto-rows-min items-start gap-2.5 min-[900px]:grid-cols-2">
               {filteredPrepaidTickets.length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-gray-700 bg-gray-900/50 px-4 py-5 text-sm text-gray-400">
                   No prepaid / online tickets for this show yet.
@@ -1725,7 +1725,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                         {renderPaidAdmissionMetadata(item)}
                       </div>
 
-                      <div className="grid gap-2 sm:grid-cols-3">
+                      <div className="grid gap-2 sm:grid-cols-3 min-[900px]:gap-1.5 2xl:gap-2">
                         <button
                           type="button"
                           onClick={() =>
@@ -1737,7 +1737,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                           disabled={
                             Boolean(activeActionId) || item.checked_in_count >= item.ticket_count
                           }
-                          className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-3 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-3 py-3 text-sm font-semibold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-xs 2xl:px-3 2xl:py-3 2xl:text-sm text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Check In All
                         </button>
@@ -1745,7 +1745,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                           type="button"
                           onClick={() => void handleAdjustTicketCheckIn(item, 1)}
                           disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
-                          className="rounded-xl bg-emerald-700 px-4 py-4 text-base font-bold text-gray-50 shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
+                          className="rounded-xl bg-emerald-700 px-4 py-4 text-base font-bold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-sm 2xl:px-4 2xl:py-4 2xl:text-base text-gray-50 shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
                         >
                           +1 Check In
                         </button>
@@ -1753,7 +1753,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                           type="button"
                           onClick={() => void handleAdjustTicketCheckIn(item, -1)}
                           disabled={Boolean(activeActionId) || item.checked_in_count <= 0}
-                          className="rounded-xl border border-gray-700 bg-gray-800 px-3 py-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-xl border border-gray-700 bg-gray-800 px-3 py-3 text-sm font-semibold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-xs 2xl:px-3 2xl:py-3 2xl:text-sm text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           -1 Undo
                         </button>
