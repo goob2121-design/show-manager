@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ReservedSeatMap, type ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeDoorReservedSeatIds } from "@/lib/door-mode-presentation";
@@ -19,19 +19,21 @@ import {
 } from "@/lib/door-welcome-display";
 import {
   POST_SHOW_HEADLINE,
+  buildBalancedIdleSlides,
   buildGuestIdleSlides,
-  buildTimedIdleSlides,
   chunkDoorWelcomeSeats,
   doorWelcomeGuestCount,
   isSponsorIdleSlide,
   resolveTimedIdleWindow,
+  shuffleSponsorQueue,
   type IdleSlide,
 } from "@/lib/door-welcome-presentation";
 
 const DISPLAY_TRANSITION_MS = 250;
+const IDLE_SLIDE_FADE_HALF_MS = 225;
 const IDLE_ROTATION_INTERVAL_MS = 15_000;
 const HERO_LOGO_CONTAINER_CLASS = "mx-auto flex h-[min(38vh,26rem)] w-[min(68vw,52rem)] items-center justify-center p-[clamp(0.125rem,0.5vw,0.5rem)]";
-const HERO_LOGO_IMAGE_CLASS = "h-full w-full object-contain motion-safe:animate-[logo-swap-in_400ms_ease-out]";
+const HERO_LOGO_IMAGE_CLASS = "h-full w-full object-contain";
 const DOOR_WELCOME_RESERVED_SEAT_IDS = RESERVED_SEAT_DEFINITIONS.map((seat) => seat.seatId);
 type WelcomeSponsorLogo = {
   name: string;
@@ -97,12 +99,15 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   const [show, setShow] = useState<Pick<ShowRecord, "show_date" | "venue"> | null>(null);
   const [nextShowDate, setNextShowDate] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
-  const [sponsorLogos, setSponsorLogos] = useState<WelcomeSponsorLogo[]>([]);
+  const [sponsorQueue, setSponsorQueue] = useState<WelcomeSponsorLogo[]>([]);
   const [guestSlides, setGuestSlides] = useState<IdleSlide[]>([]);
   const [welcome, setWelcome] = useState<DoorWelcomeEvent | null>(null);
   const [seatView, setSeatView] = useState<DoorWelcomeSeatViewEvent | null>(null);
   const [isWelcomeExiting, setIsWelcomeExiting] = useState(false);
   const [idleMessageIndex, setIdleMessageIndex] = useState(0);
+  const idleMessageIndexRef = useRef(0);
+  const [presentedIdleIndex, setPresentedIdleIndex] = useState(0);
+  const [isIdleSlideVisible, setIsIdleSlideVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fullscreenSupported, setFullscreenSupported] = useState(false);
 
@@ -140,7 +145,9 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
           return name && logoUrl ? [{ name, logoUrl }] : [];
         })
         .filter((logo, index, items) => items.findIndex((item) => item.logoUrl === logo.logoUrl) === index);
-      setSponsorLogos(logos);
+      setSponsorQueue(shuffleSponsorQueue(logos));
+      idleMessageIndexRef.current = 0;
+      setIdleMessageIndex(0);
       const { data: guestProfiles, error: guestProfilesError } = await supabase
         .from("guest_profiles")
         .select("name, photo_url, is_confirmed, permission_granted")
@@ -181,7 +188,6 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
         }
         if (!isDoorWelcomeEvent(message.data, showSlug)) return;
         setSeatView(null);
-        setIdleMessageIndex(0);
         setIsWelcomeExiting(false);
         setWelcome(message.data);
       };
@@ -207,13 +213,31 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
     };
   }, [welcome]);
 
+  const timedIdleWindow = resolveTimedIdleWindow(clockNow);
+  const idleSlides = useMemo(
+    () => buildBalancedIdleSlides(timedIdleWindow, guestSlides, sponsorQueue),
+    [guestSlides, sponsorQueue, timedIdleWindow],
+  );
+
+  const lastScheduledSponsorLogoUrl = [...idleSlides].reverse().find(isSponsorIdleSlide)?.logoUrl ?? null;
+
   useEffect(() => {
     if (welcome || seatView) return;
     const rotation = window.setInterval(() => {
-      setIdleMessageIndex((current) => current + 1);
+      const nextIndex = idleMessageIndexRef.current + 1;
+      if (nextIndex >= idleSlides.length) {
+        setSponsorQueue((currentQueue) =>
+          shuffleSponsorQueue(currentQueue, lastScheduledSponsorLogoUrl),
+        );
+        idleMessageIndexRef.current = 0;
+        setIdleMessageIndex(0);
+        return;
+      }
+      idleMessageIndexRef.current = nextIndex;
+      setIdleMessageIndex(nextIndex);
     }, IDLE_ROTATION_INTERVAL_MS);
     return () => window.clearInterval(rotation);
-  }, [seatView, welcome]);
+  }, [idleSlides.length, lastScheduledSponsorLogoUrl, seatView, welcome]);
 
 
   useEffect(() => {
@@ -222,15 +246,25 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
     }, 60_000);
     return () => window.clearInterval(clock);
   }, []);
-  const timedIdleWindow = resolveTimedIdleWindow(clockNow);
-  const idleSlides = buildTimedIdleSlides(timedIdleWindow, guestSlides);
-  const activeIdleIndex = idleMessageIndex % idleSlides.length;
+  const scheduledIdleIndex = idleMessageIndex % idleSlides.length;
+  useEffect(() => {
+    if (scheduledIdleIndex === presentedIdleIndex) return;
+    const fadeFrame = window.requestAnimationFrame(() => setIsIdleSlideVisible(false));
+    const swapTimeout = window.setTimeout(() => {
+      setPresentedIdleIndex(scheduledIdleIndex);
+      setIsIdleSlideVisible(true);
+    }, IDLE_SLIDE_FADE_HALF_MS);
+    return () => {
+      window.cancelAnimationFrame(fadeFrame);
+      window.clearTimeout(swapTimeout);
+    };
+  }, [presentedIdleIndex, scheduledIdleIndex]);
+  const activeIdleIndex = presentedIdleIndex % idleSlides.length;
   const activeIdleSlide = idleSlides[activeIdleIndex];
   const activeIdleHeadline = activeIdleSlide.kind === "guest" ? null : activeIdleSlide.headline;
   const isSponsorSlide = isSponsorIdleSlide(activeIdleSlide);
-  const sponsorCycle = Math.floor(idleMessageIndex / idleSlides.length);
-  const activeSponsorLogo = isSponsorSlide && sponsorLogos.length > 0
-    ? sponsorLogos[sponsorCycle % sponsorLogos.length]
+  const activeSponsorLogo = isSponsorSlide && activeIdleSlide.name && activeIdleSlide.logoUrl
+    ? { name: activeIdleSlide.name, logoUrl: activeIdleSlide.logoUrl }
     : null;
   const showSeatView = Boolean(seatView);
   const showWelcome = Boolean(welcome) && !isWelcomeExiting && !showSeatView;
@@ -276,14 +310,14 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
             hideIdlePresentation ? "pointer-events-none opacity-0" : "opacity-100"
           }`}
         >
-          <div className={HERO_LOGO_CONTAINER_CLASS} aria-live="off">
+          <div className={`${HERO_LOGO_CONTAINER_CLASS} transition-opacity duration-[225ms] ease-in-out motion-reduce:transition-none ${isIdleSlideVisible ? "opacity-100" : "opacity-0"}`} aria-live="off">
             {activeIdleSlide.kind === "guest" && activeIdleSlide.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 key={activeIdleSlide.photoUrl}
                 src={activeIdleSlide.photoUrl}
                 alt={activeIdleSlide.name + " promotional photo"}
-                className="h-full w-full rounded-[2rem] object-contain motion-safe:animate-[logo-swap-in_400ms_ease-out]"
+                className="h-full w-full rounded-[2rem] object-contain"
               />
             ) : activeSponsorLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -307,9 +341,8 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
           </div>
           <h1 className="sr-only">Welcome to the Cumberland Mountain Music Show</h1>
           <div
-            key={activeIdleIndex}
             aria-hidden="true"
-            className="mx-auto flex min-h-[clamp(7rem,18vh,13rem)] w-full max-w-6xl flex-col items-center justify-center text-center motion-safe:animate-[idle-message-in_400ms_ease-out]"
+            className={`mx-auto flex min-h-[clamp(7rem,18vh,13rem)] w-full max-w-6xl flex-col items-center justify-center text-center transition-opacity duration-[225ms] ease-in-out motion-reduce:transition-none ${isIdleSlideVisible ? "opacity-100" : "opacity-0"}`}
           >
             {activeIdleSlide.kind === "guest" ? (
               <div className="mx-auto flex flex-col items-center gap-3">
@@ -440,14 +473,6 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
       </div>
 
       <style jsx global>{`
-        @keyframes logo-swap-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes idle-message-in {
-          from { opacity: 0; transform: translateY(5px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
         @keyframes guest-welcome-in {
           from { opacity: 0; transform: scale(0.96); }
           to { opacity: 1; transform: scale(1); }

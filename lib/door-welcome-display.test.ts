@@ -14,6 +14,11 @@ import {
 // @ts-expect-error Node's type-stripping test runner requires the TypeScript extension.
 } from "./door-welcome-display.ts";
 
+import {
+  buildBalancedIdleSlides,
+  shuffleSponsorQueue,
+// @ts-expect-error Node's type-stripping test runner requires the TypeScript extension.
+} from "./door-welcome-presentation.ts";
 const doorModePath = new URL("../app/components/door-mode-page.tsx", import.meta.url);
 const displayPath = new URL("../app/components/door-welcome-display.tsx", import.meta.url);
 
@@ -105,9 +110,11 @@ test("display transitions between idle and welcome while preserving the ten-seco
   assert.match(source, /\}, \[welcome\]\)/);
 });
 
-test("new welcome events replace the active message and reset transition and idle rotation state", async () => {
+test("new welcome events replace the active message without restarting the fair idle queue", async () => {
   const source = await readFile(displayPath, "utf8");
-  assert.match(source, /setIdleMessageIndex\(0\);\s*setIsWelcomeExiting\(false\);\s*setWelcome\(message\.data\)/);
+  const channelBlock = source.slice(source.indexOf("channel.onmessage"), source.indexOf("channel?.close"));
+  assert.doesNotMatch(channelBlock, /setIdleMessageIndex\(0\)/);
+  assert.match(channelBlock, /setIsWelcomeExiting\(false\);\s*setWelcome\(message\.data\)/);
   assert.match(source, /key=\{welcome\.timestamp\}/);
   assert.match(source, /window\.clearTimeout\(idleTimeout\)/);
   assert.match(source, /window\.clearTimeout\(clearTimeout\)/);
@@ -140,12 +147,23 @@ test("idle rotation runs only while idle and exposes no totals or internal statu
   const source = await readFile(displayPath, "utf8");
   assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
   assert.match(source, /if \(welcome \|\| seatView\) return;\s*const rotation = window\.setInterval/);
-  assert.match(source, /const activeIdleIndex = idleMessageIndex % idleSlides.length/);
+  assert.match(source, /const scheduledIdleIndex = idleMessageIndex % idleSlides.length/);
+  assert.match(source, /buildBalancedIdleSlides/);
   assert.match(source, /isSponsorIdleSlide/);
-  assert.match(source, /buildTimedIdleSlides/);
+  assert.match(source, /buildBalancedIdleSlides/);
   assert.doesNotMatch(source, /attendance|check-in statistics|Square status|running total/i);
 });
 
+test("idle slides crossfade at the render layer without changing the rotation scheduler", async () => {
+  const source = await readFile(displayPath, "utf8");
+  assert.match(source, /const IDLE_SLIDE_FADE_HALF_MS = 225/);
+  assert.match(source, /const scheduledIdleIndex = idleMessageIndex % idleSlides\.length/);
+  assert.match(source, /requestAnimationFrame\(\(\) => setIsIdleSlideVisible\(false\)\)/);
+  assert.match(source, /setPresentedIdleIndex\(scheduledIdleIndex\);\s*setIsIdleSlideVisible\(true\)/);
+  assert.equal((source.match(/duration-\[225ms\] ease-in-out/g) ?? []).length, 2);
+  assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
+  assert.match(source, /buildBalancedIdleSlides\(timedIdleWindow, guestSlides, sponsorQueue\)/);
+});
 test("fullscreen, reduced motion, and BroadcastChannel behavior remain intact", async () => {
   const source = await readFile(displayPath, "utf8");
   assert.match(source, /document\.documentElement\.requestFullscreen\(\)/);
@@ -159,7 +177,7 @@ test("Phase 1.3 replaces the idle CMMS logo only when a sponsor logo is availabl
   const source = await readFile(displayPath, "utf8");
   assert.ok(source.includes("const isSponsorSlide = isSponsorIdleSlide(activeIdleSlide)"));
   assert.match(source, /isSponsorIdleSlide/);
-  assert.match(source, /const activeSponsorLogo = isSponsorSlide && sponsorLogos\.length > 0/);
+  assert.match(source, /const activeSponsorLogo = isSponsorSlide && activeIdleSlide\.name && activeIdleSlide\.logoUrl/);
   assert.ok(source.includes("activeSponsorLogo ? ("));
   assert.match(source, /src=\{activeSponsorLogo\.logoUrl\}/);
   assert.match(source, /alt=\{`\$\{activeSponsorLogo\.name\} logo`\}/);
@@ -172,23 +190,59 @@ test("Phase 1.3 gives sponsor logos a large fixed responsive showcase without di
   assert.match(source, /HERO_LOGO_CONTAINER_CLASS = "mx-auto flex h-\[min\(38vh,26rem\)\] w-\[min\(68vw,52rem\)\] items-center justify-center/);
   assert.match(source, /HERO_LOGO_IMAGE_CLASS = "h-full w-full object-contain/);
   assert.equal((source.match(/className=\{HERO_LOGO_IMAGE_CLASS\}/g) ?? []).length, 2);
-  assert.match(source, /motion-safe:animate-\[logo-swap-in_400ms_ease-out\]/);
-  assert.match(source, /@keyframes logo-swap-in/);
+  assert.match(source, /transition-opacity duration-\[225ms\] ease-in-out/);
+  assert.doesNotMatch(source, /logo-swap-in|idle-message-in/);
   assert.match(source, /p-\[clamp\(0\.125rem,0\.5vw,0\.5rem\)\]/);
   assert.match(source, /overflow-hidden/);
 });
 
-test("Phase 1.3 rotates distinct valid sponsor logos once per existing idle cycle", async () => {
-  const source = await readFile(displayPath, "utf8");
-  assert.match(source, /return name && logoUrl \? \[\{ name, logoUrl \}\] : \[\]/);
-  assert.match(source, /findIndex\(\(item\) => item\.logoUrl === logo\.logoUrl\) === index/);
-  assert.ok(source.includes("const sponsorCycle = Math.floor(idleMessageIndex / idleSlides.length)"));
-  assert.match(source, /sponsorLogos\[sponsorCycle % sponsorLogos\.length\]/);
-  assert.match(source, /setIdleMessageIndex\(\(current\) => current \+ 1\)/);
-  assert.equal((source.match(/window\.setInterval/g) ?? []).length, 2);
-  assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
+test("balanced rotation shows every eligible sponsor before one repeats", () => {
+  const sponsors = [
+    { name: "Alpha", logoUrl: "/alpha.png" },
+    { name: "Bravo", logoUrl: "/bravo.png" },
+    { name: "Charlie", logoUrl: "/charlie.png" },
+    { name: "Delta", logoUrl: "/delta.png" },
+  ];
+  const slides = buildBalancedIdleSlides("normal", [], sponsors);
+  const sponsorNames = slides.flatMap((slide) => slide.kind === "sponsor" ? [slide.name] : []);
+  assert.deepEqual(sponsorNames.slice(0, sponsors.length), sponsors.map((sponsor) => sponsor.name));
+  assert.equal(new Set(sponsorNames.slice(0, sponsors.length)).size, sponsors.length);
 });
 
+test("balanced rotation never separates sponsor appearances by more than two non-sponsor slides", () => {
+  const sponsors = [
+    { name: "Alpha", logoUrl: "/alpha.png" },
+    { name: "Bravo", logoUrl: "/bravo.png" },
+    { name: "Charlie", logoUrl: "/charlie.png" },
+  ];
+  const slides = buildBalancedIdleSlides("doors-open-soon", [
+    { kind: "guest", name: "Special Guest", photoUrl: null },
+  ], sponsors);
+  const sponsorIndexes = slides.flatMap((slide, index) => slide.kind === "sponsor" ? [index] : []);
+  assert.ok(sponsorIndexes.length >= sponsors.length);
+  assert.ok(sponsorIndexes.every((index, position) => position === 0 || index - sponsorIndexes[position - 1] - 1 <= 2));
+  assert.ok(slides.filter((slide) => slide.kind === "guest").length >= 1);
+});
+
+test("sponsor reshuffle avoids an immediate boundary repeat", () => {
+  const sponsors = [
+    { name: "Alpha", logoUrl: "/alpha.png" },
+    { name: "Bravo", logoUrl: "/bravo.png" },
+    { name: "Charlie", logoUrl: "/charlie.png" },
+  ];
+  const queue = shuffleSponsorQueue(sponsors, "/charlie.png", () => 0);
+  assert.notEqual(queue[0]?.logoUrl, "/charlie.png");
+  assert.deepEqual(new Set(queue.map((sponsor) => sponsor.logoUrl)), new Set(sponsors.map((sponsor) => sponsor.logoUrl)));
+});
+
+test("Welcome Display advances and reshuffles the sponsor queue only after a complete balanced cycle", async () => {
+  const source = await readFile(displayPath, "utf8");
+  assert.match(source, /setSponsorQueue\(shuffleSponsorQueue\(logos\)\)/);
+  assert.match(source, /if \(nextIndex >= idleSlides\.length\)/);
+  assert.match(source, /shuffleSponsorQueue\(currentQueue, lastScheduledSponsorLogoUrl\)/);
+  assert.match(source, /idleMessageIndexRef\.current = nextIndex/);
+  assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
+});
 test("Phase 1.3 reuses the existing show read and established sponsor logo relation", async () => {
   const source = await readFile(displayPath, "utf8");
   assert.equal((source.match(/\.from\("shows"\)/g) ?? []).length, 2);
@@ -206,7 +260,7 @@ test("Phase 1.3 keeps the sponsor headline and all fixed supporting content cent
   assert.match(source, /www\.cumberlandmountainmusic\.com/);
   assert.equal((source.match(/www\.cumberlandmountainmusic\.com/g) ?? []).length, 1);
   assert.equal((source.match(/<span>Big-Time Show<\/span>/g) ?? []).length, 1);
-  assert.match(source, /className=\{HERO_LOGO_CONTAINER_CLASS\}/);
+  assert.match(source, /className=\{`\$\{HERO_LOGO_CONTAINER_CLASS\} transition-opacity/);
 });
 
 test("Phase 1.3 preserves the active logo hierarchy, responsive centering, and accessibility", async () => {
@@ -244,7 +298,7 @@ test("Phase 2.1 uses additive New York timed windows without touching Door Mode"
   const displaySource = await readFile(displayPath, "utf8");
   const doorSource = await readFile(doorModePath, "utf8");
   assert.match(displaySource, /resolveTimedIdleWindow\(clockNow\)/);
-  assert.ok(displaySource.includes("buildTimedIdleSlides(timedIdleWindow, guestSlides)"));
+  assert.ok(displaySource.includes("buildBalancedIdleSlides(timedIdleWindow, guestSlides, sponsorQueue)"));
   assert.match(displaySource, /const clock = window\.setInterval/);
   assert.match(displaySource, /}, 60_000\)/);
   assert.match(displaySource, /activeIdleHeadline === POST_SHOW_HEADLINE && nextShowDate/);
@@ -254,7 +308,7 @@ test("Phase 2.1 uses additive New York timed windows without touching Door Mode"
 });
 test("guest loading is isolated so failures cannot suppress show or sponsor data", async () => {
   const source = await readFile(displayPath, "utf8");
-  const sponsorCommitIndex = source.indexOf("setSponsorLogos(logos);");
+  const sponsorCommitIndex = source.indexOf("setSponsorQueue(shuffleSponsorQueue(logos));");
   const guestQueryIndex = source.indexOf('.from("guest_profiles")');
   assert.ok(source.includes('.select("id, show_date, venue, show_sponsors(placement_order, sponsor:sponsor_library(name, logo_url))")'));
   assert.ok(sponsorCommitIndex >= 0 && guestQueryIndex > sponsorCommitIndex);

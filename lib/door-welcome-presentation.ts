@@ -12,7 +12,7 @@ export type GuestIdleSlideSource = {
 export type IdleSlide =
   | { kind: "message"; headline: string }
   | { kind: "guest"; name: string; photoUrl: string | null }
-  | { kind: "sponsor"; headline: string };
+  | { kind: "sponsor"; headline: string; name?: string; logoUrl?: string };
 
 export const BASE_IDLE_MESSAGES = [
   "Welcome to the Cumberland Mountain Music Show",
@@ -74,6 +74,72 @@ export function buildTimedIdleSlides(window: TimedIdleWindow, guestSlides: reado
   return slides;
 }
 
+export type SponsorIdleSlideSource = {
+  name: string;
+  logoUrl: string;
+};
+
+export function shuffleSponsorQueue(
+  sponsors: readonly SponsorIdleSlideSource[],
+  previousLogoUrl: string | null = null,
+  random: () => number = Math.random,
+) {
+  const queue = [...sponsors];
+  for (let index = queue.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [queue[index], queue[swapIndex]] = [queue[swapIndex], queue[index]];
+  }
+  if (queue.length > 1 && queue[0]?.logoUrl === previousLogoUrl) {
+    const replacementIndex = queue.findIndex((sponsor) => sponsor.logoUrl !== previousLogoUrl);
+    if (replacementIndex > 0) [queue[0], queue[replacementIndex]] = [queue[replacementIndex], queue[0]];
+  }
+  return queue;
+}
+
+export function buildBalancedIdleSlides(
+  window: TimedIdleWindow,
+  guestSlides: readonly IdleSlide[],
+  sponsorQueue: readonly SponsorIdleSlideSource[],
+) {
+  if (sponsorQueue.length === 0) return buildTimedIdleSlides(window, guestSlides);
+
+  const messages: IdleSlide[] = BASE_IDLE_MESSAGES
+    .filter((headline) => !(SPONSOR_IDLE_MESSAGES as readonly string[]).includes(headline))
+    .map((headline) => ({ kind: "message", headline }) satisfies IdleSlide);
+  if (window === "doors-open-soon") messages.push({ kind: "message", headline: DOORS_OPEN_SOON_HEADLINE });
+  if (window === "post-show") messages.push({ kind: "message", headline: POST_SHOW_HEADLINE });
+
+  const slides: IdleSlide[] = [];
+  const welcomeSlide = messages.shift();
+  if (welcomeSlide) slides.push(welcomeSlide);
+  const sponsorAppearanceCount = Math.max(
+    sponsorQueue.length,
+    Math.ceil(messages.length / 2),
+    guestSlides.length * 3,
+  );
+  let guestIndex = 0;
+
+  for (let sponsorIndex = 0; sponsorIndex < sponsorAppearanceCount; sponsorIndex += 1) {
+    const sponsor = sponsorQueue[sponsorIndex % sponsorQueue.length];
+    slides.push({
+      kind: "sponsor",
+      headline: SPONSOR_IDLE_MESSAGES[sponsorIndex % SPONSOR_IDLE_MESSAGES.length],
+      name: sponsor.name,
+      logoUrl: sponsor.logoUrl,
+    });
+
+    const remainingSponsorSlots = sponsorAppearanceCount - sponsorIndex;
+    const messagesThisSlot = Math.min(2, Math.ceil(messages.length / remainingSponsorSlots));
+    slides.push(...messages.splice(0, messagesThisSlot));
+
+    if (guestSlides.length > 0 && (sponsorIndex + 1) % 3 === 0) {
+      slides.push(guestSlides[guestIndex % guestSlides.length]);
+      guestIndex += 1;
+    }
+  }
+
+  return slides;
+}
 export function chunkDoorWelcomeSeats(labels: readonly string[], maximumPerLine = 6) {
   const lines: string[][] = [];
   for (let index = 0; index < labels.length; index += maximumPerLine) {
