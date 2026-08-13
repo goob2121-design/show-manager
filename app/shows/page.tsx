@@ -2607,7 +2607,7 @@ export default function ShowsDashboardPage() {
                               </span>
                             </Link>
                             <Link
-                              href={`/admin/${currentShow.slug}?tab=tickets`}
+                              href={`/admin/${currentShow.slug}?tab=comp-tickets`}
                               className="inline-flex min-h-16 w-full items-center justify-center gap-2 rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[rgba(255,255,255,0.09)]"
                             >
                               <DashboardIcon><ShieldIcon /></DashboardIcon>

@@ -14,16 +14,17 @@ test("main dashboard links Door Mode to the selected current show", async () => 
   assert.match(source, /aria-label=\{\x60Open Door Mode for \$\{currentShow\.name\}\x60\}/);
 });
 
-test("Door Mode remains show-specific and preserves the existing Admin action", async () => {
+test("Door Mode and Ticket Sales remain show-specific", async () => {
   const source = await readFile(dashboardUrl, "utf8");
 
   const currentShowBranch = source.indexOf(") : currentShow ? (");
   const doorModeLink = source.indexOf("href={`/admin/${currentShow.slug}/door`}", currentShowBranch);
-  const adminLink = source.indexOf("href={`/admin/${currentShow.slug}`}", doorModeLink);
+  const ticketSalesLink = source.indexOf("href={`/admin/${currentShow.slug}?tab=comp-tickets`}", doorModeLink);
 
   assert.ok(currentShowBranch >= 0);
   assert.ok(doorModeLink > currentShowBranch);
-  assert.ok(adminLink > doorModeLink);
+  assert.ok(ticketSalesLink > doorModeLink);
+  assert.doesNotMatch(source, /href=\{`\/admin\/\$\{currentShow\.slug\}\?tab=tickets`\}/);
   assert.match(source, /<AdminGate[\s\S]*?slug="shows-dashboard"/);
 });
 
