@@ -2996,6 +2996,15 @@ function buildPayoutSheetHtml({
           background: #ffffff;
         }
         h1 { margin: 0; font-size: 1.9rem; }
+        .payout-logo {
+          display: block;
+          width: auto;
+          height: auto;
+          max-width: 230px;
+          max-height: 92px;
+          margin: 0 auto 0.45rem;
+          object-fit: contain;
+        }
         .meta { margin-top: 0.5rem; color: #57534e; font-size: 0.98rem; }
         .section { margin-top: 1.5rem; break-inside: avoid; page-break-inside: avoid; }
         .section h2 {
@@ -3055,6 +3064,7 @@ function buildPayoutSheetHtml({
     <body>
       <main>
         <header>
+          <img class="payout-logo" src="/cmms-logo.png" alt="Cumberland Mountain Music Show logo" />
           <h1>Show Payout Sheet</h1>
           <p class="meta">${escapeHtml(showName)}${showDate ? ` - ${escapeHtml(formatShowDate(showDate))}` : ""}</p>
         </header>
