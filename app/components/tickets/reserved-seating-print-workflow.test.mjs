@@ -48,7 +48,9 @@ test("selected chair cards omit admission codes and emphasize assignment details
   assert.match(selectedCards, /min-h-\[2\.2in\]/);
   assert.match(source, /print:text-\[36px\]/);
   assert.match(selectedCards, /print:text-\[26px\]/);
-  assert.match(selectedCards, /Section \{card\.section\} - Row \{card\.row_label\} - Seat \{card\.seat_number\}/);
+  assert.match(selectedCards, /\{card\.seatExplanation\}/);
+  assert.match(selectedCards, /buildReservedSeatPrintCards\(assignments, reservedLinks\)/);
+  assert.match(selectedCards, /\{card\.seatId\}/);
 
   assert.match(source.slice(0, selectedStart), /ReservationTicketCode/);
 });

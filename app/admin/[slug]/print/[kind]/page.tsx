@@ -6,6 +6,7 @@ import { PrintButton } from "@/app/components/print-button";
 import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
 import { PrintStudioExportButton } from "./print-studio-export-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildReservedSeatPrintCards } from "@/lib/reserved-seat-print-cards";
 import type { GuestProfile, ShowCompTicket, ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
 type PrintKind =
@@ -1012,18 +1013,12 @@ function getSelectedSeatCardNamePrintClass(name: string) {
 
 function SelectedReservedSeatCardsPrintView({
   assignments,
+  reservedLinks,
 }: {
   assignments: SelectedReservedSeatRow[];
+  reservedLinks: ReservedSeatingLinkRow[];
 }) {
-  const seatCards = [...assignments]
-    .filter((assignment) => assignment.assignment_type === "customer")
-    .sort((left, right) => {
-      if ((left.customer_name ?? "") !== (right.customer_name ?? "")) {
-        return (left.customer_name ?? "").localeCompare(right.customer_name ?? "", "en-US");
-      }
-
-      return left.seat_id.localeCompare(right.seat_id, "en-US");
-    });
+  const seatCards = buildReservedSeatPrintCards(assignments, reservedLinks);
 
   if (seatCards.length === 0) {
     return (
@@ -1048,7 +1043,7 @@ function SelectedReservedSeatCardsPrintView({
           }}
         >
           {pageEntries.map((card) => {
-            const customerName = card.customer_name?.trim() || "Reserved Guest";
+            const customerName = card.customerName;
             const printName = getSelectedSeatCardPrintName(customerName);
             return (
               <article
@@ -1073,9 +1068,9 @@ function SelectedReservedSeatCardsPrintView({
                     <span className="hidden print:block">{printName}</span>
                   </h2>
 
-                  <p className="mt-3 text-2xl font-black tracking-[0.03em] text-stone-900 print:text-[26px]">{card.seat_id}</p>
+                  <p className="mt-3 text-2xl font-black tracking-[0.03em] text-stone-900 print:text-[26px]">{card.seatId}</p>
                   <p className="mt-1 text-base font-semibold tracking-[0.08em] text-stone-700 print:text-[17px]">
-                    Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
+                    {card.seatExplanation}
                   </p>
 
                   </div>
@@ -1407,6 +1402,7 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         {printKind === "selected-seat-cards" ? (
           <SelectedReservedSeatCardsPrintView
             assignments={selectedReservedSeatAssignments}
+            reservedLinks={reservedSeatingLinks}
           />
         ) : null}
       </PrintShell>
