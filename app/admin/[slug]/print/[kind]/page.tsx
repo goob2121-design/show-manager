@@ -364,10 +364,52 @@ function PrintShell({
   const isReservedSeatCards = kind === "reserved-seat-cards";
   const isCompReservedSeatCards = kind === "comp-reserved-seat-cards";
   const isBlankSeatCards = kind === "blank-seat-cards";
+  const isSelectedSeatCards = kind === "selected-seat-cards";
+  const isSeatCardPrint = isReservedSeatCards || isCompReservedSeatCards || isBlankSeatCards || isSelectedSeatCards;
 
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-8 text-stone-900 sm:px-6 print:bg-white print:px-0 print:py-0">
       <style>{`img[src=/cmms-logo.png] { filter: none !important; -webkit-filter: none !important; }`}</style>
+      {isSeatCardPrint ? (
+        <style>{`
+          @page { size: letter portrait; margin: 0.35in; }
+          @media print {
+            html, body { margin: 0 !important; padding: 0 !important; }
+            .seat-card-pages { display: block !important; margin: 0 !important; padding: 0 !important; }
+            .seat-card-sheet {
+              box-sizing: border-box !important;
+              width: 7.8in !important;
+              height: 10.3in !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              display: grid !important;
+              grid-template-columns: repeat(2, 3.84in) !important;
+              grid-template-rows: repeat(4, 2.485in) !important;
+              column-gap: 0.12in !important;
+              row-gap: 0.12in !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+            .seat-card-sheet-with-header {
+              height: 7.695in !important;
+              grid-template-rows: repeat(3, 2.485in) !important;
+            }
+            .seat-card {
+              box-sizing: border-box !important;
+              width: 3.84in !important;
+              height: 2.485in !important;
+              min-width: 0 !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+              border: 1pt dashed #a8a29e !important;
+              padding: 0.12in !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+          }
+        `}</style>
+      ) : null}
       <section className="mx-auto max-w-4xl rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-8 print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <Link
@@ -757,11 +799,11 @@ function ReservedSeatCardsPrintView({
   const pages = chunkItems(seatCards, 8);
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 seat-card-pages">
       {pages.map((pageEntries, pageIndex) => (
         <section
           key={`reserved-seat-page-${pageIndex}`}
-          className="grid grid-cols-2 gap-4 print:h-[9.15in] print:[grid-template-rows:repeat(4,minmax(0,1fr))] print:gap-3"
+          className="seat-card-sheet grid grid-cols-2 gap-4"
           style={{
             breakAfter: pageIndex < pages.length - 1 ? "page" : "auto",
             pageBreakAfter: pageIndex < pages.length - 1 ? "always" : "auto",
@@ -770,7 +812,7 @@ function ReservedSeatCardsPrintView({
           {pageEntries.map((card) => (
             <article
               key={card.id}
-              className="flex min-h-[2.2in] flex-col items-center justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+              className="seat-card flex min-h-[2.2in] flex-col items-center justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:rounded-none"
               style={{
                 breakInside: "avoid",
                 pageBreakInside: "avoid",
@@ -844,11 +886,11 @@ function CompReservedSeatCardsPrintView({
   const pages = chunkItems(seatCards, 8);
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 seat-card-pages">
       {pages.map((pageEntries, pageIndex) => (
         <section
           key={`comp-reserved-seat-page-${pageIndex}`}
-          className="grid grid-cols-2 gap-4 print:h-[9.15in] print:[grid-template-rows:repeat(4,minmax(0,1fr))] print:gap-3"
+          className="seat-card-sheet grid grid-cols-2 gap-4"
           style={{
             breakAfter: pageIndex < pages.length - 1 ? "page" : "auto",
             pageBreakAfter: pageIndex < pages.length - 1 ? "always" : "auto",
@@ -860,7 +902,7 @@ function CompReservedSeatCardsPrintView({
             return (
               <article
                 key={card.id}
-                className="flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+                className="seat-card flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:rounded-none"
                 style={{
                   breakInside: "avoid",
                   pageBreakInside: "avoid",
@@ -912,12 +954,12 @@ function BlankSeatCardsPrintView() {
   }));
 
   return (
-    <div className="grid gap-6">
-      <section className="grid grid-cols-2 gap-4 print:h-[9.15in] print:[grid-template-rows:repeat(4,minmax(0,1fr))] print:gap-3">
+    <div className="grid gap-6 seat-card-pages">
+      <section className="seat-card-sheet grid grid-cols-2 gap-4">
         {seatCards.map((card) => (
           <article
             key={card.id}
-            className="flex min-h-[2.2in] flex-col items-center justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+            className="seat-card flex min-h-[2.2in] flex-col items-center justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:rounded-none"
             style={{
               breakInside: "avoid",
               pageBreakInside: "avoid",
@@ -946,16 +988,33 @@ function BlankSeatCardsPrintView() {
   );
 }
 
+function getSelectedSeatCardPrintName(name: string) {
+  const trimmedName = name.trim();
+  if (Array.from(trimmedName).length <= 26) return trimmedName;
+
+  const words = trimmedName.split(/\s+/);
+  const ampersandIndex = words.indexOf("&");
+  if (ampersandIndex > 0 && ampersandIndex < words.length - 1) {
+    return words.slice(0, ampersandIndex + 2).join(" ");
+  }
+
+  return words.slice(0, 2).join(" ");
+}
+
+function getSelectedSeatCardNamePrintClass(name: string) {
+  const characterCount = Array.from(name.trim()).length;
+
+  if (characterCount <= 20) return "print:text-[36px]";
+  if (characterCount <= 26) return "print:text-[28px]";
+  if (characterCount <= 32) return "print:text-[20px]";
+  return "print:text-[16px]";
+}
+
 function SelectedReservedSeatCardsPrintView({
   assignments,
-  reservedLinks,
-  show,
 }: {
   assignments: SelectedReservedSeatRow[];
-  reservedLinks: ReservedSeatingLinkRow[];
-  show: ShowRecord;
 }) {
-  const reservedLinkById = new Map(reservedLinks.map((link) => [link.id, link]));
   const seatCards = [...assignments]
     .filter((assignment) => assignment.assignment_type === "customer")
     .sort((left, right) => {
@@ -974,25 +1033,27 @@ function SelectedReservedSeatCardsPrintView({
     );
   }
 
-  const pages = chunkItems(seatCards, 8);
+  const firstPageCards = seatCards.slice(0, 6);
+  const pages = [firstPageCards, ...chunkItems(seatCards.slice(6), 8)];
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 seat-card-pages">
       {pages.map((pageEntries, pageIndex) => (
         <section
           key={`selected-seat-page-${pageIndex}`}
-          className="grid grid-cols-2 gap-4 print:h-[9.15in] print:[grid-template-rows:repeat(4,minmax(0,1fr))] print:gap-3"
+          className={`seat-card-sheet grid grid-cols-2 gap-4 ${pageIndex === 0 ? "seat-card-sheet-with-header" : ""}`}
           style={{
             breakAfter: pageIndex < pages.length - 1 ? "page" : "auto",
             pageBreakAfter: pageIndex < pages.length - 1 ? "always" : "auto",
           }}
         >
           {pageEntries.map((card) => {
-            const reservedLink = card.seating_link_id ? reservedLinkById.get(card.seating_link_id) ?? null : null;
+            const customerName = card.customer_name?.trim() || "Reserved Guest";
+            const printName = getSelectedSeatCardPrintName(customerName);
             return (
               <article
                 key={card.id}
-                className="flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:h-full print:min-h-0 print:rounded-none print:px-3 print:py-3"
+                className="seat-card flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:rounded-none"
                 style={{
                   breakInside: "avoid",
                   pageBreakInside: "avoid",
@@ -1007,26 +1068,16 @@ function SelectedReservedSeatCardsPrintView({
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[13px]">
                     Reserved Seating
                   </p>
-                  <h2 className="mt-2 max-w-full text-4xl font-black leading-none tracking-[0.01em] text-stone-950 print:text-[36px]">
-                    {card.customer_name?.trim() || "Reserved Guest"}
+                  <h2 className={`mt-2 max-w-full text-4xl font-black leading-none tracking-[0.01em] text-stone-950 print:block print:h-[0.45in] print:w-full print:overflow-hidden print:whitespace-nowrap print:text-ellipsis print:leading-[0.45in] ${getSelectedSeatCardNamePrintClass(printName)}`}>
+                    <span className="print:hidden">{customerName}</span>
+                    <span className="hidden print:block">{printName}</span>
                   </h2>
-                  {reservedLink?.is_complimentary ? (
-                    <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[9px]">
-                      Complimentary
-                    </p>
-                  ) : null}
-                  {reservedLink?.source_note?.trim() ? (
-                    <p className="mt-1 text-[10px] font-medium tracking-[0.1em] text-stone-500 print:text-[9px]">
-                      {reservedLink.source_note}
-                    </p>
-                  ) : null}
+
                   <p className="mt-3 text-2xl font-black tracking-[0.03em] text-stone-900 print:text-[26px]">{card.seat_id}</p>
                   <p className="mt-1 text-base font-semibold tracking-[0.08em] text-stone-700 print:text-[17px]">
                     Section {card.section} - Row {card.row_label} - Seat {card.seat_number}
                   </p>
-                    <p className="mt-2 text-sm font-medium tracking-[0.12em] text-stone-500 print:text-[12px]">
-                      {formatShowDate(show.show_date)}
-                    </p>
+
                   </div>
                 </article>
               );
@@ -1356,8 +1407,6 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         {printKind === "selected-seat-cards" ? (
           <SelectedReservedSeatCardsPrintView
             assignments={selectedReservedSeatAssignments}
-            reservedLinks={reservedSeatingLinks}
-            show={show}
           />
         ) : null}
       </PrintShell>
