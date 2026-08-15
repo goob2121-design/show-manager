@@ -49,31 +49,31 @@ export function buildDoorSeatMapPrintDocument({ guestName, admissionLabel, seatI
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Seat Map - ${safeGuestName}</title>
     <style>
-      @page { size: landscape; margin: 0.35in; }
+      @page { size: landscape; margin: 0.2in; }
       * { box-sizing: border-box; }
       html, body { margin: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; }
       body { padding: 0; }
-      .sheet { width: 100%; max-width: 10.3in; margin: 0 auto; }
-      .guest { margin: 0; text-align: center; font-size: 25pt; line-height: 1.05; font-weight: 800; }
-      .admission { margin: 5px 0 0; text-align: center; font-size: 13pt; font-weight: 600; }
-      .reserved { margin: 8px 0 10px; text-align: center; font-size: 19pt; line-height: 1.1; font-weight: 800; }
-      .stage { width: 64%; margin: 0 auto 4px; border: 2px solid #000; padding: 5px; text-align: center; font-size: 17pt; font-weight: 900; letter-spacing: 0.14em; }
-      .front, .back { text-align: center; font-size: 9pt; font-weight: 800; letter-spacing: 0.16em; }
-      .front { margin-bottom: 7px; }
-      .back { margin-top: 7px; }
-      .section-labels { display: grid; grid-template-columns: 22px minmax(0, 1fr) 76px minmax(0, 1fr) 22px; gap: 4px; margin-bottom: 3px; }
-      .section-label { text-align: center; font-size: 9pt; font-weight: 800; letter-spacing: 0.08em; }
-      .map { display: grid; grid-template-columns: 22px minmax(0, 1fr) 76px minmax(0, 1fr) 22px; gap: 3px 4px; align-items: stretch; }
-      .row-label { display: flex; align-items: center; justify-content: center; font-size: 10pt; font-weight: 900; }
-      .seat-row { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; }
-      .seat { min-height: 29px; border: 1px solid #777; border-radius: 4px; display: flex; align-items: center; justify-content: center; background: #fff; color: #000; font-size: 9pt; font-weight: 700; }
-      .seat--assigned { border: 3px solid #000; background: #000; color: #fff; font-size: 11pt; font-weight: 900; }
+      .sheet { width: 100%; max-width: 7.2in; margin: 0 auto; }
+      .guest { margin: 0; text-align: center; font-size: 20pt; line-height: 1.05; font-weight: 800; }
+      .admission { margin: 4px 0 0; text-align: center; font-size: 10pt; font-weight: 600; }
+      .reserved { margin: 6px 0 7px; text-align: center; font-size: 15pt; line-height: 1.1; font-weight: 800; }
+      .stage { width: 64%; margin: 0 auto 3px; border: 2px solid #000; padding: 3px; text-align: center; font-size: 13pt; font-weight: 900; letter-spacing: 0.14em; }
+      .front, .back { text-align: center; font-size: 7.5pt; font-weight: 800; letter-spacing: 0.16em; }
+      .front { margin-bottom: 5px; }
+      .back { margin-top: 5px; }
+      .section-labels { display: grid; grid-template-columns: 16px minmax(0, 1fr) 53px minmax(0, 1fr) 16px; gap: 3px; margin-bottom: 2px; }
+      .section-label { text-align: center; font-size: 7.5pt; font-weight: 800; letter-spacing: 0.08em; }
+      .map { display: grid; grid-template-columns: 16px minmax(0, 1fr) 53px minmax(0, 1fr) 16px; gap: 2px 3px; align-items: stretch; }
+      .row-label { display: flex; align-items: center; justify-content: center; font-size: 8pt; font-weight: 900; }
+      .seat-row { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 2px; }
+      .seat { min-height: 21px; border: 1px solid #777; border-radius: 3px; display: flex; align-items: center; justify-content: center; background: #fff; color: #000; font-size: 8pt; font-weight: 700; }
+      .seat--assigned { border: 2px solid #000; background: #000; color: #fff; font-size: 9pt; font-weight: 900; }
       .aisle { position: relative; display: flex; align-items: center; justify-content: center; border-left: 1px dashed #888; border-right: 1px dashed #888; }
-      .aisle span { background: #fff; padding: 1px 3px; font-size: 7pt; font-weight: 900; letter-spacing: 0.06em; }
-      .legend { display: flex; justify-content: center; gap: 24px; margin-top: 8px; font-size: 9pt; font-weight: 700; }
-      .legend-item { display: flex; align-items: center; gap: 6px; }
-      .legend-seat { width: 22px; height: 16px; border: 1px solid #777; border-radius: 3px; background: #fff; }
-      .legend-seat--assigned { border: 3px solid #000; background: #000; }
+      .aisle span { background: #fff; padding: 1px 2px; font-size: 6pt; font-weight: 900; letter-spacing: 0.04em; }
+      .legend { display: flex; justify-content: center; gap: 16px; margin-top: 5px; font-size: 7.5pt; font-weight: 700; }
+      .legend-item { display: flex; align-items: center; gap: 4px; }
+      .legend-seat { width: 16px; height: 12px; border: 1px solid #777; border-radius: 2px; background: #fff; }
+      .legend-seat--assigned { border: 2px solid #000; background: #000; }
       @media print {
         .sheet { break-inside: avoid; }
         .seat, .seat--assigned, .legend-seat, .legend-seat--assigned { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
