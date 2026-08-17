@@ -6,15 +6,54 @@ import {
 } from "./reserved-seat-print-cards.ts";
 
 const link = (ticketCount: number) => ({ id: "link-1", customer_name: "John Smith", ticket_count: ticketCount });
-const assignment = (seatId: string, linkId: string | null = "link-1") => ({
-  id: `assignment-${seatId}`,
-  seating_link_id: linkId,
-  customer_name: "John Smith",
-  seat_id: seatId,
-  section: "L",
-  row_label: "B",
-  seat_number: Number(seatId.replace(/\D/g, "")),
-  assignment_type: "customer",
+const assignment = (
+  seatId: string,
+  linkId: string | null = "link-1",
+  customerName = "John Smith",
+) => {
+  const match = /^(L|R)-([A-J])(\d+)$/.exec(seatId);
+  return {
+    id: `assignment-${seatId}`,
+    seating_link_id: linkId,
+    customer_name: customerName,
+    seat_id: seatId,
+    section: match?.[1] ?? "L",
+    row_label: match?.[2] ?? "B",
+    seat_number: Number(match?.[3] ?? seatId.replace(/\D/g, "")),
+    assignment_type: "customer",
+  };
+};
+
+test("assigned cards sort Left before Right, then by row and numeric seat number", () => {
+  const rows = "ABCDEFGHIJ".split("");
+  const seatNumbers = Array.from({ length: 10 }, (_, index) => index + 1);
+  const expectedSeatIds = [
+    ...rows.flatMap((row) => seatNumbers.map((seatNumber) => `L-${row}${seatNumber}`)),
+    ...rows.flatMap((row) => seatNumbers.map((seatNumber) => `R-${row}${seatNumber}`)),
+  ];
+  const unsortedAssignments = [...expectedSeatIds]
+    .reverse()
+    .map((seatId) => assignment(seatId));
+
+  const cards = buildReservedSeatPrintCards(unsortedAssignments, []);
+
+  assert.deepEqual(cards.map((card) => card.seatId), expectedSeatIds);
+  assert.ok(cards.indexOf(cards.find((card) => card.seatId === "L-A10")!) > cards.indexOf(cards.find((card) => card.seatId === "L-A9")!));
+  assert.ok(cards.indexOf(cards.find((card) => card.seatId === "R-A1")!) > cards.indexOf(cards.find((card) => card.seatId === "L-J10")!));
+});
+
+test("NSS cards print after every assigned-seat card regardless of customer name", () => {
+  const cards = buildReservedSeatPrintCards(
+    [assignment("R-J10", "link-1", "Zelda Guest")],
+    [
+      { id: "link-1", customer_name: "Zelda Guest", ticket_count: 2 },
+      { id: "link-2", customer_name: "Aaron Guest", ticket_count: 1 },
+    ],
+  );
+
+  assert.deepEqual(cards.map((card) => card.seatId), ["R-J10", "NSS", "NSS"]);
+  assert.equal(cards[0]?.kind, "assigned");
+  assert.ok(cards.slice(1).every((card) => card.kind === "nss"));
 });
 
 test("two assigned reserved seats produce no NSS cards", () => {
