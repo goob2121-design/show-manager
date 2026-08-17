@@ -150,10 +150,10 @@ type RehearsalSectionLabel = "" | "set1" | "set2";
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab =
   | "overview"
-  | "setlist"
-  | "songs"
+  | "music-setlist"
   | "guests"
   | "comp-tickets"
+  | "square-integration"
   | "finance"
   | "promo-materials"
   | "sponsors"
@@ -163,6 +163,7 @@ type BandTab = "setlist" | "songs" | "rehearsal" | "itinerary" | "promo-material
 type GuestTab = "welcome" | "songs" | "artist-info" | "itinerary" | "promo-materials";
 type SponsorAdminTab = "library" | "current-show" | "rsvp" | "print";
 type FinanceAdminSubTab = "reporting" | "payouts";
+type MusicAdminSubTab = "setlist" | "songs";
 type SetlistSectionConfig = {
   key: SetSection;
   title: string;
@@ -171,10 +172,10 @@ type SetlistSectionConfig = {
 
 const adminTabItems: Array<{ key: AdminTab; label: string }> = [
   { key: "overview", label: "Overview" },
-  { key: "setlist", label: "Setlist" },
-  { key: "songs", label: "Songs" },
+  { key: "music-setlist", label: "Music & Setlist" },
   { key: "guests", label: "Guests" },
   { key: "comp-tickets", label: "Tickets / Check-In" },
+  { key: "square-integration", label: "Square Integration" },
   { key: "finance", label: "Finance" },
   { key: "promo-materials", label: "Promo Materials" },
   { key: "sponsors", label: "Sponsors" },
@@ -183,6 +184,9 @@ const adminTabItems: Array<{ key: AdminTab; label: string }> = [
 ];
 
 function normalizeAdminTab(value: string | null): AdminTab | null {
+  if (value === "setlist" || value === "songs") {
+    return "music-setlist";
+  }
   return adminTabItems.some((tab) => tab.key === value) ? (value as AdminTab) : null;
 }
 
@@ -6313,7 +6317,6 @@ export function ShowPage({
   showRoleToggle = true,
   lockedGuestProfileId = null,
   isPrivateGuestPortal = false,
-  squareAdminStatus,
 }: ShowPageProps) {
   const requestedAdminTab = normalizeAdminTab(initialAdminTab);
   const shouldOpenPayoutsInsideFinance = initialAdminTab === "payouts";
@@ -6321,6 +6324,9 @@ export function ShowPage({
   const [isBandAdminUnlocked, setIsBandAdminUnlocked] = useState(false);
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(
     requestedAdminTab ?? (shouldOpenPayoutsInsideFinance ? "finance" : "overview"),
+  );
+  const [activeMusicAdminSubTab, setActiveMusicAdminSubTab] = useState<MusicAdminSubTab>(
+    initialAdminTab === "songs" ? "songs" : "setlist",
   );
   const [activeBandTab, setActiveBandTab] = useState<BandTab>("setlist");
   const [activeGuestTab, setActiveGuestTab] = useState<GuestTab>("welcome");
@@ -6692,7 +6698,7 @@ export function ShowPage({
   const isGuestView = viewMode === "guest";
   const hasAdminPortalAccess = isAdminView || (isBandView && isBandAdminUnlocked);
   const shouldShowAdminSongSubmission =
-    isAdminView && activeAdminTab === "songs";
+    isAdminView && activeAdminTab === "music-setlist" && activeMusicAdminSubTab === "songs";
   const shouldShowBandSongTools = isBandView && activeBandTab === "songs";
   const shouldShowBandRehearsalTab = isBandView && activeBandTab === "rehearsal";
   const canEditBandRehearsal = isBandView && hasAdminPortalAccess;
@@ -7031,7 +7037,7 @@ export function ShowPage({
   const shouldShowSetlistSection = viewMode === "guest"
     ? false
     : isAdminView
-    ? activeAdminTab === "setlist"
+    ? activeAdminTab === "music-setlist" && activeMusicAdminSubTab === "setlist"
     : !isBandView || activeBandTab === "setlist";
   const setlistSections = getRenderableSetlistSections(setlist);
   const visibleGuestSongs = viewMode === "guest" ? [] : pendingSongs;
@@ -17318,24 +17324,62 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               role="tablist"
               aria-label="Admin portal sections"
             >
-              {adminTabItems.map((tab) => (
+              {adminTabItems.map((tab) =>
+                tab.key === "square-integration" ? (
+                  <Link
+                    key={tab.key}
+                    href={`/admin/${encodeURIComponent(showSlug)}/square-integration`}
+                    role="tab"
+                    aria-selected={false}
+                    className="flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-2xl bg-white px-5 py-3 text-center text-sm font-semibold leading-tight text-stone-700 transition hover:bg-stone-50 sm:min-h-0 sm:w-full sm:px-6 sm:py-4 sm:text-base sm:leading-none"
+                  >
+                    {tab.label}
+                  </Link>
+                ) : (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeAdminTab === tab.key}
+                    onClick={() => setActiveAdminTab(tab.key)}
+                    className={`min-h-11 shrink-0 whitespace-nowrap rounded-2xl px-5 py-3 text-sm font-semibold leading-tight transition sm:min-h-0 sm:w-full sm:px-6 sm:py-4 sm:text-base sm:leading-none ${
+                      activeAdminTab === tab.key
+                        ? "bg-emerald-700 text-white shadow-sm"
+                        : "bg-white text-stone-700 hover:bg-stone-50"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ),
+              )}
+            </div>
+
+          </section>
+        ) : null}
+
+        {isAdminView && activeAdminTab === "music-setlist" ? (
+          <section className="print-hidden flex flex-col gap-2 border-t border-stone-200 pt-6">
+            <div className="inline-flex w-full rounded-2xl bg-stone-100 p-1 sm:w-fit" role="tablist" aria-label="Music and setlist sections">
+              {([
+                { key: "setlist", label: "Setlist" },
+                { key: "songs", label: "Song Library" },
+              ] as const).map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
                   role="tab"
-                  aria-selected={activeAdminTab === tab.key}
-                  onClick={() => setActiveAdminTab(tab.key)}
-                  className={`min-h-11 shrink-0 whitespace-nowrap rounded-2xl px-5 py-3 text-sm font-semibold leading-tight transition sm:min-h-0 sm:w-full sm:px-6 sm:py-4 sm:text-base sm:leading-none ${
-                    activeAdminTab === tab.key
-                      ? "bg-emerald-700 text-white shadow-sm"
-                      : "bg-white text-stone-700 hover:bg-stone-50"
+                  aria-selected={activeMusicAdminSubTab === tab.key}
+                  onClick={() => setActiveMusicAdminSubTab(tab.key)}
+                  className={`flex-1 rounded-xl px-5 py-2.5 text-sm font-semibold transition sm:flex-none ${
+                    activeMusicAdminSubTab === tab.key
+                      ? "bg-white text-emerald-800 shadow-sm"
+                      : "text-stone-600 hover:text-stone-900"
                   }`}
                 >
                   {tab.label}
                 </button>
               ))}
             </div>
-
           </section>
         ) : null}
 
@@ -17507,55 +17551,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               </section>
             </div>
 
-            <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Square Ticketing</p>
-                  <h3 className="mt-1 text-lg font-semibold text-stone-900">Square Ticketing</h3>
-                  <p className="mt-1 text-sm text-stone-600">
-                    Manage Square integration, ticket mapping, catalog items, and webhook status.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Link href={`/admin/${encodeURIComponent(showSlug)}/square-integration`} className="inline-flex rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800">
-                    Square Integration Status
-                  </Link>
-                  <Link href={`/admin/${encodeURIComponent(showSlug)}/square-catalog`} className="inline-flex rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">
-                    Square Catalog
-                  </Link>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${squareAdminStatus?.configurationValid ? "bg-emerald-500" : "bg-rose-500"}`} />
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Environment</p>
-                  </div>
-                  <p className="mt-1 text-sm font-semibold text-stone-800">
-                    {squareAdminStatus?.environment === "production" ? "Production" : squareAdminStatus?.environment === "sandbox" ? "Sandbox" : "Missing"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${squareAdminStatus?.webhookConfigured ? "bg-emerald-500" : "bg-rose-500"}`} />
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Webhook</p>
-                  </div>
-                  <p className="mt-1 text-sm font-semibold text-stone-800">
-                    {squareAdminStatus?.webhookConfigured ? "Configured" : "Missing"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-stone-200 bg-white px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${show.square_catalog_variation_id ? "bg-emerald-500" : "bg-amber-400"}`} />
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Ticket Mapping</p>
-                  </div>
-                  <p className="mt-1 text-sm font-semibold text-stone-800">
-                    {show.square_catalog_variation_id ? "Connected" : "Not Connected"}
-                  </p>
-                </div>
-              </div>
-            </section>
             {isShowChecklistOpen ? (
               <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/60 px-4 py-6 backdrop-blur-sm sm:px-6 sm:py-10">
                 <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-stone-200 bg-stone-50 p-4 shadow-2xl sm:p-5">
@@ -26336,7 +26331,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           </section>
         ) : null}
 
-        {isAdminView && activeAdminTab === "songs" ? (
+        {isAdminView && activeAdminTab === "music-setlist" && activeMusicAdminSubTab === "songs" ? (
           <section className="print-hidden flex flex-col gap-3 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Setlist Builder</h2>
@@ -26948,7 +26943,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           </div>
         ) : null}
 
-        {isAdminView && activeAdminTab === "songs" ? (
+        {isAdminView && activeAdminTab === "music-setlist" && activeMusicAdminSubTab === "songs" ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Guest Songs for This Show</h2>
@@ -27194,7 +27189,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           </section>
         ) : null}
 
-        {shouldShowBandSongTools || (isAdminView && activeAdminTab === "songs") ? (
+        {shouldShowBandSongTools || (isAdminView && activeAdminTab === "music-setlist" && activeMusicAdminSubTab === "songs") ? (
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Song Library</h2>
