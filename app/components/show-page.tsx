@@ -1899,6 +1899,10 @@ function sortFinanceItems(items: ShowFinanceItem[]) {
   return [...items].sort((itemA, itemB) => itemB.created_at.localeCompare(itemA.created_at));
 }
 
+function isSquareManagedFinanceItem(item: ShowFinanceItem) {
+  return item.is_system_managed && item.source === "square";
+}
+
 function normalizeShowPayoutItem(
   item: Omit<ShowPayoutItem, "amount"> & { amount: number | string | null },
 ): ShowPayoutItem {
@@ -7438,6 +7442,7 @@ export function ShowPage({
   }
 
   function startEditingFinanceItem(item: ShowFinanceItem) {
+    if (isSquareManagedFinanceItem(item)) return;
     setEditingFinanceItemId(item.id);
     setEditingFinanceItemFormState(buildFinanceItemFormState(item));
     setFinanceErrorMessage(null);
@@ -7515,6 +7520,11 @@ export function ShowPage({
   }
 
   async function handleSaveFinanceItem(item: ShowFinanceItem) {
+    if (isSquareManagedFinanceItem(item)) {
+      setFinanceErrorMessage("Square-managed Finance items are read-only.");
+      return;
+    }
+
     if (!show) {
       setFinanceErrorMessage("The show is not loaded yet.");
       return;
@@ -7575,6 +7585,11 @@ export function ShowPage({
   }
 
   async function handleDeleteFinanceItem(item: ShowFinanceItem) {
+    if (isSquareManagedFinanceItem(item)) {
+      setFinanceErrorMessage("Square-managed Finance items are read-only.");
+      return;
+    }
+
     if (!show) {
       setFinanceErrorMessage("The show is not loaded yet.");
       return;
@@ -22178,6 +22193,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                     {item.category}
                                   </span>
                                 ) : null}
+                                {isSquareManagedFinanceItem(item) ? (
+                                  <span className="rounded-full border border-sky-700/60 bg-sky-950/60 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-200">
+                                    Square · Auto
+                                  </span>
+                                ) : null}
                               </div>
                               {item.notes?.trim() ? (
                                 <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-stone-400">{item.notes}</p>
@@ -22191,6 +22211,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <button
                                 type="button"
                                 onClick={() => startEditingFinanceItem(item)}
+                                disabled={isSquareManagedFinanceItem(item)}
                                 className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-xs font-semibold text-stone-200 transition hover:bg-stone-800"
                               >
                                 Edit
@@ -22198,7 +22219,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <button
                                 type="button"
                                 onClick={() => void handleDeleteFinanceItem(item)}
-                                disabled={activeFinanceActionId === `delete-${item.id}`}
+                                disabled={isSquareManagedFinanceItem(item) || activeFinanceActionId === `delete-${item.id}`}
                                 className="rounded-lg border border-rose-900/60 bg-rose-950/60 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {activeFinanceActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
@@ -22400,6 +22421,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <button
                                 type="button"
                                 onClick={() => startEditingFinanceItem(item)}
+                                disabled={isSquareManagedFinanceItem(item)}
                                 className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-xs font-semibold text-stone-200 transition hover:bg-stone-800"
                               >
                                 Edit
@@ -22407,7 +22429,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <button
                                 type="button"
                                 onClick={() => void handleDeleteFinanceItem(item)}
-                                disabled={activeFinanceActionId === `delete-${item.id}`}
+                                disabled={isSquareManagedFinanceItem(item) || activeFinanceActionId === `delete-${item.id}`}
                                 className="rounded-lg border border-rose-900/60 bg-rose-950/60 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {activeFinanceActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}

@@ -310,6 +310,7 @@ export type SquarePayment = {
   shipping_address?: SquareAddress;
   buyer_email_address?: string;
   customer_id?: string;
+  created_at?: string;
   updated_at?: string;
 };
 

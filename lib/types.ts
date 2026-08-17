@@ -62,6 +62,8 @@ export type ShowRecord = {
   ticket_link: string | null;
   ticket_code_format: string | null;
   square_catalog_variation_id?: string | null;
+  square_finance_sync_enabled?: boolean;
+  square_finance_sync_started_at?: string | null;
   opening_script: string | null;
   intermission_script: string | null;
   closing_script: string | null;
@@ -303,6 +305,16 @@ export type ShowFinanceItem = {
   amount: number;
   notes: string | null;
   created_at: string;
+  source?: string | null;
+  source_kind?: string | null;
+  external_payment_id?: string | null;
+  external_order_id?: string | null;
+  external_line_item_uid?: string | null;
+  currency?: string | null;
+  original_amount_cents?: number | null;
+  occurred_at?: string | null;
+  imported_at?: string | null;
+  is_system_managed?: boolean;
 };
 
 export type ShowChecklistItem = {

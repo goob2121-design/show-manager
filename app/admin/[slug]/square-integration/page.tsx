@@ -18,6 +18,7 @@ import { CreateSandboxCheckoutLinkButton } from "./create-sandbox-checkout-link-
 import { DebugLatestImportButton } from "./debug-latest-import-button";
 import { RecentSquareWebhookResults, type SquareImportEventRow } from "./recent-square-webhook-results";
 import { SquareTicketMappingControl } from "./square-ticket-mapping-control";
+import { SquareFinanceSyncControl } from "./square-finance-sync-control";
 
 export const runtime = "nodejs";
 
@@ -59,7 +60,7 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
   const environmentLabel = selectedEnvironment === "production" ? "Square Production" : "Square Sandbox";
   const supabase = createServiceRoleSupabaseClient();
   const [{ data: show }, { data: events }, { data: pendingCheckouts }] = await Promise.all([
-    supabase.from("shows").select("id, name, slug, square_catalog_variation_id").eq("slug", slug).maybeSingle(),
+    supabase.from("shows").select("id, name, slug, square_catalog_variation_id, square_finance_sync_enabled, square_finance_sync_started_at").eq("slug", slug).maybeSingle(),
     supabase
       .from("square_ticket_import_events")
       .select("id, event_id, event_type, payment_id, order_id, line_item_uid, catalog_variation_id, show_id, show_name, result, ticket_count, email_present, seat_link_created, email_sent, error_message, payload_summary, received_at, imported_at")
@@ -72,7 +73,7 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
       .limit(10),
   ]);
 
-  const typedShow = show as { id: string; name: string; slug: string; square_catalog_variation_id: string | null } | null;
+  const typedShow = show as { id: string; name: string; slug: string; square_catalog_variation_id: string | null; square_finance_sync_enabled: boolean; square_finance_sync_started_at: string | null } | null;
   const typedEvents = (events ?? []) as SquareImportEventRow[];
   const typedPendingCheckouts = (pendingCheckouts ?? []) as SquarePendingCheckoutRow[];
   const lastWebhookAt = typedEvents[0]?.received_at ?? null;
@@ -170,14 +171,22 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
           ) : null}
 
           {config && typedShow ? (
-            <SquareTicketMappingControl
-              slug={slug}
-              showId={typedShow.id}
-              showName={typedShow.name}
-              environment={config.environment}
-              options={catalogOptions}
-              currentMapping={currentMapping}
-            />
+            <>
+              <SquareFinanceSyncControl
+                slug={slug}
+                showId={typedShow.id}
+                enabled={typedShow.square_finance_sync_enabled}
+                startedAt={typedShow.square_finance_sync_started_at}
+              />
+              <SquareTicketMappingControl
+                slug={slug}
+                showId={typedShow.id}
+                showName={typedShow.name}
+                environment={config.environment}
+                options={catalogOptions}
+                currentMapping={currentMapping}
+              />
+            </>
           ) : (
             <section className="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-600 shadow-sm">
               Square ticket mapping is unavailable until the Square configuration and show are available.

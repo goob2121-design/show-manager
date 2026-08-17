@@ -21,6 +21,7 @@ import {
   markSquarePendingCheckoutError,
 } from "@/app/api/integrations/square/pending-checkouts";
 import { ingestExternalTicketSale, type IngestExternalTicketSaleResult } from "@/lib/ticket-ingestion";
+import { syncSquareGrossSaleFinance } from "@/lib/square-finance-sync";
 import {
   sendTrackedReservedSeatEmail,
   trackedEmailStateWasSent,
@@ -85,6 +86,7 @@ type WebhookProcessingStage =
   | "resolve_customer"
   | "map_show"
   | "ingest_ticket"
+  | "sync_finance"
   | "create_seat_link"
   | "send_email"
   | "record_event"
@@ -175,6 +177,27 @@ async function maybeSendImportedSeatEmail(
     error: emailResult.failed ? emailResult.error : null,
   };
 }
+
+async function maybeSyncImportedSquareFinance(
+  supabase: ReturnType<typeof createServiceRoleSupabaseClient>,
+  result: IngestExternalTicketSaleResult,
+  input: {
+    paymentStatus: string;
+    paymentId: string;
+    orderId: string;
+    lineItemUid: string;
+    amountCents: number | null;
+    currency: string | null;
+    occurredAt: string | null;
+  },
+) {
+  if (!["imported", "incomplete_customer", "duplicate"].includes(result.status)) return null;
+  return syncSquareGrossSaleFinance(supabase, {
+    showId: result.showId,
+    ...input,
+  });
+}
+
 export async function POST(request: Request) {
   const { config, missing, invalid } = getSquarePhase1Config();
   if (!config) {
@@ -335,6 +358,17 @@ export async function POST(request: Request) {
         payloadSummary: { eventType, paymentStatus, orderId, lineItemUid: matchingLineItem.uid ?? null, catalogVariationId: pendingCheckout.catalog_variation_id, quantity: pendingCheckout.ticket_count, ...pendingSummary },
       });
 
+      processingStage = "sync_finance";
+      await maybeSyncImportedSquareFinance(supabase, result, {
+        paymentStatus,
+        paymentId,
+        orderId,
+        lineItemUid: matchingLineItem.uid ?? pendingCheckout.id,
+        amountCents: typeof matchingLineItem.total_money?.amount === "number" ? matchingLineItem.total_money.amount : null,
+        currency: matchingLineItem.total_money?.currency ?? payment.amount_money?.currency ?? null,
+        occurredAt: payment.updated_at ?? payment.created_at ?? null,
+      });
+
       processingStage = "create_seat_link";
       await markSquarePendingCheckoutCompleted(supabase, pendingCheckout.id, { paymentId, orderId, importedTicketId: result.ticketId });
       processingStage = "send_email";
@@ -431,6 +465,16 @@ export async function POST(request: Request) {
 
       processingStage = "ingest_ticket";
       const result = await ingestExternalTicketSale(supabase, { source: "square", eventId: eventId ?? "unknown-event", paymentId, orderId, lineItemUid, catalogVariationId, purchaserName: purchaserDetails.purchaserName, purchaserEmail: purchaserDetails.purchaserEmail, quantity, amountPaid: typeof lineItem.total_money?.amount === "number" ? lineItem.total_money.amount / 100 : null, currency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null, paymentStatus, payloadSummary: { eventType, paymentStatus, orderId, lineItemUid, catalogVariationId, lineItemName: lineItem.name ?? null, quantity, amountCurrency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null, ...customerSummary } });
+      processingStage = "sync_finance";
+      await maybeSyncImportedSquareFinance(supabase, result, {
+        paymentStatus,
+        paymentId,
+        orderId,
+        lineItemUid,
+        amountCents: typeof lineItem.total_money?.amount === "number" ? lineItem.total_money.amount : null,
+        currency: lineItem.total_money?.currency ?? payment.amount_money?.currency ?? null,
+        occurredAt: payment.updated_at ?? payment.created_at ?? null,
+      });
       processingStage = "create_seat_link";
       processingStage = "send_email";
       const emailDelivery = await maybeSendImportedSeatEmail(supabase, result, config.environment);
