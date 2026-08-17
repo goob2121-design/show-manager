@@ -56,8 +56,18 @@ function formatDateTime(value: string | null) {
 export default async function SquareIntegrationStatusPage({ params }: PageProps) {
   const { slug } = await params;
   const { config, missing, invalid } = getSquareConfig();
-  const selectedEnvironment = config?.environment ?? (process.env.SQUARE_ENVIRONMENT?.trim().toLowerCase() === "production" ? "production" : "sandbox");
+  const rawEnvironment = process.env.SQUARE_ENVIRONMENT?.trim().toLowerCase();
+  const normalizedEnvironment = rawEnvironment === "sandbox" || rawEnvironment === "production" ? rawEnvironment : null;
+  const selectedEnvironment = config?.environment ?? (rawEnvironment === "production" ? "production" : "sandbox");
   const environmentLabel = selectedEnvironment === "production" ? "Square Production" : "Square Sandbox";
+  const webhookConfigured =
+    normalizedEnvironment !== null &&
+    !missing.some(
+      (variableName) =>
+        variableName.endsWith("_SIGNATURE_KEY") ||
+        variableName.endsWith("_WEBHOOK_NOTIFICATION_URL"),
+    ) &&
+    invalid.length === 0;
   const supabase = createServiceRoleSupabaseClient();
   const [{ data: show }, { data: events }, { data: pendingCheckouts }] = await Promise.all([
     supabase.from("shows").select("id, name, slug, square_catalog_variation_id, square_finance_sync_enabled, square_finance_sync_started_at").eq("slug", slug).maybeSingle(),
@@ -74,6 +84,8 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
   ]);
 
   const typedShow = show as { id: string; name: string; slug: string; square_catalog_variation_id: string | null; square_finance_sync_enabled: boolean; square_finance_sync_started_at: string | null } | null;
+  const ticketMappingConnected = Boolean(typedShow?.square_catalog_variation_id?.trim());
+  const financeSyncEnabled = typedShow?.square_finance_sync_enabled === true;
   const typedEvents = (events ?? []) as SquareImportEventRow[];
   const typedPendingCheckouts = (pendingCheckouts ?? []) as SquarePendingCheckoutRow[];
   const lastWebhookAt = typedEvents[0]?.received_at ?? null;
@@ -151,6 +163,39 @@ export default async function SquareIntegrationStatusPage({ params }: PageProps)
               <Link href={`/admin/${encodeURIComponent(slug)}`} className="inline-flex rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100">Back to Admin</Link>
             </div>
           </div>
+
+          <section aria-label="Square integration health" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${normalizedEnvironment ? "bg-emerald-500" : "bg-rose-500"}`} />
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Environment</p>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-stone-800">
+                {normalizedEnvironment === "production" ? "Production" : normalizedEnvironment === "sandbox" ? "Sandbox" : "Not configured"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${webhookConfigured ? "bg-emerald-500" : "bg-rose-500"}`} />
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Webhook</p>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-stone-800">{webhookConfigured ? "Configured" : "Not configured"}</p>
+            </div>
+            <div className="rounded-xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${ticketMappingConnected ? "bg-emerald-500" : "bg-amber-400"}`} />
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Ticket Mapping</p>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-stone-800">{ticketMappingConnected ? "Connected" : "Not connected"}</p>
+            </div>
+            <div className="rounded-xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${financeSyncEnabled ? "bg-emerald-500" : "bg-amber-400"}`} />
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">Finance Sync</p>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-stone-800">{financeSyncEnabled ? "Enabled" : "Disabled"}</p>
+            </div>
+          </section>
 
           {selectedEnvironment === "sandbox" ? <CreateSandboxCheckoutLinkButton slug={slug} /> : null}
           {config?.environment === "sandbox" ? <DebugLatestImportButton paymentId={latestImportEvent?.payment_id ?? null} orderId={latestImportEvent?.order_id ?? null} /> : null}
