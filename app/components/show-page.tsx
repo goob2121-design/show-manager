@@ -17379,6 +17379,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   {tab.label}
                 </button>
               ))}
+              <Link
+                href={`/admin/${encodeURIComponent(showSlug)}/performance-setup`}
+                role="tab"
+                aria-selected={false}
+                className="flex flex-1 items-center justify-center rounded-xl px-5 py-2.5 text-center text-sm font-semibold text-stone-600 transition hover:text-stone-900 sm:flex-none"
+              >
+                Performance Setup
+              </Link>
             </div>
           </section>
         ) : null}
@@ -17940,14 +17948,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                         : "Sync Rehearsal to Setlist"}
                     </button>
                   ) : null}
-                  {show?.slug ? (
-                    <Link
-                      href={`/band/${encodeURIComponent(show.slug)}/live`}
-                      className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 sm:w-auto"
-                    >
-                      Live Mode
-                    </Link>
-                  ) : null}
                 </div>
                 <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
                   <button
@@ -17980,14 +17980,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   >
                     {copiedRehearsalLink ? "Rehearsal link copied!" : "Copy Rehearsal Link"}
                   </button>
-                  {canManageBandRehearsal && show?.slug ? (
-                    <Link
-                      href={`/admin/${encodeURIComponent(show.slug)}/performance-setup`}
-                      className="inline-flex w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                    >
-                      Performance Setup
-                    </Link>
-                  ) : null}
                 </div>
               </div>
             </div>

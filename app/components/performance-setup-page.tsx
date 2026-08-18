@@ -187,7 +187,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
             <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600 dark:text-slate-300">Prepare Live Mode automation, lyrics, intros, and scrolling for the full show.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={`/admin/${encodeURIComponent(showSlug)}?tab=rehearsal`} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Rehearsal</Link>
+            <Link href={`/admin/${encodeURIComponent(showSlug)}?tab=music-setlist`} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Music &amp; Setlist</Link>
             <Link href={`/band/${encodeURIComponent(showSlug)}/live`} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-500/15 dark:text-emerald-100">Live Mode</Link>
           </div>
         </header>

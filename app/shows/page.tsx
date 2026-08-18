@@ -2589,7 +2589,7 @@ export default function ShowsDashboardPage() {
                             </div>
                           </div>
 
-                          <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:min-w-[320px]">
+                          <div className="grid w-full gap-2 sm:grid-cols-3 lg:w-auto lg:min-w-[520px]">
                             <Link
                               href={`/admin/${currentShow.slug}/door`}
                               aria-label={`Open Door Mode for ${currentShow.name}`}
@@ -2604,6 +2604,19 @@ export default function ShowsDashboardPage() {
                               </span>
                               <span className="ml-auto text-xl text-emerald-100 transition group-hover:translate-x-0.5" aria-hidden="true">
                                 &rarr;
+                              </span>
+                            </Link>
+                            <Link
+                              href={`/band/${currentShow.slug}/live`}
+                              aria-label={`Open Live Mode for ${currentShow.name}`}
+                              className="group flex min-h-16 w-full items-center gap-3 rounded-2xl border border-[rgba(255,255,255,0.10)] bg-[#1f1f1f] px-4 py-3 text-left text-white transition hover:bg-[rgba(255,255,255,0.09)]"
+                            >
+                              <DashboardIcon className="h-10 w-10 rounded-xl bg-white/5">
+                                <MicrophoneIcon />
+                              </DashboardIcon>
+                              <span className="min-w-0">
+                                <span className="block text-base font-semibold">Live Mode</span>
+                                <span className="block text-sm text-stone-300">Run the Show</span>
                               </span>
                             </Link>
                             <Link
