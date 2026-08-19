@@ -2749,6 +2749,146 @@ function getChecklistDueStatus(item: ShowChecklistItem) {
   return null;
 }
 
+function buildCurrentShowFinanceSummaryHtml({
+  showName,
+  showDate,
+  totalIncome,
+  totalExpenses,
+  netProfit,
+  profitMargin,
+  printedAt,
+}: {
+  showName: string;
+  showDate: string | null;
+  totalIncome: number;
+  totalExpenses: number;
+  netProfit: number;
+  profitMargin: string | null;
+  printedAt: Date;
+}) {
+  const printedAtLabel = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(printedAt);
+  const summaryRows = [
+    { label: "Total Income", value: formatCurrency(totalIncome) },
+    { label: "Total Expenses", value: formatCurrency(totalExpenses) },
+    { label: "Net Profit / Loss", value: formatCurrency(netProfit), isNet: true },
+    { label: "Overhead / Expenses", value: formatCurrency(totalExpenses) },
+    { label: "Profit Margin", value: profitMargin ?? "N/A" },
+  ];
+
+  return `<!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(`${showName} - Current Show Finance Summary`)}</title>
+        <style>
+          @page { size: letter; margin: 0.65in; }
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            background: #ffffff;
+            color: #171717;
+            font-family: "Segoe UI", Arial, sans-serif;
+          }
+          .sheet {
+            min-height: 9.7in;
+            display: flex;
+            flex-direction: column;
+          }
+          .brand {
+            margin: 0;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+          }
+          header {
+            padding-bottom: 24px;
+            border-bottom: 2px solid #171717;
+          }
+          h1 {
+            margin: 12px 0 0;
+            font-size: 30px;
+            line-height: 1.15;
+          }
+          .show-meta {
+            margin-top: 12px;
+            display: grid;
+            gap: 4px;
+            font-size: 15px;
+            color: #444444;
+          }
+          .show-meta p { margin: 0; }
+          .summary {
+            margin-top: 30px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+          }
+          .summary-card {
+            min-height: 108px;
+            padding: 18px;
+            border: 1px solid #a3a3a3;
+            border-radius: 10px;
+            background: #ffffff;
+            break-inside: avoid;
+          }
+          .summary-card.net { grid-column: 1 / -1; }
+          .summary-label {
+            margin: 0;
+            color: #525252;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+          }
+          .summary-value {
+            margin: 14px 0 0;
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 1;
+          }
+          .net-negative { color: #7f1d1d; }
+          footer {
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 1px solid #d4d4d4;
+            color: #737373;
+            font-size: 10px;
+          }
+          @media print {
+            html, body { width: 100%; }
+            .sheet { min-height: 9.7in; }
+          }
+        </style>
+      </head>
+      <body>
+        <main class="sheet">
+          <header>
+            <p class="brand">Cumberland Mountain Music Show / StageFlow</p>
+            <h1>Current Show Finance Summary</h1>
+            <div class="show-meta">
+              <p><strong>${escapeHtml(showName)}</strong></p>
+              <p>${escapeHtml(formatShowDate(showDate))}</p>
+            </div>
+          </header>
+          <section class="summary" aria-label="Current show financial totals">
+            ${summaryRows.map((row) => `
+              <article class="summary-card${row.isNet ? " net" : ""}">
+                <p class="summary-label">${escapeHtml(row.label)}</p>
+                <p class="summary-value${row.isNet && netProfit < 0 ? " net-negative" : ""}">${escapeHtml(row.value)}</p>
+              </article>
+            `).join("")}
+          </section>
+          <footer>Printed: ${escapeHtml(printedAtLabel)}</footer>
+        </main>
+      </body>
+    </html>`;
+}
+
 function buildFinanceReportHtml({
   showName,
   showDate,
@@ -9079,6 +9219,19 @@ export function ShowPage({
     if (document.readyState === "complete") {
       triggerPrint();
     }
+  }
+
+  function handlePrintCurrentShowFinanceSummary() {
+    const printHtml = buildCurrentShowFinanceSummaryHtml({
+      showName: show?.name ?? "Show",
+      showDate: show?.show_date ?? null,
+      totalIncome,
+      totalExpenses,
+      netProfit,
+      profitMargin,
+      printedAt: new Date(),
+    });
+    openPrintDocumentWindow(printHtml);
   }
 
   const loadShowData = useCallback(
@@ -21946,11 +22099,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   ) : null}
                 </section>
 
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-lg font-semibold text-stone-900">Current Show Finance</h3>
-                  <p className="text-sm text-stone-600">
-                    Income and expenses below apply only to this show.
-                  </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-lg font-semibold text-stone-900">Current Show Finance</h3>
+                    <p className="text-sm text-stone-600">
+                      Income and expenses below apply only to this show.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handlePrintCurrentShowFinanceSummary}
+                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
+                  >
+                    Print Show Summary
+                  </button>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
