@@ -47,10 +47,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: "Webhook payload is missing data.email_id." }, { status: 400 });
   }
 
-  const { data: links, error: linksError } = await supabase
-    .from("show_reserved_seating_links")
-    .select("id")
+  const { data: deliveries, error: deliveriesError } = await supabase
+    .from("reserved_seat_email_deliveries")
+    .select("id,reserved_seating_link_id")
     .eq("resend_email_id", resendEmailId);
+
+  if (deliveriesError) {
+    console.error("Resend webhook delivery lookup failed.", { message: deliveriesError.message, emailId: resendEmailId, type: event.type });
+    return NextResponse.json({ success: false, error: "Unable to match webhook event." }, { status: 500 });
+  }
+
+  if ((deliveries ?? []).length > 1) {
+    console.error("Resend webhook found multiple delivery matches for one email ID.", { emailId: resendEmailId, type: event.type, matchCount: deliveries?.length ?? 0 });
+    return NextResponse.json({ success: true, matched: false });
+  }
+
+  const delivery = deliveries?.[0] ?? null;
+  const { data: links, error: linksError } = delivery
+    ? { data: delivery.reserved_seating_link_id ? [{ id: delivery.reserved_seating_link_id }] : [], error: null }
+    : await supabase.from("show_reserved_seating_links").select("id").eq("resend_email_id", resendEmailId);
 
   if (linksError) {
     console.error("Resend webhook link lookup failed.", {
@@ -88,6 +103,7 @@ export async function POST(request: Request) {
     .insert({
       resend_email_id: resendEmailId,
       reserved_seating_link_id: links[0].id,
+      email_delivery_id: delivery?.id ?? null,
       event_type: event.type,
       event_created_at: event.created_at,
       recipient: event.data.to[0] ?? null,

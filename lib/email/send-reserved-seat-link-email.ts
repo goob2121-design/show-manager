@@ -60,10 +60,72 @@ function deliveryFlags(state: TrackedEmailDeliveryState) {
   };
 }
 
+async function recordInitialOrResentDelivery(input: {
+  supabase: SupabaseClient;
+  link: EmailLinkRow;
+  resendEmailId: string;
+  sentAt: string;
+  isAdminResend: boolean;
+  requestedSource: "square_import" | "admin_single";
+}) {
+  const baseRow = {
+    show_id: input.link.show_id,
+    reserved_seating_link_id: input.link.id,
+    recipient: input.link.email?.trim() || "unknown@invalid.local",
+    subject: "Select Your Reserved Seats - The Cumberland Mountain Music Show",
+    resend_email_id: input.resendEmailId,
+    requested_source: input.requestedSource,
+    send_status: "accepted",
+    sent_at: input.sentAt,
+  };
+
+  if (!input.isAdminResend) {
+    return input.supabase.from("reserved_seat_email_deliveries").insert({
+      ...baseRow,
+      email_type: "reserved_seat_initial",
+      sequence_number: 0,
+      provider_idempotency_key: `initial-${input.link.id}`,
+      request_id: `initial-${input.link.id}`,
+    });
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { data: latest, error: latestError } = await input.supabase
+      .from("reserved_seat_email_deliveries")
+      .select("sequence_number")
+      .eq("reserved_seating_link_id", input.link.id)
+      .eq("email_type", "reserved_seat_resend")
+      .order("sequence_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestError) return { error: latestError };
+
+    const sequenceNumber = Math.max(0, Number(latest?.sequence_number ?? 0)) + 1;
+    const insertResult = await input.supabase.from("reserved_seat_email_deliveries").insert({
+      ...baseRow,
+      email_type: "reserved_seat_resend",
+      sequence_number: sequenceNumber,
+      provider_idempotency_key: `resend-${input.resendEmailId}`,
+      request_id: `resend-${input.resendEmailId}`,
+    });
+    if (!insertResult.error) return insertResult;
+    if (insertResult.error.code !== "23505") return insertResult;
+
+    const { data: existing, error: existingError } = await input.supabase
+      .from("reserved_seat_email_deliveries")
+      .select("id")
+      .eq("resend_email_id", input.resendEmailId)
+      .maybeSingle();
+    if (existingError || existing) return { error: existingError };
+  }
+
+  return { error: { code: "sequence_conflict", message: "Unable to allocate resend delivery sequence." } };
+}
+
 export async function sendTrackedReservedSeatEmail(
   supabase: SupabaseClient,
   linkId: string,
-  options: { allowResend?: boolean } = {},
+  options: { allowResend?: boolean; requestedSource?: "square_import" | "admin_single" } = {},
 ): Promise<ReservedSeatEmailResult & ReturnType<typeof deliveryFlags> & { sentAt: string | null }> {
   const { data: linkData, error: linkError } = await supabase.from("show_reserved_seating_links").select("id,show_id,customer_name,email,ticket_count,selection_token,scan_token,sent_at,resend_email_id,email_attempt_count,seat_category").eq("id", linkId).maybeSingle();
   if (linkError) throw linkError;
@@ -166,5 +228,20 @@ export async function sendTrackedReservedSeatEmail(
   if (sendClaim) trackingUpdate = trackingUpdate.eq("resend_email_id", sendClaim);
   const { error: trackingError } = await trackingUpdate;
   if (trackingError) throw trackingError;
+  // Delivery history is additive. A history-write failure must never turn a
+  // successfully delivered customer email into a failed Square import.
+  if (result.resendId) {
+    const { error: historyError } = await recordInitialOrResentDelivery({
+      supabase,
+      link,
+      resendEmailId: result.resendId,
+      sentAt,
+      isAdminResend: options.allowResend === true,
+      requestedSource: options.requestedSource ?? "square_import",
+    });
+    if (historyError && historyError.code !== "23505") {
+      console.error("Reserved-seat email history insert failed", historyError);
+    }
+  }
   return { ...result, sentAt, ...deliveryFlags("sent_now") };
 }

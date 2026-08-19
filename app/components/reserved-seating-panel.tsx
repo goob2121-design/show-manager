@@ -26,6 +26,7 @@ import {
 } from "@/lib/reserved-seat-generated-message";
 import { tryGenerateReservationScanToken } from "@/lib/reservation-scan-tokens";
 import { getOfficialTicketReadiness } from "@/lib/official-ticket-readiness";
+import { getReservedSeatReminderEligibility } from "@/lib/reserved-seat-reminder-eligibility";
 import { createClient } from "@/lib/supabase/client";
 import type { ReservedSeatCategory, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -68,10 +69,22 @@ type LinkWithSeats = ShowReservedSeatingLink & {
 
 type CopyFeedbackTarget = "subject" | "body" | "link" | null;
 type ReservedSeatListFilter = "all" | "auto_assign" | ReservedSeatCategory;
+type ReservedSeatEmailDeliveryStatus = ReservedSeatEmailTrackingSummary & {
+  id: string;
+  emailType: "reserved_seat_initial" | "reserved_seat_resend" | "reserved_seat_reminder";
+  sequenceNumber: number;
+  label: string;
+  subject: string;
+  sendStatus: string;
+  sentAt: string | null;
+  failedAt: string | null;
+  errorMessage: string | null;
+};
 type ReservedSeatEmailStatus = ReservedSeatEmailTrackingSummary & {
   reservedSeatingLinkId: string;
   attempts: number;
   lastEmailError: string | null;
+  deliveries: ReservedSeatEmailDeliveryStatus[];
 };
 
 const initialLinkFormState: LinkFormState = {
@@ -236,6 +249,7 @@ export function ReservedSeatingPanel({
   const [emailTrackingRequestState, setEmailTrackingRequestState] = useState<ReservedSeatEmailTrackingRequestState>("loading");
   const [ticketCodeActionId, setTicketCodeActionId] = useState<string | null>(null);
   const [postAssignmentPromptLinkId, setPostAssignmentPromptLinkId] = useState<string | null>(null);
+  const [showBulkReminderConfirmation, setShowBulkReminderConfirmation] = useState(false);
   const supabase = useMemo(() => createClient(), []);
 
   async function loadReservedSeatEmailStatuses(nextLinks: ShowReservedSeatingLink[]) {
@@ -485,6 +499,21 @@ export function ReservedSeatingPanel({
   const missingTicketCodeCount = useMemo(
     () => linksWithSeats.filter((link) => !link.scan_token).length,
     [linksWithSeats],
+  );
+  const reminderEligibilityByLink = useMemo(() => Object.fromEntries(linksWithSeats.map((link) => [
+    link.id,
+    getReservedSeatReminderEligibility({
+      ticketCount: link.ticket_count,
+      assignedCustomerSeatCount: link.seatIds.length,
+      email: link.email,
+      selectionToken: link.selection_token,
+      submittedAt: link.submitted_at,
+      isReservedSeating: true,
+    }),
+  ])), [linksWithSeats]);
+  const bulkReminderEligibleCount = useMemo(
+    () => Object.values(reminderEligibilityByLink).filter((eligibility) => eligibility.eligible).length,
+    [reminderEligibilityByLink],
   );
 
   const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
@@ -902,6 +931,58 @@ export function ReservedSeatingPanel({
     }
   }
 
+  async function handleSendReminder(link: LinkWithSeats) {
+    setActiveActionId(`reminder-${link.id}`);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const response = await fetch(`/api/admin/shows/${showId}/reserved-seat-reminders`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "single", slug: showSlug, reservationId: link.id, requestId: crypto.randomUUID() }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; result?: { sequenceNumber?: number } };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to send the reminder.");
+      setStatusMessage(`Reminder #${payload.result?.sequenceNumber ?? ""} sent to ${link.customer_name}.`);
+      await loadReservedSeatEmailStatuses(links);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to send the reminder."));
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
+  async function handleSendBulkReminders() {
+    setShowBulkReminderConfirmation(false);
+    setActiveActionId("bulk-reminders");
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const response = await fetch(`/api/admin/shows/${showId}/reserved-seat-reminders`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bulk", slug: showSlug, bulkOperationId: crypto.randomUUID() }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; summary?: Record<string, number> };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to send reminders.");
+      const sent = payload.summary?.sent ?? 0;
+      const already = payload.summary?.already_processed ?? 0;
+      const failed = payload.summary?.failed ?? 0;
+      const skipped = Object.entries(payload.summary ?? {}).reduce(
+        (count, [key, value]) => count + (["sent", "already_processed", "failed"].includes(key) ? 0 : value),
+        0,
+      );
+      setStatusMessage(`Reminders complete: ${sent} sent, ${already} already processed, ${skipped} skipped, ${failed} failed.`);
+      await loadReservedSeatEmailStatuses(links);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to send reminders."));
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
   return (
     <section className="overflow-hidden rounded-[1.9rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.12),_transparent_24%),linear-gradient(180deg,_#0a1627,_#070f1c_58%,_#050913)] p-4 text-slate-100 shadow-[0_24px_54px_rgba(2,6,23,0.42)] sm:p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -912,6 +993,14 @@ export function ReservedSeatingPanel({
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => setShowBulkReminderConfirmation(true)}
+            disabled={bulkReminderEligibleCount === 0 || activeActionId === "bulk-reminders"}
+            className="inline-flex items-center justify-center rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {activeActionId === "bulk-reminders" ? "Sending Reminders..." : `Send Reminders to All Without Seats (${bulkReminderEligibleCount})`}
+          </button>
           <AdminBackButton
             fallbackHref={`/admin/${showSlug}`}
             onBeforeNavigate={onCompAssignmentCancel}
@@ -1327,10 +1416,14 @@ export function ReservedSeatingPanel({
               const isManualAssigning = manualAssignLinkId === link.id;
               const linkSeatCategory = normalizeReservedSeatCategory(link.seat_category, link.is_complimentary);
               const emailStatus = emailStatuses[link.id];
+              const latestDelivery = emailStatus?.deliveries?.length
+                ? emailStatus.deliveries[emailStatus.deliveries.length - 1]
+                : null;
               const emailStatusDisplay = getReservedSeatEmailStatusDisplayModel({
-                emailStatus,
+                emailStatus: latestDelivery ?? emailStatus,
                 requestState: emailTrackingRequestState,
               });
+              const reminderEligibility = reminderEligibilityByLink[link.id];
               const emailStatusToneClasses = getEmailStatusToneClasses(emailStatusDisplay.statusTone);
               const officialTicketReadiness = getOfficialTicketReadiness(link.ticket_emailed_at);
               return (
@@ -1410,6 +1503,38 @@ export function ReservedSeatingPanel({
                       {link.source_note?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.source_note}</p> : null}
                       <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 px-3 py-3" aria-live="polite">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Email Status</p>
+                        {emailStatus?.deliveries?.length ? (
+                          <div className="mt-2 space-y-2" aria-label="Reserved-seat email delivery history">
+                            {emailStatus.deliveries.map((delivery) => {
+                              const deliveryDisplay = getReservedSeatEmailStatusDisplayModel({
+                                emailStatus: delivery,
+                                requestState: "loaded",
+                              });
+                              const deliveryTone = getEmailStatusToneClasses(deliveryDisplay.statusTone);
+                              return (
+                                <div key={delivery.id} className={`rounded-lg border-l-2 px-3 py-2 ${deliveryTone}`}>
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-xs font-bold text-white">{delivery.label}</p>
+                                    <p className="text-xs font-semibold">{deliveryDisplay.prominentLabel}</p>
+                                  </div>
+                                  {(delivery.sentAt ?? deliveryDisplay.prominentTimestamp) ? (
+                                    <time className="mt-1 block text-[11px] opacity-80" dateTime={delivery.sentAt ?? deliveryDisplay.prominentTimestamp ?? undefined}>
+                                      {formatReservedSeatEmailTimestamp(delivery.sentAt ?? deliveryDisplay.prominentTimestamp)}
+                                    </time>
+                                  ) : null}
+                                  {delivery.errorMessage ? <p className="mt-1 text-xs text-rose-200">{delivery.errorMessage}</p> : null}
+                                  {deliveryDisplay.showHistory ? (
+                                    <p className="mt-1 text-[11px] opacity-80">
+                                      {deliveryDisplay.history.map((entry) => entry.label).join(" / ")}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        {!emailStatus?.deliveries?.length ? (
+                          <>
                         <div className={`mt-2 rounded-lg border-l-2 px-3 py-2 ${emailStatusToneClasses}`}>
                           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-75">Latest Activity</p>
                           <p className="mt-1 flex items-center gap-2 text-sm font-semibold">
@@ -1467,6 +1592,8 @@ export function ReservedSeatingPanel({
                           >
                             Retry
                           </button>
+                        ) : null}
+                          </>
                         ) : null}
                         <p className="mt-2 text-xs text-slate-400">Attempts: {emailStatus?.attempts ?? link.email_attempt_count ?? 0}</p>
                         {emailStatus?.prominentLabel === "Tracking unavailable" && link.sent_at ? (
@@ -1531,6 +1658,22 @@ export function ReservedSeatingPanel({
                       >
                         Generate Message
                       </button>
+                      {reminderEligibility?.eligible ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleSendReminder(link)}
+                          disabled={activeActionId === `reminder-${link.id}`}
+                          className="rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {activeActionId === `reminder-${link.id}` ? "Sending Reminder..." : "Send Reminder"}
+                        </button>
+                      ) : reminderEligibility?.reason === "partial_assignment" ? (
+                        <span className="rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-2.5 text-sm font-semibold text-amber-100">Needs Attention - Partial Assignment</span>
+                      ) : reminderEligibility?.reason === "complete" || reminderEligibility?.reason === "completed_selection" ? (
+                        <span className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-100">Seats Complete</span>
+                      ) : reminderEligibility?.reason === "missing_email" ? (
+                        <span className="rounded-xl border border-slate-400/25 bg-white/[0.04] px-4 py-2.5 text-sm font-semibold text-slate-300">Cannot remind - Missing email</span>
+                      ) : null}
                       {link.email?.trim() ? (
                         <button
                           type="button"
@@ -1609,6 +1752,23 @@ export function ReservedSeatingPanel({
           </div>
         )}
       </div>
+      {showBulkReminderConfirmation ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="bulk-reminder-title">
+          <div className="w-full max-w-lg rounded-3xl border border-white/12 bg-[#0b1627] p-6 text-slate-100 shadow-2xl">
+            <h2 id="bulk-reminder-title" className="text-2xl font-black text-white">Send Seat-Selection Reminders?</h2>
+            <p className="mt-4 text-slate-200">
+              Send seat-selection reminders to {bulkReminderEligibleCount} customer{bulkReminderEligibleCount === 1 ? "" : "s"} who still need to select their seats?
+            </p>
+            <p className="mt-2 text-sm text-slate-400">StageFlow will check every reservation again immediately before sending.</p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => void handleSendBulkReminders()} className="rounded-xl bg-sky-600 px-4 py-3 font-bold text-white hover:bg-sky-500">
+                Send {bulkReminderEligibleCount} Reminder{bulkReminderEligibleCount === 1 ? "" : "s"}
+              </button>
+              <button type="button" onClick={() => setShowBulkReminderConfirmation(false)} className="rounded-xl border border-white/15 bg-white/[0.06] px-4 py-3 font-semibold text-white hover:bg-white/[0.1]">Cancel</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {postAssignmentPromptLink && !postAssignmentPromptLink.ticket_emailed_at ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="seats-assigned-title">
           <div className="w-full max-w-md rounded-3xl border border-white/12 bg-[#0b1627] p-6 text-slate-100 shadow-2xl">

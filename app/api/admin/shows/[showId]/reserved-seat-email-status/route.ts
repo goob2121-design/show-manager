@@ -63,39 +63,81 @@ export async function GET(request: Request, context: ReservedSeatEmailStatusRout
     }
 
     const linkIds = (links ?? []).map((link) => link.id);
-    const { data: events, error: eventsError } = linkIds.length > 0
-      ? await supabase
-        .from("reserved_seat_email_events")
-        .select("id,resend_email_id,reserved_seating_link_id,event_type,event_created_at,received_at,recipient,click_target,raw_event_id")
-        .in("reserved_seating_link_id", linkIds)
-        .order("event_created_at", { ascending: true })
-      : { data: [], error: null };
+    const [{ data: deliveries, error: deliveriesError }, { data: events, error: eventsError }] = await Promise.all([
+      supabase.from("reserved_seat_email_deliveries").select("id,reserved_seating_link_id,email_type,sequence_number,subject,resend_email_id,send_status,sent_at,failed_at,error_message,created_at").eq("show_id", accessResult.showId).order("created_at", { ascending: true }),
+      linkIds.length > 0
+        ? supabase.from("reserved_seat_email_events").select("id,resend_email_id,reserved_seating_link_id,email_delivery_id,event_type,event_created_at,received_at,recipient,click_target,raw_event_id").in("reserved_seating_link_id", linkIds).order("event_created_at", { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (deliveriesError) throw deliveriesError;
+    if (eventsError) throw eventsError;
 
-    if (eventsError) {
-      throw eventsError;
+    type EventWithDelivery = ReservedSeatEmailEventRecord & { email_delivery_id: string | null };
+    const eventMap = new Map<string, EventWithDelivery[]>();
+    const deliveryEventMap = new Map<string, EventWithDelivery[]>();
+    for (const event of (events ?? []) as EventWithDelivery[]) {
+      if (event.reserved_seating_link_id) {
+        const list = eventMap.get(event.reserved_seating_link_id) ?? [];
+        list.push(event);
+        eventMap.set(event.reserved_seating_link_id, list);
+      }
+      if (event.email_delivery_id) {
+        const list = deliveryEventMap.get(event.email_delivery_id) ?? [];
+        list.push(event);
+        deliveryEventMap.set(event.email_delivery_id, list);
+      }
     }
 
-    const eventMap = new Map<string, ReservedSeatEmailEventRecord[]>();
-    for (const event of (events ?? []) as ReservedSeatEmailEventRecord[]) {
-      const linkId = event.reserved_seating_link_id;
-      if (!linkId) continue;
-      const list = eventMap.get(linkId) ?? [];
-      list.push(event);
-      eventMap.set(linkId, list);
+    const deliveriesByLink = new Map<string, NonNullable<typeof deliveries>>();
+    for (const delivery of deliveries ?? []) {
+      if (!delivery.reserved_seating_link_id) continue;
+      const list = deliveriesByLink.get(delivery.reserved_seating_link_id) ?? [];
+      list.push(delivery);
+      deliveriesByLink.set(delivery.reserved_seating_link_id, list);
     }
 
     return NextResponse.json({
       success: true,
-      statuses: (links ?? []).map((link) => ({
-        reservedSeatingLinkId: link.id,
-        attempts: link.email_attempt_count ?? 0,
-        lastEmailError: link.last_email_error ?? null,
-        ...deriveReservedSeatEmailTrackingSummary({
-          sentAt: link.sent_at ?? null,
-          resendEmailId: link.resend_email_id ?? null,
-          events: eventMap.get(link.id) ?? [],
-        }),
-      })),
+      statuses: (links ?? []).map((link) => {
+        const allEvents = eventMap.get(link.id) ?? [];
+        const deliveryHistory = (deliveriesByLink.get(link.id) ?? []).map((delivery) => ({
+          id: delivery.id,
+          emailType: delivery.email_type,
+          sequenceNumber: delivery.sequence_number,
+          label: delivery.email_type === "reserved_seat_initial"
+            ? "Original Email"
+            : delivery.email_type === "reserved_seat_resend"
+              ? `Resent Original #${delivery.sequence_number}`
+              : `Reminder #${delivery.sequence_number}`,
+          subject: delivery.subject,
+          sendStatus: delivery.send_status,
+          sentAt: delivery.sent_at,
+          failedAt: delivery.failed_at,
+          errorMessage: delivery.error_message,
+          ...deriveReservedSeatEmailTrackingSummary({ sentAt: delivery.sent_at, resendEmailId: delivery.resend_email_id, events: deliveryEventMap.get(delivery.id) ?? [] }),
+        }));
+        if (!deliveryHistory.some((delivery) => delivery.emailType === "reserved_seat_initial") && (link.sent_at || link.resend_email_id)) {
+          deliveryHistory.unshift({
+            id: `legacy-${link.id}`,
+            emailType: "reserved_seat_initial",
+            sequenceNumber: 0,
+            label: "Original Email",
+            subject: "Select Your Reserved Seats - The Cumberland Mountain Music Show",
+            sendStatus: "accepted",
+            sentAt: link.sent_at,
+            failedAt: null,
+            errorMessage: link.last_email_error,
+            ...deriveReservedSeatEmailTrackingSummary({ sentAt: link.sent_at, resendEmailId: link.resend_email_id, events: allEvents.filter((event) => event.email_delivery_id === null) }),
+          });
+        }
+        return {
+          reservedSeatingLinkId: link.id,
+          attempts: link.email_attempt_count ?? 0,
+          lastEmailError: link.last_email_error ?? null,
+          deliveries: deliveryHistory,
+          ...deriveReservedSeatEmailTrackingSummary({ sentAt: link.sent_at ?? null, resendEmailId: link.resend_email_id ?? null, events: allEvents }),
+        };
+      }),
     });
   } catch (error) {
     console.error("Reserved-seat email status lookup failed.", {

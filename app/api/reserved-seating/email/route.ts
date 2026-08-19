@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const { data: link } = await supabase.from("show_reserved_seating_links").select("show_id").eq("id", linkId).maybeSingle();
     if (!show || !link || show.id !== link.show_id) return NextResponse.json({ success: false, error: "Reserved seating link was not found for this show." }, { status: 404 });
 
-    const result = await sendTrackedReservedSeatEmail(supabase, linkId, { allowResend: body.resend === true });
+    const result = await sendTrackedReservedSeatEmail(supabase, linkId, { allowResend: body.resend === true, requestedSource: "admin_single" });
     return NextResponse.json(result, { status: result.success ? 200 : 502 });
   } catch (error) {
     console.error("Reserved-seat email route failed.", { message: error instanceof Error ? error.message : "Unknown error" });
