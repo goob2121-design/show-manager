@@ -2757,6 +2757,8 @@ function buildCurrentShowFinanceSummaryHtml({
   netProfit,
   profitMargin,
   printedAt,
+  incomeItems,
+  expenseItems,
 }: {
   showName: string;
   showDate: string | null;
@@ -2765,6 +2767,8 @@ function buildCurrentShowFinanceSummaryHtml({
   netProfit: number;
   profitMargin: string | null;
   printedAt: Date;
+  incomeItems: ShowFinanceItem[];
+  expenseItems: ShowFinanceItem[];
 }) {
   const printedAtLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
@@ -2777,6 +2781,16 @@ function buildCurrentShowFinanceSummaryHtml({
     { label: "Overhead / Expenses", value: formatCurrency(totalExpenses) },
     { label: "Profit Margin", value: profitMargin ?? "N/A" },
   ];
+  const buildLineItemRows = (items: ShowFinanceItem[]) =>
+    items.length === 0
+      ? `<tr><td colspan="3" class="empty">No items added.</td></tr>`
+      : items.map((item) => `
+          <tr>
+            <td>${escapeHtml(item.label)}</td>
+            <td>${escapeHtml(item.category ?? "Uncategorized")}</td>
+            <td class="amount">${escapeHtml(formatCurrency(item.amount))}</td>
+          </tr>
+        `).join("");
 
   return `<!doctype html>
     <html lang="en">
@@ -2785,7 +2799,7 @@ function buildCurrentShowFinanceSummaryHtml({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${escapeHtml(`${showName} - Current Show Finance Summary`)}</title>
         <style>
-          @page { size: letter; margin: 0.65in; }
+          @page { size: letter; margin: 0.5in; }
           * { box-sizing: border-box; }
           body {
             margin: 0;
@@ -2852,6 +2866,47 @@ function buildCurrentShowFinanceSummaryHtml({
             line-height: 1;
           }
           .net-negative { color: #7f1d1d; }
+          .line-items { margin-top: 28px; }
+          .line-items h2 {
+            margin: 0 0 10px;
+            font-size: 15px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+          }
+          th, td {
+            padding: 8px 10px;
+            border: 1px solid #d4d4d4;
+            text-align: left;
+            vertical-align: top;
+          }
+          th {
+            background: #f5f5f5;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+          }
+          th.amount, td.amount { width: 22%; text-align: right; white-space: nowrap; }
+          .empty { color: #737373; font-style: italic; text-align: center; }
+          .section-total {
+            margin: 10px 0 0;
+            text-align: right;
+            font-size: 13px;
+            font-weight: 700;
+          }
+          .final-net {
+            margin-top: 28px;
+            padding: 14px 16px;
+            border: 2px solid #171717;
+            text-align: right;
+            font-size: 17px;
+            font-weight: 800;
+            break-inside: avoid;
+          }
           footer {
             margin-top: auto;
             padding-top: 20px;
@@ -2861,7 +2916,26 @@ function buildCurrentShowFinanceSummaryHtml({
           }
           @media print {
             html, body { width: 100%; }
-            .sheet { min-height: 9.7in; }
+            .sheet { display: block; min-height: 0; }
+            header { padding-bottom: 12px; }
+            h1 { margin-top: 6px; font-size: 26px; }
+            .show-meta { margin-top: 6px; }
+            .summary { margin-top: 10px; gap: 6px; }
+            .summary-card { min-height: 58px; padding: 8px 12px; }
+            .summary-value { margin-top: 5px; font-size: 21px; }
+            .line-items {
+              margin-top: 8px;
+              break-inside: auto;
+              page-break-inside: auto;
+            }
+            .line-items h2 { margin-bottom: 4px; break-after: avoid; }
+            table { break-inside: auto; page-break-inside: auto; }
+            thead { display: table-header-group; }
+            tr { break-inside: avoid; page-break-inside: avoid; }
+            th, td { padding: 3px 7px; }
+            .section-total { margin-top: 4px; }
+            .final-net { margin-top: 8px; padding: 8px 12px; font-size: 16px; }
+            footer { margin-top: 8px; padding-top: 5px; }
           }
         </style>
       </head>
@@ -2883,6 +2957,23 @@ function buildCurrentShowFinanceSummaryHtml({
               </article>
             `).join("")}
           </section>
+          <section class="line-items" aria-labelledby="income-heading">
+            <h2 id="income-heading">Income</h2>
+            <table>
+              <thead><tr><th>Description</th><th>Category</th><th class="amount">Amount</th></tr></thead>
+              <tbody>${buildLineItemRows(incomeItems)}</tbody>
+            </table>
+            <p class="section-total">Total Income: ${escapeHtml(formatCurrency(totalIncome))}</p>
+          </section>
+          <section class="line-items" aria-labelledby="expenses-heading">
+            <h2 id="expenses-heading">Expenses</h2>
+            <table>
+              <thead><tr><th>Description</th><th>Category</th><th class="amount">Amount</th></tr></thead>
+              <tbody>${buildLineItemRows(expenseItems)}</tbody>
+            </table>
+            <p class="section-total">Total Expenses: ${escapeHtml(formatCurrency(totalExpenses))}</p>
+          </section>
+          <p class="final-net${netProfit < 0 ? " net-negative" : ""}">Net Profit / Loss: ${escapeHtml(formatCurrency(netProfit))}</p>
           <footer>Printed: ${escapeHtml(printedAtLabel)}</footer>
         </main>
       </body>
@@ -9230,6 +9321,8 @@ export function ShowPage({
       netProfit,
       profitMargin,
       printedAt: new Date(),
+      incomeItems: incomeFinanceItems,
+      expenseItems: expenseFinanceItems,
     });
     openPrintDocumentWindow(printHtml);
   }
@@ -22106,13 +22199,6 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                       Income and expenses below apply only to this show.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handlePrintCurrentShowFinanceSummary}
-                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 sm:w-auto"
-                  >
-                    Print Show Summary
-                  </button>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">

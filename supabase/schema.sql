@@ -1290,12 +1290,35 @@ begin
   end if;
 end
 $$;
+create table if not exists public.manual_email_bulk_operations (
+  id uuid primary key,
+  show_id uuid not null references public.shows(id) on delete cascade,
+  audience_key text not null,
+  audience_label text not null,
+  template_key text not null,
+  sender_key text not null,
+  from_address text not null,
+  subject_template text not null,
+  requested_recipient_count integer not null default 0,
+  selected_recipient_count integer not null default 0,
+  skipped_count integer not null default 0,
+  sent_count integer not null default 0,
+  failed_count integer not null default 0,
+  operation_status text not null check (operation_status in ('pending', 'sending', 'completed', 'failed')),
+  started_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.manual_email_history (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,
+  recipient_name text,
   recipient_email text not null,
   from_address text not null,
+  reply_to text,
   subject text not null,
+  message_text text,
   template_key text not null check (template_key in (
     'general',
     'complimentary_tickets',
@@ -1304,15 +1327,67 @@ create table if not exists public.manual_email_history (
     'show_information',
     'custom'
   )),
-  send_status text not null check (send_status in ('sent', 'failed')),
+  send_status text not null check (send_status in ('queued', 'sent', 'failed')),
+  current_status text,
   resend_message_id text,
   error_message text,
-  created_at timestamptz not null default now()
+  request_id uuid,
+  bulk_operation_id uuid references public.manual_email_bulk_operations(id) on delete set null,
+  original_delivery_id uuid references public.manual_email_history(id) on delete set null,
+  sent_at timestamptz,
+  last_activity_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+create index if not exists manual_email_bulk_operations_show_created_at_idx
+  on public.manual_email_bulk_operations(show_id, created_at desc);
 
 create index if not exists manual_email_history_show_created_at_idx
   on public.manual_email_history(show_id, created_at desc);
+create unique index if not exists manual_email_history_request_id_unique
+  on public.manual_email_history(request_id) where request_id is not null;
+create unique index if not exists manual_email_history_resend_message_id_unique
+  on public.manual_email_history(resend_message_id) where resend_message_id is not null;
 
+create table if not exists public.manual_email_events (
+  id uuid primary key default gen_random_uuid(),
+  email_history_id uuid not null references public.manual_email_history(id) on delete cascade,
+  resend_message_id text not null,
+  event_type text not null check (event_type in (
+    'email.sent', 'email.delivered', 'email.delivery_delayed', 'email.complained',
+    'email.bounced', 'email.opened', 'email.clicked', 'email.failed'
+  )),
+  event_created_at timestamptz not null,
+  recipient text,
+  safe_clicked_url text,
+  detail text,
+  provider_event_id text,
+  event_fingerprint text not null,
+  received_at timestamptz not null default now()
+);
+
+create unique index if not exists manual_email_events_fingerprint_unique on public.manual_email_events(event_fingerprint);
+create index if not exists manual_email_events_history_created_at_idx on public.manual_email_events(email_history_id, event_created_at asc);
+
+create index if not exists manual_email_history_bulk_operation_id_idx
+  on public.manual_email_history(bulk_operation_id) where bulk_operation_id is not null;
+
+alter table public.manual_email_bulk_operations enable row level security;
 alter table public.manual_email_history enable row level security;
+alter table public.manual_email_events enable row level security;
 
+revoke all on table public.manual_email_bulk_operations from anon, authenticated;
 revoke all on table public.manual_email_history from anon, authenticated;
+revoke all on table public.manual_email_events from anon, authenticated;
+
+create table if not exists public.mailing_list_subscribers (
+  id uuid primary key default gen_random_uuid(), email text not null, first_name text, last_name text,
+  status text not null default 'active' check (status in ('active', 'unsubscribed')),
+  source text not null default 'other' check (source in ('website', 'admin', 'ticket_opt_in', 'import', 'other')),
+  metadata jsonb not null default '{}'::jsonb, subscribed_at timestamptz not null default now(), unsubscribed_at timestamptz,
+  last_campaign_at timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+create unique index if not exists mailing_list_subscribers_email_lower_key on public.mailing_list_subscribers (lower(btrim(email)));
+create index if not exists mailing_list_subscribers_status_idx on public.mailing_list_subscribers (status, created_at desc);
+alter table public.mailing_list_subscribers enable row level security;
+revoke all on public.mailing_list_subscribers from anon, authenticated;

@@ -4,326 +4,470 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import {
+  EMAIL_CENTER_AUDIENCES,
+  dedupeEmailCenterAudienceRecipients,
+  recipientsForEmailCenterAudience,
+  renderEmailCenterRecipient,
+  type EmailCenterAudienceKey,
+  type EmailCenterAudienceRecipient,
+} from "@/lib/email-center-audiences";
+import { renderEmailCenterEmail } from "@/lib/email-center-renderer";
+import {
+  EMAIL_CENTER_MERGE_FIELDS,
+  findUnresolvedEmailCenterMergeFields,
+  resolveEmailCenterMergeFields,
+  splitEmailCenterName,
+  type EmailCenterMergeValues,
+} from "@/lib/email-center";
+import {
   getManualEmailTemplate,
   manualEmailSenders,
   manualEmailTemplates,
   MANUAL_EMAIL_REPLY_TO,
+  isValidManualEmailAddress,
   type ManualEmailSenderKey,
   type ManualEmailTemplateKey,
 } from "@/lib/manual-email-center";
 
-type ManualEmailHistoryItem = {
-  id: string;
-  recipientEmail: string;
-  fromAddress: string;
-  subject: string;
-  templateKey: string;
-  sendStatus: "sent" | "failed";
-  resendMessageId: string | null;
-  errorMessage: string | null;
-  createdAt: string;
+type Recipient = EmailCenterAudienceRecipient;
+type EmailEvent = { id: string; type: string; createdAt: string; recipient: string | null; clickedUrl: string | null; detail: string | null };
+type HistoryItem = {
+  id: string; recipientName: string | null; recipientEmail: string; fromAddress: string; replyTo: string | null;
+  subject: string; message: string | null; templateKey: string; sendStatus: string; currentStatus: string;
+  resendMessageId: string | null; errorMessage: string | null; sentAt: string | null;
+  lastActivityAt: string; createdAt: string; events: EmailEvent[];
 };
-
-type EmailCenterResponse = {
-  success?: boolean;
-  error?: string;
-  warning?: string;
-  resendMessageId?: string | null;
-  history?: ManualEmailHistoryItem | null;
+type BulkOperation = {
+  id: string; audience_label: string; template_key: string; selected_recipient_count: number;
+  sent_count: number; failed_count: number; skipped_count: number; operation_status: string;
+  completed_at: string | null; created_at: string;
 };
+type BulkDelivery = {
+  id: string; bulk_operation_id: string; recipient_name: string | null; recipient_email: string;
+  subject: string; current_status: string; error_message: string | null; created_at: string;
+};
+type ApiResponse = { success?: boolean; error?: string; warning?: string; resendMessageId?: string | null; history?: HistoryItem | null };
+type HistoryFilter = "all" | "sent" | "delivered" | "opened" | "clicked" | "problems";
 
-function formatSentAt(value: string) {
+function formatDateTime(value: string | null) {
+  if (!value) return "";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+function statusTone(status: string) {
+  if (["bounced", "failed", "complained"].includes(status)) return "border-rose-400/40 bg-rose-500/15 text-rose-100";
+  if (status === "delivery_delayed") return "border-amber-400/40 bg-amber-500/15 text-amber-100";
+  if (["delivered", "opened", "clicked"].includes(status)) return "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+  return "border-sky-400/30 bg-sky-500/10 text-sky-100";
+}
+function statusLabel(status: string) {
+  return status.replace("delivery_delayed", "Delayed").replace(/_/g, " ").replace(/^./, (value) => value.toUpperCase());
+}
+function eventLabel(type: string) {
+  return statusLabel(type.replace("email.", ""));
 }
 
 export function EmailCenter({ slug }: { slug: string }) {
   const initialTemplate = manualEmailTemplates[0];
   const [senderKey, setSenderKey] = useState<ManualEmailSenderKey>("info");
   const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientQuery, setRecipientQuery] = useState("");
+  const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
+  const [mergeFields, setMergeFields] = useState<EmailCenterMergeValues>({});
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [audienceKey, setAudienceKey] = useState<EmailCenterAudienceKey | "">("");
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
+  const [bulkProgress, setBulkProgress] = useState<string | null>(null);
   const [templateKey, setTemplateKey] = useState<ManualEmailTemplateKey>(initialTemplate.key);
   const [subject, setSubject] = useState<string>(initialTemplate.subject);
   const [message, setMessage] = useState(initialTemplate.message);
-  const [history, setHistory] = useState<ManualEmailHistoryItem[]>([]);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [heading, setHeading] = useState("");
+  const [ctaLabel, setCtaLabel] = useState("");
+  const [ctaUrl, setCtaUrl] = useState("");
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [bulkOperations, setBulkOperations] = useState<BulkOperation[]>([]);
+  const [bulkDeliveries, setBulkDeliveries] = useState<BulkDelivery[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [resultTone, setResultTone] = useState<"success" | "error">("success");
 
-  const templateLabels = useMemo(
-    () => Object.fromEntries(manualEmailTemplates.map((template) => [template.key, template.label])),
-    [],
-  );
+  const selectedSender = manualEmailSenders.find((sender) => sender.key === senderKey) ?? null;
+  const uniqueRecipients = useMemo(() => dedupeEmailCenterAudienceRecipients(recipients).recipients, [recipients]);
+  const audienceResult = useMemo(() => audienceKey
+    ? recipientsForEmailCenterAudience(recipients, audienceKey)
+    : { recipients: [], recordsFound: 0, duplicatesRemoved: 0, uniqueRecipients: 0 }, [recipients, audienceKey]);
+  const audienceRows = useMemo(() => audienceResult.recipients.map((recipient) => ({
+    recipient,
+    ...renderEmailCenterRecipient({ recipient, subjectTemplate: subject, messageTemplate: message, headingTemplate: heading, ctaLabelTemplate: ctaLabel, ctaUrlTemplate: ctaUrl, senderValid: Boolean(selectedSender) }),
+  })), [audienceResult.recipients, subject, message, heading, ctaLabel, ctaUrl, selectedSender]);
+  const selectedRecipientSet = useMemo(() => new Set(selectedRecipientIds), [selectedRecipientIds]);
+  const selectedReadyRows = audienceRows.filter((row) => row.ready && selectedRecipientSet.has(row.recipient.id));
+  const problemRows = audienceRows.filter((row) => !row.ready);
+  const excludedCount = audienceRows.filter((row) => row.ready && !selectedRecipientSet.has(row.recipient.id)).length;
+  const renderedSubject = useMemo(() => resolveEmailCenterMergeFields(subject, mergeFields).rendered, [subject, mergeFields]);
+  const renderedMessage = useMemo(() => resolveEmailCenterMergeFields(message, mergeFields).rendered, [message, mergeFields]);
+  const renderedHeading = useMemo(() => resolveEmailCenterMergeFields(heading, mergeFields).rendered, [heading, mergeFields]);
+  const renderedCtaLabel = useMemo(() => resolveEmailCenterMergeFields(ctaLabel, mergeFields).rendered, [ctaLabel, mergeFields]);
+  const renderedCtaUrl = useMemo(() => resolveEmailCenterMergeFields(ctaUrl, mergeFields).rendered, [ctaUrl, mergeFields]);
+  const previewUnsubscribeUrl = audienceKey === "mailing_list_subscribers" || selectedRecipientId?.startsWith("mailing:") ? "https://stageflow.cumberlandmountainmusic.com/mailing-list/unsubscribe?token=recipient-specific-secure-link" : undefined;
+  const renderedEmail = useMemo(() => renderEmailCenterEmail({ heading: renderedHeading, message: renderedMessage, ctaLabel: renderedCtaLabel, ctaUrl: renderedCtaUrl, unsubscribeUrl: previewUnsubscribeUrl }), [renderedHeading, renderedMessage, renderedCtaLabel, renderedCtaUrl, previewUnsubscribeUrl]);
+  const unresolvedFields = useMemo(() => findUnresolvedEmailCenterMergeFields(renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl), [renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl]);
+  const checks = [
+    { label: "Recipient", ok: isValidManualEmailAddress(recipientEmail), issue: "Enter a valid recipient email." },
+    { label: "Sender", ok: Boolean(selectedSender), issue: "Select an allowlisted sender." },
+    { label: "Subject", ok: Boolean(renderedSubject.trim()), issue: "Subject is blank." },
+    { label: "Message", ok: Boolean(renderedMessage.trim()), issue: "Message is blank." },
+    { label: "CTA", ok: Boolean(renderedCtaLabel.trim()) === Boolean(renderedCtaUrl.trim()) && (!renderedCtaUrl.trim() || /^https:\/\//i.test(renderedCtaUrl.trim())), issue: "CTA requires both a label and an HTTPS URL." },
+    { label: "Merge fields", ok: unresolvedFields.length === 0, issue: unresolvedFields.length ? `Unresolved field: ${unresolvedFields[0]}` : "" },
+    { label: "Send state", ok: !isSending, issue: "A send is already in progress." },
+  ];
+  const ready = checks.every((check) => check.ok);
+  const matchingRecipients = useMemo(() => {
+    const query = recipientQuery.trim().toLowerCase();
+    if (!query) return [];
+    return uniqueRecipients.filter((recipient) => `${recipient.name} ${recipient.email}`.toLowerCase().includes(query)).slice(0, 8);
+  }, [recipientQuery, uniqueRecipients]);
+  const templateLabels = useMemo(() => Object.fromEntries(manualEmailTemplates.map((item) => [item.key, item.label])), []);
+  const filteredHistory = history.filter((item) => {
+    if (historyFilter === "all") return true;
+    if (historyFilter === "problems") return ["bounced", "failed", "complained", "delivery_delayed"].includes(item.currentStatus);
+    return item.currentStatus === historyFilter;
+  });
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadHistory() {
-      setIsLoadingHistory(true);
-      setHistoryError(null);
+    async function load() {
+      setIsLoading(true); setLoadError(null);
       try {
-        const response = await fetch(`/api/admin/email-center?slug=${encodeURIComponent(slug)}`, {
-          cache: "no-store",
-        });
-        const payload = await response.json() as {
-          success?: boolean;
-          error?: string;
-          history?: ManualEmailHistoryItem[];
-        };
-        if (!response.ok || !payload.success) {
-          throw new Error(payload.error || "Unable to load recent sent emails.");
-        }
-        if (!cancelled) setHistory(payload.history ?? []);
-      } catch (error) {
+        const [historyResponse, recipientsResponse, bulkResponse] = await Promise.all([
+          fetch(`/api/admin/email-center?slug=${encodeURIComponent(slug)}`, { cache: "no-store" }),
+          fetch(`/api/admin/email-center?slug=${encodeURIComponent(slug)}&mode=recipients`, { cache: "no-store" }),
+          fetch(`/api/admin/email-center/bulk?slug=${encodeURIComponent(slug)}`, { cache: "no-store" }),
+        ]);
+        const historyPayload = await historyResponse.json() as { success?: boolean; error?: string; history?: HistoryItem[] };
+        const recipientsPayload = await recipientsResponse.json() as { success?: boolean; error?: string; recipients?: Recipient[]; show?: EmailCenterMergeValues };
+        const bulkPayload = await bulkResponse.json() as { success?: boolean; error?: string; operations?: BulkOperation[]; deliveries?: BulkDelivery[] };
+        if (!historyResponse.ok || !historyPayload.success) throw new Error(historyPayload.error || "Unable to load recent emails.");
+        if (!recipientsResponse.ok || !recipientsPayload.success) throw new Error(recipientsPayload.error || "Unable to load recipients.");
+        if (!bulkResponse.ok || !bulkPayload.success) throw new Error(bulkPayload.error || "Unable to load bulk sends.");
         if (!cancelled) {
-          setHistoryError(error instanceof Error ? error.message : "Unable to load recent sent emails.");
+          setHistory(historyPayload.history ?? []);
+          setRecipients(recipientsPayload.recipients ?? []);
+          setMergeFields(recipientsPayload.show ?? {});
+          setBulkOperations(bulkPayload.operations ?? []);
+          setBulkDeliveries(bulkPayload.deliveries ?? []);
         }
-      } finally {
-        if (!cancelled) setIsLoadingHistory(false);
-      }
+      } catch (error) {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : "Unable to load Email Center.");
+      } finally { if (!cancelled) setIsLoading(false); }
     }
-
-    void loadHistory();
-    return () => {
-      cancelled = true;
-    };
+    void load();
+    return () => { cancelled = true; };
   }, [slug]);
 
-  function handleTemplateChange(nextKey: ManualEmailTemplateKey) {
-    const template = getManualEmailTemplate(nextKey);
-    if (!template) return;
-    setTemplateKey(nextKey);
-    setSubject(template.subject);
-    setMessage(template.message);
+  function chooseAudience(value: EmailCenterAudienceKey | "") {
+    setAudienceKey(value);
     setResultMessage(null);
+    if (!value) {
+      setSelectedRecipientIds([]);
+      return;
+    }
+    const result = recipientsForEmailCenterAudience(recipients, value);
+    setSelectedRecipientIds(result.recipients
+      .filter((recipient) => renderEmailCenterRecipient({
+        recipient,
+        subjectTemplate: subject,
+        messageTemplate: message,
+        headingTemplate: heading, ctaLabelTemplate: ctaLabel, ctaUrlTemplate: ctaUrl,
+        senderValid: Boolean(selectedSender),
+      }).ready)
+      .map((recipient) => recipient.id));
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (isSending) return;
+  function toggleAudienceRecipient(id: string) {
+    setSelectedRecipientIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
 
+  async function handleBulkSubmit() {
+    if (!audienceKey || !selectedSender || !selectedReadyRows.length) return;
+    const audience = EMAIL_CENTER_AUDIENCES.find((item) => item.key === audienceKey);
+    if (!audience) return;
+    const confirmation = [
+      `Audience: ${audience.label}`,
+      `Selected Recipients: ${selectedReadyRows.length}`,
+      `Excluded: ${excludedCount}`,
+      `Problems: ${problemRows.length}`,
+      `Sender: ${selectedSender.from}`,
+      `Subject: ${subject}`,
+      "",
+      `Type SEND ${selectedReadyRows.length} EMAILS to confirm.`,
+    ].join("\n");
+    if (window.prompt(confirmation) !== `SEND ${selectedReadyRows.length} EMAILS`) return;
     setIsSending(true);
     setResultMessage(null);
+    setBulkProgress(`Sending 0 of ${selectedReadyRows.length}...`);
     try {
-      const response = await fetch("/api/admin/email-center", {
+      const response = await fetch("/api/admin/email-center/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           slug,
+          operationId: crypto.randomUUID(),
+          audienceKey,
           senderKey,
-          recipientEmail,
           templateKey,
           subject,
           message,
+          heading, ctaLabel, ctaUrl,
+          selectedRecipientIds: selectedReadyRows.map((row) => row.recipient.id),
         }),
       });
-      const payload = await response.json() as EmailCenterResponse;
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.error || "Unable to send this email.");
-      }
-
-      if (payload.history) {
-        setHistory((current) => [payload.history as ManualEmailHistoryItem, ...current].slice(0, 50));
-      }
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to complete bulk send.");
+      setBulkProgress(`${payload.sentCount} accepted - ${payload.failedCount} failed - ${payload.skippedCount} skipped`);
       setResultTone("success");
-      setResultMessage(payload.warning || "Email sent successfully.");
+      setResultMessage(`Bulk send completed: ${payload.sentCount} accepted, ${payload.failedCount} failed.`);
     } catch (error) {
       setResultTone("error");
-      setResultMessage(error instanceof Error ? error.message : "Unable to send this email.");
+      setResultMessage(error instanceof Error ? error.message : "Unable to complete bulk send.");
+      setBulkProgress(null);
     } finally {
       setIsSending(false);
     }
+  }
+
+  function selectRecipient(recipient: Recipient) {
+    setSelectedRecipientId(recipient.id); setRecipientName(recipient.name); setRecipientEmail(recipient.email);
+    setRecipientQuery(recipient.name || recipient.email); setMergeFields(recipient.mergeFields); setResultMessage(null);
+  }
+  function changeRecipientEmail(value: string) {
+    setRecipientEmail(value); setSelectedRecipientId(null);
+    setMergeFields((current) => ({ ...current, email: value.trim(), first_name: recipientName.split(/\s+/)[0] ?? "", full_name: recipientName }));
+  }
+  function handleTemplateChange(nextKey: ManualEmailTemplateKey) {
+    const template = getManualEmailTemplate(nextKey);
+    if (!template) return;
+    setTemplateKey(nextKey); setSubject(template.subject); setMessage(template.message); setResultMessage(null);
+  }
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (audienceKey) {
+      await handleBulkSubmit();
+      return;
+    }
+    if (isSending || !ready || !selectedSender) return;
+    const confirmed = window.confirm([
+      `To: ${recipientName ? `${recipientName} <${recipientEmail}>` : recipientEmail}`,
+      `From: ${selectedSender.from}`, `Subject: ${renderedSubject}`, "", "Send Email?",
+    ].join("\n"));
+    if (!confirmed) return;
+    setIsSending(true); setResultMessage(null);
+    try {
+      const response = await fetch("/api/admin/email-center", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, requestId: crypto.randomUUID(), senderKey, recipientEmail, recipientName,
+          selectedRecipientId, mergeFields, templateKey, subject, message, heading, ctaLabel, ctaUrl }),
+      });
+      const payload = await response.json() as ApiResponse;
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to send this email.");
+      if (payload.history) setHistory((current) => [payload.history!, ...current].slice(0, 50));
+      setResultTone("success"); setResultMessage(payload.warning || "Email sent successfully.");
+    } catch (error) {
+      setResultTone("error"); setResultMessage(error instanceof Error ? error.message : "Unable to send this email.");
+    } finally { setIsSending(false); }
   }
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-stone-950 px-4 py-6 text-slate-100 sm:px-6 sm:py-10">
       <div className="mx-auto grid w-full max-w-6xl gap-6">
         <AdminQuickNav slug={slug} currentView="email-center" />
-
         <header className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:flex-row sm:items-end sm:justify-between sm:p-7">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">StageFlow Admin</p>
+          <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">StageFlow Admin</p>
             <h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Email Center</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-              Send manual Cumberland Mountain Music Show messages through the existing Resend configuration.
-            </p>
-          </div>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Compose, preview, send, and audit show-scoped messages through Resend.</p></div>
           <div className="flex flex-wrap gap-2">
-            <a
-              href="https://webmail.porkbun.com/?_task=mail&_mbox=INBOX"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex w-fit rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-amber-300"
-            >
-              Open Webmail
-            </a>
-            <Link
-              href={`/admin/${encodeURIComponent(slug)}`}
-              className="inline-flex w-fit rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
-            >
-              Back to Admin
-            </Link>
+            <Link href={`/admin/${encodeURIComponent(slug)}/mailing-list`} className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-100">Mailing List</Link>
+            <a href="https://webmail.porkbun.com/?_task=mail&_mbox=INBOX" target="_blank" rel="noopener noreferrer" className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950">Open Webmail</a>
+            <Link href={`/admin/${encodeURIComponent(slug)}`} className="rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold">Back to Admin</Link>
           </div>
         </header>
 
         <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
-          <form className="grid gap-5" onSubmit={(event) => void handleSubmit(event)}>
-            <div className="grid gap-5 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold text-slate-200">
-                From
-                <select
-                  value={senderKey}
-                  onChange={(event) => setSenderKey(event.target.value as ManualEmailSenderKey)}
-                  className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3 text-sm text-white outline-none transition focus:border-emerald-400"
-                >
-                  {manualEmailSenders.map((sender) => (
-                    <option key={sender.key} value={sender.key}>
-                      {sender.label} - {sender.address}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-xs font-normal text-slate-400">Reply-To: {MANUAL_EMAIL_REPLY_TO}</span>
-              </label>
-
-              <label className="grid gap-2 text-sm font-semibold text-slate-200">
-                To
-                <input
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={recipientEmail}
-                  onChange={(event) => setRecipientEmail(event.target.value)}
-                  placeholder="recipient@example.com"
-                  className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-emerald-400"
-                />
-              </label>
-            </div>
-
-            <label className="grid gap-2 text-sm font-semibold text-slate-200">
-              Template
+          <form className="grid gap-6" onSubmit={(event) => void handleSubmit(event)}>
+            <div><h2 className="text-xl font-black">Compose</h2><p className="mt-1 text-sm text-slate-400">Choose one contact or a dynamic current-show audience.</p></div>
+            <label className="grid gap-2 text-sm font-semibold">Audience
               <select
-                value={templateKey}
-                onChange={(event) => handleTemplateChange(event.target.value as ManualEmailTemplateKey)}
-                className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3 text-sm text-white outline-none transition focus:border-emerald-400"
+                value={audienceKey}
+                onChange={(event) => chooseAudience(event.target.value as EmailCenterAudienceKey | "")}
+                className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3"
               >
-                {manualEmailTemplates.map((template) => (
-                  <option key={template.key} value={template.key}>{template.label}</option>
+                <option value="">Individual recipient</option>
+                {EMAIL_CENTER_AUDIENCES.map((audience) => (
+                  <option key={audience.key} value={audience.key}>{audience.label}</option>
                 ))}
               </select>
-              <span className="text-xs font-normal text-slate-400">
-                Selecting a template fills the fields below. Nothing is sent until you press Send Email.
-              </span>
             </label>
-
-            <label className="grid gap-2 text-sm font-semibold text-slate-200">
-              Subject
-              <input
-                type="text"
-                required
-                maxLength={200}
-                value={subject}
-                onChange={(event) => setSubject(event.target.value)}
-                className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3 text-sm text-white outline-none transition focus:border-emerald-400"
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm font-semibold text-slate-200">
-              Message
-              <textarea
-                required
-                maxLength={20000}
-                rows={18}
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                className="min-h-72 resize-y rounded-xl border border-white/15 bg-slate-950 px-3 py-3 font-mono text-sm leading-6 text-white outline-none transition focus:border-emerald-400"
-              />
-            </label>
-
-            {resultMessage ? (
-              <div
-                role="status"
-                className={`rounded-xl border px-4 py-3 text-sm ${
-                  resultTone === "success"
-                    ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
-                    : "border-rose-400/30 bg-rose-500/10 text-rose-100"
-                }`}
-              >
-                {resultMessage}
+            <div className="grid gap-5 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold">From
+                <select value={senderKey} onChange={(event) => setSenderKey(event.target.value as ManualEmailSenderKey)} className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3">
+                  {manualEmailSenders.map((sender) => <option key={sender.key} value={sender.key}>{sender.label} - {sender.address}</option>)}
+                </select><span className="text-xs font-normal text-slate-400">Reply-To: {MANUAL_EMAIL_REPLY_TO}</span>
+              </label>
+              <div className="relative grid gap-2 text-sm font-semibold">
+                <label htmlFor="recipient-search">Find show recipient</label>
+                <input id="recipient-search" value={recipientQuery} onChange={(event) => setRecipientQuery(event.target.value)} placeholder="Search name or email" autoComplete="off" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+                {matchingRecipients.length ? <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-white/15 bg-slate-950 shadow-2xl">
+                  {matchingRecipients.map((recipient) => <button key={recipient.id} type="button" onClick={() => selectRecipient(recipient)} className="block w-full border-b border-white/10 px-3 py-3 text-left last:border-0 hover:bg-white/[0.08]">
+                    <span className="block font-bold text-white">{recipient.name || recipient.email}</span><span className="block text-xs text-slate-300">{recipient.email}</span>
+                    <span className="block text-xs text-emerald-300">{recipient.sourceLabel} - {recipient.detail}</span>
+                  </button>)}
+                </div> : null}
               </div>
-            ) : null}
+              <label className="grid gap-2 text-sm font-semibold">Recipient name
+                <input value={recipientName} onChange={(event) => { const name = splitEmailCenterName(event.target.value); setRecipientName(event.target.value); setSelectedRecipientId(null); setMergeFields((current) => ({ ...current, first_name: name.firstName, last_name: name.lastName, full_name: name.fullName })); }} placeholder="Optional for manual recipients" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold">To
+                <input type="email" required value={recipientEmail} onChange={(event) => changeRecipientEmail(event.target.value)} placeholder="recipient@example.com" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+              </label>
+            </div>
+            <label className="grid gap-2 text-sm font-semibold">Template
+              <select value={templateKey} onChange={(event) => handleTemplateChange(event.target.value as ManualEmailTemplateKey)} className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3">
+                {manualEmailTemplates.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
+              </select><span className="text-xs font-normal text-slate-400">Template selection fills editable fields; it never changes the saved template.</span>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">Subject
+              <input maxLength={200} value={subject} onChange={(event) => setSubject(event.target.value)} className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">Message
+              <textarea maxLength={20000} rows={14} value={message} onChange={(event) => setMessage(event.target.value)} className="min-h-64 resize-y rounded-xl border border-white/15 bg-slate-950 px-3 py-3 font-mono text-sm leading-6" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">Email Heading (optional)
+              <input maxLength={200} value={heading} onChange={(event) => setHeading(event.target.value)} placeholder="A message from CMMS" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+            </label>
+            <div className="grid gap-5 md:grid-cols-2"><label className="grid gap-2 text-sm font-semibold">CTA Button Label (optional)<input maxLength={80} value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} placeholder="Get Tickets" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">CTA URL (optional)<input type="url" value={ctaUrl} onChange={(event) => setCtaUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div>
 
-            <button
-              type="submit"
-              disabled={isSending}
-              className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900 disabled:text-emerald-300 sm:w-fit sm:min-w-44"
-            >
-              {isSending ? "Sending..." : "Send Email"}
-            </button>
+            {audienceKey ? (
+              <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-bold">Recipient Preview</h3>
+                    <p className="text-xs text-slate-400">
+                      Audience records found: {audienceResult.recordsFound} - Duplicates removed: {audienceResult.duplicatesRemoved} - Unique recipients: {audienceResult.uniqueRecipients}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setSelectedRecipientIds(audienceRows.filter((row) => row.ready).map((row) => row.recipient.id))} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-bold">Select All Ready</button>
+                    <button type="button" onClick={() => setSelectedRecipientIds([])} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-bold">Clear All</button>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm">
+                  <span className="text-emerald-300">Ready: {audienceRows.filter((row) => row.ready).length}</span>
+                  {" - "}<span className="text-amber-300">Needs Attention: {problemRows.length}</span>
+                  {" - "}Selected: {selectedReadyRows.length}
+                </p>
+                <div className="mt-4 max-h-96 overflow-y-auto rounded-xl border border-white/10">
+                  {audienceRows.map((row) => (
+                    <label key={row.recipient.id} className="flex gap-3 border-b border-white/10 p-3 last:border-0">
+                      <input type="checkbox" checked={row.ready && selectedRecipientSet.has(row.recipient.id)} disabled={!row.ready} onChange={() => toggleAudienceRecipient(row.recipient.id)} />
+                      <span className="min-w-0">
+                        <strong className="block">{row.recipient.name || "Unnamed contact"}</strong>
+                        <span className="block break-all text-xs text-slate-300">{row.recipient.email || "Missing email address"}</span>
+                        <span className="block text-xs text-slate-400">{row.recipient.sourceLabel} - {row.recipient.detail}</span>
+                        <span className={`block text-xs ${row.ready ? "text-emerald-300" : "text-amber-300"}`}>
+                          {row.ready ? "Ready" : row.problems.join("; ")}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            ) : (
+              <div className="grid gap-5 lg:grid-cols-2">
+                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <h3 className="font-bold">Smart Data / Final Preview</h3>
+                  <p className="mt-2 text-xs text-slate-400">Available: {EMAIL_CENTER_MERGE_FIELDS.map((field) => `{{${field}}}`).join(", ")}</p>
+                  <p className="mt-4 text-xs font-bold uppercase tracking-wider text-slate-400">Subject</p>
+                  <p className="mt-1 text-sm text-white">{renderedSubject || "-"}</p>
+                  <iframe title="Rendered email preview" srcDoc={renderedEmail.html} className="mt-4 h-[680px] w-full rounded-xl border border-white/10 bg-white" sandbox="" />
+                </section>
+                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <h3 className="font-bold">Pre-Send Check</h3>
+                  <div className="mt-3 grid gap-2">{checks.map((check) => <p key={check.label} className={`text-sm ${check.ok ? "text-emerald-300" : "text-amber-300"}`}>{check.ok ? "OK" : "Warning:"} {check.ok ? check.label : check.issue}</p>)}</div>
+                  <p className={`mt-4 rounded-xl px-3 py-2 font-bold ${ready ? "bg-emerald-500/15 text-emerald-200" : "bg-amber-500/15 text-amber-200"}`}>{ready ? "Ready to Send" : "Review items above"}</p>
+                </section>
+              </div>
+            )}
+            {bulkProgress ? <div className="rounded-xl bg-sky-500/10 px-4 py-3 text-sm text-sky-100">{bulkProgress}</div> : null}
+            {resultMessage ? <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${resultTone === "success" ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" : "border-rose-400/30 bg-rose-500/10 text-rose-100"}`}>{resultMessage}</div> : null}
+            <button type="submit" disabled={isSending || (audienceKey ? !selectedReadyRows.length : !ready)} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 font-bold disabled:cursor-not-allowed disabled:bg-slate-700 sm:w-fit sm:min-w-44">{isSending ? (audienceKey ? `Sending ${selectedReadyRows.length} emails...` : "Sending...") : audienceKey ? `SEND ${selectedReadyRows.length} EMAILS` : "Send Email"}</button>
           </form>
         </section>
 
         <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
-          <div>
-            <h2 className="text-xl font-black text-white">Recent Sent Emails</h2>
-            <p className="mt-1 text-sm text-slate-400">The 50 most recent manual Email Center attempts for this show.</p>
+          <h2 className="text-xl font-black">Bulk Sends / Campaigns</h2>
+          <p className="mt-1 text-sm text-slate-400">Counts come from exact linked delivery rows.</p>
+          <div className="mt-5 grid gap-3">
+            {bulkOperations.length ? bulkOperations.map((operation) => {
+              const deliveries = bulkDeliveries.filter((delivery) => delivery.bulk_operation_id === operation.id);
+              const delivered = deliveries.filter((delivery) => delivery.current_status === "delivered").length;
+              const opened = deliveries.filter((delivery) => delivery.current_status === "opened").length;
+              const clicked = deliveries.filter((delivery) => delivery.current_status === "clicked").length;
+              const problems = deliveries.filter((delivery) => ["bounced", "failed", "complained", "delivery_delayed"].includes(delivery.current_status)).length;
+              return <details key={operation.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <summary className="cursor-pointer list-none"><div className="grid gap-2 sm:grid-cols-[2fr_auto_auto]">
+                  <div><strong>{templateLabels[operation.template_key] ?? operation.template_key}</strong><p className="text-sm text-slate-300">{operation.audience_label} - {operation.selected_recipient_count} recipients</p></div>
+                  <span className="text-xs text-slate-400">{formatDateTime(operation.completed_at || operation.created_at)}</span>
+                  <span className={`w-fit rounded-full border px-2 py-1 text-xs font-bold ${statusTone(operation.failed_count ? "failed" : "delivered")}`}>{operation.sent_count} accepted - {operation.failed_count} failed</span>
+                </div></summary>
+                <p className="mt-3 text-sm">Delivered {delivered} - Opened {opened} - Clicked {clicked} - Problems {problems}</p>
+                <div className="mt-3 grid gap-2">{deliveries.map((delivery) => <div key={delivery.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 p-3 text-sm">
+                  <span><strong>{delivery.recipient_name || delivery.recipient_email}</strong><span className="ml-2 text-slate-400">{delivery.recipient_email}</span></span>
+                  <span className={`rounded-full border px-2 py-1 text-xs ${statusTone(delivery.current_status)}`}>{statusLabel(delivery.current_status)}</span>
+                </div>)}</div>
+              </details>;
+            }) : <p className="text-sm text-slate-400">No bulk sends yet.</p>}
           </div>
+        </section>
 
-          {isLoadingHistory ? <p className="mt-5 text-sm text-slate-400">Loading email history...</p> : null}
-          {historyError ? (
-            <p className="mt-5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-              {historyError}
-            </p>
-          ) : null}
-          {!isLoadingHistory && !historyError && history.length === 0 ? (
-            <p className="mt-5 rounded-xl border border-dashed border-white/15 px-4 py-6 text-sm text-slate-400">
-              No manual emails have been sent for this show yet.
-            </p>
-          ) : null}
-
-          {history.length > 0 ? (
-            <div className="mt-5 overflow-x-auto rounded-2xl border border-white/10">
-              <table className="min-w-full divide-y divide-white/10 text-left text-sm">
-                <thead className="bg-white/[0.04] text-xs uppercase tracking-[0.12em] text-slate-400">
-                  <tr>
-                    <th className="px-3 py-3">Date / Time</th>
-                    <th className="px-3 py-3">Recipient</th>
-                    <th className="px-3 py-3">From</th>
-                    <th className="px-3 py-3">Subject</th>
-                    <th className="px-3 py-3">Template</th>
-                    <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">Resend ID</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {history.map((item) => (
-                    <tr key={item.id} className="align-top">
-                      <td className="whitespace-nowrap px-3 py-3 text-slate-300">{formatSentAt(item.createdAt)}</td>
-                      <td className="px-3 py-3 text-white">{item.recipientEmail}</td>
-                      <td className="min-w-56 px-3 py-3 text-slate-300">{item.fromAddress}</td>
-                      <td className="min-w-64 px-3 py-3 text-slate-200">{item.subject}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-slate-300">{templateLabels[item.templateKey] ?? item.templateKey}</td>
-                      <td className="px-3 py-3">
-                        <span className={`rounded-full border px-2.5 py-1 text-xs font-bold uppercase ${
-                          item.sendStatus === "sent"
-                            ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
-                            : "border-rose-400/30 bg-rose-500/10 text-rose-100"
-                        }`}>
-                          {item.sendStatus}
-                        </span>
-                        {item.errorMessage ? <p className="mt-2 min-w-52 text-xs text-rose-200">{item.errorMessage}</p> : null}
-                      </td>
-                      <td className="max-w-64 break-all px-3 py-3 text-xs text-slate-400">{item.resendMessageId ?? "\u2014"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
+          <h2 className="text-xl font-black">Recent Emails</h2><p className="mt-1 text-sm text-slate-400">Immutable message snapshots and Resend delivery activity for this show.</p>
+          <div className="mt-4 flex flex-wrap gap-2">{(["all","sent","delivered","opened","clicked","problems"] as HistoryFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setHistoryFilter(filter)} className={`rounded-full border px-3 py-1.5 text-xs font-bold uppercase ${historyFilter === filter ? "border-emerald-400 bg-emerald-500/20 text-emerald-100" : "border-white/15 text-slate-300"}`}>{filter}</button>)}</div>
+          {isLoading ? <p className="mt-5 text-sm text-slate-400">Loading Email Center...</p> : null}
+          {loadError ? <p className="mt-5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{loadError}</p> : null}
+          {!isLoading && !loadError && filteredHistory.length === 0 ? <p className="mt-5 rounded-xl border border-dashed border-white/15 px-4 py-6 text-sm text-slate-400">No emails match this filter.</p> : null}
+          <div className="mt-5 grid gap-3">{filteredHistory.map((item) => <details key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <summary className="cursor-pointer list-none">
+              <div className="grid gap-2 sm:grid-cols-[1.2fr_2fr_auto_auto] sm:items-center">
+                <div><p className="font-bold text-white">{item.recipientName || item.recipientEmail}</p><p className="text-xs text-slate-400">{item.recipientEmail}</p></div>
+                <p className="text-sm text-slate-200">{item.subject}</p><p className="text-xs text-slate-400">{formatDateTime(item.createdAt)}</p>
+                <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-bold uppercase ${statusTone(item.currentStatus)}`}>{statusLabel(item.currentStatus)}'</span>
+              </div>
+            </summary>
+            <div className="mt-4 grid gap-5 border-t border-white/10 pt-4 lg:grid-cols-2">
+              <div className="grid gap-2 text-sm"><h3 className="font-bold uppercase tracking-wider text-slate-400">Message Details</h3>
+                <p><span className="text-slate-400">To:</span> {item.recipientName ? `${item.recipientName} <${item.recipientEmail}>` : item.recipientEmail}</p>
+                <p><span className="text-slate-400">From:</span> {item.fromAddress}</p><p><span className="text-slate-400">Reply-To:</span> {item.replyTo || ""}</p>
+                <p><span className="text-slate-400">Template:</span> {templateLabels[item.templateKey] ?? item.templateKey}</p>
+                <p><span className="text-slate-400">Subject:</span> {item.subject}</p><p><span className="text-slate-400">Sent:</span> {formatDateTime(item.sentAt)}</p>
+                <p><span className="text-slate-400">Resend ID:</span> {item.resendMessageId || ""}</p>
+                <pre className="mt-2 whitespace-pre-wrap rounded-xl bg-slate-950 p-3 font-sans text-sm leading-6">{item.message || "Historical message body unavailable."}</pre>
+              </div>
+              <div><h3 className="font-bold uppercase tracking-wider text-slate-400">Email Activity</h3>
+                <ol className="mt-3 grid gap-3 text-sm"><li><span className="text-slate-400">{formatDateTime(item.createdAt)}</span>  Email created</li>
+                  {item.sentAt ? <li><span className="text-slate-400">{formatDateTime(item.sentAt)}</span>  Sent to Resend</li> : null}
+                  {item.events.map((event) => <li key={event.id}><span className="text-slate-400">{formatDateTime(event.createdAt)}</span>  {eventLabel(event.type)}
+                    {event.clickedUrl ? <p className="break-all text-xs text-cyan-300">{event.clickedUrl}</p> : null}
+                    {event.detail ? <p className="text-xs text-rose-200">{event.detail}</p> : null}</li>)}
+                  {item.errorMessage ? <li className="text-rose-200">{item.errorMessage}</li> : null}
+                </ol>
+              </div>
             </div>
-          ) : null}
+          </details>)}</div>
         </section>
       </div>
     </main>
