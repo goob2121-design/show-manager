@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
+import { SavedDiscountCodes, type SavedDiscountSelection } from "@/app/components/saved-discount-codes";
 import {
   EMAIL_CENTER_AUDIENCES,
   dedupeEmailCenterAudienceRecipients,
@@ -259,6 +260,11 @@ export function EmailCenter({ slug }: { slug: string }) {
     setCtaUrl(value);
     setCtaLabel((current) => value.trim() ? (current.trim() || "Get Tickets") : "");
   }
+  function selectSavedDiscountCode(selection: SavedDiscountSelection) {
+    setMergeFields((current) => ({ ...current, promo_code: selection.code, promo_offer: selection.offerText, ticket_link: selection.ticketUrl }));
+    setCtaUrl(selection.ticketUrl);
+    setCtaLabel(selection.ticketUrl ? "Get Tickets" : "");
+  }
   function handleTemplateChange(nextKey: ManualEmailTemplateKey) {
     const template = getManualEmailTemplate(nextKey);
     if (!template) return;
@@ -361,6 +367,7 @@ export function EmailCenter({ slug }: { slug: string }) {
             </label>
             <section className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4"><h3 className="font-bold text-amber-200">Ticket Promotion Details (optional)</h3><p className="mt-1 text-xs text-slate-400">Used by the Save on Tickets template. Change these for every promotion.</p><div className="mt-4 grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-semibold">Discount / Promo Code<input value={mergeFields.promo_code ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_code: event.target.value }))} placeholder="SAVE10" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Offer Text<input value={mergeFields.promo_offer ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_offer: event.target.value }))} placeholder="Save $5 on each ticket" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Ticket Purchase URL<input type="url" value={mergeFields.ticket_link ?? ""} onChange={(event) => changeTicketPurchaseUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div></section>
             <div className="grid gap-5 md:grid-cols-2"><label className="grid gap-2 text-sm font-semibold">CTA Button Label (optional)<input maxLength={80} value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} placeholder="Get Tickets" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">CTA URL (optional)<input type="url" value={ctaUrl} onChange={(event) => setCtaUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div>
+            {templateKey === "ticket_discount" ? <SavedDiscountCodes slug={slug} onSelect={selectSavedDiscountCode} /> : null}
 
             {audienceKey ? (
               <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
