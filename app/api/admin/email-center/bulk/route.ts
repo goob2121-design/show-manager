@@ -82,6 +82,8 @@ export async function POST(request: NextRequest) {
     const headingTemplate = text(body.heading);
     const ctaLabelTemplate = text(body.ctaLabel);
     const ctaUrlTemplate = text(body.ctaUrl);
+    const rawCampaignFields = body.campaignMergeFields && typeof body.campaignMergeFields === "object" && !Array.isArray(body.campaignMergeFields) ? body.campaignMergeFields as Record<string, unknown> : {};
+    const campaignMergeFields = { promo_code: text(rawCampaignFields.promo_code), promo_offer: text(rawCampaignFields.promo_offer), ticket_link: text(rawCampaignFields.ticket_link) };
     const selectedRecipientIds = Array.isArray(body.selectedRecipientIds)
       ? [...new Set(body.selectedRecipientIds.map(text).filter(Boolean))] : [];
     const sender = getManualEmailSender(senderKey);
@@ -100,10 +102,11 @@ export async function POST(request: NextRequest) {
     const selectedSet = new Set(selectedRecipientIds);
     const selected = audienceResult.recipients.filter((recipient) => selectedSet.has(recipient.id));
     const rendered = selected.map((recipient) => {
-      const content = renderEmailCenterRecipient({ recipient, subjectTemplate, messageTemplate, headingTemplate, ctaLabelTemplate, ctaUrlTemplate, senderValid: true });
+      const campaignRecipient = { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields } };
+      const content = renderEmailCenterRecipient({ recipient: campaignRecipient, subjectTemplate, messageTemplate, headingTemplate, ctaLabelTemplate, ctaUrlTemplate, promoOfferTemplate: campaignMergeFields.promo_offer, promoCodeTemplate: campaignMergeFields.promo_code, senderValid: true });
       const subscriberId = audienceKey === "mailing_list_subscribers" && recipient.id.startsWith("mailing:") ? recipient.id.slice(8) : null;
       const unsubscribeUrl = subscriberId ? mailingListUnsubscribeUrl(request.nextUrl.origin, subscriberId) : undefined;
-      return { recipient, subscriberId, ...content, renderedEmail: renderEmailCenterEmail({ heading: content.heading, message: content.message, ctaLabel: content.ctaLabel, ctaUrl: content.ctaUrl, unsubscribeUrl }) };
+      return { recipient, subscriberId, ...content, renderedEmail: renderEmailCenterEmail({ heading: content.heading, message: content.message, ctaLabel: content.ctaLabel, ctaUrl: content.ctaUrl, promoOffer: content.promoOffer, promoCode: content.promoCode, unsubscribeUrl }) };
     });
     const ready = rendered.filter((item) => item.ready);
     const skippedCount = audienceResult.recipients.length - ready.length;

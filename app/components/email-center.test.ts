@@ -45,3 +45,17 @@ test("Email Center preview uses the canonical branded renderer with optional hea
   for (const label of ["Email Heading", "CTA Button Label", "CTA URL"]) assert.match(source, new RegExp(label));
   assert.match(source, /heading, ctaLabel, ctaUrl/);
 });
+
+test("Email Center exposes reusable editable ticket-promotion fields", async () => {
+  const source = await readFile(componentPath, "utf8");
+  for (const label of ["Discount / Promo Code", "Offer Text", "Ticket Purchase URL"]) assert.match(source, new RegExp(label));
+  assert.match(source, /campaignMergeFields/);
+});
+
+test("Ticket Purchase URL automatically configures the gold ticket CTA", async () => {
+  const source = await readFile(componentPath, "utf8");
+  assert.match(source, /function changeTicketPurchaseUrl/);
+  assert.match(source, /setCtaUrl\(value\)/);
+  assert.match(source, /current\.trim\(\) \|\| "Get Tickets"/);
+  assert.match(source, /onChange=\{\(event\) => changeTicketPurchaseUrl\(event\.target\.value\)\}/);
+});

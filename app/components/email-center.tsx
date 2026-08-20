@@ -96,14 +96,15 @@ export function EmailCenter({ slug }: { slug: string }) {
   const [resultTone, setResultTone] = useState<"success" | "error">("success");
 
   const selectedSender = manualEmailSenders.find((sender) => sender.key === senderKey) ?? null;
+  const campaignMergeFields: EmailCenterMergeValues = { promo_code: mergeFields.promo_code ?? "", promo_offer: mergeFields.promo_offer ?? "", ticket_link: mergeFields.ticket_link ?? "" };
   const uniqueRecipients = useMemo(() => dedupeEmailCenterAudienceRecipients(recipients).recipients, [recipients]);
   const audienceResult = useMemo(() => audienceKey
     ? recipientsForEmailCenterAudience(recipients, audienceKey)
     : { recipients: [], recordsFound: 0, duplicatesRemoved: 0, uniqueRecipients: 0 }, [recipients, audienceKey]);
   const audienceRows = useMemo(() => audienceResult.recipients.map((recipient) => ({
     recipient,
-    ...renderEmailCenterRecipient({ recipient, subjectTemplate: subject, messageTemplate: message, headingTemplate: heading, ctaLabelTemplate: ctaLabel, ctaUrlTemplate: ctaUrl, senderValid: Boolean(selectedSender) }),
-  })), [audienceResult.recipients, subject, message, heading, ctaLabel, ctaUrl, selectedSender]);
+    ...renderEmailCenterRecipient({ recipient: { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields } }, subjectTemplate: subject, messageTemplate: message, headingTemplate: heading, ctaLabelTemplate: ctaLabel, ctaUrlTemplate: ctaUrl, promoOfferTemplate: mergeFields.promo_offer, promoCodeTemplate: mergeFields.promo_code, senderValid: Boolean(selectedSender) }),
+  })), [audienceResult.recipients, subject, message, heading, ctaLabel, ctaUrl, selectedSender, mergeFields.promo_code, mergeFields.promo_offer, mergeFields.ticket_link]);
   const selectedRecipientSet = useMemo(() => new Set(selectedRecipientIds), [selectedRecipientIds]);
   const selectedReadyRows = audienceRows.filter((row) => row.ready && selectedRecipientSet.has(row.recipient.id));
   const problemRows = audienceRows.filter((row) => !row.ready);
@@ -113,14 +114,17 @@ export function EmailCenter({ slug }: { slug: string }) {
   const renderedHeading = useMemo(() => resolveEmailCenterMergeFields(heading, mergeFields).rendered, [heading, mergeFields]);
   const renderedCtaLabel = useMemo(() => resolveEmailCenterMergeFields(ctaLabel, mergeFields).rendered, [ctaLabel, mergeFields]);
   const renderedCtaUrl = useMemo(() => resolveEmailCenterMergeFields(ctaUrl, mergeFields).rendered, [ctaUrl, mergeFields]);
+  const renderedPromoOffer = useMemo(() => resolveEmailCenterMergeFields(mergeFields.promo_offer ?? "", mergeFields).rendered, [mergeFields]);
+  const renderedPromoCode = useMemo(() => resolveEmailCenterMergeFields(mergeFields.promo_code ?? "", mergeFields).rendered, [mergeFields]);
   const previewUnsubscribeUrl = audienceKey === "mailing_list_subscribers" || selectedRecipientId?.startsWith("mailing:") ? "https://stageflow.cumberlandmountainmusic.com/mailing-list/unsubscribe?token=recipient-specific-secure-link" : undefined;
-  const renderedEmail = useMemo(() => renderEmailCenterEmail({ heading: renderedHeading, message: renderedMessage, ctaLabel: renderedCtaLabel, ctaUrl: renderedCtaUrl, unsubscribeUrl: previewUnsubscribeUrl }), [renderedHeading, renderedMessage, renderedCtaLabel, renderedCtaUrl, previewUnsubscribeUrl]);
-  const unresolvedFields = useMemo(() => findUnresolvedEmailCenterMergeFields(renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl), [renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl]);
+  const renderedEmail = useMemo(() => renderEmailCenterEmail({ heading: renderedHeading, message: renderedMessage, ctaLabel: renderedCtaLabel, ctaUrl: renderedCtaUrl, unsubscribeUrl: previewUnsubscribeUrl, promoOffer: renderedPromoOffer, promoCode: renderedPromoCode }), [renderedHeading, renderedMessage, renderedCtaLabel, renderedCtaUrl, previewUnsubscribeUrl, renderedPromoOffer, renderedPromoCode]);
+  const unresolvedFields = useMemo(() => findUnresolvedEmailCenterMergeFields(renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl, renderedPromoOffer, renderedPromoCode), [renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl, renderedPromoOffer, renderedPromoCode]);
   const checks = [
     { label: "Recipient", ok: isValidManualEmailAddress(recipientEmail), issue: "Enter a valid recipient email." },
     { label: "Sender", ok: Boolean(selectedSender), issue: "Select an allowlisted sender." },
     { label: "Subject", ok: Boolean(renderedSubject.trim()), issue: "Subject is blank." },
     { label: "Message", ok: Boolean(renderedMessage.trim()), issue: "Message is blank." },
+    { label: "Promotion", ok: Boolean(renderedPromoOffer.trim()) === Boolean(renderedPromoCode.trim()), issue: "Promotion requires both offer text and a promo code." },
     { label: "CTA", ok: Boolean(renderedCtaLabel.trim()) === Boolean(renderedCtaUrl.trim()) && (!renderedCtaUrl.trim() || /^https:\/\//i.test(renderedCtaUrl.trim())), issue: "CTA requires both a label and an HTTPS URL." },
     { label: "Merge fields", ok: unresolvedFields.length === 0, issue: unresolvedFields.length ? `Unresolved field: ${unresolvedFields[0]}` : "" },
     { label: "Send state", ok: !isSending, issue: "A send is already in progress." },
@@ -224,6 +228,7 @@ export function EmailCenter({ slug }: { slug: string }) {
           subject,
           message,
           heading, ctaLabel, ctaUrl,
+          campaignMergeFields,
           selectedRecipientIds: selectedReadyRows.map((row) => row.recipient.id),
         }),
       });
@@ -243,16 +248,21 @@ export function EmailCenter({ slug }: { slug: string }) {
 
   function selectRecipient(recipient: Recipient) {
     setSelectedRecipientId(recipient.id); setRecipientName(recipient.name); setRecipientEmail(recipient.email);
-    setRecipientQuery(recipient.name || recipient.email); setMergeFields(recipient.mergeFields); setResultMessage(null);
+    setRecipientQuery(recipient.name || recipient.email); setMergeFields((current) => ({ ...recipient.mergeFields, promo_code: current.promo_code, promo_offer: current.promo_offer, ticket_link: current.ticket_link })); setResultMessage(null);
   }
   function changeRecipientEmail(value: string) {
     setRecipientEmail(value); setSelectedRecipientId(null);
     setMergeFields((current) => ({ ...current, email: value.trim(), first_name: recipientName.split(/\s+/)[0] ?? "", full_name: recipientName }));
   }
+  function changeTicketPurchaseUrl(value: string) {
+    setMergeFields((current) => ({ ...current, ticket_link: value }));
+    setCtaUrl(value);
+    setCtaLabel((current) => value.trim() ? (current.trim() || "Get Tickets") : "");
+  }
   function handleTemplateChange(nextKey: ManualEmailTemplateKey) {
     const template = getManualEmailTemplate(nextKey);
     if (!template) return;
-    setTemplateKey(nextKey); setSubject(template.subject); setMessage(template.message); setResultMessage(null);
+    setTemplateKey(nextKey); setSubject(template.subject); setMessage(template.message); setHeading(template.heading); setCtaLabel(template.ctaLabel); setCtaUrl(template.ctaUrl); setResultMessage(null);
   }
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -349,6 +359,7 @@ export function EmailCenter({ slug }: { slug: string }) {
             <label className="grid gap-2 text-sm font-semibold">Email Heading (optional)
               <input maxLength={200} value={heading} onChange={(event) => setHeading(event.target.value)} placeholder="A message from CMMS" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
             </label>
+            <section className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4"><h3 className="font-bold text-amber-200">Ticket Promotion Details (optional)</h3><p className="mt-1 text-xs text-slate-400">Used by the Save on Tickets template. Change these for every promotion.</p><div className="mt-4 grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-semibold">Discount / Promo Code<input value={mergeFields.promo_code ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_code: event.target.value }))} placeholder="SAVE10" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Offer Text<input value={mergeFields.promo_offer ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_offer: event.target.value }))} placeholder="Save $5 on each ticket" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Ticket Purchase URL<input type="url" value={mergeFields.ticket_link ?? ""} onChange={(event) => changeTicketPurchaseUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div></section>
             <div className="grid gap-5 md:grid-cols-2"><label className="grid gap-2 text-sm font-semibold">CTA Button Label (optional)<input maxLength={80} value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} placeholder="Get Tickets" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">CTA URL (optional)<input type="url" value={ctaUrl} onChange={(event) => setCtaUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div>
 
             {audienceKey ? (

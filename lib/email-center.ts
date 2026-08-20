@@ -2,7 +2,8 @@ import type { SupportedResendEmailEventType } from "./reserved-seat-email-tracki
 
 export const EMAIL_CENTER_MERGE_FIELDS = [
   "first_name", "last_name", "full_name", "email", "show_name", "show_date",
-  "show_time", "ticket_quantity", "seat_numbers", "reserved_seat_link",
+  "show_time", "ticket_quantity", "seat_numbers", "reserved_seat_link", "promo_code",
+  "promo_offer", "ticket_link",
 ] as const;
 
 export type EmailCenterMergeField = (typeof EMAIL_CENTER_MERGE_FIELDS)[number];

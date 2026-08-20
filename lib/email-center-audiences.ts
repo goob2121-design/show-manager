@@ -75,6 +75,8 @@ export function renderEmailCenterRecipient(input: {
   headingTemplate?: string;
   ctaLabelTemplate?: string;
   ctaUrlTemplate?: string;
+  promoOfferTemplate?: string;
+  promoCodeTemplate?: string;
   senderValid: boolean;
 }) {
   const subject = resolveEmailCenterMergeFields(input.subjectTemplate, input.recipient.mergeFields).rendered;
@@ -82,7 +84,9 @@ export function renderEmailCenterRecipient(input: {
   const heading = resolveEmailCenterMergeFields(input.headingTemplate ?? "", input.recipient.mergeFields).rendered;
   const ctaLabel = resolveEmailCenterMergeFields(input.ctaLabelTemplate ?? "", input.recipient.mergeFields).rendered;
   const ctaUrl = resolveEmailCenterMergeFields(input.ctaUrlTemplate ?? "", input.recipient.mergeFields).rendered;
-  const unresolved = findUnresolvedEmailCenterMergeFields(subject, message, heading, ctaLabel, ctaUrl);
+  const promoOffer = resolveEmailCenterMergeFields(input.promoOfferTemplate ?? "", input.recipient.mergeFields).rendered;
+  const promoCode = resolveEmailCenterMergeFields(input.promoCodeTemplate ?? "", input.recipient.mergeFields).rendered;
+  const unresolved = findUnresolvedEmailCenterMergeFields(subject, message, heading, ctaLabel, ctaUrl, promoOffer, promoCode);
   const problems: string[] = [];
   if (!input.recipient.email.trim()) problems.push("Missing email address");
   else if (!isValidManualEmailAddress(input.recipient.email.trim().toLowerCase())) problems.push("Invalid email address");
@@ -92,5 +96,6 @@ export function renderEmailCenterRecipient(input: {
   if (Boolean(ctaLabel.trim()) !== Boolean(ctaUrl.trim())) problems.push("CTA label and URL must both be provided");
   if (ctaUrl.trim() && !/^https:\/\//i.test(ctaUrl.trim())) problems.push("CTA URL must use HTTPS");
   for (const field of unresolved) problems.push(`${field} unavailable`);
-  return { subject, message, heading, ctaLabel, ctaUrl, problems, ready: problems.length === 0 };
+  if (Boolean(promoOffer.trim()) !== Boolean(promoCode.trim())) problems.push("Promo offer and code must both be provided");
+  return { subject, message, heading, ctaLabel, ctaUrl, promoOffer, promoCode, problems, ready: problems.length === 0 };
 }

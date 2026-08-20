@@ -209,7 +209,9 @@ export async function POST(request: NextRequest) {
     const resolvedHeading = resolveEmailCenterMergeFields(headingTemplate, mergeFields);
     const resolvedCtaLabel = resolveEmailCenterMergeFields(ctaLabelTemplate, mergeFields);
     const resolvedCtaUrl = resolveEmailCenterMergeFields(ctaUrlTemplate, mergeFields);
-    const unresolved = findUnresolvedEmailCenterMergeFields(resolvedSubject.rendered, resolvedMessage.rendered, resolvedHeading.rendered, resolvedCtaLabel.rendered, resolvedCtaUrl.rendered);
+    const resolvedPromoOffer = resolveEmailCenterMergeFields(mergeFields.promo_offer ?? "", mergeFields);
+    const resolvedPromoCode = resolveEmailCenterMergeFields(mergeFields.promo_code ?? "", mergeFields);
+    const unresolved = findUnresolvedEmailCenterMergeFields(resolvedSubject.rendered, resolvedMessage.rendered, resolvedHeading.rendered, resolvedCtaLabel.rendered, resolvedCtaUrl.rendered, resolvedPromoOffer.rendered, resolvedPromoCode.rendered);
 
     if (!validRequestId(requestId)) return NextResponse.json({ success: false, error: "A valid send request ID is required." }, { status: 400 });
     if (!isValidManualEmailAddress(recipientEmail)) return NextResponse.json({ success: false, error: "Enter a valid recipient email address." }, { status: 400 });
@@ -217,6 +219,7 @@ export async function POST(request: NextRequest) {
     if (!template) return NextResponse.json({ success: false, error: "Select a valid email template." }, { status: 400 });
     if (!resolvedSubject.rendered || resolvedSubject.rendered.length > 200 || /[\r\n]/.test(resolvedSubject.rendered)) return NextResponse.json({ success: false, error: "Enter a subject of 200 characters or fewer." }, { status: 400 });
     if (!resolvedMessage.rendered || resolvedMessage.rendered.length > 20000) return NextResponse.json({ success: false, error: "Enter a message of 20,000 characters or fewer." }, { status: 400 });
+    if (Boolean(resolvedPromoOffer.rendered) !== Boolean(resolvedPromoCode.rendered)) return NextResponse.json({ success: false, error: "Promotion requires both offer text and a promo code." }, { status: 400 });
     if (Boolean(resolvedCtaLabel.rendered) !== Boolean(resolvedCtaUrl.rendered)) return NextResponse.json({ success: false, error: "CTA label and URL must both be provided." }, { status: 400 });
     if (resolvedCtaUrl.rendered && !/^https:\/\//i.test(resolvedCtaUrl.rendered)) return NextResponse.json({ success: false, error: "CTA URL must use HTTPS." }, { status: 400 });
     if (unresolved.length) return NextResponse.json({ success: false, error: `Resolve merge field: ${unresolved[0]}` }, { status: 400 });
@@ -227,7 +230,7 @@ export async function POST(request: NextRequest) {
       if (!subscriber || subscriber.status !== "active" || subscriber.email.trim().toLowerCase() !== recipientEmail) return NextResponse.json({ success: false, error: "This mailing-list subscriber is no longer active." }, { status: 409 });
       unsubscribeUrl = mailingListUnsubscribeUrl(request.nextUrl.origin, subscriber.id);
     }
-    const renderedEmail = renderEmailCenterEmail({ heading: resolvedHeading.rendered, message: resolvedMessage.rendered, ctaLabel: resolvedCtaLabel.rendered, ctaUrl: resolvedCtaUrl.rendered, unsubscribeUrl });
+    const renderedEmail = renderEmailCenterEmail({ heading: resolvedHeading.rendered, message: resolvedMessage.rendered, ctaLabel: resolvedCtaLabel.rendered, ctaUrl: resolvedCtaUrl.rendered, promoOffer: resolvedPromoOffer.rendered, promoCode: resolvedPromoCode.rendered, unsubscribeUrl });
 
     const now = new Date().toISOString();
     const { data: delivery, error: claimError } = await access.supabase.from("manual_email_history").insert({

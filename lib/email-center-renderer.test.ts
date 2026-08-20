@@ -32,3 +32,14 @@ test("missing or unsafe CTA does not leave an empty button", () => {
     assert.doesNotMatch(result.text, /Click:/);
   }
 });
+
+test("promo callout renders offer and escaped code without affecting ordinary messages", () => {
+  const promo = renderEmailCenterEmail({ message: "Limited-time ticket savings.", promoOffer: "Save $5 <today>", promoCode: "SAVE<5>", ctaLabel: "Get Tickets", ctaUrl: "https://example.com/tickets" });
+  assert.match(promo.html, /SPECIAL OFFER/);
+  assert.match(promo.html, /Save \$5 &lt;today&gt;/);
+  assert.match(promo.html, /SAVE&lt;5&gt;/);
+  assert.match(promo.html, /Use this code at checkout/);
+  assert.match(promo.html, /href="https:\/\/example\.com\/tickets"/);
+  const ordinary = renderEmailCenterEmail({ message: "Ordinary update" });
+  assert.doesNotMatch(ordinary.html, /SPECIAL OFFER|Use this code at checkout/);
+});
