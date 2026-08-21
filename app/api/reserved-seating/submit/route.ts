@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { deliverOfficialTicketEmail } from "@/lib/email/official-ticket-email";
+import { splitMailingListFullName, subscribeMailingListContact } from "@/lib/mailing-list-subscription";
 import { RESERVED_SEAT_DEFINITIONS, RESERVED_SEATING_VENUE, formatReservedSeatLabel, getReservedSeatDefinition, sortReservedSeatIds } from "@/lib/reserved-seating";
 import type { ShowRecord, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -12,6 +13,7 @@ const defaultFromAddress = "onboarding@resend.dev";
 type SubmitReservedSeatsRequestBody = {
   token?: unknown;
   seatIds?: unknown;
+  mailingListOptIn?: unknown;
 };
 
 function createServiceRoleSupabaseClient() {
@@ -254,6 +256,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
 
+    let mailingListSubscribed = false;
+    if (body.mailingListOptIn === true && typedSeatingLink.email?.trim()) {
+      try {
+        const names = splitMailingListFullName(typedSeatingLink.customer_name);
+        const subscription = await subscribeMailingListContact(supabase, {
+          email: typedSeatingLink.email,
+          ...names,
+          source: "ticket_opt_in",
+          confirmResubscribe: true,
+        });
+        mailingListSubscribed = subscription.status !== "resubscribe_required";
+      } catch (error) {
+        console.error("Mailing-list opt-in failed after reserved-seat assignment commit.", {
+          reservationId: typedSeatingLink.id,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
     let ticketEmailDelivered = false;
     let ticketEmailMessage: string | null = null;
     try {
@@ -299,6 +320,7 @@ export async function POST(request: NextRequest) {
         submittedAt,
         ticketEmailDelivered,
         ticketEmailMessage,
+        mailingListSubscribed,
       },
     });
   } catch (error) {

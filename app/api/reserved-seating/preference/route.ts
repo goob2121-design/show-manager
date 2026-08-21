@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import type { ReservedSeatPreference } from "@/lib/types";
+import { splitMailingListFullName, subscribeMailingListContact } from "@/lib/mailing-list-subscription";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,7 @@ function createServiceRoleSupabaseClient() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { token?: unknown; preference?: unknown };
+    const body = await request.json() as { token?: unknown; preference?: unknown; mailingListOptIn?: unknown };
     const token = typeof body.token === "string" ? body.token.trim() : "";
     const preference = body.preference as ReservedSeatPreference;
     if (!token || !["customer_select", "auto_assign"].includes(preference)) {
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceRoleSupabaseClient();
     const { data: link, error: linkError } = await supabase
       .from("show_reserved_seating_links")
-      .select("id,submitted_at")
+      .select("id,submitted_at,email,customer_name")
       .eq("selection_token", token)
       .maybeSingle();
     if (linkError) throw linkError;
@@ -44,7 +45,26 @@ export async function POST(request: NextRequest) {
       .eq("id", link.id);
     if (updateError) throw updateError;
 
-    return NextResponse.json({ success: true, data: { seatPreference: preference } });
+    let mailingListSubscribed = false;
+    if (preference === "auto_assign" && body.mailingListOptIn === true && link.email?.trim()) {
+      try {
+        const names = splitMailingListFullName(link.customer_name);
+        const subscription = await subscribeMailingListContact(supabase, {
+          email: link.email,
+          ...names,
+          source: "ticket_opt_in",
+          confirmResubscribe: true,
+        });
+        mailingListSubscribed = subscription.status !== "resubscribe_required";
+      } catch (error) {
+        console.error("Mailing-list opt-in failed after no-seat-selected preference commit.", {
+          reservationId: link.id,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    return NextResponse.json({ success: true, data: { seatPreference: preference, mailingListSubscribed } });
   } catch (error) {
     console.error("Customer seat preference update failed.", { message: error instanceof Error ? error.message : "Unknown error" });
     return NextResponse.json({ success: false, error: "Unable to save your seat preference right now." }, { status: 500 });

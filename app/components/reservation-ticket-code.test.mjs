@@ -32,7 +32,7 @@ test("QR and barcode independently open an accessible dismissible overlay", asyn
   assert.doesNotMatch(source, /target="_blank"|window\.open/);
 });
 
-test("interactive styling improves metadata and remains customer-screen only", async () => {
+test("interactive styling remains available to shared consumers but is absent from public seat selection", async () => {
   const [source, page, phone] = await Promise.all([
     readFile(codeUrl, "utf8"),
     readFile(customerPageUrl, "utf8"),
@@ -42,8 +42,7 @@ test("interactive styling improves metadata and remains customer-screen only", a
   assert.match(source, /canEnlarge = interactive && !phone && !printable/);
   assert.match(source, /canEnlarge \? "text-slate-100"/);
   assert.match(source, /break-words text-base leading-6/);
-  assert.match(page, /seatLabels=\{seatsToShow\.map[\s\S]*compact[\s\S]*interactive/);
-  assert.ok(page.indexOf("interactive") < page.indexOf("!isAlreadySubmitted ?"));
+  assert.doesNotMatch(page, /<ReservationTicketCode[\s\S]*compact[\s\S]*interactive/);
   assert.match(phone, /<ReservationTicketCode[\s\S]*phone/);
   assert.doesNotMatch(phone, /<ReservationTicketCode[\s\S]*interactive/);
 });

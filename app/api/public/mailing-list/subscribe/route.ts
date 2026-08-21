@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { cleanMailingListName, isValidMailingListEmail, normalizeMailingListEmail } from "@/lib/mailing-list";
 import { sendMailingListWelcomeEmail, type MailingListWelcomeSendResult } from "@/lib/mailing-list-welcome-email";
+import { subscribeMailingListContact } from "@/lib/mailing-list-subscription";
 
 export const runtime = "nodejs";
 
@@ -79,42 +80,16 @@ export async function POST(request: NextRequest) {
     if (!isValidMailingListEmail(email)) return NextResponse.json({ success: false, error: "Enter a valid email address." }, { status: 400, headers });
 
     const supabase = db();
-    const { data: existing, error: lookupError } = await supabase
-      .from("mailing_list_subscribers")
-      .select("id,status")
-      .ilike("email", email)
-      .maybeSingle();
-    if (lookupError) throw lookupError;
-
-    if (existing?.status === "unsubscribed" && !resubscribe) {
+    const subscription = await subscribeMailingListContact(supabase, { email, firstName, lastName, source: "website", confirmResubscribe: resubscribe });
+    if (subscription.status === "resubscribe_required") {
       return NextResponse.json({ success: true, status: "resubscribe_required", message: "This address was previously unsubscribed. Confirm that you want to rejoin." }, { headers });
     }
-
-    const now = new Date().toISOString();
-    let subscriberId: string;
-    let created = false;
-    if (existing) {
-      const changes = existing.status === "unsubscribed"
-        ? { email, first_name: firstName || null, last_name: lastName || null, status: "active", source: "website", subscribed_at: now, unsubscribed_at: null, updated_at: now }
-        : { ...(firstName ? { first_name: firstName } : {}), ...(lastName ? { last_name: lastName } : {}), updated_at: now };
-      const { error } = await supabase.from("mailing_list_subscribers").update(changes).eq("id", existing.id);
-      if (error) throw error;
-      subscriberId = existing.id;
-      if (existing.status === "active") return NextResponse.json({ success: true, status: "already_subscribed", message: "You’re already on the list — thanks for staying connected!" }, { headers });
-    } else {
-      const { data, error } = await supabase
-        .from("mailing_list_subscribers")
-        .insert({ email, first_name: firstName || null, last_name: lastName || null, source: "website", status: "active" })
-        .select("id")
-        .single();
-      if (error?.code === "23505") return NextResponse.json({ success: true, status: "already_subscribed", message: "Already on the list - thanks for staying connected!" }, { headers });
-      if (error) throw error;
-      subscriberId = data.id;
-      created = true;
-    }
+    if (subscription.status === "already_subscribed") return NextResponse.json({ success: true, status: "already_subscribed", message: "You’re already on the list — thanks for staying connected!" }, { headers });
+    const subscriberId = subscription.subscriberId;
+    const created = subscription.created;
 
     let welcomeEmailResult: MailingListWelcomeSendResult | null = null;
-    if (created) {
+    if (created && subscriberId) {
       welcomeEmailResult = await sendMailingListWelcomeEmail({ subscriberId, email, firstName, apiKey: process.env.RESEND_API_KEY });
       await recordWelcomeEmailResult(supabase, subscriberId, welcomeEmailResult);
       if (welcomeEmailResult.sent) {

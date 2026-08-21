@@ -3,8 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 const subscribe = new URL("./subscribe/route.ts", import.meta.url);
 const unsubscribe = new URL("./unsubscribe/route.ts", import.meta.url);
+const subscriptionHelper = new URL("../../../../lib/mailing-list-subscription.ts", import.meta.url);
 test("public signup validates, normalizes, deduplicates, and requires explicit resubscribe", async () => {
-  const source = await readFile(subscribe, "utf8");
+  const routeSource = await readFile(subscribe, "utf8");
+  const helperSource = await readFile(subscriptionHelper, "utf8");
+  const source = `${routeSource}\n${helperSource}`;
   assert.match(source, /normalizeMailingListEmail/); assert.match(source, /isValidMailingListEmail/);
   assert.match(source, /\.ilike\("email", email\)/); assert.match(source, /already_subscribed/);
   assert.match(source, /resubscribe_required/); assert.match(source, /raw\.resubscribe === true/);

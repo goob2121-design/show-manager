@@ -76,6 +76,8 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
   const [isSavingPreference, setIsSavingPreference] = useState(false);
   const [isMobileHelpExpanded, setIsMobileHelpExpanded] = useState(false);
   const [hasSelectedMobileSection, setHasSelectedMobileSection] = useState(false);
+  const [mailingListOptIn, setMailingListOptIn] = useState(false);
+  const [mailingListSubscribed, setMailingListSubscribed] = useState(false);
   const isAlreadySubmitted = hasSubmitted;
 
   useEffect(() => {
@@ -111,11 +113,16 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
       const response = await fetch("/api/reserved-seating/preference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: seatingLink.selection_token, preference }),
+        body: JSON.stringify({
+          token: seatingLink.selection_token,
+          preference,
+          mailingListOptIn: preference === "auto_assign" && mailingListOptIn,
+        }),
       });
-      const payload = await response.json() as { success?: boolean; error?: string };
+      const payload = await response.json() as { success?: boolean; error?: string; data?: { mailingListSubscribed?: boolean } };
       if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to save your seat preference.");
       setSeatPreference(preference);
+      setMailingListSubscribed(Boolean(payload.data?.mailingListSubscribed));
       if (preference === "customer_select") {
         const url = new URL(window.location.href);
         url.searchParams.delete("preference");
@@ -207,10 +214,11 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
         body: JSON.stringify({
           token: seatingLink.selection_token,
           seatIds: selectedSeatIds,
+          mailingListOptIn,
         }),
       });
 
-      const payload = (await response.json()) as { success?: boolean; error?: string; data?: { seatIds?: string[]; ticketEmailDelivered?: boolean; ticketEmailMessage?: string | null } };
+      const payload = (await response.json()) as { success?: boolean; error?: string; data?: { seatIds?: string[]; ticketEmailDelivered?: boolean; ticketEmailMessage?: string | null; mailingListSubscribed?: boolean } };
 
       if (!response.ok || !payload.success) {
         throw new Error(payload.error || "Unable to save reserved seats.");
@@ -220,6 +228,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
       setConfirmedSeatIds(normalizedSeatIds);
       setSelectedSeatIds(normalizedSeatIds);
       setHasSubmitted(true);
+      setMailingListSubscribed(Boolean(payload.data?.mailingListSubscribed));
       setTicketEmailMessageTone(payload.data?.ticketEmailDelivered ? "success" : "warning");
       setTicketEmailMessage(payload.data?.ticketEmailDelivered
         ? "Your official ticket email is on its way."
@@ -306,6 +315,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
           <h1 className="mt-3 text-3xl font-black text-white">We&apos;ve Got It From Here!</h1>
           <p className="mt-5 leading-7 text-slate-200">Thanks! We&apos;ll choose the best available seats for your party, keep everyone together whenever possible, and email your tickets with your assigned seat numbers once they&apos;re ready.</p>
           <p className="mt-3 leading-7 text-slate-300">If you change your mind before your seats have been assigned, you can still return and choose your own seats.</p>
+          {mailingListSubscribed ? <p className="mt-4 text-sm text-emerald-200">You&apos;re also subscribed to CMMS updates.</p> : null}
           {errorMessage ? <p className="mt-5 rounded-xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{errorMessage}</p> : null}
           <div className="mt-7 grid gap-3 sm:grid-cols-2">
             <button type="button" onClick={() => void saveSeatPreference("customer_select")} disabled={isSavingPreference} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-[#071426] hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60">{isSavingPreference ? "Saving..." : "Choose My Own Seats Instead"}</button>
@@ -567,17 +577,6 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 )}
               </div>
 
-              <div className="mt-4">
-                <ReservationTicketCode
-                  scanToken={seatingLink.scan_token}
-                  format={show.ticket_code_format}
-                  purchaserName={seatingLink.customer_name}
-                  ticketCount={seatingLink.ticket_count}
-                  seatLabels={seatsToShow.map((seatId) => formatReservedSeatLabel(seatId))}
-                  compact
-                  interactive
-                />
-              </div>
 
               {errorMessage ? (
                 <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
@@ -662,6 +661,15 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                   <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-300">If you&apos;d rather not choose your seats online, we&apos;re happy to take care of it for you.</p>
                   <p className="mx-auto mt-2 max-w-3xl text-sm leading-6 text-slate-300">Your advance ticket purchase already guarantees your reserved seats. We&apos;ll choose the best available seats for your party, keep everyone together whenever possible, and email your tickets with your assigned seat numbers—so all you have to do is show up and enjoy the show!</p>
                     </div>
+                  <label className="mx-auto mt-4 flex min-h-12 max-w-2xl cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left text-sm leading-6 text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={mailingListOptIn}
+                      onChange={(event) => setMailingListOptIn(event.target.checked)}
+                      className="mt-1 h-5 w-5 shrink-0 accent-emerald-500"
+                    />
+                    <span>Keep me updated about upcoming Cumberland Mountain Music Shows, special announcements, and exclusive discounts.</span>
+                  </label>
                   <button type="button" onClick={() => void saveSeatPreference("auto_assign")} disabled={isSavingPreference} className="mt-4 rounded-xl bg-amber-400 px-4 py-2.5 font-bold text-[#071426] hover:bg-amber-300 disabled:opacity-60">{isSavingPreference ? "Saving..." : "🎟️ Choose My Seats for Me"}</button>
                   </div>
                 </section>
@@ -710,6 +718,16 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 </div>
               </div>
 
+              <label className="mt-4 flex min-h-12 cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={mailingListOptIn}
+                  onChange={(event) => setMailingListOptIn(event.target.checked)}
+                  className="mt-1 h-5 w-5 shrink-0 accent-emerald-500"
+                />
+                <span>Keep me updated about upcoming Cumberland Mountain Music Shows, special announcements, and exclusive discounts.</span>
+              </label>
+
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"
@@ -742,6 +760,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 <p className="text-sm leading-6 text-slate-300">Most guests simply use their phone at the door. Open the Phone-Friendly Ticket below and present the code when you arrive.</p>
                 <p className="text-sm leading-6 text-slate-300">You may also print your ticket or email it to yourself again.</p>
                 <p className="text-sm font-semibold text-amber-100">{ticketCoverageMessage}</p>
+                {mailingListSubscribed ? <p className="text-sm text-emerald-200">You&apos;re also subscribed to CMMS updates.</p> : null}
               </div>
 
               <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
