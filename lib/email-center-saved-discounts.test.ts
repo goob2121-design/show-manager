@@ -8,7 +8,7 @@ const bulkPath = new URL("../app/api/admin/email-center/bulk/route.ts", import.m
 
 test("ticket discount template exposes saved codes while manual promo fields remain editable", async () => {
   const source = await readFile(componentPath, "utf8");
-  assert.match(source, /templateKey === "ticket_discount" \? <SavedDiscountCodes/);
+  assert.match(source, /activeSection === "discount-codes" \? <section[^\n]*<SavedDiscountCodes/);
   assert.match(source, /promo_code: selection\.code/);
   assert.match(source, /promo_offer: selection\.offerText/);
   assert.match(source, /ticket_link: selection\.ticketUrl/);

@@ -167,7 +167,14 @@ export async function GET(request: NextRequest) {
     if (!access.ok) return NextResponse.json({ success: false, error: access.error }, { status: access.status });
     if (request.nextUrl.searchParams.get("mode") === "recipients") {
       const recipients = await loadEmailCenterRecipients(access.supabase, access.show, request.nextUrl.origin);
-      return NextResponse.json({ success: true, recipients, show: baseMergeFields(access.show) });
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: currentUpcomingShow, error: currentShowError } = await access.supabase.from("shows")
+        .select("slug,name,show_date").eq("is_archived", false).gte("show_date", today)
+        .order("show_date", { ascending: true }).limit(1).maybeSingle();
+      if (currentShowError) throw currentShowError;
+      return NextResponse.json({ success: true, recipients, show: baseMergeFields(access.show),
+        showContext: { slug: access.show.slug, name: access.show.name, showDate: access.show.show_date },
+        currentUpcomingShow: currentUpcomingShow ? { slug: currentUpcomingShow.slug, name: currentUpcomingShow.name, showDate: currentUpcomingShow.show_date } : null });
     }
     const { data, error } = await access.supabase.from("manual_email_history").select(HISTORY_SELECT)
       .eq("show_id", access.show.id).order("created_at", { ascending: false })

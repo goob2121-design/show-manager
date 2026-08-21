@@ -49,11 +49,19 @@ type BulkDelivery = {
 };
 type ApiResponse = { success?: boolean; error?: string; warning?: string; resendMessageId?: string | null; history?: HistoryItem | null };
 type HistoryFilter = "all" | "sent" | "delivered" | "opened" | "clicked" | "problems";
+type EmailCenterShowContext = { slug: string; name: string; showDate: string | null };
+type EmailCenterSection = "compose" | "templates" | "discount-codes" | "sent";
+const EMAIL_CENTER_SECTIONS: Array<{ key: EmailCenterSection; label: string }> = [{ key: "compose", label: "Compose" }, { key: "templates", label: "Templates" }, { key: "discount-codes", label: "Discount Codes" }, { key: "sent", label: "Sent & Activity" }];
 
 function formatDateTime(value: string | null) {
   if (!value) return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+function formatShowDate(value: string | null) {
+  if (!value) return "Date not set";
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(date);
 }
 function statusTone(status: string) {
   if (["bounced", "failed", "complained"].includes(status)) return "border-rose-400/40 bg-rose-500/15 text-rose-100";
@@ -96,7 +104,11 @@ export function EmailCenter({ slug }: { slug: string }) {
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [resultTone, setResultTone] = useState<"success" | "error">("success");
 
+  const [showContext, setShowContext] = useState<EmailCenterShowContext | null>(null);
+  const [currentUpcomingShow, setCurrentUpcomingShow] = useState<EmailCenterShowContext | null>(null);
+  const [activeSection, setActiveSection] = useState<EmailCenterSection>("compose");
   const selectedSender = manualEmailSenders.find((sender) => sender.key === senderKey) ?? null;
+  const usesTicketPromotion = templateKey === "ticket_discount";
   const campaignMergeFields: EmailCenterMergeValues = { promo_code: mergeFields.promo_code ?? "", promo_offer: mergeFields.promo_offer ?? "", ticket_link: mergeFields.ticket_link ?? "" };
   const uniqueRecipients = useMemo(() => dedupeEmailCenterAudienceRecipients(recipients).recipients, [recipients]);
   const audienceResult = useMemo(() => audienceKey
@@ -125,7 +137,7 @@ export function EmailCenter({ slug }: { slug: string }) {
     { label: "Sender", ok: Boolean(selectedSender), issue: "Select an allowlisted sender." },
     { label: "Subject", ok: Boolean(renderedSubject.trim()), issue: "Subject is blank." },
     { label: "Message", ok: Boolean(renderedMessage.trim()), issue: "Message is blank." },
-    { label: "Promotion", ok: Boolean(renderedPromoOffer.trim()) === Boolean(renderedPromoCode.trim()), issue: "Promotion requires both offer text and a promo code." },
+    ...(usesTicketPromotion ? [{ label: "Promotion", ok: Boolean(renderedPromoOffer.trim()) === Boolean(renderedPromoCode.trim()), issue: "Promotion requires both offer text and a promo code." }] : []),
     { label: "CTA", ok: Boolean(renderedCtaLabel.trim()) === Boolean(renderedCtaUrl.trim()) && (!renderedCtaUrl.trim() || /^https:\/\//i.test(renderedCtaUrl.trim())), issue: "CTA requires both a label and an HTTPS URL." },
     { label: "Merge fields", ok: unresolvedFields.length === 0, issue: unresolvedFields.length ? `Unresolved field: ${unresolvedFields[0]}` : "" },
     { label: "Send state", ok: !isSending, issue: "A send is already in progress." },
@@ -143,6 +155,9 @@ export function EmailCenter({ slug }: { slug: string }) {
     return item.currentStatus === historyFilter;
   });
 
+  const today = new Date().toISOString().slice(0, 10);
+  const isPastShow = Boolean(showContext?.showDate && showContext.showDate < today);
+  const currentShowLink = currentUpcomingShow && currentUpcomingShow.slug !== showContext?.slug ? currentUpcomingShow : null;
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -154,7 +169,7 @@ export function EmailCenter({ slug }: { slug: string }) {
           fetch(`/api/admin/email-center/bulk?slug=${encodeURIComponent(slug)}`, { cache: "no-store" }),
         ]);
         const historyPayload = await historyResponse.json() as { success?: boolean; error?: string; history?: HistoryItem[] };
-        const recipientsPayload = await recipientsResponse.json() as { success?: boolean; error?: string; recipients?: Recipient[]; show?: EmailCenterMergeValues };
+        const recipientsPayload = await recipientsResponse.json() as { success?: boolean; error?: string; recipients?: Recipient[]; show?: EmailCenterMergeValues; showContext?: EmailCenterShowContext; currentUpcomingShow?: EmailCenterShowContext | null };
         const bulkPayload = await bulkResponse.json() as { success?: boolean; error?: string; operations?: BulkOperation[]; deliveries?: BulkDelivery[] };
         if (!historyResponse.ok || !historyPayload.success) throw new Error(historyPayload.error || "Unable to load recent emails.");
         if (!recipientsResponse.ok || !recipientsPayload.success) throw new Error(recipientsPayload.error || "Unable to load recipients.");
@@ -165,6 +180,8 @@ export function EmailCenter({ slug }: { slug: string }) {
           setMergeFields(recipientsPayload.show ?? {});
           setBulkOperations(bulkPayload.operations ?? []);
           setBulkDeliveries(bulkPayload.deliveries ?? []);
+          setShowContext(recipientsPayload.showContext ?? null);
+          setCurrentUpcomingShow(recipientsPayload.currentUpcomingShow ?? null);
         }
       } catch (error) {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : "Unable to load Email Center.");
@@ -173,6 +190,21 @@ export function EmailCenter({ slug }: { slug: string }) {
     void load();
     return () => { cancelled = true; };
   }, [slug]);
+  useEffect(() => {
+    function sectionFromHash(): EmailCenterSection {
+      const value = window.location.hash.slice(1);
+      return EMAIL_CENTER_SECTIONS.some((section) => section.key === value) ? value as EmailCenterSection : "compose";
+    }
+    const update = () => setActiveSection(sectionFromHash());
+    update();
+    window.addEventListener("hashchange", update);
+    return () => window.removeEventListener("hashchange", update);
+  }, []);
+  function chooseSection(section: EmailCenterSection) {
+    setActiveSection(section);
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${section}`);
+  }
+
 
   function chooseAudience(value: EmailCenterAudienceKey | "") {
     setAudienceKey(value);
@@ -313,9 +345,15 @@ export function EmailCenter({ slug }: { slug: string }) {
           </div>
         </header>
 
-        <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
+        {showContext ? <section aria-label="Current show context" className={`rounded-3xl border p-5 shadow-2xl sm:p-7 ${isPastShow ? "border-amber-400/50 bg-amber-950/40" : "border-emerald-400/35 bg-emerald-950/30"}`}><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className={`text-xs font-black uppercase tracking-[0.2em] ${isPastShow ? "text-amber-300" : "text-emerald-300"}`}>{isPastShow ? `PAST SHOW — ${formatShowDate(showContext.showDate).toUpperCase()}` : "CURRENT / UPCOMING SHOW"}</p><p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Current Show</p><h2 className="mt-1 text-2xl font-black text-white">{showContext.name}</h2><p className="mt-1 text-lg font-semibold text-slate-200">{formatShowDate(showContext.showDate)}</p>{isPastShow ? <p className="mt-3 max-w-3xl rounded-xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100">You are viewing the Email Center for a past show. Messages sent here will be recorded under this show.</p> : null}</div>{currentShowLink ? <Link href={`/admin/${encodeURIComponent(currentShowLink.slug)}/email-center`} className="inline-flex w-fit rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-4 py-3 text-sm font-bold text-emerald-100">Go to Current Show Email Center</Link> : null}</div></section> : null}
+
+        <nav aria-label="Email Center sections" className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/70 p-2 shadow-xl"><div className="flex min-w-max gap-2 sm:grid sm:min-w-0 sm:grid-cols-4">{EMAIL_CENTER_SECTIONS.map((section) => <button key={section.key} type="button" onClick={() => chooseSection(section.key)} aria-current={activeSection === section.key ? "page" : undefined} className={`rounded-xl px-4 py-3 text-sm font-bold ${activeSection === section.key ? "bg-emerald-600 text-white" : "text-slate-300 hover:bg-white/[0.07]"}`}>{section.label}</button>)}</div></nav>
+
+        {activeSection === "compose" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
           <form className="grid gap-6" onSubmit={(event) => void handleSubmit(event)}>
             <div><h2 className="text-xl font-black">Compose</h2><p className="mt-1 text-sm text-slate-400">Choose one contact or a dynamic current-show audience.</p></div>
+            <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+              <div aria-label="Composer" className="grid min-w-0 gap-6">
             <label className="grid gap-2 text-sm font-semibold">Audience
               <select
                 value={audienceKey}
@@ -365,9 +403,10 @@ export function EmailCenter({ slug }: { slug: string }) {
             <label className="grid gap-2 text-sm font-semibold">Email Heading (optional)
               <input maxLength={200} value={heading} onChange={(event) => setHeading(event.target.value)} placeholder="A message from CMMS" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
             </label>
-            <section className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4"><h3 className="font-bold text-amber-200">Ticket Promotion Details (optional)</h3><p className="mt-1 text-xs text-slate-400">Used by the Save on Tickets template. Change these for every promotion.</p><div className="mt-4 grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-semibold">Discount / Promo Code<input value={mergeFields.promo_code ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_code: event.target.value }))} placeholder="SAVE10" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Offer Text<input value={mergeFields.promo_offer ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_offer: event.target.value }))} placeholder="Save $5 on each ticket" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Ticket Purchase URL<input type="url" value={mergeFields.ticket_link ?? ""} onChange={(event) => changeTicketPurchaseUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div></section>
+            {usesTicketPromotion ? <section className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4"><h3 className="font-bold text-amber-200">Ticket Promotion Details (optional)</h3><p className="mt-1 text-xs text-slate-400">Used by the Save on Tickets template. Change these for every promotion.</p><div className="mt-4 grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-semibold">Discount / Promo Code<input value={mergeFields.promo_code ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_code: event.target.value }))} placeholder="SAVE10" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Offer Text<input value={mergeFields.promo_offer ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_offer: event.target.value }))} placeholder="Save $5 on each ticket" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Ticket Purchase URL<input type="url" value={mergeFields.ticket_link ?? ""} onChange={(event) => changeTicketPurchaseUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div></section> : null}
             <div className="grid gap-5 md:grid-cols-2"><label className="grid gap-2 text-sm font-semibold">CTA Button Label (optional)<input maxLength={80} value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} placeholder="Get Tickets" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">CTA URL (optional)<input type="url" value={ctaUrl} onChange={(event) => setCtaUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div>
-            {templateKey === "ticket_discount" ? <SavedDiscountCodes slug={slug} onSelect={selectSavedDiscountCode} /> : null}
+              </div>
+              <div aria-label="Preview and validation" className="grid min-w-0 gap-5 xl:sticky xl:top-6">
 
             {audienceKey ? (
               <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -405,7 +444,7 @@ export function EmailCenter({ slug }: { slug: string }) {
                 </div>
               </section>
             ) : (
-              <div className="grid gap-5 lg:grid-cols-2">
+              <div className="grid gap-5">
                 <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
                   <h3 className="font-bold">Smart Data / Final Preview</h3>
                   <p className="mt-2 text-xs text-slate-400">Available: {EMAIL_CENTER_MERGE_FIELDS.map((field) => `{{${field}}}`).join(", ")}</p>
@@ -420,13 +459,19 @@ export function EmailCenter({ slug }: { slug: string }) {
                 </section>
               </div>
             )}
+              </div>
+            </div>
             {bulkProgress ? <div className="rounded-xl bg-sky-500/10 px-4 py-3 text-sm text-sky-100">{bulkProgress}</div> : null}
             {resultMessage ? <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${resultTone === "success" ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" : "border-rose-400/30 bg-rose-500/10 text-rose-100"}`}>{resultMessage}</div> : null}
             <button type="submit" disabled={isSending || (audienceKey ? !selectedReadyRows.length : !ready)} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 font-bold disabled:cursor-not-allowed disabled:bg-slate-700 sm:w-fit sm:min-w-44">{isSending ? (audienceKey ? `Sending ${selectedReadyRows.length} emails...` : "Sending...") : audienceKey ? `SEND ${selectedReadyRows.length} EMAILS` : "Send Email"}</button>
           </form>
-        </section>
+        </section> : null}
 
-        <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
+        {activeSection === "templates" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7"><h2 className="text-xl font-black">Templates</h2><p className="mt-1 text-sm text-slate-400">Choose an existing template, then continue composing with editable fields.</p><div className="mt-5 grid gap-3 md:grid-cols-2">{manualEmailTemplates.map((template) => <button key={template.key} type="button" onClick={() => { handleTemplateChange(template.key); chooseSection("compose"); }} className={`rounded-2xl border p-4 text-left ${templateKey === template.key ? "border-emerald-400/50 bg-emerald-500/10" : "border-white/10 bg-black/20 hover:bg-white/[0.06]"}`}><strong className="text-white">{template.label}</strong><p className="mt-1 text-xs text-slate-400">{template.subject || "Custom subject and message"}</p></button>)}</div></section> : null}
+
+        {activeSection === "discount-codes" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7"><h2 className="text-xl font-black">Discount Codes</h2><p className="mt-1 text-sm text-slate-400">Manage reusable promotions or select one to populate the current compose draft.</p><SavedDiscountCodes slug={slug} onSelect={selectSavedDiscountCode} /></section> : null}
+
+        {activeSection === "sent" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
           <h2 className="text-xl font-black">Bulk Sends / Campaigns</h2>
           <p className="mt-1 text-sm text-slate-400">Counts come from exact linked delivery rows.</p>
           <div className="mt-5 grid gap-3">
@@ -450,9 +495,9 @@ export function EmailCenter({ slug }: { slug: string }) {
               </details>;
             }) : <p className="text-sm text-slate-400">No bulk sends yet.</p>}
           </div>
-        </section>
+        </section> : null}
 
-        <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
+        {activeSection === "sent" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
           <h2 className="text-xl font-black">Recent Emails</h2><p className="mt-1 text-sm text-slate-400">Immutable message snapshots and Resend delivery activity for this show.</p>
           <div className="mt-4 flex flex-wrap gap-2">{(["all","sent","delivered","opened","clicked","problems"] as HistoryFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setHistoryFilter(filter)} className={`rounded-full border px-3 py-1.5 text-xs font-bold uppercase ${historyFilter === filter ? "border-emerald-400 bg-emerald-500/20 text-emerald-100" : "border-white/15 text-slate-300"}`}>{filter}</button>)}</div>
           {isLoading ? <p className="mt-5 text-sm text-slate-400">Loading Email Center...</p> : null}
@@ -486,7 +531,7 @@ export function EmailCenter({ slug }: { slug: string }) {
               </div>
             </div>
           </details>)}</div>
-        </section>
+        </section> : null}
       </div>
     </main>
   );
