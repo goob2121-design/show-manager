@@ -59,3 +59,48 @@ test("Ticket Purchase URL automatically configures the gold ticket CTA", async (
   assert.match(source, /current\.trim\(\) \|\| "Get Tickets"/);
   assert.match(source, /onChange=\{\(event\) => changeTicketPurchaseUrl\(event\.target\.value\)\}/);
 });
+
+test("Email Center keeps compact show context and actions inside the responsive header", async () => {
+  const source = await readFile(componentPath, "utf8");
+  const headerStart = source.indexOf('<header aria-label="Email Center header"');
+  const headerEnd = source.indexOf("</header>", headerStart);
+  const header = source.slice(headerStart, headerEnd);
+  const navigationStart = source.indexOf('<nav aria-label="Email Center sections"');
+
+  assert.ok(headerStart >= 0);
+  assert.ok(navigationStart > headerEnd);
+  assert.match(header, /aria-label="Current show context"/);
+  assert.match(header, /\{showContext\.name\}/);
+  assert.match(header, /formatShowDate\(showContext\.showDate\)/);
+  assert.match(header, /isPastShow \? "Past Show" : "Current Show"/);
+  assert.match(header, /You are viewing the Email Center for a past show/);
+  assert.match(header, /Go to Current Show Email Center/);
+  assert.match(header, /Mailing List/);
+  assert.match(header, /Open Webmail/);
+  assert.match(header, /Back to Admin/);
+  assert.match(header, /flex-col[^"]*md:flex-row/);
+  assert.doesNotMatch(source, /CURRENT \/ UPCOMING SHOW/);
+  assert.equal((source.match(/aria-label="Current show context"/g) ?? []).length, 1);
+  for (const section of ["Compose", "Templates", "Discount Codes", "Sent & Activity"]) {
+    assert.match(source, new RegExp(`label: "${section}"`));
+  }
+});
+
+test("Composer separates sender/search and recipient details into responsive rows", async () => {
+  const source = await readFile(componentPath, "utf8");
+  const fieldsStart = source.indexOf('aria-label="Sender and recipient fields"');
+  const fieldsEnd = source.indexOf("Template", fieldsStart);
+  const fields = source.slice(fieldsStart, fieldsEnd);
+
+  assert.ok(fieldsStart >= 0);
+  assert.match(fields, /className="grid gap-6"/);
+  assert.equal((fields.match(/className="grid gap-5 md:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)\]"/g) ?? []).length, 2);
+  assert.match(fields, /From/);
+  assert.match(fields, /Find show recipient/);
+  assert.match(fields, /Recipient name/);
+  assert.match(fields, />To\s*</);
+  assert.match(fields, /grid min-w-0 gap-2 text-sm font-semibold">From/);
+  assert.match(fields, /w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl/);
+  assert.match(fields, /id="recipient-search"[\s\S]*?className="w-full min-w-0/);
+  assert.match(fields, /function selectRecipient|selectRecipient\(recipient\)/);
+});

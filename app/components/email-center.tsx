@@ -334,18 +334,42 @@ export function EmailCenter({ slug }: { slug: string }) {
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-stone-950 px-4 py-6 text-slate-100 sm:px-6 sm:py-10">
       <div className="mx-auto grid w-full max-w-6xl gap-6">
         <AdminQuickNav slug={slug} currentView="email-center" />
-        <header className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:flex-row sm:items-end sm:justify-between sm:p-7">
-          <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">StageFlow Admin</p>
+        <header aria-label="Email Center header" className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl md:flex-row md:items-start md:justify-between sm:p-7">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">StageFlow Admin</p>
             <h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Email Center</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-300">Compose, preview, send, and audit show-scoped messages through Resend.</p></div>
-          <div className="flex flex-wrap gap-2">
-            <Link href={`/admin/${encodeURIComponent(slug)}/mailing-list`} className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-100">Mailing List</Link>
-            <a href="https://webmail.porkbun.com/?_task=mail&_mbox=INBOX" target="_blank" rel="noopener noreferrer" className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950">Open Webmail</a>
-            <Link href={`/admin/${encodeURIComponent(slug)}`} className="rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold">Back to Admin</Link>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Compose, preview, send, and audit show-scoped messages through Resend.</p>
+          </div>
+          <div className="flex w-full min-w-0 flex-col gap-3 md:w-auto md:max-w-xl md:items-end">
+            {showContext ? (
+              <section
+                aria-label="Current show context"
+                className={`w-full rounded-2xl border px-4 py-3 md:w-auto md:min-w-80 ${isPastShow ? "border-amber-400/50 bg-amber-950/40" : "border-emerald-400/35 bg-emerald-950/30"}`}
+              >
+                <p className={`text-[0.68rem] font-black uppercase tracking-[0.18em] ${isPastShow ? "text-amber-300" : "text-emerald-300"}`}>
+                  {isPastShow ? "Past Show" : "Current Show"}
+                </p>
+                <p className="mt-1 text-sm font-bold text-white">{showContext.name}</p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-300">{formatShowDate(showContext.showDate)}</p>
+                {isPastShow ? (
+                  <p className="mt-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs font-semibold leading-5 text-amber-100">
+                    You are viewing the Email Center for a past show. Messages sent here will be recorded under this show.
+                  </p>
+                ) : null}
+                {currentShowLink ? (
+                  <Link href={`/admin/${encodeURIComponent(currentShowLink.slug)}/email-center`} className="mt-2 inline-flex w-fit rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-100">
+                    Go to Current Show Email Center
+                  </Link>
+                ) : null}
+              </section>
+            ) : null}
+            <div className="flex w-full flex-wrap gap-2 md:justify-end">
+              <Link href={`/admin/${encodeURIComponent(slug)}/mailing-list`} className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-100">Mailing List</Link>
+              <a href="https://webmail.porkbun.com/?_task=mail&_mbox=INBOX" target="_blank" rel="noopener noreferrer" className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950">Open Webmail</a>
+              <Link href={`/admin/${encodeURIComponent(slug)}`} className="rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold">Back to Admin</Link>
+            </div>
           </div>
         </header>
-
-        {showContext ? <section aria-label="Current show context" className={`rounded-3xl border p-5 shadow-2xl sm:p-7 ${isPastShow ? "border-amber-400/50 bg-amber-950/40" : "border-emerald-400/35 bg-emerald-950/30"}`}><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className={`text-xs font-black uppercase tracking-[0.2em] ${isPastShow ? "text-amber-300" : "text-emerald-300"}`}>{isPastShow ? `PAST SHOW — ${formatShowDate(showContext.showDate).toUpperCase()}` : "CURRENT / UPCOMING SHOW"}</p><p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Current Show</p><h2 className="mt-1 text-2xl font-black text-white">{showContext.name}</h2><p className="mt-1 text-lg font-semibold text-slate-200">{formatShowDate(showContext.showDate)}</p>{isPastShow ? <p className="mt-3 max-w-3xl rounded-xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100">You are viewing the Email Center for a past show. Messages sent here will be recorded under this show.</p> : null}</div>{currentShowLink ? <Link href={`/admin/${encodeURIComponent(currentShowLink.slug)}/email-center`} className="inline-flex w-fit rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-4 py-3 text-sm font-bold text-emerald-100">Go to Current Show Email Center</Link> : null}</div></section> : null}
 
         <nav aria-label="Email Center sections" className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/70 p-2 shadow-xl"><div className="flex min-w-max gap-2 sm:grid sm:min-w-0 sm:grid-cols-4">{EMAIL_CENTER_SECTIONS.map((section) => <button key={section.key} type="button" onClick={() => chooseSection(section.key)} aria-current={activeSection === section.key ? "page" : undefined} className={`rounded-xl px-4 py-3 text-sm font-bold ${activeSection === section.key ? "bg-emerald-600 text-white" : "text-slate-300 hover:bg-white/[0.07]"}`}>{section.label}</button>)}</div></nav>
 
@@ -366,28 +390,32 @@ export function EmailCenter({ slug }: { slug: string }) {
                 ))}
               </select>
             </label>
-            <div className="grid gap-5 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold">From
-                <select value={senderKey} onChange={(event) => setSenderKey(event.target.value as ManualEmailSenderKey)} className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3">
-                  {manualEmailSenders.map((sender) => <option key={sender.key} value={sender.key}>{sender.label} - {sender.address}</option>)}
-                </select><span className="text-xs font-normal text-slate-400">Reply-To: {MANUAL_EMAIL_REPLY_TO}</span>
-              </label>
-              <div className="relative grid gap-2 text-sm font-semibold">
-                <label htmlFor="recipient-search">Find show recipient</label>
-                <input id="recipient-search" value={recipientQuery} onChange={(event) => setRecipientQuery(event.target.value)} placeholder="Search name or email" autoComplete="off" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
-                {matchingRecipients.length ? <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-white/15 bg-slate-950 shadow-2xl">
-                  {matchingRecipients.map((recipient) => <button key={recipient.id} type="button" onClick={() => selectRecipient(recipient)} className="block w-full border-b border-white/10 px-3 py-3 text-left last:border-0 hover:bg-white/[0.08]">
-                    <span className="block font-bold text-white">{recipient.name || recipient.email}</span><span className="block text-xs text-slate-300">{recipient.email}</span>
-                    <span className="block text-xs text-emerald-300">{recipient.sourceLabel} - {recipient.detail}</span>
-                  </button>)}
-                </div> : null}
+            <div aria-label="Sender and recipient fields" className="grid gap-6">
+              <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <label className="grid min-w-0 gap-2 text-sm font-semibold">From
+                  <select value={senderKey} onChange={(event) => setSenderKey(event.target.value as ManualEmailSenderKey)} className="w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-white/15 bg-slate-950 px-3 py-3">
+                    {manualEmailSenders.map((sender) => <option key={sender.key} value={sender.key}>{sender.label} - {sender.address}</option>)}
+                  </select><span className="text-xs font-normal text-slate-400">Reply-To: {MANUAL_EMAIL_REPLY_TO}</span>
+                </label>
+                <div className="relative grid min-w-0 content-start gap-2 text-sm font-semibold">
+                  <label htmlFor="recipient-search">Find show recipient</label>
+                  <input id="recipient-search" value={recipientQuery} onChange={(event) => setRecipientQuery(event.target.value)} placeholder="Search name or email" autoComplete="off" className="w-full min-w-0 rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+                  {matchingRecipients.length ? <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-white/15 bg-slate-950 shadow-2xl">
+                    {matchingRecipients.map((recipient) => <button key={recipient.id} type="button" onClick={() => selectRecipient(recipient)} className="block w-full border-b border-white/10 px-3 py-3 text-left last:border-0 hover:bg-white/[0.08]">
+                      <span className="block font-bold text-white">{recipient.name || recipient.email}</span><span className="block text-xs text-slate-300">{recipient.email}</span>
+                      <span className="block text-xs text-emerald-300">{recipient.sourceLabel} - {recipient.detail}</span>
+                    </button>)}
+                  </div> : null}
+                </div>
               </div>
-              <label className="grid gap-2 text-sm font-semibold">Recipient name
-                <input value={recipientName} onChange={(event) => { const name = splitEmailCenterName(event.target.value); setRecipientName(event.target.value); setSelectedRecipientId(null); setMergeFields((current) => ({ ...current, first_name: name.firstName, last_name: name.lastName, full_name: name.fullName })); }} placeholder="Optional for manual recipients" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">To
-                <input type="email" required value={recipientEmail} onChange={(event) => changeRecipientEmail(event.target.value)} placeholder="recipient@example.com" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
-              </label>
+              <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <label className="grid min-w-0 gap-2 text-sm font-semibold">Recipient name
+                  <input value={recipientName} onChange={(event) => { const name = splitEmailCenterName(event.target.value); setRecipientName(event.target.value); setSelectedRecipientId(null); setMergeFields((current) => ({ ...current, first_name: name.firstName, last_name: name.lastName, full_name: name.fullName })); }} placeholder="Optional for manual recipients" className="w-full min-w-0 rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+                </label>
+                <label className="grid min-w-0 gap-2 text-sm font-semibold">To
+                  <input type="email" required value={recipientEmail} onChange={(event) => changeRecipientEmail(event.target.value)} placeholder="recipient@example.com" className="w-full min-w-0 rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+                </label>
+              </div>
             </div>
             <label className="grid gap-2 text-sm font-semibold">Template
               <select value={templateKey} onChange={(event) => handleTemplateChange(event.target.value as ManualEmailTemplateKey)} className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3">
