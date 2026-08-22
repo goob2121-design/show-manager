@@ -40,9 +40,10 @@ export function MailingListAdmin({ slug }: { slug: string }) {
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    await action({ action: "add", firstName: data.get("firstName"), lastName: data.get("lastName"), email: data.get("email"), source: "admin" });
-    if (event.currentTarget.isConnected) event.currentTarget.reset();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const added = await action({ action: "add", firstName: data.get("firstName"), lastName: data.get("lastName"), email: data.get("email"), source: "admin" });
+    if (added && form.isConnected) form.reset();
   }
 
   function startEditing(item: Subscriber) {

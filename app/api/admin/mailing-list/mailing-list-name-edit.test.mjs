@@ -33,6 +33,21 @@ test("Mailing List UI edits optional names inline while keeping email read-only"
   assert.match(source, /<td className="py-2 pr-3">\{item\.email\}<\/td>/);
   assert.doesNotMatch(source, /action: "update_names"[^\n]*email:/);
 });
+test("Add Subscriber captures the form before awaiting and resets only after success", async () => {
+  const source = await readFile(uiUrl, "utf8");
+  const start = source.indexOf("async function add(");
+  const end = source.indexOf("function startEditing", start);
+  const addHandler = source.slice(start, end);
+  const awaitIndex = addHandler.indexOf("await action(");
+  assert.ok(awaitIndex > 0);
+  assert.ok(addHandler.indexOf("const form = event.currentTarget") < awaitIndex);
+  assert.match(addHandler, /new FormData\(form\)/);
+  assert.match(addHandler, /action: "add", firstName: data\.get\("firstName"\), lastName: data\.get\("lastName"\), email: data\.get\("email"\), source: "admin"/);
+  assert.match(addHandler, /const added = await action/);
+  assert.match(addHandler, /if \(added && form\.isConnected\) form\.reset\(\)/);
+  assert.equal(addHandler.slice(awaitIndex).includes("event.currentTarget"), false);
+});
+
 
 test("Email Center continues resolving edited first and last names from subscriber lookup", async () => {
   const source = await readFile(emailCenterRouteUrl, "utf8");

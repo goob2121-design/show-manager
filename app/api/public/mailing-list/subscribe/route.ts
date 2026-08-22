@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { cleanMailingListName, isValidMailingListEmail, normalizeMailingListEmail } from "@/lib/mailing-list";
 import { sendMailingListWelcomeEmail, type MailingListWelcomeSendResult } from "@/lib/mailing-list-welcome-email";
 import { subscribeMailingListContact } from "@/lib/mailing-list-subscription";
+import { sendAutomaticMailingListPresaleAccess } from "@/lib/mailing-list-presale-delivery";
 
 export const runtime = "nodejs";
 
@@ -102,6 +103,19 @@ export async function POST(request: NextRequest) {
           replyTo: welcomeEmailResult.replyTo,
           message: welcomeEmailResult.errorMessage,
         });
+      }
+    }
+
+    if (subscriberId) {
+      const presaleResult = await sendAutomaticMailingListPresaleAccess({
+        supabase,
+        subscriberId,
+        email,
+        firstName,
+        apiKey: process.env.RESEND_API_KEY,
+      });
+      if (presaleResult.status === "sent") {
+        console.info("Automatic mailing-list presale email sent.", { subscriberId, resendMessageId: presaleResult.resendMessageId });
       }
     }
 
