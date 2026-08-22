@@ -7,6 +7,8 @@ import { ReservationTicketCode } from "@/app/components/reservation-ticket-code"
 import { PrintStudioExportButton } from "./print-studio-export-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildReservedSeatPrintCards } from "@/lib/reserved-seat-print-cards";
+import { buildReservedSeatMapRosterReport } from "@/lib/reserved-seat-map-roster";
+import { RESERVED_SEATING_ROW_LABELS, RESERVED_SEATING_SECTION_LABELS } from "@/lib/reserved-seating";
 import type { GuestProfile, ShowCompTicket, ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
 type PrintKind =
@@ -17,7 +19,8 @@ type PrintKind =
   | "reserved-seat-cards"
   | "comp-reserved-seat-cards"
   | "blank-seat-cards"
-  | "selected-seat-cards";
+  | "selected-seat-cards"
+  | "seat-map-roster";
 
 type SponsorRow = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -80,7 +83,8 @@ function normalizePrintKind(kind: string): PrintKind | null {
     kind === "reserved-seat-cards" ||
     kind === "comp-reserved-seat-cards" ||
     kind === "blank-seat-cards" ||
-    kind === "selected-seat-cards"
+    kind === "selected-seat-cards" ||
+    kind === "seat-map-roster"
   ) {
     return kind;
   }
@@ -134,6 +138,8 @@ function getPrintTitle(kind: PrintKind) {
       return "Blank Seat Cards";
     case "selected-seat-cards":
       return "Selected Seat Cards";
+    case "seat-map-roster":
+      return "Seat Map & Roster";
     default:
       return "Itinerary";
   }
@@ -367,6 +373,7 @@ function PrintShell({
   const isBlankSeatCards = kind === "blank-seat-cards";
   const isSelectedSeatCards = kind === "selected-seat-cards";
   const isSeatCardPrint = isReservedSeatCards || isCompReservedSeatCards || isBlankSeatCards || isSelectedSeatCards;
+  const isSeatMapRoster = kind === "seat-map-roster";
 
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-8 text-stone-900 sm:px-6 print:bg-white print:px-0 print:py-0">
@@ -408,10 +415,155 @@ function PrintShell({
               break-inside: avoid !important;
               page-break-inside: avoid !important;
             }
+            .selected-reserved-seat-card,
+            .selected-reserved-seat-card * {
+              color: #000000 !important;
+            }
+            html.dark .selected-reserved-seat-card,
+            html.dark .selected-reserved-seat-card * {
+              color: #000000 !important;
+            }
+            .selected-reserved-seat-card,
+            .selected-reserved-seat-card img[src="/cmms-logo.png"] {
+              filter: saturate(1.65) contrast(1.08) !important;
+              -webkit-filter: saturate(1.65) contrast(1.08) !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            html.dark .selected-reserved-seat-card { background: #ffffff !important; }
           }
         `}</style>
       ) : null}
-      <section className="mx-auto max-w-4xl rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-8 print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
+      <section className={`mx-auto max-w-4xl rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-8 print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none ${isSeatMapRoster ? "seat-map-roster-print-shell" : ""}`}>
+      {isSeatMapRoster ? (
+        <style>{`
+          @page { size: letter landscape; margin: 0.35in; }
+          .seat-map-print-only { display: none; }
+          html.dark .seat-map-roster-report { color: #f8fafc !important; }
+          html.dark .seat-map-roster-summary > div,
+          html.dark .seat-map-roster-section,
+          html.dark .seat-map-roster-table th,
+          html.dark .seat-map-roster-table td,
+          html.dark .seat-map-roster-nss th,
+          html.dark .seat-map-roster-nss td {
+            background: #0f172a !important;
+            border-color: #64748b !important;
+            color: #f8fafc !important;
+          }
+          html.dark .seat-map-seat-available {
+            background: #0f172a !important;
+            border-color: #94a3b8 !important;
+            color: #f8fafc !important;
+          }
+          html.dark .seat-map-seat-unavailable {
+            background: #334155 !important;
+            border-color: #94a3b8 !important;
+            color: #f8fafc !important;
+          }
+          html.dark .seat-map-seat-assigned {
+            background: #f8fafc !important;
+            border-color: #ffffff !important;
+            color: #020617 !important;
+          }
+          html.dark .seat-map-legend-assigned {
+            background: #f8fafc !important;
+            border-color: #ffffff !important;
+          }
+          html.dark .seat-map-legend-available {
+            background: #0f172a !important;
+            border-color: #94a3b8 !important;
+          }
+          html.dark .seat-map-legend-unavailable {
+            background: #334155 !important;
+            border-color: #94a3b8 !important;
+          }
+          @media print {
+            html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; }
+            .seat-map-roster-report, .seat-map-roster-report * { color: #000000 !important; }
+            .seat-map-screen-only { display: none !important; }
+            .seat-map-print-only { display: inline-flex !important; }
+            .seat-map-roster-map-page {
+              break-after: page;
+              page-break-after: always;
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+            .seat-map-roster-section,
+            .seat-map-roster-summary {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+            .seat-map-roster-report,
+            .seat-map-roster-map-page,
+            .seat-map-roster-section,
+            .seat-map-roster-summary > div,
+            .seat-map-roster-table,
+            .seat-map-roster-nss,
+            .seat-map-roster-table td,
+            .seat-map-roster-nss td {
+              background: #ffffff !important;
+            }
+            .seat-map-roster-table th,
+            .seat-map-roster-nss th { background: #f5f5f4 !important; }
+            .seat-map-roster-table tr,
+            .seat-map-roster-nss tr { break-inside: avoid; page-break-inside: avoid; }
+            html.dark .seat-map-roster-report,
+            html.dark .seat-map-roster-report * { color: #000000 !important; }
+            .seat-map-roster-print-shell > header,
+            .seat-map-roster-print-shell > header *,
+            .seat-map-roster-table th,
+            .seat-map-roster-table th *,
+            .seat-map-roster-table td,
+            .seat-map-roster-table td *,
+            .seat-map-roster-nss th,
+            .seat-map-roster-nss th *,
+            .seat-map-roster-nss td,
+            .seat-map-roster-nss td * {
+              color: #000000 !important;
+              -webkit-text-fill-color: #000000 !important;
+              opacity: 1 !important;
+            }
+            .seat-map-seat-assigned {
+              background: #000000 !important;
+              border: 2pt solid #000000 !important;
+              color: #ffffff !important;
+              font-weight: 900 !important;
+              font-size: 11px !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .seat-map-seat-assigned,
+            .seat-map-seat-assigned *,
+            html.dark .seat-map-seat-assigned,
+            html.dark .seat-map-seat-assigned * {
+              color: #ffffff !important;
+            }
+            html.dark .seat-map-seat-assigned {
+              background: #000000 !important;
+              border: 2pt solid #000000 !important;
+            }
+            .seat-map-seat-available { background: #ffffff !important; color: #000000 !important; font-size: 11px !important; font-weight: 800 !important; }
+            .seat-map-seat-unavailable {
+              background: #ffffff !important;
+              border: 3px double #000000 !important;
+              color: #000000 !important;
+              font-size: 11px !important;
+              font-weight: 800 !important;
+            }
+            .seat-map-legend-assigned,
+            html.dark .seat-map-legend-assigned {
+              background: #000000 !important;
+              border: 2pt solid #000000 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .seat-map-legend-available,
+            html.dark .seat-map-legend-available { background: #ffffff !important; border: 1px solid #000000 !important; }
+            .seat-map-legend-unavailable,
+            html.dark .seat-map-legend-unavailable { background: #ffffff !important; border: 3px double #000000 !important; }
+          }
+        `}</style>
+      ) : null}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <Link
             href={`/admin/${show.slug}`}
@@ -1048,7 +1200,7 @@ function SelectedReservedSeatCardsPrintView({
             return (
               <article
                 key={card.id}
-                className="seat-card flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:rounded-none"
+                className="seat-card selected-reserved-seat-card flex min-h-[2.2in] flex-col justify-between rounded-xl border-2 border-dashed border-stone-400 bg-white px-4 py-4 text-center print:rounded-none"
                 style={{
                   breakInside: "avoid",
                   pageBreakInside: "avoid",
@@ -1057,19 +1209,19 @@ function SelectedReservedSeatCardsPrintView({
                 <img
                   src="/cmms-logo.png"
                   alt="Cumberland Mountain Music Show logo"
-                  className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[42px] print:max-w-[124px]"
+                  className="mx-auto h-auto max-h-[48px] w-auto max-w-[140px] object-contain print:max-h-[48px] print:max-w-[140px]"
                 />
                 <div className="flex flex-1 flex-col items-center justify-center py-1.5">
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[13px]">
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-stone-600 print:text-[14px] print:font-bold print:text-black">
                     Reserved Seating
                   </p>
-                  <h2 className={`mt-2 max-w-full text-4xl font-black leading-none tracking-[0.01em] text-stone-950 print:block print:h-[0.45in] print:w-full print:overflow-hidden print:whitespace-nowrap print:text-ellipsis print:leading-[0.45in] ${getSelectedSeatCardNamePrintClass(printName)}`}>
+                  <h2 className={`mt-2 max-w-full text-4xl font-black leading-none tracking-[0.01em] text-stone-950 print:block print:h-[0.45in] print:w-full print:overflow-hidden print:whitespace-nowrap print:text-ellipsis print:font-black print:leading-[0.45in] print:text-black ${getSelectedSeatCardNamePrintClass(printName)}`}>
                     <span className="print:hidden">{customerName}</span>
                     <span className="hidden print:block">{printName}</span>
                   </h2>
 
-                  <p className="mt-3 text-2xl font-black tracking-[0.03em] text-stone-900 print:text-[26px]">{card.seatId}</p>
-                  <p className="mt-1 text-base font-semibold tracking-[0.08em] text-stone-700 print:text-[17px]">
+                  <p className="mt-3 max-w-full whitespace-nowrap text-2xl font-black leading-none tracking-[0.03em] text-stone-900 print:text-[32px] print:font-black print:text-black">{card.seatId}</p>
+                  <p className="mt-1 text-base font-semibold tracking-[0.08em] text-stone-700 print:text-[19px] print:font-bold print:text-black">
                     {card.seatExplanation}
                   </p>
 
@@ -1082,6 +1234,104 @@ function SelectedReservedSeatCardsPrintView({
     </div>
   );
 }
+
+function SeatMapRosterPrintView({
+  assignments,
+  reservedLinks,
+}: {
+  assignments: SelectedReservedSeatRow[];
+  reservedLinks: ReservedSeatingLinkRow[];
+}) {
+  const report = buildReservedSeatMapRosterReport(assignments, reservedLinks);
+
+  return (
+    <div className="seat-map-roster-report text-black">
+      <section className="seat-map-roster-map-page">
+        <div className="seat-map-roster-summary grid grid-cols-4 gap-3">
+          {[
+            ["Assigned", report.summary.assigned],
+            ["Available", report.summary.available],
+            ["Unavailable", report.summary.unavailable],
+            ["NSS Needed", report.summary.nssNeeded],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-stone-400 bg-white px-3 py-2 text-center">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em]">{label}</p>
+              <p className="mt-1 text-xl font-black">{value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-black uppercase tracking-[0.12em]">Reserved Seating Layout</h2>
+          <div className="flex flex-wrap items-center gap-4 text-xs font-semibold" aria-label="Seat map legend">
+            <span className="inline-flex items-center gap-1.5"><span className="seat-map-legend-assigned h-4 w-4 border-2 border-black bg-white" /> Assigned</span>
+            <span className="inline-flex items-center gap-1.5"><span className="seat-map-legend-available h-4 w-4 border border-black bg-slate-900" /> Available</span>
+            <span className="inline-flex items-center gap-1.5"><span className="seat-map-legend-unavailable inline-flex h-4 w-4 items-center justify-center border border-black bg-slate-600"><span className="seat-map-print-only font-black">/</span></span> Unavailable</span>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-5">
+          {RESERVED_SEATING_SECTION_LABELS.map((section) => (
+            <section key={section} className="seat-map-roster-section rounded-lg border border-black bg-white p-2">
+              <h3 className="text-center text-sm font-black uppercase tracking-[0.16em]">{section === "L" ? "Left Section" : "Right Section"}</h3>
+              <div className="mt-2 grid gap-1">
+                {RESERVED_SEATING_ROW_LABELS.map((rowLabel) => (
+                  <div key={`${section}-${rowLabel}`} className="grid grid-cols-[1.2rem_repeat(10,minmax(0,1fr))] items-center gap-1">
+                    <span className="text-center text-xs font-black">{rowLabel}</span>
+                    {report.seats
+                      .filter((seat) => seat.section === section && seat.rowLabel === rowLabel)
+                      .map((seat) => (
+                        <div
+                          key={seat.seatId}
+                          title={seat.customerName ?? undefined}
+                          className={`flex h-7 min-w-0 items-center justify-center rounded border border-black text-[9px] font-black ${
+                            seat.status === "assigned"
+                              ? "seat-map-seat-assigned bg-white text-black"
+                              : seat.status === "unavailable"
+                                ? "seat-map-seat-unavailable bg-stone-300 text-black"
+                                : "seat-map-seat-available bg-white text-black"
+                          }`}
+                        >
+                          {seat.status === "unavailable" ? <span className="seat-map-print-only mr-0.5 font-black" aria-hidden="true">/</span> : null}
+                          <span>{seat.seatNumber}</span>
+                        </div>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+        <p className="mt-3 text-center text-[10px] font-semibold">Seat labels follow the same Left → Right, Row A → J, Seat 1 → 10 physical order used by Selected Seat Cards.</p>
+      </section>
+
+      <section className="seat-map-roster-table">
+        <h2 className="text-lg font-black uppercase tracking-[0.12em]">Assigned Seat Roster</h2>
+        <table className="mt-3 w-full table-fixed border-collapse text-sm">
+          <thead><tr><th className="w-28 border border-black bg-stone-100 px-3 py-2 text-left">Seat</th><th className="border border-black bg-stone-100 px-3 py-2 text-left">Ticket Holder</th></tr></thead>
+          <tbody>
+            {report.roster.length ? report.roster.map((entry) => (
+              <tr key={entry.seatId}><td className="border border-black px-3 py-1.5 font-black">{entry.seatId}</td><td className="border border-black px-3 py-1.5 font-semibold">{entry.customerName}</td></tr>
+            )) : <tr><td colSpan={2} className="border border-black px-3 py-3">No assigned reserved seats.</td></tr>}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="seat-map-roster-nss mt-6">
+        <h2 className="text-lg font-black uppercase tracking-[0.12em]">No Seat Selected</h2>
+        <table className="mt-3 w-full table-fixed border-collapse text-sm">
+          <thead><tr><th className="border border-black bg-stone-100 px-3 py-2 text-left">Ticket Holder</th><th className="w-32 border border-black bg-stone-100 px-3 py-2 text-right">Seats Needed</th></tr></thead>
+          <tbody>
+            {report.nss.length ? report.nss.map((entry) => (
+              <tr key={entry.seatingLinkId}><td className="border border-black px-3 py-1.5 font-semibold">{entry.customerName}</td><td className="border border-black px-3 py-1.5 text-right font-black">{entry.seatsNeeded}</td></tr>
+            )) : <tr><td colSpan={2} className="border border-black px-3 py-3">No reservations are waiting for seats.</td></tr>}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
 
 function cleanPrintStudioRecord(record: PrintStudioExportRecord) {
   return Object.fromEntries(Object.entries(record).filter(([, value]) => typeof value === "string" && value.trim())) as PrintStudioExportRecord;
@@ -1352,11 +1602,11 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
       ? await safeLoad("door guest list", () => loadDoorGuestList(show.id), [])
       : [];
   const selectedReservedSeatAssignments =
-    printKind === "selected-seat-cards" || printKind === "reserved-seat-cards" || printKind === "comp-reserved-seat-cards"
+    printKind === "selected-seat-cards" || printKind === "seat-map-roster" || printKind === "reserved-seat-cards" || printKind === "comp-reserved-seat-cards"
       ? await safeLoad("selected reserved seat assignments", () => loadReservedSeatAssignments(show.id), [])
       : [];
   const reservedSeatingLinks =
-    printKind === "reserved-seat-cards" || printKind === "selected-seat-cards" || printKind === "comp-reserved-seat-cards"
+    printKind === "reserved-seat-cards" || printKind === "selected-seat-cards" || printKind === "seat-map-roster" || printKind === "comp-reserved-seat-cards"
       ? await safeLoad("reserved seating links", () => loadReservedSeatingLinks(show.id), [])
       : [];
 
@@ -1401,6 +1651,12 @@ export default async function AdminPrintPage({ params }: PrintPageProps) {
         {printKind === "blank-seat-cards" ? <BlankSeatCardsPrintView /> : null}
         {printKind === "selected-seat-cards" ? (
           <SelectedReservedSeatCardsPrintView
+            assignments={selectedReservedSeatAssignments}
+            reservedLinks={reservedSeatingLinks}
+          />
+        ) : null}
+        {printKind === "seat-map-roster" ? (
+          <SeatMapRosterPrintView
             assignments={selectedReservedSeatAssignments}
             reservedLinks={reservedSeatingLinks}
           />
