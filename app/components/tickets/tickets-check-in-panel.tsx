@@ -53,7 +53,7 @@ export function TicketsCheckInPanel({
   children,
 }: TicketsCheckInPanelProps) {
   return (
-    <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
+    <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -66,7 +66,7 @@ export function TicketsCheckInPanel({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {ticketWorkflowSections.map((section) => {
           const isActive = activeSection === section.key;
 
@@ -75,14 +75,14 @@ export function TicketsCheckInPanel({
               key={section.key}
               type="button"
               onClick={() => onSectionSelect(section.key)}
-              className={`rounded-2xl border p-4 text-left shadow-sm transition ${
+              className={`min-h-20 rounded-xl border px-4 py-3 text-left shadow-sm transition ${
                 isActive
                   ? "border-emerald-500 bg-emerald-50 text-emerald-900"
                   : "border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-50"
               }`}
             >
               <p className="text-base font-semibold">{section.title}</p>
-              <p className={`mt-1 text-sm ${isActive ? "text-emerald-800" : "text-stone-600"}`}>{section.subtitle}</p>
+              <p className={`mt-0.5 text-sm leading-5 ${isActive ? "text-emerald-800" : "text-stone-600"}`}>{section.subtitle}</p>
             </button>
           );
         })}
@@ -99,7 +99,7 @@ export function TicketsCheckInPanel({
         </div>
       ) : null}
 
-      {activeSection === "reserved-seating" ? (
+      {activeSection === "reserved-seating" && !reservedSeatingPanelProps.isReservedSeatingOpen ? (
         <TicketReservedSeatingPanel {...reservedSeatingPanelProps} />
       ) : null}
 

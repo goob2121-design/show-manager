@@ -28,4 +28,12 @@ test("Tickets and Check-In actions share one responsive grid", async () => {
   assert.ok(order.every((position) => position >= 0));
   assert.deepEqual(order, [...order].sort((left, right) => left - right));
   assert.ok(admissions.indexOf("{headerActions}") < admissions.indexOf("Preview Check-In List"));
+  for (const title of ["Ticket Sales & Check-In", "Reserved Seating", "Sponsor & Comp Tickets", "Reports & Printouts"]) {
+    assert.match(wrapper, new RegExp(`title: "${title.replace(/[&/]/g, "\\$&")}"`));
+  }
+  for (const key of ["ticket-sales", "reserved-seating", "sponsor-comp", "reports"]) {
+    assert.match(wrapper, new RegExp(`key: "${key}"`));
+  }
+  assert.match(wrapper, /onClick=\{\(\) => onSectionSelect\(section\.key\)\}/);
+  assert.match(wrapper, /min-h-20 rounded-xl border px-4 py-3/);
 });

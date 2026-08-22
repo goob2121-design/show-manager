@@ -15,8 +15,8 @@ test("Admin Sections has the requested ten-button layout", async () => {
   assert.deepEqual(labels, [
     "Overview",
     "Music & Setlist",
-    "Guests",
-    "Tickets / Check-In",
+    "Special Guests",
+    "Tickets / Seating",
     "Square Integration",
     "Finance",
     "Promo Materials",

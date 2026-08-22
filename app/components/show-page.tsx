@@ -173,8 +173,8 @@ type SetlistSectionConfig = {
 const adminTabItems: Array<{ key: AdminTab; label: string }> = [
   { key: "overview", label: "Overview" },
   { key: "music-setlist", label: "Music & Setlist" },
-  { key: "guests", label: "Guests" },
-  { key: "comp-tickets", label: "Tickets / Check-In" },
+  { key: "guests", label: "Special Guests" },
+  { key: "comp-tickets", label: "Tickets / Seating" },
   { key: "square-integration", label: "Square Integration" },
   { key: "finance", label: "Finance" },
   { key: "promo-materials", label: "Promo Materials" },
@@ -21238,6 +21238,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   showSlug={show.slug}
                   showName={show.name}
                   showDate={show.show_date}
+                  copiedPublicSeatAvailabilityLink={copiedPublicSeatAvailabilityLink}
+                  publicSeatAvailabilityUrl={buildPublicSeatAvailabilityUrl()}
+                  genericPublicSeatAvailabilityUrl={buildGenericPublicSeatAvailabilityUrl()}
+                  onToggleReservedSeating={() => setIsReservedSeatingOpen((currentValue) => !currentValue)}
+                  onOpenPublicSeatAvailabilityPage={handleOpenPublicSeatAvailabilityPage}
+                  onCopyPublicSeatAvailabilityLink={() => void handleCopyPublicSeatAvailabilityLink()}
                   sponsorOptions={sponsorsWithCompTickets.map((sponsor) => ({
                     id: sponsor.id,
                     name: getSponsorTicketSponsorName(sponsor),

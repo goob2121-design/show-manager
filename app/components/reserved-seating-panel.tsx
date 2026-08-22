@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { AdminBackButton } from "@/app/components/admin-back-button";
 import { useEffect, useMemo, useState } from "react";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
@@ -43,6 +42,12 @@ type ReservedSeatingPanelProps = {
   showDate: string | null;
   sponsorOptions?: ReservedSeatingSponsorOption[];
   selectedSponsorId?: string;
+  copiedPublicSeatAvailabilityLink: boolean;
+  publicSeatAvailabilityUrl: string;
+  genericPublicSeatAvailabilityUrl: string;
+  onToggleReservedSeating: () => void;
+  onOpenPublicSeatAvailabilityPage: () => void;
+  onCopyPublicSeatAvailabilityLink: () => void;
   selectedManualAssignLinkId?: string | null;
   compAssignmentContext?: {
     name: string;
@@ -227,6 +232,12 @@ export function ReservedSeatingPanel({
   showDate,
   sponsorOptions = [],
   selectedSponsorId = "",
+  copiedPublicSeatAvailabilityLink,
+  publicSeatAvailabilityUrl,
+  genericPublicSeatAvailabilityUrl,
+  onToggleReservedSeating,
+  onOpenPublicSeatAvailabilityPage,
+  onCopyPublicSeatAvailabilityLink,
   selectedManualAssignLinkId = null,
   compAssignmentContext = null,
   onAssignmentsChange,
@@ -492,6 +503,9 @@ export function ReservedSeatingPanel({
       ready: { reservations: ready.length, seats: ready.reduce((count, link) => count + link.seatIds.length, 0) },
     };
   }, [linksWithSeats]);
+  const seatingAttentionCount = readinessSummary.autoAssignWaiting.reservations
+    + readinessSummary.assignedNotEmailed.reservations;
+
   const postAssignmentPromptLink = useMemo(
     () => linksWithSeats.find((link) => link.id === postAssignmentPromptLinkId) ?? null,
     [linksWithSeats, postAssignmentPromptLinkId],
@@ -985,43 +999,75 @@ export function ReservedSeatingPanel({
 
   return (
     <section className="overflow-hidden rounded-[1.9rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.12),_transparent_24%),linear-gradient(180deg,_#0a1627,_#070f1c_58%,_#050913)] p-4 text-slate-100 shadow-[0_24px_54px_rgba(2,6,23,0.42)] sm:p-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="grid gap-2.5">
         <div>
           <h3 className="text-xl font-semibold text-white">Reserved Seating</h3>
           <p className="text-sm text-slate-300">
-            Manage paid online guests and complimentary seat assignments in one place for {showName} on {formatShowDate(showDate)}.
+            Manage reserved seating, assignments, public availability, and seat cards from one place.
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" aria-label="Reserved Seating actions">
+          <button
+            type="button"
+            onClick={onToggleReservedSeating}
+            className="inline-flex min-h-11 w-full min-w-0 items-center justify-center rounded-xl border border-emerald-500/40 bg-emerald-500/20 px-3 py-2 text-center text-sm font-semibold leading-5 text-emerald-100 transition hover:bg-emerald-500/30"
+          >
+            Hide Reserved Seating
+          </button>
+          <button
+            type="button"
+            onClick={onOpenPublicSeatAvailabilityPage}
+            className="inline-flex min-h-11 w-full min-w-0 items-center justify-center rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-center text-sm font-semibold leading-5 text-slate-100 transition hover:bg-white/[0.1]"
+          >
+            Open Public Availability
+          </button>
+          <button
+            type="button"
+            onClick={onCopyPublicSeatAvailabilityLink}
+            className="inline-flex min-h-11 w-full min-w-0 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-center text-sm font-semibold leading-5 text-emerald-100 transition hover:bg-emerald-500/25"
+          >
+            {copiedPublicSeatAvailabilityLink ? "Availability Link Copied" : "Copy Availability Link"}
+          </button>
           <button
             type="button"
             onClick={() => setShowBulkReminderConfirmation(true)}
             disabled={bulkReminderEligibleCount === 0 || activeActionId === "bulk-reminders"}
-            className="inline-flex items-center justify-center rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 w-full min-w-0 items-center justify-center rounded-xl border border-sky-400/30 bg-sky-500/15 px-3 py-2 text-center text-sm font-semibold leading-5 text-sky-100 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {activeActionId === "bulk-reminders" ? "Sending Reminders..." : `Send Reminders to All Without Seats (${bulkReminderEligibleCount})`}
+            {activeActionId === "bulk-reminders" ? "Sending Reminders..." : `Send Reminders (${bulkReminderEligibleCount})`}
           </button>
-          <AdminBackButton
-            fallbackHref={`/admin/${showSlug}`}
-            onBeforeNavigate={onCompAssignmentCancel}
-            className="inline-flex items-center justify-center rounded-xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
-          />
           <Link
             href={`/admin/${showSlug}/print/seat-map-roster`}
-            className="inline-flex items-center justify-center rounded-xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
+            className="inline-flex min-h-11 w-full min-w-0 items-center justify-center rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-center text-sm font-semibold leading-5 text-slate-100 transition hover:bg-white/[0.1]"
           >
             Print Seat Map &amp; Roster
           </Link>
           <Link
             href={`/admin/${showSlug}/print/selected-seat-cards`}
-            className="inline-flex items-center justify-center rounded-xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.1]"
+            className="inline-flex min-h-11 w-full min-w-0 items-center justify-center rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-center text-sm font-semibold leading-5 text-slate-100 transition hover:bg-white/[0.1]"
           >
             Print Selected Seat Cards
           </Link>
         </div>
+        <p className="sr-only">
+          Public availability URL: {publicSeatAvailabilityUrl}. Generic fallback: {genericPublicSeatAvailabilityUrl}.
+        </p>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3" aria-label="Reserved seating preference summary">
+      <details className="group mt-3 rounded-2xl border border-white/10 bg-white/[0.04]">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 marker:hidden">
+          <span className="font-semibold text-white">Reserved Seating Status</span>
+          <span className="text-xs font-semibold text-slate-300">
+            {seatPreferenceCounts.autoAssignRequested} Auto Assign · {seatPreferenceCounts.customerSelecting} Selecting · {seatPreferenceCounts.seatsAssigned} Assigned · {readinessSummary.ready.reservations} Ready
+          </span>
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${seatingAttentionCount > 0 ? "border-amber-300/40 bg-amber-400/15 text-amber-100" : "border-emerald-300/30 bg-emerald-500/10 text-emerald-100"}`}>
+            {seatingAttentionCount > 0 ? `${seatingAttentionCount} item${seatingAttentionCount === 1 ? "" : "s"} need attention` : "No items need attention"}
+          </span>
+          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-300 group-open:hidden">Expand</span>
+          <span className="hidden text-xs font-bold uppercase tracking-[0.12em] text-slate-300 group-open:inline">Collapse</span>
+        </summary>
+        <div className="border-t border-white/10 p-3">
+      <div className="grid gap-3 sm:grid-cols-3" aria-label="Reserved seating preference summary">
         <div className="rounded-2xl border border-fuchsia-400/30 bg-fuchsia-500/15 px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-fuchsia-100">Auto Assign Requested</p>
           <p className="mt-1 text-3xl font-black text-white">{seatPreferenceCounts.autoAssignRequested}</p>
@@ -1052,7 +1098,9 @@ export function ReservedSeatingPanel({
           <p className="mt-2 text-lg font-black text-white">{readinessSummary.ready.reservations} Reservations</p>
           <p className="text-sm font-semibold text-emerald-100">{readinessSummary.ready.seats} Seats</p>
         </div>
+        </div>
       </div>
+      </details>
 
       {manualAssignLink ? (() => {
         const seatLabels = manualAssignLink.seatIds.map(formatReservedSeatLabel);
