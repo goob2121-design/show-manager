@@ -8,9 +8,15 @@ function db() { const url = process.env.NEXT_PUBLIC_SUPABASE_URL; const key = pr
 async function authorized(slug: string) { const store = await cookies(); return slug && verifyAdminSessionCookieValue(slug, store.get(getAdminSessionCookieName(slug))?.value); }
 export async function GET(request: NextRequest) {
   const slug = request.nextUrl.searchParams.get("slug")?.trim() ?? ""; if (!(await authorized(slug))) return NextResponse.json({ success: false, error: "Admin access is required." }, { status: 401 });
-  const { data, error } = await db().from("mailing_list_subscribers").select("id,email,first_name,last_name,status,source,subscribed_at,unsubscribed_at,created_at,updated_at").order("created_at", { ascending: false });
-  if (error) return NextResponse.json({ success: false, error: "Unable to load subscribers." }, { status: 500 });
-  return NextResponse.json({ success: true, subscribers: data ?? [] });
+  const supabase = db();
+  const [subscriberResult, deliveryResult] = await Promise.all([
+    supabase.from("mailing_list_subscribers").select("id,email,first_name,last_name,status,source,subscribed_at,unsubscribed_at,created_at,updated_at").order("created_at", { ascending: false }),
+    supabase.from("mailing_list_presale_deliveries")
+      .select("id,recipient,send_status,resend_message_id,error_message,sent_at,failed_at,created_at,subscriber:mailing_list_subscribers(first_name,last_name),show:shows(name,show_date)")
+      .order("created_at", { ascending: false }).limit(50),
+  ]);
+  if (subscriberResult.error || deliveryResult.error) return NextResponse.json({ success: false, error: "Unable to load mailing list records." }, { status: 500 });
+  return NextResponse.json({ success: true, subscribers: subscriberResult.data ?? [], presaleDeliveries: deliveryResult.data ?? [] });
 }
 export async function POST(request: NextRequest) {
   const raw = await request.json() as Record<string, unknown>; const slug = typeof raw.slug === "string" ? raw.slug.trim() : "";

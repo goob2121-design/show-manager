@@ -2,6 +2,30 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 type Subscriber = { id: string; email: string; first_name: string | null; last_name: string | null; status: "active" | "unsubscribed"; source: string; subscribed_at: string; unsubscribed_at: string | null };
+type PresaleDelivery = {
+  id: string; recipient: string; send_status: "pending" | "accepted" | "failed"; resend_message_id: string | null;
+  error_message: string | null; sent_at: string | null; failed_at: string | null; created_at: string;
+  subscriber: { first_name: string | null; last_name: string | null } | null;
+  show: { name: string; show_date: string | null } | null;
+};
+
+function formatDeliveryDate(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function formatShow(delivery: PresaleDelivery) {
+  if (!delivery.show) return "—";
+  if (!delivery.show.show_date) return delivery.show.name || "—";
+  const date = new Date(`${delivery.show.show_date}T12:00:00`);
+  const label = Number.isNaN(date.getTime()) ? delivery.show.show_date : new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(date);
+  return delivery.show.name ? `${delivery.show.name} · ${label}` : label;
+}
+
+function deliveryStatusLabel(status: PresaleDelivery["send_status"]) {
+  return status === "accepted" ? "Sent" : status === "failed" ? "Failed" : "Sending";
+}
 
 export function MailingListAdmin({ slug }: { slug: string }) {
   const [items, setItems] = useState<Subscriber[]>([]);
@@ -11,11 +35,15 @@ export function MailingListAdmin({ slug }: { slug: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
+  const [presaleDeliveries, setPresaleDeliveries] = useState<PresaleDelivery[]>([]);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/admin/mailing-list?slug=${encodeURIComponent(slug)}`, { cache: "no-store" });
     const payload = await response.json();
-    if (response.ok) setItems(payload.subscribers ?? []);
+    if (response.ok) {
+      setItems(payload.subscribers ?? []);
+      setPresaleDeliveries(payload.presaleDeliveries ?? []);
+    }
     else setMessage(payload.error ?? "Unable to load subscribers.");
   }, [slug]);
 
@@ -58,6 +86,11 @@ export function MailingListAdmin({ slug }: { slug: string }) {
   }
 
   const active = items.filter((item) => item.status === "active").length;
+  const presaleSummary = useMemo(() => ({
+    sent: presaleDeliveries.filter((item) => item.send_status === "accepted").length,
+    failed: presaleDeliveries.filter((item) => item.send_status === "failed").length,
+    pending: presaleDeliveries.filter((item) => item.send_status === "pending").length,
+  }), [presaleDeliveries]);
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
@@ -72,6 +105,57 @@ export function MailingListAdmin({ slug }: { slug: string }) {
           <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-5"><p className="text-sm uppercase text-emerald-300">Active</p><p className="text-3xl font-black">{active}</p></div>
           <div className="rounded-2xl border border-white/10 bg-slate-900 p-5"><p className="text-sm uppercase text-slate-400">Unsubscribed</p><p className="text-3xl font-black">{items.length - active}</p></div>
         </section>
+
+        <details className="group rounded-2xl border border-white/10 bg-slate-900">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-5 py-4 marker:hidden">
+            <span>
+              <span className="block font-bold text-white">Presale Delivery History</span>
+              <span className="mt-1 block text-xs text-slate-400">Most recent {presaleDeliveries.length} of 50 maximum</span>
+            </span>
+            <span className="text-sm font-semibold text-slate-300">
+              {presaleSummary.sent} Sent · {presaleSummary.failed} Failed{presaleSummary.pending ? ` · ${presaleSummary.pending} Sending` : ""}
+              <span className="ml-3 inline-block transition group-open:rotate-180" aria-hidden="true">⌄</span>
+            </span>
+          </summary>
+          <div className="border-t border-white/10 p-4 sm:p-5">
+            {presaleDeliveries.length === 0 ? (
+              <p className="text-sm text-slate-400">No automatic presale deliveries have been recorded yet.</p>
+            ) : (
+              <>
+                <div className="grid gap-3 md:hidden">
+                  {presaleDeliveries.map((delivery) => {
+                    const subscriberName = [delivery.subscriber?.first_name, delivery.subscriber?.last_name].filter(Boolean).join(" ") || "—";
+                    const attemptedAt = delivery.sent_at ?? delivery.failed_at ?? delivery.created_at;
+                    return <article key={delivery.id} className="min-w-0 rounded-xl border border-white/10 bg-slate-950 p-4 text-sm">
+                      <div className="flex items-start justify-between gap-3"><p className="font-bold text-white">{subscriberName}</p><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${delivery.send_status === "accepted" ? "bg-emerald-500/15 text-emerald-200" : delivery.send_status === "failed" ? "bg-rose-500/15 text-rose-200" : "bg-amber-500/15 text-amber-200"}`}>{deliveryStatusLabel(delivery.send_status)}</span></div>
+                      <a href={`mailto:${delivery.recipient}`} className="mt-2 block break-all text-sky-300 underline">{delivery.recipient}</a>
+                      <p className="mt-2 text-slate-300">{formatShow(delivery)}</p>
+                      <p className="mt-1 text-xs text-slate-400">{formatDeliveryDate(attemptedAt)}</p>
+                      {delivery.send_status === "failed" && delivery.error_message ? <details className="mt-3"><summary className="cursor-pointer text-xs font-bold text-rose-200">Failure details</summary><p className="mt-2 break-words rounded-lg bg-rose-500/10 p-2 text-xs text-rose-100">{delivery.error_message}</p></details> : null}
+                    </article>;
+                  })}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[760px] text-left text-sm">
+                    <thead><tr className="text-slate-400"><th className="p-2">Subscriber</th><th>Email</th><th>Show</th><th>Status</th><th>Sent / Attempted</th><th>Details</th></tr></thead>
+                    <tbody>{presaleDeliveries.map((delivery) => {
+                      const subscriberName = [delivery.subscriber?.first_name, delivery.subscriber?.last_name].filter(Boolean).join(" ") || "—";
+                      const attemptedAt = delivery.sent_at ?? delivery.failed_at ?? delivery.created_at;
+                      return <tr key={delivery.id} className="border-t border-white/10 align-top">
+                        <td className="p-2">{subscriberName}</td>
+                        <td className="py-2 pr-3"><a href={`mailto:${delivery.recipient}`} className="break-all text-sky-300 underline">{delivery.recipient}</a></td>
+                        <td className="py-2 pr-3">{formatShow(delivery)}</td>
+                        <td className="py-2 pr-3"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${delivery.send_status === "accepted" ? "bg-emerald-500/15 text-emerald-200" : delivery.send_status === "failed" ? "bg-rose-500/15 text-rose-200" : "bg-amber-500/15 text-amber-200"}`}>{deliveryStatusLabel(delivery.send_status)}</span></td>
+                        <td className="py-2 pr-3">{formatDeliveryDate(attemptedAt)}</td>
+                        <td className="py-2">{delivery.send_status === "failed" && delivery.error_message ? <details><summary className="cursor-pointer text-xs font-bold text-rose-200">View failure</summary><p className="mt-2 max-w-xs break-words rounded-lg bg-rose-500/10 p-2 text-xs text-rose-100">{delivery.error_message}</p></details> : "—"}</td>
+                      </tr>;
+                    })}</tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </details>
 
         <form onSubmit={(event) => void add(event)} className="grid gap-3 rounded-2xl border border-white/10 bg-slate-900 p-5 md:grid-cols-4">
           <input name="firstName" placeholder="First name" className="rounded-xl bg-slate-950 px-3 py-3" />
