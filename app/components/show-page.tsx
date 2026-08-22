@@ -43,6 +43,7 @@ import {
 import { TicketPrintingPanel } from "@/app/components/tickets/ticket-printing-panel";
 import { SHOW_LEGACY_PAID_ORDER_IMPORT } from "@/app/components/tickets/ticket-sales-panel";
 import { GuestListTicketEntries } from "@/app/components/tickets/guest-list-ticket-entries";
+import { normalizeTicketSaleStatus, ticketSaleStatusLabel } from "@/lib/ticket-sale-status";
 import { TicketsCheckInPanel } from "@/app/components/tickets/tickets-check-in-panel";
 import { getGreetingName } from "@/lib/getGreetingName";
 import { getGuestReminderMissingItems } from "@/lib/guest-reminder";
@@ -306,6 +307,9 @@ const initialShowDetailsFormState: ShowDetailsFormState = {
   promoLong: "",
   ticketLink: "",
   ticketCodeFormat: "qr",
+  ticketSaleStatus: "public",
+  presaleStartsAt: "",
+  publicSaleStartsAt: "",
 };
 
 const DEFAULT_GUEST_WELCOME_MESSAGE_INTRO =
@@ -4078,6 +4082,23 @@ function normalizeOptionalField(value: string | null | undefined) {
   return trimmedValue ? trimmedValue : null;
 }
 
+function toDateTimeLocal(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function normalizeOptionalDateTime(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+  if (!trimmedValue) return null;
+  const date = new Date(trimmedValue);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Enter a valid ticket sale date and time.");
+  }
+  return date.toISOString();
+}
 function normalizeOptionalInteger(value: number | null | undefined) {
   return Number.isInteger(value) ? value : null;
 }
@@ -6314,6 +6335,9 @@ function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
     promoLong: show.promo_long ?? "",
     ticketLink: show.ticket_link ?? "",
     ticketCodeFormat: normalizeTicketCodeFormat(show.ticket_code_format),
+    ticketSaleStatus: normalizeTicketSaleStatus(show.ticket_sale_status),
+    presaleStartsAt: toDateTimeLocal(show.presale_starts_at),
+    publicSaleStartsAt: toDateTimeLocal(show.public_sale_starts_at),
   };
 }
 
@@ -12243,6 +12267,9 @@ export function ShowPage({
         promo_long: normalizeOptionalField(showDetailsFormState.promoLong),
         ticket_link: normalizeOptionalField(showDetailsFormState.ticketLink),
         ticket_code_format: normalizeTicketCodeFormat(showDetailsFormState.ticketCodeFormat),
+        ticket_sale_status: normalizeTicketSaleStatus(showDetailsFormState.ticketSaleStatus),
+        presale_starts_at: normalizeOptionalDateTime(showDetailsFormState.presaleStartsAt),
+        public_sale_starts_at: normalizeOptionalDateTime(showDetailsFormState.publicSaleStartsAt),
       };
 
       const { data, error } = await supabase
@@ -20918,6 +20945,66 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   placeholder="Add a warm welcome, arrival notes, or anything guests should see first."
                 />
               </label>
+
+              <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-stone-900">Ticket Sale Access</h3>
+                    <p className="mt-1 text-sm text-stone-600">
+                      Controls the sale status StageFlow publishes for this show. Dates are informational in Phase 1.
+                    </p>
+                  </div>
+                  <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-black tracking-[0.1em] ${
+                    showDetailsFormState.ticketSaleStatus === "public"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : showDetailsFormState.ticketSaleStatus === "presale"
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-stone-200 text-stone-700"
+                  }`}>
+                    {ticketSaleStatusLabel(normalizeTicketSaleStatus(showDetailsFormState.ticketSaleStatus))}
+                  </span>
+                </div>
+
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Ticket Sale Status
+                  <select
+                    name="ticketSaleStatus"
+                    value={showDetailsFormState.ticketSaleStatus}
+                    onChange={handleShowDetailsChange}
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  >
+                    <option value="not_on_sale">Not On Sale</option>
+                    <option value="presale">Presale / Early Access</option>
+                    <option value="public">Public Sale</option>
+                  </select>
+                </label>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Presale Starts
+                    <input
+                      type="datetime-local"
+                      name="presaleStartsAt"
+                      value={showDetailsFormState.presaleStartsAt}
+                      onChange={handleShowDetailsChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                    Public Sale Starts
+                    <input
+                      type="datetime-local"
+                      name="publicSaleStartsAt"
+                      value={showDetailsFormState.publicSaleStartsAt}
+                      onChange={handleShowDetailsChange}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                    />
+                  </label>
+                </div>
+                <p className="text-xs text-stone-500">
+                  StageFlow will not automatically change the selected status when either time arrives.
+                </p>
+              </section>
 
               <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
                 <div className="flex flex-col gap-1">

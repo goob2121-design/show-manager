@@ -3,6 +3,7 @@ export type SubmittedByRole = "guest" | "band" | "admin";
 export type SetSection = "set1" | "set2" | "encore";
 export type SongTempo = "fast" | "medium" | "slow";
 export type SongType = "vocal" | "instrumental";
+export type TicketSaleStatus = "not_on_sale" | "presale" | "public";
 export type SongSourceType = "library" | "guest";
 export type PromoMaterialCategory =
   | "flyer"
@@ -64,6 +65,9 @@ export type ShowRecord = {
   square_catalog_variation_id?: string | null;
   square_finance_sync_enabled?: boolean;
   square_finance_sync_started_at?: string | null;
+  ticket_sale_status: TicketSaleStatus;
+  presale_starts_at: string | null;
+  public_sale_starts_at: string | null;
   opening_script: string | null;
   intermission_script: string | null;
   closing_script: string | null;
@@ -609,4 +613,7 @@ export type ShowDetailsFormState = {
   promoLong: string;
   ticketLink: string;
   ticketCodeFormat: string;
+  ticketSaleStatus: TicketSaleStatus;
+  presaleStartsAt: string;
+  publicSaleStartsAt: string;
 };

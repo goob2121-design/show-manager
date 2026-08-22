@@ -32,6 +32,16 @@ alter table public.shows
   add column if not exists promo_long text,
   add column if not exists ticket_link text,
   add column if not exists ticket_code_format text;
+alter table public.shows
+  add column if not exists ticket_sale_status text not null default 'public',
+  add column if not exists presale_starts_at timestamptz,
+  add column if not exists public_sale_starts_at timestamptz;
+
+alter table public.shows
+  drop constraint if exists shows_ticket_sale_status_check;
+alter table public.shows
+  add constraint shows_ticket_sale_status_check
+  check (ticket_sale_status in ('not_on_sale', 'presale', 'public'));
 
 alter table public.shows
   add column if not exists is_archived boolean default false;

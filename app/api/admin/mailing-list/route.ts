@@ -23,6 +23,11 @@ export async function POST(request: NextRequest) {
     if (existing?.status === "unsubscribed") return NextResponse.json({ success: false, error: "This subscriber is unsubscribed. Use Reactivate to explicitly restore them." }, { status: 409 });
     if (existing) return NextResponse.json({ success: true, status: "already_subscribed" });
     const { error } = await supabase.from("mailing_list_subscribers").insert({ email, first_name: cleanMailingListName(raw.firstName) || null, last_name: cleanMailingListName(raw.lastName) || null, source }); if (error) throw error;
+  } else if (action === "update_names") {
+    const id = typeof raw.id === "string" ? raw.id : ""; if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ success: false, error: "Invalid subscriber." }, { status: 400 });
+    const names = { first_name: cleanMailingListName(raw.firstName) || null, last_name: cleanMailingListName(raw.lastName) || null };
+    const { error } = await supabase.from("mailing_list_subscribers").update(names).eq("id", id);
+    if (error) throw error;
   } else if (["unsubscribe", "reactivate"].includes(action)) {
     const id = typeof raw.id === "string" ? raw.id : ""; if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ success: false, error: "Invalid subscriber." }, { status: 400 });
     const active = action === "reactivate"; const { error } = await supabase.from("mailing_list_subscribers").update({ status: active ? "active" : "unsubscribed", subscribed_at: active ? now : undefined, unsubscribed_at: active ? null : now, updated_at: now }).eq("id", id); if (error) throw error;

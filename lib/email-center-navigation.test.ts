@@ -46,8 +46,8 @@ test("show banner identifies current and past shows without blocking sending", a
   const source = await readFile(componentPath, "utf8");
   assert.match(source, /showContext\.name/);
   assert.match(source, /formatShowDate\(showContext\.showDate\)/);
-  assert.match(source, /PAST SHOW/);
-  assert.match(source, /CURRENT \/ UPCOMING SHOW/);
+  assert.match(source, /\{isPastShow \? "Past Show" : "Current Show"\}/);
+  assert.match(source, /"Current Show"/);
   assert.match(source, /Messages sent here will be recorded under this show/);
   assert.doesNotMatch(source, /isPastShow\s*\?[^\n]*disabled/);
 });
