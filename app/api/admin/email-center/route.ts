@@ -19,6 +19,7 @@ import {
   MANUAL_EMAIL_REPLY_TO,
 } from "@/lib/manual-email-center";
 import { formatEmailCenterSaleDate, PRESALE_EMAIL_TEMPLATE_KEY, validatePresaleEmailFields, withPresaleGreetingFallback } from "@/lib/email-center-presale";
+import { getEffectiveTicketSaleState } from "@/lib/ticket-sale-status";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { buildReservedSeatSelectionUrl } from "@/lib/server/stageflow-public-url";
 
@@ -178,8 +179,9 @@ export async function GET(request: NextRequest) {
         .select("slug,name,show_date").eq("is_archived", false).gte("show_date", today)
         .order("show_date", { ascending: true }).limit(1).maybeSingle();
       if (currentShowError) throw currentShowError;
+      const effectiveSaleState = getEffectiveTicketSaleState(access.show);
       return NextResponse.json({ success: true, recipients, show: emailCenterShowMergeFields(access.show),
-        showContext: { slug: access.show.slug, name: access.show.name, showDate: access.show.show_date, ticketSaleStatus: access.show.ticket_sale_status },
+        showContext: { slug: access.show.slug, name: access.show.name, showDate: access.show.show_date, ticketSaleStatus: access.show.ticket_sale_status, effectiveTicketSaleStatus: effectiveSaleState.status, ticketSaleManualOverride: effectiveSaleState.manualOverride, ticketSaleConfigurationError: effectiveSaleState.configurationError },
         currentUpcomingShow: currentUpcomingShow ? { slug: currentUpcomingShow.slug, name: currentUpcomingShow.name, showDate: currentUpcomingShow.show_date } : null });
     }
     const { data, error } = await access.supabase.from("manual_email_history").select(HISTORY_SELECT)

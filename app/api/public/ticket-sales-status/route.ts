@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { normalizeTicketSaleStatus } from "@/lib/ticket-sale-status";
+import { effectiveTicketSaleStatus } from "@/lib/ticket-sale-status";
 
 export const runtime = "nodejs";
 
@@ -9,7 +9,7 @@ const ALLOWED_ORIGINS = new Set([
   "https://cumberlandmountainmusic.com",
 ]);
 
-const CACHE_CONTROL = "public, max-age=0, s-maxage=60, stale-while-revalidate=30";
+const CACHE_CONTROL = "no-store";
 
 function cors(origin: string | null): Record<string, string> {
   return origin && ALLOWED_ORIGINS.has(origin)
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       show: { slug: data.slug, name: data.name, date: data.show_date },
       ticketSales: {
-        status: normalizeTicketSaleStatus(data.ticket_sale_status),
+        status: effectiveTicketSaleStatus(data),
         presaleStartsAt: data.presale_starts_at,
         publicSaleStartsAt: data.public_sale_starts_at,
       },

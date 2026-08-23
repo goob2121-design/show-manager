@@ -50,7 +50,7 @@ type BulkDelivery = {
 };
 type ApiResponse = { success?: boolean; error?: string; warning?: string; resendMessageId?: string | null; history?: HistoryItem | null };
 type HistoryFilter = "all" | "sent" | "delivered" | "opened" | "clicked" | "problems";
-type EmailCenterShowContext = { slug: string; name: string; showDate: string | null; ticketSaleStatus?: string | null };
+type EmailCenterShowContext = { slug: string; name: string; showDate: string | null; ticketSaleStatus?: string | null; effectiveTicketSaleStatus?: string | null; ticketSaleManualOverride?: boolean; ticketSaleConfigurationError?: string | null };
 type EmailCenterSection = "compose" | "templates" | "discount-codes" | "sent";
 const EMAIL_CENTER_SECTIONS: Array<{ key: EmailCenterSection; label: string }> = [{ key: "compose", label: "Compose" }, { key: "templates", label: "Templates" }, { key: "discount-codes", label: "Discount Codes" }, { key: "sent", label: "Sent & Activity" }];
 
@@ -114,6 +114,13 @@ export function EmailCenter({ slug }: { slug: string }) {
   const usesPresaleTemplate = templateKey === PRESALE_EMAIL_TEMPLATE_KEY;
   const effectiveMergeFields = usesPresaleTemplate ? withPresaleGreetingFallback(mergeFields) : mergeFields;
   const presaleProblems = usesPresaleTemplate ? validatePresaleEmailFields(effectiveMergeFields) : [];
+  const presaleStatusWarning = !usesPresaleTemplate ? null
+    : showContext?.ticketSaleConfigurationError ? showContext.ticketSaleConfigurationError
+      : showContext?.ticketSaleManualOverride ? "Ticket sales are currently disabled by the manual Not On Sale override."
+        : showContext?.effectiveTicketSaleStatus === "presale" ? null
+          : showContext?.effectiveTicketSaleStatus === "public" ? "Presale has ended; this show is now in Public Sale."
+            : showContext?.effectiveTicketSaleStatus === "not_on_sale" ? "Presale is scheduled but has not started yet."
+              : "Ticket sale status is unavailable for this show.";
   const uniqueRecipients = useMemo(() => dedupeEmailCenterAudienceRecipients(recipients).recipients, [recipients]);
   const audienceResult = useMemo(() => audienceKey
     ? recipientsForEmailCenterAudience(recipients, audienceKey)
@@ -438,7 +445,7 @@ export function EmailCenter({ slug }: { slug: string }) {
               <input maxLength={200} value={heading} onChange={(event) => setHeading(event.target.value)} placeholder="A message from CMMS" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
             </label>
             {usesTicketPromotion ? <section className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4"><h3 className="font-bold text-amber-200">Ticket Promotion Details (optional)</h3><p className="mt-1 text-xs text-slate-400">Used by the Save on Tickets template. Change these for every promotion.</p><div className="mt-4 grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-semibold">Discount / Promo Code<input value={mergeFields.promo_code ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_code: event.target.value }))} placeholder="SAVE10" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Offer Text<input value={mergeFields.promo_offer ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_offer: event.target.value }))} placeholder="Save $5 on each ticket" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Ticket Purchase URL<input type="url" value={mergeFields.ticket_link ?? ""} onChange={(event) => changeTicketPurchaseUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div></section> : null}
-            {usesPresaleTemplate && showContext?.ticketSaleStatus !== "presale" ? <div role="status" className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100">This show is not currently set to Presale / Early Access.</div> : null}
+            {presaleStatusWarning ? <div role="status" className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100">{presaleStatusWarning}</div> : null}
             <div className="grid gap-5 md:grid-cols-2"><label className="grid gap-2 text-sm font-semibold">CTA Button Label (optional)<input maxLength={80} value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} placeholder="Get Tickets" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">CTA URL (optional)<input type="url" value={ctaUrl} onChange={(event) => setCtaUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div>
               </div>
               <div aria-label="Preview and validation" className="grid min-w-0 gap-5 xl:sticky xl:top-6">

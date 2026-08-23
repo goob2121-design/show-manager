@@ -28,13 +28,13 @@ test("public route selects and returns only approved status fields", async () =>
   const source = await readFile(routeUrl, "utf8");
   assert.match(source, /select\("slug,name,show_date,ticket_sale_status,presale_starts_at,public_sale_starts_at"\)/);
   assert.match(source, /show: \{ slug: data\.slug, name: data\.name, date: data\.show_date \}/);
-  assert.match(source, /status: normalizeTicketSaleStatus\(data\.ticket_sale_status\)/);
+  assert.match(source, /status: effectiveTicketSaleStatus\(data\)/);
   for (const forbidden of ["ticket_link", "access_token", "reservation_token", "entry_code", "customer_email", "customer_name", "subscriber"]) {
     assert.equal(source.includes(forbidden), false, `public route must not expose ${forbidden}`);
   }
 });
 
-test("admin controls persist explicit status and optional timestamps without scheduling side effects", async () => {
+test("admin controls persist settings, validate date order, and display the effective automatic state", async () => {
   const source = await readFile(showPageUrl, "utf8");
   assert.match(source, /name="ticketSaleStatus"/);
   assert.match(source, /value="not_on_sale"/);
@@ -46,6 +46,11 @@ test("admin controls persist explicit status and optional timestamps without sch
   assert.match(source, /presale_starts_at: normalizeOptionalDateTime\(showDetailsFormState\.presaleStartsAt\)/);
   assert.match(source, /public_sale_starts_at: normalizeOptionalDateTime\(showDetailsFormState\.publicSaleStartsAt\)/);
   assert.doesNotMatch(source, /setInterval\([^)]*ticketSale|setTimeout\([^)]*ticketSale/);
+  assert.match(source, /validateTicketSaleSchedule/);
+  assert.match(source, /Effective: \{ticketSaleStatusLabel\(effectiveTicketSaleState\.status\)\}/);
+  assert.match(source, /Automatic schedule enabled/);
+  assert.match(source, /Manual override active — ticket sales are disabled\./);
+  assert.doesNotMatch(source, /will not automatically change the selected status/);
 });
 
 test("ticket sale status work does not touch Square or reserved seating pipelines", async () => {

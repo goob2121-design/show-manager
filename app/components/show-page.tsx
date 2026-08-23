@@ -43,7 +43,7 @@ import {
 import { TicketPrintingPanel } from "@/app/components/tickets/ticket-printing-panel";
 import { SHOW_LEGACY_PAID_ORDER_IMPORT } from "@/app/components/tickets/ticket-sales-panel";
 import { GuestListTicketEntries } from "@/app/components/tickets/guest-list-ticket-entries";
-import { normalizeTicketSaleStatus, ticketSaleStatusLabel } from "@/lib/ticket-sale-status";
+import { getEffectiveTicketSaleState, normalizeTicketSaleStatus, ticketSaleStatusLabel, validateTicketSaleSchedule } from "@/lib/ticket-sale-status";
 import { TicketsCheckInPanel } from "@/app/components/tickets/tickets-check-in-panel";
 import { getGreetingName } from "@/lib/getGreetingName";
 import { getGuestReminderMissingItems } from "@/lib/guest-reminder";
@@ -6600,6 +6600,11 @@ export function ShowPage({
   const [showDetailsFormState, setShowDetailsFormState] = useState<ShowDetailsFormState>(
     initialShowDetailsFormState,
   );
+  const effectiveTicketSaleState = getEffectiveTicketSaleState({
+    ticket_sale_status: showDetailsFormState.ticketSaleStatus,
+    presale_starts_at: showDetailsFormState.presaleStartsAt || null,
+    public_sale_starts_at: showDetailsFormState.publicSaleStartsAt || null,
+  });
   const [showLogoFile, setShowLogoFile] = useState<File | null>(null);
   const [showLogoInputKey, setShowLogoInputKey] = useState(0);
   const [guestProfileFormState, setGuestProfileFormState] = useState<GuestProfileFormState>(
@@ -12230,6 +12235,16 @@ export function ShowPage({
 
     if (!show) {
       setShowDetailsError("The show is not loaded yet.");
+      return;
+    }
+
+    const ticketSaleScheduleError = validateTicketSaleSchedule({
+      ticket_sale_status: showDetailsFormState.ticketSaleStatus,
+      presale_starts_at: showDetailsFormState.presaleStartsAt || null,
+      public_sale_starts_at: showDetailsFormState.publicSaleStartsAt || null,
+    });
+    if (ticketSaleScheduleError) {
+      setShowDetailsError(ticketSaleScheduleError);
       return;
     }
 
@@ -20951,17 +20966,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   <div>
                     <h3 className="text-lg font-semibold text-stone-900">Ticket Sale Access</h3>
                     <p className="mt-1 text-sm text-stone-600">
-                      Controls the sale status StageFlow publishes for this show. Dates are informational in Phase 1.
+                      Configure the automatic presale and public-sale schedule, with a manual sales-off override.
                     </p>
                   </div>
                   <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-black tracking-[0.1em] ${
-                    showDetailsFormState.ticketSaleStatus === "public"
+                    effectiveTicketSaleState.status === "public"
                       ? "bg-emerald-100 text-emerald-800"
-                      : showDetailsFormState.ticketSaleStatus === "presale"
+                      : effectiveTicketSaleState.status === "presale"
                         ? "bg-amber-100 text-amber-800"
                         : "bg-stone-200 text-stone-700"
                   }`}>
-                    {ticketSaleStatusLabel(normalizeTicketSaleStatus(showDetailsFormState.ticketSaleStatus))}
+                    Effective: {ticketSaleStatusLabel(effectiveTicketSaleState.status)}
                   </span>
                 </div>
 
@@ -21001,9 +21016,10 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     />
                   </label>
                 </div>
-                <p className="text-xs text-stone-500">
-                  StageFlow will not automatically change the selected status when either time arrives.
-                </p>
+                {effectiveTicketSaleState.configurationError ? <p className="text-sm font-semibold text-red-700">{effectiveTicketSaleState.configurationError}</p>
+                  : effectiveTicketSaleState.manualOverride ? <p className="text-sm font-semibold text-red-700">Manual override active — ticket sales are disabled.</p>
+                    : effectiveTicketSaleState.scheduleEnabled ? <div><p className="text-sm font-semibold text-emerald-700">Automatic schedule enabled</p><p className="text-xs text-stone-500">StageFlow will use these dates to switch the effective sale state automatically.</p></div>
+                      : <p className="text-xs text-stone-500">Add a presale or public-sale start time to enable automatic scheduling.</p>}
               </section>
 
               <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">

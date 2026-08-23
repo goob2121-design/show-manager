@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isTicketSaleStatus } from "@/lib/ticket-sale-status";
+import { effectiveTicketSaleStatus } from "@/lib/ticket-sale-status";
 import { MAILING_LIST_PRESALE_SUBJECT, sendMailingListPresaleAccessEmail } from "@/lib/mailing-list-presale-email";
 
 type PresaleShow = {
@@ -13,13 +13,7 @@ type PresaleShow = {
 };
 
 export function isActiveMailingListPresale(show: PresaleShow, now = new Date()) {
-  if (!isTicketSaleStatus(show.ticket_sale_status) || show.ticket_sale_status !== "presale") return false;
-  const nowTime = now.getTime();
-  const presaleStart = show.presale_starts_at ? new Date(show.presale_starts_at).getTime() : null;
-  const publicStart = show.public_sale_starts_at ? new Date(show.public_sale_starts_at).getTime() : null;
-  if (presaleStart !== null && (!Number.isFinite(presaleStart) || nowTime < presaleStart)) return false;
-  if (publicStart !== null && (!Number.isFinite(publicStart) || nowTime >= publicStart)) return false;
-  return true;
+  return effectiveTicketSaleStatus(show, now) === "presale";
 }
 
 export async function sendAutomaticMailingListPresaleAccess(input: {
