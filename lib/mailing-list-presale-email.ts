@@ -44,7 +44,7 @@ export function buildMailingListPresaleAccessEmail(input: {
   const publicSaleDate = formatPublicSaleDate(input.publicSaleStartsAt);
   return renderEmailCenterEmail({
     heading: "Your CMMS Early Access Ticket Link",
-    message: `${greeting}\n\nSince you're on the CMMS Mailing List, I wanted to send you the early-access ticket link for ${input.showName}.${publicSaleDate ? `\n\nTickets open to the general public on ${publicSaleDate}. This gives you the first opportunity to purchase tickets and choose from the available reserved seats.` : ""}\n\nThanks for supporting the Cumberland Mountain Music Show!\n\nGmail users: If you don't see future CMMS emails in Primary, check Promotions, Spam, or Social.`,
+    message: `${greeting}\n\nSince you're on the CMMS Mailing List, I wanted to send you the early-access ticket link for ${input.showName}.${publicSaleDate ? `\n\nTickets open to the general public on ${publicSaleDate}. This gives you the first opportunity to purchase tickets and choose from the available reserved seats.` : ""}\n\nThanks for supporting the Cumberland Mountain Music Show!`,
     ctaLabel: "EARLY ACCESS TICKETS",
     ctaUrl: input.ticketUrl,
   });

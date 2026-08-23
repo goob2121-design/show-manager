@@ -162,8 +162,6 @@ export const manualEmailTemplates = [
       "",
       "Early Access begins {{presale_start}}, and tickets open to the general public on {{public_sale_start}}. This gives you the first opportunity to purchase tickets and choose from the available reserved seats.",
       "",
-      "",
-      "Gmail users: If you don't see our email in your Primary inbox, please check Promotions. You may also want to check Spam or Social.",
       "Thanks for supporting the Cumberland Mountain Music Show!",
     ].join("\n"),
   },
