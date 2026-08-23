@@ -11,8 +11,9 @@ import {
 } from "@/lib/email-center-audiences";
 import { getManualEmailSender, getManualEmailTemplate, MANUAL_EMAIL_REPLY_TO } from "@/lib/manual-email-center";
 import { renderEmailCenterEmail } from "@/lib/email-center-renderer";
+import { PRESALE_EMAIL_TEMPLATE_KEY, validatePresaleEmailFields } from "@/lib/email-center-presale";
 import { mailingListUnsubscribeUrl } from "@/lib/mailing-list";
-import { loadEmailCenterRecipients } from "../route";
+import { emailCenterShowMergeFields, loadEmailCenterRecipients } from "../route";
 
 export const runtime = "nodejs";
 
@@ -37,7 +38,7 @@ async function authorize(slug: string) {
   }
   const supabase = serviceClient();
   const { data: show, error } = await supabase.from("shows")
-    .select("id,slug,name,show_date,show_start_time").eq("slug", slug).maybeSingle();
+    .select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link").eq("slug", slug).maybeSingle();
   if (error) throw error;
   if (!show) return { ok: false as const, status: 404, error: "Show was not found." };
   return { ok: true as const, supabase, show };
@@ -84,6 +85,9 @@ export async function POST(request: NextRequest) {
     const ctaUrlTemplate = text(body.ctaUrl);
     const rawCampaignFields = body.campaignMergeFields && typeof body.campaignMergeFields === "object" && !Array.isArray(body.campaignMergeFields) ? body.campaignMergeFields as Record<string, unknown> : {};
     const campaignMergeFields = { promo_code: text(rawCampaignFields.promo_code), promo_offer: text(rawCampaignFields.promo_offer), ticket_link: text(rawCampaignFields.ticket_link) };
+    const presaleShowFields = emailCenterShowMergeFields(access.show);
+    const presaleProblems = templateKey === PRESALE_EMAIL_TEMPLATE_KEY ? validatePresaleEmailFields(presaleShowFields) : [];
+    if (presaleProblems.length) return NextResponse.json({ success: false, error: presaleProblems[0] }, { status: 400 });
     const selectedRecipientIds = Array.isArray(body.selectedRecipientIds)
       ? [...new Set(body.selectedRecipientIds.map(text).filter(Boolean))] : [];
     const sender = getManualEmailSender(senderKey);
@@ -102,8 +106,9 @@ export async function POST(request: NextRequest) {
     const selectedSet = new Set(selectedRecipientIds);
     const selected = audienceResult.recipients.filter((recipient) => selectedSet.has(recipient.id));
     const rendered = selected.map((recipient) => {
-      const campaignRecipient = { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields } };
-      const content = renderEmailCenterRecipient({ recipient: campaignRecipient, subjectTemplate, messageTemplate, headingTemplate, ctaLabelTemplate, ctaUrlTemplate, promoOfferTemplate: campaignMergeFields.promo_offer, promoCodeTemplate: campaignMergeFields.promo_code, senderValid: true });
+      const templateFields = templateKey === PRESALE_EMAIL_TEMPLATE_KEY ? presaleShowFields : {};
+      const campaignRecipient = { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields, ...templateFields } };
+      const content = renderEmailCenterRecipient({ recipient: campaignRecipient, templateKey, subjectTemplate, messageTemplate, headingTemplate, ctaLabelTemplate, ctaUrlTemplate, promoOfferTemplate: campaignMergeFields.promo_offer, promoCodeTemplate: campaignMergeFields.promo_code, senderValid: true });
       const subscriberId = audienceKey === "mailing_list_subscribers" && recipient.id.startsWith("mailing:") ? recipient.id.slice(8) : null;
       const unsubscribeUrl = subscriberId ? mailingListUnsubscribeUrl(request.nextUrl.origin, subscriberId) : undefined;
       return { recipient, subscriberId, ...content, renderedEmail: renderEmailCenterEmail({ heading: content.heading, message: content.message, ctaLabel: content.ctaLabel, ctaUrl: content.ctaUrl, promoOffer: content.promoOffer, promoCode: content.promoCode, unsubscribeUrl }) };

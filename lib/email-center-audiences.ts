@@ -1,5 +1,6 @@
 import { findUnresolvedEmailCenterMergeFields, resolveEmailCenterMergeFields, type EmailCenterMergeValues } from "./email-center";
 import { isValidManualEmailAddress } from "./manual-email-center";
+import { PRESALE_EMAIL_TEMPLATE_KEY, withPresaleGreetingFallback } from "./email-center-presale";
 
 export const EMAIL_CENTER_AUDIENCES = [
   { key: "advance_ticket_buyers", label: "All Advance Ticket Buyers" },
@@ -73,19 +74,23 @@ export function renderEmailCenterRecipient(input: {
   subjectTemplate: string;
   messageTemplate: string;
   headingTemplate?: string;
+  templateKey?: string;
   ctaLabelTemplate?: string;
   ctaUrlTemplate?: string;
   promoOfferTemplate?: string;
   promoCodeTemplate?: string;
   senderValid: boolean;
 }) {
-  const subject = resolveEmailCenterMergeFields(input.subjectTemplate, input.recipient.mergeFields).rendered;
-  const message = resolveEmailCenterMergeFields(input.messageTemplate, input.recipient.mergeFields).rendered;
-  const heading = resolveEmailCenterMergeFields(input.headingTemplate ?? "", input.recipient.mergeFields).rendered;
-  const ctaLabel = resolveEmailCenterMergeFields(input.ctaLabelTemplate ?? "", input.recipient.mergeFields).rendered;
-  const ctaUrl = resolveEmailCenterMergeFields(input.ctaUrlTemplate ?? "", input.recipient.mergeFields).rendered;
-  const promoOffer = resolveEmailCenterMergeFields(input.promoOfferTemplate ?? "", input.recipient.mergeFields).rendered;
-  const promoCode = resolveEmailCenterMergeFields(input.promoCodeTemplate ?? "", input.recipient.mergeFields).rendered;
+  const mergeFields = input.templateKey === PRESALE_EMAIL_TEMPLATE_KEY
+    ? withPresaleGreetingFallback(input.recipient.mergeFields)
+    : input.recipient.mergeFields;
+  const subject = resolveEmailCenterMergeFields(input.subjectTemplate, mergeFields).rendered;
+  const message = resolveEmailCenterMergeFields(input.messageTemplate, mergeFields).rendered;
+  const heading = resolveEmailCenterMergeFields(input.headingTemplate ?? "", mergeFields).rendered;
+  const ctaLabel = resolveEmailCenterMergeFields(input.ctaLabelTemplate ?? "", mergeFields).rendered;
+  const ctaUrl = resolveEmailCenterMergeFields(input.ctaUrlTemplate ?? "", mergeFields).rendered;
+  const promoOffer = resolveEmailCenterMergeFields(input.promoOfferTemplate ?? "", mergeFields).rendered;
+  const promoCode = resolveEmailCenterMergeFields(input.promoCodeTemplate ?? "", mergeFields).rendered;
   const unresolved = findUnresolvedEmailCenterMergeFields(subject, message, heading, ctaLabel, ctaUrl, promoOffer, promoCode);
   const problems: string[] = [];
   if (!input.recipient.email.trim()) problems.push("Missing email address");

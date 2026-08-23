@@ -18,6 +18,7 @@ import {
   isValidManualEmailAddress,
   MANUAL_EMAIL_REPLY_TO,
 } from "@/lib/manual-email-center";
+import { formatEmailCenterSaleDate, PRESALE_EMAIL_TEMPLATE_KEY, validatePresaleEmailFields, withPresaleGreetingFallback } from "@/lib/email-center-presale";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { buildReservedSeatSelectionUrl } from "@/lib/server/stageflow-public-url";
 
@@ -62,7 +63,7 @@ async function authorize(slug: string) {
   }
   const supabase = serviceClient();
   const { data: show, error } = await supabase.from("shows")
-    .select("id,slug,name,show_date,show_start_time").eq("slug", slug).maybeSingle();
+    .select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link").eq("slug", slug).maybeSingle();
   if (error) throw error;
   if (!show) return { ok: false as const, status: 404, error: "Show was not found." };
   return { ok: true as const, supabase, show };
@@ -81,12 +82,17 @@ function publicHistory(row: ManualEmailHistoryRow) {
     })),
   };
 }
-function baseMergeFields(show: { name: string; show_date: string | null; show_start_time: string | null }) {
-  return { show_name: show.name, show_date: displayShowDate(show.show_date), show_time: show.show_start_time ?? "" } satisfies EmailCenterMergeValues;
+export function emailCenterShowMergeFields(show: { name: string; show_date: string | null; show_start_time: string | null; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null }) {
+  return {
+    show_name: show.name, show_date: displayShowDate(show.show_date), show_time: show.show_start_time ?? "",
+    presale_start: formatEmailCenterSaleDate(show.presale_starts_at),
+    public_sale_start: formatEmailCenterSaleDate(show.public_sale_starts_at),
+    ticket_link: show.ticket_link?.trim() ?? "",
+  } satisfies EmailCenterMergeValues;
 }
 export async function loadEmailCenterRecipients(
   supabase: ReturnType<typeof serviceClient>,
-  show: { id: string; name: string; show_date: string | null; show_start_time: string | null },
+  show: { id: string; name: string; show_date: string | null; show_start_time: string | null; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null },
   requestOrigin: string,
 ) {
   const [linksResult, assignmentsResult, compsResult, guestsResult, sponsorsResult, mailingListResult] = await Promise.all([
@@ -100,7 +106,7 @@ export async function loadEmailCenterRecipients(
   for (const result of [linksResult, assignmentsResult, compsResult, guestsResult, sponsorsResult, mailingListResult]) {
     if (result.error) throw result.error;
   }
-  const shared = baseMergeFields(show);
+  const shared = emailCenterShowMergeFields(show);
   const seatsByLink = new Map<string, string[]>();
   for (const row of (assignmentsResult.data ?? []) as Array<{ seating_link_id: string | null; seat_id: string }>) {
     if (!row.seating_link_id) continue;
@@ -172,8 +178,8 @@ export async function GET(request: NextRequest) {
         .select("slug,name,show_date").eq("is_archived", false).gte("show_date", today)
         .order("show_date", { ascending: true }).limit(1).maybeSingle();
       if (currentShowError) throw currentShowError;
-      return NextResponse.json({ success: true, recipients, show: baseMergeFields(access.show),
-        showContext: { slug: access.show.slug, name: access.show.name, showDate: access.show.show_date },
+      return NextResponse.json({ success: true, recipients, show: emailCenterShowMergeFields(access.show),
+        showContext: { slug: access.show.slug, name: access.show.name, showDate: access.show.show_date, ticketSaleStatus: access.show.ticket_sale_status },
         currentUpcomingShow: currentUpcomingShow ? { slug: currentUpcomingShow.slug, name: currentUpcomingShow.name, showDate: currentUpcomingShow.show_date } : null });
     }
     const { data, error } = await access.supabase.from("manual_email_history").select(HISTORY_SELECT)
@@ -210,7 +216,12 @@ export async function POST(request: NextRequest) {
     const template = getManualEmailTemplate(templateKey);
     const rawMergeFields = body.mergeFields && typeof body.mergeFields === "object" && !Array.isArray(body.mergeFields)
       ? body.mergeFields as Record<string, unknown> : {};
-    const mergeFields = Object.fromEntries(Object.entries(rawMergeFields).map(([key, value]) => [key, stringValue(value)])) as EmailCenterMergeValues;
+    const clientMergeFields = Object.fromEntries(Object.entries(rawMergeFields).map(([key, value]) => [key, stringValue(value)])) as EmailCenterMergeValues;
+    const mergeFields = templateKey === PRESALE_EMAIL_TEMPLATE_KEY
+      ? withPresaleGreetingFallback({ ...clientMergeFields, ...emailCenterShowMergeFields(access.show) })
+      : clientMergeFields;
+    const presaleProblems = templateKey === PRESALE_EMAIL_TEMPLATE_KEY ? validatePresaleEmailFields(mergeFields) : [];
+    if (presaleProblems.length) return NextResponse.json({ success: false, error: presaleProblems[0] }, { status: 400 });
     const resolvedSubject = resolveEmailCenterMergeFields(subjectTemplate, mergeFields);
     const resolvedMessage = resolveEmailCenterMergeFields(messageTemplate, mergeFields);
     const resolvedHeading = resolveEmailCenterMergeFields(headingTemplate, mergeFields);

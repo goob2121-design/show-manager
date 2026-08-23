@@ -29,6 +29,7 @@ import {
   type ManualEmailSenderKey,
   type ManualEmailTemplateKey,
 } from "@/lib/manual-email-center";
+import { PRESALE_EMAIL_TEMPLATE_KEY, validatePresaleEmailFields, withPresaleGreetingFallback } from "@/lib/email-center-presale";
 
 type Recipient = EmailCenterAudienceRecipient;
 type EmailEvent = { id: string; type: string; createdAt: string; recipient: string | null; clickedUrl: string | null; detail: string | null };
@@ -49,7 +50,7 @@ type BulkDelivery = {
 };
 type ApiResponse = { success?: boolean; error?: string; warning?: string; resendMessageId?: string | null; history?: HistoryItem | null };
 type HistoryFilter = "all" | "sent" | "delivered" | "opened" | "clicked" | "problems";
-type EmailCenterShowContext = { slug: string; name: string; showDate: string | null };
+type EmailCenterShowContext = { slug: string; name: string; showDate: string | null; ticketSaleStatus?: string | null };
 type EmailCenterSection = "compose" | "templates" | "discount-codes" | "sent";
 const EMAIL_CENTER_SECTIONS: Array<{ key: EmailCenterSection; label: string }> = [{ key: "compose", label: "Compose" }, { key: "templates", label: "Templates" }, { key: "discount-codes", label: "Discount Codes" }, { key: "sent", label: "Sent & Activity" }];
 
@@ -110,25 +111,28 @@ export function EmailCenter({ slug }: { slug: string }) {
   const selectedSender = manualEmailSenders.find((sender) => sender.key === senderKey) ?? null;
   const usesTicketPromotion = templateKey === "ticket_discount";
   const campaignMergeFields: EmailCenterMergeValues = { promo_code: mergeFields.promo_code ?? "", promo_offer: mergeFields.promo_offer ?? "", ticket_link: mergeFields.ticket_link ?? "" };
+  const usesPresaleTemplate = templateKey === PRESALE_EMAIL_TEMPLATE_KEY;
+  const effectiveMergeFields = usesPresaleTemplate ? withPresaleGreetingFallback(mergeFields) : mergeFields;
+  const presaleProblems = usesPresaleTemplate ? validatePresaleEmailFields(effectiveMergeFields) : [];
   const uniqueRecipients = useMemo(() => dedupeEmailCenterAudienceRecipients(recipients).recipients, [recipients]);
   const audienceResult = useMemo(() => audienceKey
     ? recipientsForEmailCenterAudience(recipients, audienceKey)
     : { recipients: [], recordsFound: 0, duplicatesRemoved: 0, uniqueRecipients: 0 }, [recipients, audienceKey]);
   const audienceRows = useMemo(() => audienceResult.recipients.map((recipient) => ({
     recipient,
-    ...renderEmailCenterRecipient({ recipient: { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields } }, subjectTemplate: subject, messageTemplate: message, headingTemplate: heading, ctaLabelTemplate: ctaLabel, ctaUrlTemplate: ctaUrl, promoOfferTemplate: mergeFields.promo_offer, promoCodeTemplate: mergeFields.promo_code, senderValid: Boolean(selectedSender) }),
-  })), [audienceResult.recipients, subject, message, heading, ctaLabel, ctaUrl, selectedSender, mergeFields.promo_code, mergeFields.promo_offer, mergeFields.ticket_link]);
+    ...renderEmailCenterRecipient({ recipient: { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields } }, templateKey, subjectTemplate: subject, messageTemplate: message, headingTemplate: heading, ctaLabelTemplate: ctaLabel, ctaUrlTemplate: ctaUrl, promoOfferTemplate: mergeFields.promo_offer, promoCodeTemplate: mergeFields.promo_code, senderValid: Boolean(selectedSender) }),
+  })), [audienceResult.recipients, templateKey, subject, message, heading, ctaLabel, ctaUrl, selectedSender, mergeFields.promo_code, mergeFields.promo_offer, mergeFields.ticket_link]);
   const selectedRecipientSet = useMemo(() => new Set(selectedRecipientIds), [selectedRecipientIds]);
   const selectedReadyRows = audienceRows.filter((row) => row.ready && selectedRecipientSet.has(row.recipient.id));
   const problemRows = audienceRows.filter((row) => !row.ready);
   const excludedCount = audienceRows.filter((row) => row.ready && !selectedRecipientSet.has(row.recipient.id)).length;
-  const renderedSubject = useMemo(() => resolveEmailCenterMergeFields(subject, mergeFields).rendered, [subject, mergeFields]);
-  const renderedMessage = useMemo(() => resolveEmailCenterMergeFields(message, mergeFields).rendered, [message, mergeFields]);
-  const renderedHeading = useMemo(() => resolveEmailCenterMergeFields(heading, mergeFields).rendered, [heading, mergeFields]);
-  const renderedCtaLabel = useMemo(() => resolveEmailCenterMergeFields(ctaLabel, mergeFields).rendered, [ctaLabel, mergeFields]);
-  const renderedCtaUrl = useMemo(() => resolveEmailCenterMergeFields(ctaUrl, mergeFields).rendered, [ctaUrl, mergeFields]);
-  const renderedPromoOffer = useMemo(() => resolveEmailCenterMergeFields(mergeFields.promo_offer ?? "", mergeFields).rendered, [mergeFields]);
-  const renderedPromoCode = useMemo(() => resolveEmailCenterMergeFields(mergeFields.promo_code ?? "", mergeFields).rendered, [mergeFields]);
+  const renderedSubject = useMemo(() => resolveEmailCenterMergeFields(subject, effectiveMergeFields).rendered, [subject, effectiveMergeFields]);
+  const renderedMessage = useMemo(() => resolveEmailCenterMergeFields(message, effectiveMergeFields).rendered, [message, effectiveMergeFields]);
+  const renderedHeading = useMemo(() => resolveEmailCenterMergeFields(heading, effectiveMergeFields).rendered, [heading, effectiveMergeFields]);
+  const renderedCtaLabel = useMemo(() => resolveEmailCenterMergeFields(ctaLabel, effectiveMergeFields).rendered, [ctaLabel, effectiveMergeFields]);
+  const renderedCtaUrl = useMemo(() => resolveEmailCenterMergeFields(ctaUrl, effectiveMergeFields).rendered, [ctaUrl, effectiveMergeFields]);
+  const renderedPromoOffer = useMemo(() => resolveEmailCenterMergeFields(effectiveMergeFields.promo_offer ?? "", effectiveMergeFields).rendered, [effectiveMergeFields]);
+  const renderedPromoCode = useMemo(() => resolveEmailCenterMergeFields(effectiveMergeFields.promo_code ?? "", effectiveMergeFields).rendered, [effectiveMergeFields]);
   const previewUnsubscribeUrl = audienceKey === "mailing_list_subscribers" || selectedRecipientId?.startsWith("mailing:") ? "https://stageflow.cumberlandmountainmusic.com/mailing-list/unsubscribe?token=recipient-specific-secure-link" : undefined;
   const renderedEmail = useMemo(() => renderEmailCenterEmail({ heading: renderedHeading, message: renderedMessage, ctaLabel: renderedCtaLabel, ctaUrl: renderedCtaUrl, unsubscribeUrl: previewUnsubscribeUrl, promoOffer: renderedPromoOffer, promoCode: renderedPromoCode }), [renderedHeading, renderedMessage, renderedCtaLabel, renderedCtaUrl, previewUnsubscribeUrl, renderedPromoOffer, renderedPromoCode]);
   const unresolvedFields = useMemo(() => findUnresolvedEmailCenterMergeFields(renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl, renderedPromoOffer, renderedPromoCode), [renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl, renderedPromoOffer, renderedPromoCode]);
@@ -138,6 +142,7 @@ export function EmailCenter({ slug }: { slug: string }) {
     { label: "Subject", ok: Boolean(renderedSubject.trim()), issue: "Subject is blank." },
     { label: "Message", ok: Boolean(renderedMessage.trim()), issue: "Message is blank." },
     ...(usesTicketPromotion ? [{ label: "Promotion", ok: Boolean(renderedPromoOffer.trim()) === Boolean(renderedPromoCode.trim()), issue: "Promotion requires both offer text and a promo code." }] : []),
+    ...(usesPresaleTemplate ? [{ label: "Presale show data", ok: presaleProblems.length === 0, issue: presaleProblems[0] ?? "" }] : []),
     { label: "CTA", ok: Boolean(renderedCtaLabel.trim()) === Boolean(renderedCtaUrl.trim()) && (!renderedCtaUrl.trim() || /^https:\/\//i.test(renderedCtaUrl.trim())), issue: "CTA requires both a label and an HTTPS URL." },
     { label: "Merge fields", ok: unresolvedFields.length === 0, issue: unresolvedFields.length ? `Unresolved field: ${unresolvedFields[0]}` : "" },
     { label: "Send state", ok: !isSending, issue: "A send is already in progress." },
@@ -216,6 +221,7 @@ export function EmailCenter({ slug }: { slug: string }) {
     const result = recipientsForEmailCenterAudience(recipients, value);
     setSelectedRecipientIds(result.recipients
       .filter((recipient) => renderEmailCenterRecipient({
+        templateKey,
         recipient,
         subjectTemplate: subject,
         messageTemplate: message,
@@ -432,6 +438,7 @@ export function EmailCenter({ slug }: { slug: string }) {
               <input maxLength={200} value={heading} onChange={(event) => setHeading(event.target.value)} placeholder="A message from CMMS" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
             </label>
             {usesTicketPromotion ? <section className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4"><h3 className="font-bold text-amber-200">Ticket Promotion Details (optional)</h3><p className="mt-1 text-xs text-slate-400">Used by the Save on Tickets template. Change these for every promotion.</p><div className="mt-4 grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-semibold">Discount / Promo Code<input value={mergeFields.promo_code ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_code: event.target.value }))} placeholder="SAVE10" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Offer Text<input value={mergeFields.promo_offer ?? ""} onChange={(event) => setMergeFields((current) => ({ ...current, promo_offer: event.target.value }))} placeholder="Save $5 on each ticket" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">Ticket Purchase URL<input type="url" value={mergeFields.ticket_link ?? ""} onChange={(event) => changeTicketPurchaseUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div></section> : null}
+            {usesPresaleTemplate && showContext?.ticketSaleStatus !== "presale" ? <div role="status" className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100">This show is not currently set to Presale / Early Access.</div> : null}
             <div className="grid gap-5 md:grid-cols-2"><label className="grid gap-2 text-sm font-semibold">CTA Button Label (optional)<input maxLength={80} value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} placeholder="Get Tickets" className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label><label className="grid gap-2 text-sm font-semibold">CTA URL (optional)<input type="url" value={ctaUrl} onChange={(event) => setCtaUrl(event.target.value)} placeholder="https://..." className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3" /></label></div>
               </div>
               <div aria-label="Preview and validation" className="grid min-w-0 gap-5 xl:sticky xl:top-6">
