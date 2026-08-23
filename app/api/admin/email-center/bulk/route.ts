@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     const messageTemplate = text(body.message);
     const headingTemplate = text(body.heading);
     const ctaLabelTemplate = text(body.ctaLabel);
-    const ctaUrlTemplate = text(body.ctaUrl);
+    const ctaUrlTemplate = templateKey === PRESALE_EMAIL_TEMPLATE_KEY ? "{{ticket_link}}" : text(body.ctaUrl);
     const rawCampaignFields = body.campaignMergeFields && typeof body.campaignMergeFields === "object" && !Array.isArray(body.campaignMergeFields) ? body.campaignMergeFields as Record<string, unknown> : {};
     const campaignMergeFields = { promo_code: text(rawCampaignFields.promo_code), promo_offer: text(rawCampaignFields.promo_offer), ticket_link: text(rawCampaignFields.ticket_link) };
     const presaleShowFields = emailCenterShowMergeFields(access.show);

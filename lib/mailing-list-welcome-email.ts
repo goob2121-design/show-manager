@@ -47,7 +47,7 @@ function safeErrorMessage(value: unknown) {
 export function buildMailingListWelcomeEmail(firstName: string) {
   return renderEmailCenterEmail({
     heading: "Welcome to the CMMS mailing list",
-    message: `Thanks${firstName ? `, ${firstName}` : ""}! You’re on the Cumberland Mountain Music Show mailing list. We’ll keep you updated about upcoming shows and CMMS news.`,
+    message: `Thanks${firstName ? `, ${firstName}` : ""}! You’re on the Cumberland Mountain Music Show mailing list. We’ll keep you updated about upcoming shows and CMMS news.\n\nIf you use Gmail, our emails may appear in Promotions. If you don't see them in Primary, check Promotions, Spam, or Social.`,
   });
 }
 

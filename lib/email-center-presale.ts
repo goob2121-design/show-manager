@@ -29,7 +29,8 @@ export function validatePresaleEmailFields(fields: EmailCenterMergeValues) {
   if (!fields.show_date?.trim()) problems.push("The selected show's date is missing.");
   if (!fields.presale_start?.trim()) problems.push("The selected show's presale start date is missing.");
   if (!fields.public_sale_start?.trim()) problems.push("The selected show's public sale start date is missing.");
-  if (!fields.ticket_link?.trim()) problems.push("The selected show does not have a ticket link.");
-  else if (!/^https:\/\//i.test(fields.ticket_link.trim())) problems.push("The selected show's ticket link must use HTTPS.");
+  if (!fields.ticket_link?.trim() || !/^https:\/\//i.test(fields.ticket_link.trim())) {
+    problems.push("This show does not have a valid ticket link in Show Details.");
+  }
   return problems;
 }

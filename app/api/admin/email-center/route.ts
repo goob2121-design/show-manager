@@ -213,7 +213,7 @@ export async function POST(request: NextRequest) {
     const messageTemplate = stringValue(body.message);
     const headingTemplate = stringValue(body.heading);
     const ctaLabelTemplate = stringValue(body.ctaLabel);
-    const ctaUrlTemplate = stringValue(body.ctaUrl);
+    const ctaUrlTemplate = templateKey === PRESALE_EMAIL_TEMPLATE_KEY ? "{{ticket_link}}" : stringValue(body.ctaUrl);
     const sender = getManualEmailSender(senderKey);
     const template = getManualEmailTemplate(templateKey);
     const rawMergeFields = body.mergeFields && typeof body.mergeFields === "object" && !Array.isArray(body.mergeFields)

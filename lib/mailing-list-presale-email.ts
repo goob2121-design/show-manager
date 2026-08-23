@@ -40,12 +40,12 @@ export function buildMailingListPresaleAccessEmail(input: {
   ticketUrl: string;
   publicSaleStartsAt: string | null;
 }) {
-  const greeting = input.firstName ? `Thanks for joining us, ${input.firstName}!` : "Thanks for joining us!";
+  const greeting = input.firstName.trim() ? `Hi ${input.firstName.trim()},` : "Hi there,";
   const publicSaleDate = formatPublicSaleDate(input.publicSaleStartsAt);
   return renderEmailCenterEmail({
     heading: "Your CMMS Early Access Ticket Link",
-    message: `${greeting}\n\nEarly Access is currently open for ${input.showName}. Use the link below to purchase your tickets before public sales begin and get first choice of available reserved seats.${publicSaleDate ? `\n\nPublic ticket sales begin ${publicSaleDate}.` : ""}\n\nWe’ll also keep you updated about upcoming Cumberland Mountain Music Shows, special announcements, and occasional exclusive discounts.\n\nIf you don’t see future CMMS emails, check your Spam, Promotions, or Social folders.`,
-    ctaLabel: "GET EARLY ACCESS TICKETS",
+    message: `${greeting}\n\nSince you're on the CMMS Mailing List, I wanted to send you the early-access ticket link for ${input.showName}.${publicSaleDate ? `\n\nTickets open to the general public on ${publicSaleDate}. This gives you the first opportunity to purchase tickets and choose from the available reserved seats.` : ""}\n\nThanks for supporting the Cumberland Mountain Music Show!\n\nGmail users: If you don't see future CMMS emails in Primary, check Promotions, Spam, or Social.`,
+    ctaLabel: "EARLY ACCESS TICKETS",
     ctaUrl: input.ticketUrl,
   });
 }

@@ -23,6 +23,7 @@ test("mailing-list welcome email uses the Email Center renderer and configured C
   assert.match(content.html, /Big-Time Show &bull; Small-Town Hospitality/);
   assert.match(content.html, /Welcome to the CMMS mailing list/);
   assert.match(content.text, /Thanks, Bryan!/);
+  assert.match(content.text, /If you use Gmail, our emails may appear in Promotions\. If you don't see them in Primary, check Promotions, Spam, or Social\./);
 });
 
 test("new subscriber welcome send is attempted exactly once and returns the Resend provider id", async () => {
