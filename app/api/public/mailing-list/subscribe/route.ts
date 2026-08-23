@@ -4,6 +4,7 @@ import { cleanMailingListName, isValidMailingListEmail, normalizeMailingListEmai
 import { sendMailingListWelcomeEmail, type MailingListWelcomeSendResult } from "@/lib/mailing-list-welcome-email";
 import { subscribeMailingListContact } from "@/lib/mailing-list-subscription";
 import { sendAutomaticMailingListPresaleAccess } from "@/lib/mailing-list-presale-delivery";
+import { sendMailingListAdminNotification } from "@/lib/mailing-list-admin-notification";
 
 export const runtime = "nodejs";
 
@@ -106,6 +107,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let presaleDeliveryStatus: "sent" | "failed" | null = null;
+    const signedUpAt = new Date().toISOString();
     if (subscriberId) {
       const presaleResult = await sendAutomaticMailingListPresaleAccess({
         supabase,
@@ -114,8 +117,27 @@ export async function POST(request: NextRequest) {
         firstName,
         apiKey: process.env.RESEND_API_KEY,
       });
+      if (presaleResult.status === "sent" || presaleResult.status === "failed") presaleDeliveryStatus = presaleResult.status;
       if (presaleResult.status === "sent") {
         console.info("Automatic mailing-list presale email sent.", { subscriberId, resendMessageId: presaleResult.resendMessageId });
+      }
+    }
+
+    if (subscriberId) {
+      const notificationResult = await sendMailingListAdminNotification({
+        subscriberId,
+        subscriptionEvent: created ? "new" : "resubscribe",
+        firstName,
+        lastName,
+        email,
+        source: "website",
+        signedUpAt,
+        presaleDeliveryStatus,
+        apiKey: process.env.RESEND_API_KEY,
+        recipient: process.env.NOTIFY_EMAIL,
+      });
+      if (!notificationResult.sent && !notificationResult.skipped) {
+        console.error("Mailing-list admin notification failed.", { subscriberId, message: notificationResult.errorMessage });
       }
     }
 
