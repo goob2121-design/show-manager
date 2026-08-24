@@ -158,9 +158,11 @@ export const manualEmailTemplates = [
     message: [
       "Hi {{first_name}},",
       "",
-      "Since you're on the CMMS Mailing List, I wanted to send you the early-access ticket link for {{show_name}} on {{show_date}}.",
+      "As a CMMS Mailing List subscriber, you have Early Access to tickets for {{show_name}} on {{show_date}} before tickets go on sale to the general public.",
       "",
-      "Early Access begins {{presale_start}}, and tickets open to the general public on {{public_sale_start}}. This gives you the first opportunity to purchase tickets and choose from the available reserved seats.",
+      "Early Access begins {{presale_start}}, and public ticket sales begin {{public_sale_start}}. This gives you the first opportunity to purchase tickets and choose from the available reserved seats.",
+      "",
+      "Click the button below to access Early Access tickets.",
       "",
       "Thanks for supporting the Cumberland Mountain Music Show!",
     ].join("\n"),
