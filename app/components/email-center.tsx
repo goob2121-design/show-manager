@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { SavedDiscountCodes, type SavedDiscountSelection } from "@/app/components/saved-discount-codes";
+import { ScheduledEmailCampaigns } from "@/app/components/scheduled-email-campaigns";
 import {
   EMAIL_CENTER_AUDIENCES,
   dedupeEmailCenterAudienceRecipients,
@@ -512,6 +513,8 @@ export function EmailCenter({ slug }: { slug: string }) {
         {activeSection === "templates" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7"><h2 className="text-xl font-black">Templates</h2><p className="mt-1 text-sm text-slate-400">Choose an existing template, then continue composing with editable fields.</p><div className="mt-5 grid gap-3 md:grid-cols-2">{manualEmailTemplates.map((template) => <button key={template.key} type="button" onClick={() => { handleTemplateChange(template.key); chooseSection("compose"); }} className={`rounded-2xl border p-4 text-left ${templateKey === template.key ? "border-emerald-400/50 bg-emerald-500/10" : "border-white/10 bg-black/20 hover:bg-white/[0.06]"}`}><strong className="text-white">{template.label}</strong><p className="mt-1 text-xs text-slate-400">{template.subject || "Custom subject and message"}</p></button>)}</div></section> : null}
 
         {activeSection === "discount-codes" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7"><h2 className="text-xl font-black">Discount Codes</h2><p className="mt-1 text-sm text-slate-400">Manage reusable promotions or select one to populate the current compose draft.</p><SavedDiscountCodes slug={slug} onSelect={selectSavedDiscountCode} /></section> : null}
+
+        {activeSection === "sent" ? <ScheduledEmailCampaigns slug={slug} /> : null}
 
         {activeSection === "sent" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
           <h2 className="text-xl font-black">Bulk Sends / Campaigns</h2>
