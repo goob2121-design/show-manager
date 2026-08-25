@@ -11,10 +11,6 @@ export function TicketReportsPanel({ showSlug, onPrintCompList, onExportCompList
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="grid gap-4">
-        <div>
-          <h3 className="text-base font-semibold text-stone-900">Reports &amp; Printouts</h3>
-          <p className="text-sm text-stone-600">Print front-door lists, reserved-seat cards, and backup sheets without digging through operational controls.</p>
-        </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <Link href={`/admin/${showSlug}/print/door-guest-list`} className={printLinkClass}>
             Print Door Count List

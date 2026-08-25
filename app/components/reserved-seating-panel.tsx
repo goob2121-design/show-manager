@@ -1000,12 +1000,6 @@ export function ReservedSeatingPanel({
   return (
     <section className="overflow-hidden rounded-[1.9rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.12),_transparent_24%),linear-gradient(180deg,_#0a1627,_#070f1c_58%,_#050913)] p-4 text-slate-100 shadow-[0_24px_54px_rgba(2,6,23,0.42)] sm:p-5">
       <div className="grid gap-2.5">
-        <div>
-          <h3 className="text-xl font-semibold text-white">Reserved Seating</h3>
-          <p className="text-sm text-slate-300">
-            Manage reserved seating, assignments, public availability, and seat cards from one place.
-          </p>
-        </div>
         <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" aria-label="Reserved Seating actions">
           <button
             type="button"

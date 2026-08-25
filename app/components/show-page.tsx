@@ -17480,9 +17480,14 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 </div>
               </div>
             ) : isAdminView ? (
-              <h1 className="text-2xl font-semibold leading-tight tracking-tight text-stone-900 sm:text-[1.65rem]">
-                {show.name} <span className="font-normal text-stone-500">• {formatShowDate(show.show_date)} • Admin</span>
-              </h1>
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <h1 className="min-w-0 text-2xl font-semibold leading-tight tracking-tight text-stone-900 sm:text-[1.65rem]">
+                  {show.name} <span className="font-normal text-stone-500">• {formatShowDate(show.show_date)} • Admin</span>
+                </h1>
+                <div className="w-fit shrink-0 rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium tracking-[0.12em] text-stone-500">
+                  {stageflowPortalVersion}
+                </div>
+              </div>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {shouldShowPortalLogo ? (
@@ -17599,14 +17604,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         ) : null}
 
         {isAdminView ? (
-          <section className="print-hidden flex flex-col gap-2">
-            <div className="flex flex-col gap-0.5">
-              <h2 className="text-lg font-semibold">Admin Sections</h2>
-              <p className="text-sm text-stone-600">
-                Jump straight to the part of the admin portal you want to work in.
-              </p>
-            </div>
-
+          <section className="print-hidden">
             <div
               className="flex gap-2 overflow-x-auto rounded-2xl bg-stone-100 p-2 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:gap-3 sm:pb-2 lg:grid-cols-5"
               role="tablist"
@@ -17680,21 +17678,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         ) : null}
 
         {isAdminView && activeAdminTab === "overview" ? (
-          <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight text-stone-900">
-                  Admin Overview
-                </h2>
-                <p className="text-sm text-stone-600">
-                  Quick show snapshot and shortcuts into the existing admin tools.
-                </p>
-              </div>
-              <div className="w-fit rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium tracking-[0.12em] text-stone-500">
-                {stageflowPortalVersion}
-              </div>
-            </div>
-
+          <section className="print-hidden flex flex-col gap-4 pt-1">
             <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
               <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:p-5">
                 <div className="flex flex-col gap-1">

@@ -117,13 +117,7 @@ export function SponsorCompPanel<RowType extends SponsorCompPanelRow>({
 
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-base font-semibold text-stone-900">Sponsor & Comp Tickets</h3>
-          <p className="text-sm text-stone-600">
-            Track sponsor comp check-ins separately from paid online and door tickets.
-          </p>
-        </div>
+      <div className="flex flex-col gap-3 sm:items-end">
         {totalTickets > 0 ? (
           <div className="flex flex-col gap-2 sm:items-end">
             <div className="flex flex-wrap gap-2">

@@ -13,7 +13,7 @@ test("Public Availability actions live in the Reserved Seating tools grid withou
   assert.doesNotMatch(source, /<h3[^>]*>Public Seat Availability<\/h3>/);
   assert.match(source, /Public availability URL: \{publicSeatAvailabilityUrl\}/);
   assert.match(source, /Generic fallback: \{genericPublicSeatAvailabilityUrl\}/);
-  assert.match(source, /flex flex-wrap gap-2 sm:justify-end/);
+  assert.match(source, /flex flex-wrap gap-2/);
   assert.match(source, /min-h-10/);
   assert.doesNotMatch(source, /Online orders are automatically added to Reserved Seating/);
 });
@@ -44,8 +44,8 @@ test("Reserved Seating status is collapsed by default with live summary and warn
 test("open Reserved Seating uses one compact header with all actions and no duplicate Back button", async () => {
   const [wrapper, source] = await Promise.all([readFile(ticketsCheckInUrl, "utf8"), readFile(cardsUrl, "utf8")]);
   assert.match(wrapper, /activeSection === "reserved-seating" && !reservedSeatingPanelProps\.isReservedSeatingOpen/);
-  assert.equal((source.match(/<h3[^>]*>Reserved Seating<\/h3>/g) ?? []).length, 1);
-  assert.match(source, /Manage reserved seating, assignments, public availability, and seat cards from one place\./);
+  assert.doesNotMatch(source, /<h3[^>]*>Reserved Seating<\/h3>/);
+  assert.doesNotMatch(source, /Manage reserved seating, assignments, public availability, and seat cards from one place\./);
   assert.match(source, /aria-label="Reserved Seating actions"/);
   assert.match(source, /onClick=\{onToggleReservedSeating\}[\s\S]*Hide Reserved Seating/);
   assert.match(source, /onClick=\{onOpenPublicSeatAvailabilityPage\}[\s\S]*Open Public Availability/);

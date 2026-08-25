@@ -16,7 +16,7 @@ test("admin show page omits the large portal hero while guest and band retain it
   const adminSectionsStart = source.indexOf('{isAdminView ? (');
   const overviewStart = source.indexOf('{isAdminView && activeAdminTab === "overview"', adminSectionsStart);
   const adminSections = source.slice(adminSectionsStart, overviewStart);
-  assert.match(adminSections, /className="print-hidden flex flex-col gap-2"/);
+  assert.match(adminSections, /className="print-hidden"/);
   assert.doesNotMatch(adminSections, /Active section:/);
 });
 

@@ -33,10 +33,6 @@ export function TicketSalesPanel({
 }: TicketSalesPanelProps) {
   return (
     <div className="grid gap-4">
-      <div>
-        <h3 className="text-base font-semibold text-stone-900">Ticket Sales &amp; Check-In</h3>
-        <p className="text-sm text-stone-600">Manage ticket entries, prepare check-in, and open Door Mode.</p>
-      </div>
       <AdmissionsSyncPreviewPanel
         showId={showId}
         showSlug={showSlug}

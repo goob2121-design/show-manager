@@ -55,3 +55,27 @@ test("Square Integration is linked from Admin Sections and not rendered as an Ov
   assert.match(squarePage, /Square Integration/);
   assert.match(squarePage, /<SquareFinanceSyncControl/);
 });
+
+test("Admin Overview removes redundant copy and keeps the version badge in the responsive title row", async () => {
+  const source = await readFile(showPageUrl, "utf8");
+
+  assert.doesNotMatch(source, />Admin Sections</);
+  assert.doesNotMatch(source, /Jump straight to the part of the admin portal you want to work in\./);
+  assert.doesNotMatch(source, />\s*Admin Overview\s*</);
+  assert.doesNotMatch(source, /Quick show snapshot and shortcuts into the existing admin tools\./);
+  assert.match(source, /sm:flex-row sm:items-center sm:justify-between[\s\S]*\{show\.name\}[\s\S]*\{stageflowPortalVersion\}/);
+  assert.match(source, /min-w-0[\s\S]*shrink-0/);
+  assert.match(source, /overflow-x-auto[\s\S]*aria-label="Admin portal sections"/);
+});
+
+test("Overview working content begins directly after navigation and remains intact", async () => {
+  const source = await readFile(showPageUrl, "utf8");
+  const overviewStart = source.indexOf('{isAdminView && activeAdminTab === "overview"');
+  const overviewEnd = source.indexOf('{isAdminView && activeAdminTab === "mc-builder"', overviewStart);
+  const overview = source.slice(overviewStart, overviewEnd);
+
+  assert.match(overview, /flex flex-col gap-4 pt-1/);
+  assert.match(overview, /Current Show/);
+  assert.match(overview, /Needs Attention/);
+  assert.match(overview, /At a Glance/);
+});
