@@ -15,6 +15,7 @@ import {
 } from "@/lib/email/ticket-code-attachments";
 import { RESERVED_SEATING_VENUE, formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { buildReservedSeatSelectionUrl, isStageFlowPublicUrl } from "@/lib/server/stageflow-public-url";
+import { resolveReservedSeatRecipientEmail } from "@/lib/email/resolve-reserved-seat-recipient";
 
 type OfficialTicketLinkRow = {
   id: string;
@@ -25,6 +26,10 @@ type OfficialTicketLinkRow = {
   selection_token: string;
   scan_token: string | null;
   submitted_at: string | null;
+  source_ticket_id: string | null;
+  source_show_sponsor_id: string | null;
+  is_complimentary: boolean;
+  seat_category: string | null;
 };
 
 type OfficialTicketShowRow = {
@@ -187,7 +192,7 @@ export async function deliverOfficialTicketEmail(
   const sender = options.sender ?? sendOfficialTicketEmail;
   const { data: linkData, error: linkError } = await supabase
     .from("show_reserved_seating_links")
-    .select("id,show_id,customer_name,email,ticket_count,selection_token,scan_token,submitted_at")
+    .select("id,show_id,customer_name,email,ticket_count,selection_token,scan_token,submitted_at,source_ticket_id,source_show_sponsor_id,is_complimentary,seat_category")
     .eq("id", reservationId)
     .maybeSingle();
   if (linkError) throw linkError;
@@ -208,10 +213,21 @@ export async function deliverOfficialTicketEmail(
   if (!seatLabels.length) return { success: false, resendId: null, error: "No confirmed seats were found.", reservationId: link.id };
 
   try {
+    const customerEmail = link.is_complimentary
+      ? await resolveReservedSeatRecipientEmail(supabase, {
+          showId: link.show_id,
+          customerName: link.customer_name,
+          email: link.email,
+          sourceTicketId: link.source_ticket_id,
+          sourceShowSponsorId: link.source_show_sponsor_id,
+          isComplimentary: link.is_complimentary,
+          seatCategory: link.seat_category,
+        })
+      : link.email;
     const viewTicketUrl = buildReservedSeatSelectionUrl(link.selection_token, options.requestOrigin);
     const result = await sender({
       customerName: link.customer_name,
-      customerEmail: link.email ?? "",
+      customerEmail: customerEmail ?? "",
       eventName: show.name?.trim() || RESERVED_SEAT_EMAIL_EVENT_NAME,
       showDate: formatShowDate(show.show_date),
       showTime: show.show_start_time,
