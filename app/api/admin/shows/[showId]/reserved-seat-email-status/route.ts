@@ -101,7 +101,7 @@ export async function GET(request: Request, context: ReservedSeatEmailStatusRout
       link.id,
       await resolveReservedSeatRecipientEmail(supabase, {
         showId: link.show_id, customerName: link.customer_name, email: link.email,
-        sourceTicketId: link.source_ticket_id, sourceShowSponsorId: link.source_show_sponsor_id,
+        reservedSeatLinkId: link.id, sourceTicketId: link.source_ticket_id, sourceShowSponsorId: link.source_show_sponsor_id,
         isComplimentary: link.is_complimentary, seatCategory: link.seat_category,
       }),
     ] as const)));

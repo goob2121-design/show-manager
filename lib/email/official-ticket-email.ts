@@ -218,6 +218,7 @@ export async function deliverOfficialTicketEmail(
           showId: link.show_id,
           customerName: link.customer_name,
           email: link.email,
+          reservedSeatLinkId: link.id,
           sourceTicketId: link.source_ticket_id,
           sourceShowSponsorId: link.source_show_sponsor_id,
           isComplimentary: link.is_complimentary,

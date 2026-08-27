@@ -4,6 +4,7 @@ export type ReservedSeatRecipientSource = {
   showId: string;
   customerName: string;
   email: string | null;
+  reservedSeatLinkId?: string | null;
   sourceTicketId: string | null;
   sourceShowSponsorId: string | null;
   isComplimentary: boolean;
@@ -79,6 +80,21 @@ export async function resolveReservedSeatRecipientEmail(
       .maybeSingle();
     if (error) throw error;
     compTicketEmail = cleanEmail(data?.email);
+  }
+  if (!source.sourceTicketId && source.reservedSeatLinkId && source.seatCategory === "guest") {
+    const { data: projection, error: projectionError } = await supabase
+      .from("show_admission_projection_sources")
+      .select("projected_ticket_id")
+      .eq("show_id", source.showId)
+      .eq("source_type", "reserved_link")
+      .eq("source_id", source.reservedSeatLinkId)
+      .maybeSingle();
+    if (projectionError) throw projectionError;
+    if (projection?.projected_ticket_id) {
+      const { data, error } = await supabase.from("show_comp_tickets").select("email").eq("id", projection.projected_ticket_id).eq("show_id", source.showId).maybeSingle();
+      if (error) throw error;
+      compTicketEmail = cleanEmail(data?.email);
+    }
   }
   if (compTicketEmail) return compTicketEmail;
 
