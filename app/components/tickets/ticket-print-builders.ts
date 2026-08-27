@@ -136,6 +136,19 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
     </div></div>`).join("")}</section></div>`).join("")}<script>${printMode === "pdf" || printMode === "print" ? "window.onload = () => { window.focus(); window.print(); };" : ""}</script></body></html>`;
   }
 
+  const sponsorNames = new Set(
+    sponsorsWithCompTickets
+      .flatMap((sponsor) => [getSponsorTicketSponsorName(sponsor), sponsor.custom_note])
+      .map((name) => name?.trim().toLowerCase() ?? "")
+      .filter(Boolean),
+  );
+
+  function getReservedSeatsForLinks(matchedLinks: ShowReservedSeatingLink[]) {
+    const matchedLinkIds = new Set(matchedLinks.map((link) => link.id));
+    const matchedSeatIds = sponsorTicketReservedAssignments.filter((assignment) => assignment.seating_link_id && matchedLinkIds.has(assignment.seating_link_id)).map((assignment) => assignment.seat_id);
+    return sortReservedSeatIds(matchedSeatIds).map((seatId) => formatReservedSeatLabel(seatId)).join(", ");
+  }
+
   function getCompListReservedSeatsForName(name: string) {
     const normalizedName = name.trim().toLowerCase();
     if (!normalizedName) return "";
@@ -149,6 +162,31 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
       return assignment.seating_link_id ? matchedLinkIds.has(assignment.seating_link_id) : assignmentName.includes(normalizedName) || normalizedName.includes(assignmentName);
     }).map((assignment) => assignment.seat_id);
     return sortReservedSeatIds(matchedSeatIds).map((seatId) => formatReservedSeatLabel(seatId)).join(", ");
+  }
+
+  function getSponsorReservedSeats(sponsor: ShowSponsor, name: string) {
+    const stableLinks = sponsorTicketReservedLinks.filter((link) => link.source_show_sponsor_id === sponsor.id);
+    if (stableLinks.length > 0) return getReservedSeatsForLinks(stableLinks);
+    return getCompListReservedSeatsForName(name);
+  }
+
+  function getCompReservedSeats(item: ShowCompTicket) {
+    const stableLinks = sponsorTicketReservedLinks.filter((link) => link.source_ticket_id === item.id);
+    if (stableLinks.length > 0) return getReservedSeatsForLinks(stableLinks);
+    return getCompListReservedSeatsForName(item.guest_name);
+  }
+
+  function isSponsorProjectionTicket(item: ShowCompTicket) {
+    return sponsorTicketReservedLinks.some(
+      (link) => {
+        if (link.source_ticket_id !== item.id || !link.is_complimentary) return false;
+        if (link.source_show_sponsor_id) return true;
+        if (/(?:\[comp type:\s*sponsor\]|\bsponsor comp\b)/i.test(link.source_note ?? "")) return true;
+
+        const customerName = link.customer_name.trim().toLowerCase();
+        return Boolean(customerName && sponsorNames.has(customerName));
+      },
+    );
   }
 
   function parseCompCategoryFromText(text: string): CompListReportRow["category"] | null {
@@ -195,14 +233,14 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
   function buildCompListReportRows() {
     const sponsorRows: CompListReportRow[] = sponsorsWithCompTickets.map((sponsor) => {
       const name = getSponsorTicketSponsorName(sponsor);
-      return { id: `sponsor-${sponsor.id}`, name, category: "sponsor", categoryLabel: "Sponsor Comp", quantity: Math.max(0, sponsor.comp_ticket_allowance ?? 0), reservedSeats: getCompListReservedSeatsForName(name), checkedIn: Math.max(0, sponsor.comp_tickets_checked_in ?? 0), notes: stripCompMetadataFromNotes(sponsor.recognition_notes), admissionType: parseCompAdmissionTypeFromText(sponsor.recognition_notes ?? "") };
+      return { id: `sponsor-${sponsor.id}`, name, category: "sponsor", categoryLabel: "Sponsor Comp", quantity: Math.max(0, sponsor.comp_ticket_allowance ?? 0), reservedSeats: getSponsorReservedSeats(sponsor, name), checkedIn: Math.max(0, sponsor.comp_tickets_checked_in ?? 0), notes: stripCompMetadataFromNotes(sponsor.recognition_notes), admissionType: parseCompAdmissionTypeFromText(sponsor.recognition_notes ?? "") };
     });
     const compRows: CompListReportRow[] = compTickets.filter((item) => {
       const ticketType = normalizeGuestListTicketType(item.ticket_type);
-      return ticketType !== "paid_online" && ticketType !== "door_paid";
+      return ticketType !== "paid_online" && ticketType !== "door_paid" && !isSponsorProjectionTicket(item);
     }).map((item) => {
       const category = classifyCompTicket(item);
-      return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompListReservedSeatsForName(item.guest_name), checkedIn: item.checked_in_count, notes: stripCompMetadataFromNotes(item.notes), admissionType: parseCompAdmissionTypeFromText(item.notes ?? "") };
+      return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompReservedSeats(item), checkedIn: item.checked_in_count, notes: stripCompMetadataFromNotes(item.notes), admissionType: parseCompAdmissionTypeFromText(item.notes ?? "") };
     });
     const existingKeys = new Set([...sponsorRows, ...compRows].map((row) => row.name.trim().toLowerCase()).filter(Boolean));
     const reservedOnlyRowsByName = new Map<string, CompListReportRow>();
