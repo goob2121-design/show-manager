@@ -1467,6 +1467,7 @@ export function ReservedSeatingPanel({
               const isManualAssigning = manualAssignLinkId === link.id;
               const linkSeatCategory = normalizeReservedSeatCategory(link.seat_category, link.is_complimentary);
               const emailStatus = emailStatuses[link.id];
+              const resolvedRecipientEmail = link.email?.trim() || emailStatus?.resolvedRecipientEmail?.trim() || null;
               const latestDelivery = emailStatus?.deliveries?.length
                 ? emailStatus.deliveries[emailStatus.deliveries.length - 1]
                 : null;
@@ -1550,7 +1551,7 @@ export function ReservedSeatingPanel({
                           </span>
                         ) : null}
                       </div>
-                      {link.email?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.email}</p> : null}
+                      {resolvedRecipientEmail ? <p className="mt-2 text-sm text-slate-300">{resolvedRecipientEmail}</p> : null}
                       {link.source_note?.trim() ? <p className="mt-2 text-sm text-slate-300">{link.source_note}</p> : null}
                       <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 px-3 py-3" aria-live="polite">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Email Status</p>
@@ -1725,7 +1726,7 @@ export function ReservedSeatingPanel({
                       ) : reminderEligibility?.reason === "missing_email" ? (
                         <span className="rounded-xl border border-slate-400/25 bg-white/[0.04] px-4 py-2.5 text-sm font-semibold text-slate-300">Cannot remind - Missing email</span>
                       ) : null}
-                      {link.email?.trim() ? (
+                      {resolvedRecipientEmail ? (
                         <button
                           type="button"
                           onClick={() => void handleSendSeatEmail(link)}
@@ -1735,14 +1736,14 @@ export function ReservedSeatingPanel({
                           {activeActionId === `email-${link.id}` ? "Sending..." : link.resend_email_id ? "Resend Seat Email" : link.last_email_error ? "Retry Email" : "Send Seat Email"}
                         </button>
                       ) : null}
-                      {link.submitted_at && link.email?.trim() ? (
+                      {link.submitted_at && resolvedRecipientEmail ? (
                         <button
                           type="button"
                           onClick={() => void handleResendOfficialTicketEmail(link)}
                           disabled={activeActionId === `ticket-email-${link.id}`}
                           className="rounded-xl border border-amber-300/25 bg-amber-400/10 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {activeActionId === `ticket-email-${link.id}` ? "Sending Ticket..." : "Resend Ticket Email"}
+                          {activeActionId === `ticket-email-${link.id}` ? "Sending Ticket..." : link.ticket_emailed_at ? "Resend Ticket Email" : "Email Ticket"}
                         </button>
                       ) : null}
                       <button
