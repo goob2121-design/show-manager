@@ -531,6 +531,7 @@ export type ShowReservedSeatingLink = {
   is_complimentary: boolean;
   source_note: string | null;
   source_ticket_id: string | null;
+  source_show_sponsor_id: string | null;
   source_order_id: string | null;
   source_import_key: string | null;
   seat_category: ReservedSeatCategory | string;

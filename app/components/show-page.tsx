@@ -8836,9 +8836,19 @@ export function ShowPage({
     try {
       const supabase = createClient();
       let linkId: string | null = null;
+      const sourceTicketId = row.id.startsWith("comp-") ? row.id.replace("comp-", "") : null;
+      const sourceShowSponsorId = row.id.startsWith("sponsor-") ? row.id.replace("sponsor-", "") : null;
       if (row.id.startsWith("reserved-comp-")) {
         const assignmentId = row.id.replace("reserved-comp-", "");
         linkId = sponsorTicketReservedAssignments.find((assignment) => assignment.id === assignmentId)?.seating_link_id ?? null;
+      }
+
+      if (!linkId) {
+        const sourceOwnedLink = sponsorTicketReservedLinks.find((link) =>
+          (sourceTicketId && link.source_ticket_id === sourceTicketId)
+          || (sourceShowSponsorId && link.source_show_sponsor_id === sourceShowSponsorId),
+        );
+        linkId = sourceOwnedLink?.id ?? null;
       }
 
       if (!linkId) {
@@ -8861,6 +8871,8 @@ export function ShowPage({
             scan_token: tryGenerateReservationScanToken(),
             selection_mode: "comp",
             is_complimentary: true,
+            source_ticket_id: sourceTicketId,
+            source_show_sponsor_id: sourceShowSponsorId,
             source_note: buildCompCategoryNotes(row.notes, row.category, row.admissionType),
             seat_category: row.category === "guest" ? "guest" : "comp",
           })
@@ -8871,7 +8883,7 @@ export function ShowPage({
       } else {
         const { error } = await supabase
           .from("show_reserved_seating_links")
-          .update({ ticket_count: Math.max(1, row.quantity), customer_name: row.name, source_note: buildCompCategoryNotes(row.notes, row.category, row.admissionType), is_complimentary: true, seat_category: row.category === "guest" ? "guest" : "comp" })
+          .update({ ticket_count: Math.max(1, row.quantity), customer_name: row.name, source_ticket_id: sourceTicketId, source_show_sponsor_id: sourceShowSponsorId, source_note: buildCompCategoryNotes(row.notes, row.category, row.admissionType), is_complimentary: true, seat_category: row.category === "guest" ? "guest" : "comp" })
           .eq("id", linkId);
         if (error) throw error;
       }

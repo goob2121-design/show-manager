@@ -2,11 +2,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendReservedSeatEmail, type ReservedSeatEmailResult } from "@/lib/email/reserved-seat-email";
 import { RESERVED_SEATING_VENUE, formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { buildReservedSeatSelectionUrl } from "@/lib/server/stageflow-public-url";
+import { resolveReservedSeatRecipientEmail } from "@/lib/email/resolve-reserved-seat-recipient";
 
 type EmailLinkRow = {
   id: string; show_id: string; customer_name: string; email: string | null; ticket_count: number;
   selection_token: string; scan_token: string | null; sent_at: string | null; resend_email_id: string | null;
   email_attempt_count: number | null; seat_category: string | null;
+  source_ticket_id: string | null; source_show_sponsor_id: string | null;
+  is_complimentary: boolean;
 };
 
 type EmailShowRow = {
@@ -127,10 +130,15 @@ export async function sendTrackedReservedSeatEmail(
   linkId: string,
   options: { allowResend?: boolean; requestedSource?: "square_import" | "admin_single" } = {},
 ): Promise<ReservedSeatEmailResult & ReturnType<typeof deliveryFlags> & { sentAt: string | null }> {
-  const { data: linkData, error: linkError } = await supabase.from("show_reserved_seating_links").select("id,show_id,customer_name,email,ticket_count,selection_token,scan_token,sent_at,resend_email_id,email_attempt_count,seat_category").eq("id", linkId).maybeSingle();
+  const { data: linkData, error: linkError } = await supabase.from("show_reserved_seating_links").select("id,show_id,customer_name,email,ticket_count,selection_token,scan_token,sent_at,resend_email_id,email_attempt_count,seat_category,is_complimentary,source_ticket_id,source_show_sponsor_id").eq("id", linkId).maybeSingle();
   if (linkError) throw linkError;
   const link = linkData as EmailLinkRow | null;
   if (!link) return { success: false, resendId: null, error: "Reserved seating link was not found.", sentAt: null, ...deliveryFlags("failed") };
+  link.email = await resolveReservedSeatRecipientEmail(supabase, {
+    showId: link.show_id, customerName: link.customer_name, email: link.email,
+    sourceTicketId: link.source_ticket_id, sourceShowSponsorId: link.source_show_sponsor_id,
+    isComplimentary: link.is_complimentary, seatCategory: link.seat_category,
+  });
   if (!options.allowResend && link.resend_email_id) {
     const state = classifyTrackedEmailState(link.resend_email_id, link.sent_at);
     return {

@@ -87,6 +87,7 @@ type ReservedSeatEmailDeliveryStatus = ReservedSeatEmailTrackingSummary & {
 };
 type ReservedSeatEmailStatus = ReservedSeatEmailTrackingSummary & {
   reservedSeatingLinkId: string;
+  resolvedRecipientEmail: string | null;
   attempts: number;
   lastEmailError: string | null;
   deliveries: ReservedSeatEmailDeliveryStatus[];
@@ -286,6 +287,8 @@ export function ReservedSeatingPanel({
       }
 
       setEmailStatuses(Object.fromEntries(payload.statuses.map((status) => [status.reservedSeatingLinkId, status])));
+      const resolvedEmailByLink = new Map(payload.statuses.map((status) => [status.reservedSeatingLinkId, status.resolvedRecipientEmail]));
+      setLinks((currentLinks) => currentLinks.map((link) => ({ ...link, email: link.email?.trim() || resolvedEmailByLink.get(link.id) || null })));
       setEmailTrackingRequestState("loaded");
     } catch (error) {
       console.error("Reserved-seat email status load failed.", error);

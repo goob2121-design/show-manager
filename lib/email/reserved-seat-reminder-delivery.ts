@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendReservedSeatReminderEmail, RESERVED_SEAT_REMINDER_SUBJECT } from "@/lib/email/reserved-seat-reminder-email";
 import { getReservedSeatReminderEligibility, type ReservedSeatReminderEligibilityReason } from "@/lib/reserved-seat-reminder-eligibility";
 import { buildReservedSeatSelectionUrl } from "@/lib/server/stageflow-public-url";
+import { resolveReservedSeatRecipientEmail } from "@/lib/email/resolve-reserved-seat-recipient";
 
 export type ReservedSeatReminderRequestedSource = "admin_single" | "admin_bulk";
 export type ReservedSeatReminderDeliveryResult = {
@@ -22,6 +23,10 @@ type ReminderLinkRow = {
   ticket_count: number;
   selection_token: string;
   submitted_at: string | null;
+  source_ticket_id: string | null;
+  source_show_sponsor_id: string | null;
+  is_complimentary: boolean;
+  seat_category: string | null;
 };
 
 type ReminderShowRow = { id: string; name: string; show_date: string | null };
@@ -66,13 +71,18 @@ export async function deliverReservedSeatReminder(input: {
 
   const [{ data: showData, error: showError }, { data: linkData, error: linkError }] = await Promise.all([
     input.supabase.from("shows").select("id,name,show_date").eq("id", input.showId).maybeSingle(),
-    input.supabase.from("show_reserved_seating_links").select("id,show_id,customer_name,email,ticket_count,selection_token,submitted_at").eq("id", input.reservationId).eq("show_id", input.showId).maybeSingle(),
+    input.supabase.from("show_reserved_seating_links").select("id,show_id,customer_name,email,ticket_count,selection_token,submitted_at,source_ticket_id,source_show_sponsor_id,is_complimentary,seat_category").eq("id", input.reservationId).eq("show_id", input.showId).maybeSingle(),
   ]);
   if (showError) throw showError;
   if (linkError) throw linkError;
   const show = showData as ReminderShowRow | null;
   const link = linkData as ReminderLinkRow | null;
   if (!show || !link) return { reservationId: input.reservationId, outcome: "not_eligible", reason: "general_admission", deliveryId: null, sequenceNumber: null, resendEmailId: null, error: null };
+  link.email = await resolveReservedSeatRecipientEmail(input.supabase, {
+    showId: link.show_id, customerName: link.customer_name, email: link.email,
+    sourceTicketId: link.source_ticket_id, sourceShowSponsorId: link.source_show_sponsor_id,
+    isComplimentary: link.is_complimentary, seatCategory: link.seat_category,
+  });
 
   const { count, error: assignmentError } = await input.supabase.from("show_reserved_seat_assignments").select("id", { count: "exact", head: true }).eq("seating_link_id", link.id).eq("assignment_type", "customer");
   if (assignmentError) throw assignmentError;

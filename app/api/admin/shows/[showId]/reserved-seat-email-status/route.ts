@@ -7,6 +7,7 @@ import {
   type ReservedSeatEmailEventRecord,
 } from "@/lib/reserved-seat-email-tracking";
 import { validateReservedSeatEmailStatusAccess } from "@/lib/reserved-seat-email-status-auth";
+import { resolveReservedSeatRecipientEmail } from "@/lib/email/resolve-reserved-seat-recipient";
 
 export const runtime = "nodejs";
 
@@ -55,7 +56,7 @@ export async function GET(request: Request, context: ReservedSeatEmailStatusRout
 
     const { data: links, error: linksError } = await supabase
       .from("show_reserved_seating_links")
-      .select("id,resend_email_id,sent_at,email_attempt_count,last_email_error")
+      .select("id,show_id,customer_name,email,source_ticket_id,source_show_sponsor_id,is_complimentary,seat_category,resend_email_id,sent_at,email_attempt_count,last_email_error")
       .eq("show_id", accessResult.showId);
 
     if (linksError) {
@@ -96,6 +97,15 @@ export async function GET(request: Request, context: ReservedSeatEmailStatusRout
       deliveriesByLink.set(delivery.reserved_seating_link_id, list);
     }
 
+    const resolvedRecipientEmails = new Map(await Promise.all((links ?? []).map(async (link) => [
+      link.id,
+      await resolveReservedSeatRecipientEmail(supabase, {
+        showId: link.show_id, customerName: link.customer_name, email: link.email,
+        sourceTicketId: link.source_ticket_id, sourceShowSponsorId: link.source_show_sponsor_id,
+        isComplimentary: link.is_complimentary, seatCategory: link.seat_category,
+      }),
+    ] as const)));
+
     return NextResponse.json({
       success: true,
       statuses: (links ?? []).map((link) => {
@@ -132,6 +142,7 @@ export async function GET(request: Request, context: ReservedSeatEmailStatusRout
         }
         return {
           reservedSeatingLinkId: link.id,
+          resolvedRecipientEmail: resolvedRecipientEmails.get(link.id) ?? null,
           attempts: link.email_attempt_count ?? 0,
           lastEmailError: link.last_email_error ?? null,
           deliveries: deliveryHistory,
