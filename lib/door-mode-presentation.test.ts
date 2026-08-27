@@ -77,6 +77,7 @@ test("Door Mode keeps print routes, native sections, feedback, and existing muta
 });
 test("attendance progress uses loaded admission quantities and hides when expected is zero", () => {
   assert.equal(expectedDoorAttendance([{ ticket_count: 2 }, { ticket_count: 3 }], 4), 9);
+  assert.equal(expectedDoorAttendance([{ id: "paid", ticket_count: 2 }, { id: "sponsor", ticket_count: 2 }], 2, new Set(["sponsor"])), 4);
   assert.equal(attendanceProgressPercent(6, 9), 67);
   assert.equal(attendanceProgressPercent(0, 0), null);
 });
@@ -294,4 +295,11 @@ test("Door Mode applies scoped note filtering at card rendering", async () => {
   assert.match(source, /admissionMatchesDoorSearch/);
   assert.match(source, /handleAdjustTicketCheckIn/);
   assert.doesNotMatch(source, /\.from\("show_comp_tickets"\)\s*\.update\(\{\s*notes:/);
+});
+test("expected attendance counts every admission once across paid, manual, guest, and sponsor comps", () => {
+  assert.equal(expectedDoorAttendance([{ id: "paid", ticket_count: 3 }], 0), 3);
+  assert.equal(expectedDoorAttendance([{ id: "sponsor-projection", ticket_count: 2 }], 2, new Set(["sponsor-projection"])), 2);
+  assert.equal(expectedDoorAttendance([{ id: "paid", ticket_count: 2 }, { id: "guest", ticket_count: 2 }], 0), 4);
+  assert.equal(expectedDoorAttendance([{ id: "paid", ticket_count: 2 }, { id: "manual", ticket_count: 1 }, { id: "guest", ticket_count: 2 }], 0), 5);
+  assert.equal(expectedDoorAttendance([{ id: "sponsor-a", ticket_count: 2 }, { id: "sponsor-b", ticket_count: 3 }], 5, new Set(["sponsor-a", "sponsor-b"])), 5);
 });

@@ -1,4 +1,4 @@
-﻿import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type DoorModeSeatAssignment = {
   projectedTicketId: string;
@@ -14,6 +14,7 @@ type ProjectionSourceRow = {
 type DirectReservedLinkRow = {
   id: string;
   source_ticket_id: string | null;
+  source_show_sponsor_id?: string | null;
   customer_name?: string | null;
   is_complimentary?: boolean;
   source_note?: string | null;
@@ -70,7 +71,8 @@ export function buildDoorModeSeatAssignments(
 
     const projectedTicketId = projectedTicketIdByLinkId.get(link.id);
     if (!projectedTicketId || !link.is_complimentary) continue;
-    const sourceIdentifiesSponsor = /(?:\[comp type:\s*sponsor\]|\bsponsor comp\b)/i.test(link.source_note ?? "");
+    const sourceIdentifiesSponsor = Boolean(link.source_show_sponsor_id)
+      || /(?:\[comp type:\s*sponsor\]|\bsponsor comp\b)/i.test(link.source_note ?? "");
     const sponsorNameMatches = sponsorNames.has(link.customer_name?.trim().toLowerCase() ?? "");
     if (sourceIdentifiesSponsor || sponsorNameMatches) sponsorProjectionTicketIds.add(projectedTicketId);
   }
@@ -105,7 +107,7 @@ export async function loadDoorModeSeatAssignments(
 
   const { data: directLinkData, error: directLinkError } = await supabase
     .from("show_reserved_seating_links")
-    .select("id, source_ticket_id, customer_name, is_complimentary, source_note")
+    .select("id, source_ticket_id, source_show_sponsor_id, customer_name, is_complimentary, source_note")
     .eq("show_id", showId);
   if (directLinkError) throw directLinkError;
 

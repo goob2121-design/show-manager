@@ -115,7 +115,7 @@ test("seat lookup and route are authenticated, private, and SELECT-only", async 
   assert.match(lookupSource, /from\("show_admission_projection_sources"\)/);
   assert.match(lookupSource, /select\("source_id, projected_ticket_id"\)/);
   assert.match(lookupSource, /from\("show_reserved_seating_links"\)/);
-  assert.match(lookupSource, /select\("id, source_ticket_id, customer_name, is_complimentary, source_note"\)/);
+  assert.match(lookupSource, /select\("id, source_ticket_id, source_show_sponsor_id, customer_name, is_complimentary, source_note"\)/);
   assert.match(lookupSource, /from\("show_sponsors"\)/);
   assert.match(lookupSource, /from\("show_reserved_seat_assignments"\)/);
   assert.match(lookupSource, /select\("seating_link_id, seat_id"\)/);
@@ -125,4 +125,13 @@ test("seat lookup and route are authenticated, private, and SELECT-only", async 
   assert.match(routeSource, /export async function GET/);
   assert.doesNotMatch(routeSource, /export async function (POST|PUT|PATCH|DELETE)/);
   assert.doesNotMatch(routeSource, /guest_name|customer_name|email|payment|order_id|seat_selection_token/i);
+});
+test("stable show sponsor ownership classifies a sponsor projection without name matching", () => {
+  const result = buildDoorModeSeatAssignments(
+    [{ source_id: "link-stable", projected_ticket_id: "ticket-stable" }],
+    [{ id: "link-stable", source_ticket_id: null, source_show_sponsor_id: "show-sponsor-1", customer_name: "Display Name", is_complimentary: true, source_note: null }],
+    [],
+    canonicalSeatIds,
+  );
+  assert.equal(result[0]?.isSponsorReservedProjection, true);
 });

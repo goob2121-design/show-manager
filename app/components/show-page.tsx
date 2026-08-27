@@ -49,6 +49,8 @@ import { getGreetingName } from "@/lib/getGreetingName";
 import { getGuestReminderMissingItems } from "@/lib/guest-reminder";
 import { GuestReminderPreviewDialog, type GuestReminderPreview } from "@/app/components/guest-reminder-preview-dialog";
 import { checkInAdmissionLabel } from "@/lib/check-in-ticket-classification";
+import { expectedDoorAttendance } from "@/lib/door-mode-presentation";
+import type { DoorModeSeatAssignment } from "@/lib/door-mode-seat-assignments";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "@/app/available-seats/path";
 import {
@@ -6658,6 +6660,7 @@ export function ShowPage({
   const [checklistDueDateDrafts, setChecklistDueDateDrafts] = useState<Record<string, string>>({});
   const [activeChecklistActionId, setActiveChecklistActionId] = useState<string | null>(null);
   const [compTickets, setCompTickets] = useState<ShowCompTicket[]>([]);
+  const [sponsorReservedProjectionTicketIds, setSponsorReservedProjectionTicketIds] = useState<Set<string>>(() => new Set());
   const [guestListExpandToken, setGuestListExpandToken] = useState(0);
   const [compTicketFormState, setCompTicketFormState] = useState<CompTicketFormState>(initialCompTicketFormState);
   const [editingCompTicketId, setEditingCompTicketId] = useState<string | null>(null);
@@ -7121,13 +7124,14 @@ export function ShowPage({
   );
   const checkedInCompTickets = useMemo(
     () =>
-      compTickets.reduce((sum, item) => sum + item.checked_in_count, 0) + sponsorCompTicketsCheckedIn,
-    [compTickets, sponsorCompTicketsCheckedIn],
+      compTickets
+        .filter((item) => !sponsorReservedProjectionTicketIds.has(item.id))
+        .reduce((sum, item) => sum + item.checked_in_count, 0) + sponsorCompTicketsCheckedIn,
+    [compTickets, sponsorCompTicketsCheckedIn, sponsorReservedProjectionTicketIds],
   );
   const totalCompTickets = useMemo(
-    () =>
-      compTickets.reduce((sum, item) => sum + item.ticket_count, 0) + sponsorCompTicketsAllowed,
-    [compTickets, sponsorCompTicketsAllowed],
+    () => expectedDoorAttendance(compTickets, sponsorCompTicketsAllowed, sponsorReservedProjectionTicketIds),
+    [compTickets, sponsorCompTicketsAllowed, sponsorReservedProjectionTicketIds],
   );
   const areAllCompTicketsSelected = compTickets.length > 0 && compTickets.every((item) => selectedCompTicketIds.includes(item.id));
   const payoutItemsByCategory = useMemo(() => {
@@ -9407,7 +9411,8 @@ export function ShowPage({
           setShowSponsors([]);
           setShowChecklistItems([]);
           setCompTickets([]);
-          setFinanceItems([]);
+          setSponsorReservedProjectionTicketIds(new Set());
+        setFinanceItems([]);
           setPayoutItems([]);
           setPromoLinks([]);
           setPromoMaterials([]);
@@ -9419,6 +9424,15 @@ export function ShowPage({
         }
 
         setShow(showRecord);
+
+        const sponsorProjectionTicketIdsPromise = fetch(
+          `/api/admin/shows/${encodeURIComponent(showRecord.id)}/door-seat-assignments?slug=${encodeURIComponent(showRecord.slug)}`,
+          { method: "GET", credentials: "same-origin", cache: "no-store" },
+        ).then(async (response) => {
+          const payload = await response.json().catch(() => null) as DoorModeSeatAssignment[] | null;
+          if (!response.ok || !Array.isArray(payload)) return new Set<string>();
+          return new Set(payload.filter((item) => item.isSponsorReservedProjection).map((item) => item.projectedTicketId));
+        }).catch(() => new Set<string>());
 
         const sectionErrors: DataSectionErrors = {};
         const loadSection = async <T,>(
@@ -9814,6 +9828,7 @@ export function ShowPage({
             >).map((item) => normalizeShowCompTicket(item)),
           ),
         );
+        setSponsorReservedProjectionTicketIds(await sponsorProjectionTicketIdsPromise);
         setFinanceItems(
           sortFinanceItems(
             ((financeItemRows ?? []) as Array<

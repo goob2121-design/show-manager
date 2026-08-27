@@ -14,6 +14,7 @@ export type RecentGuestCheckIn = {
 };
 
 export type DoorAttendanceAdmission = {
+  id?: string;
   ticket_count: number;
 };
 
@@ -74,8 +75,12 @@ export function addRecentGuestCheckIn(
 export function expectedDoorAttendance(
   admissions: DoorAttendanceAdmission[],
   sponsorAllowance: number,
+  sponsorProjectionTicketIds: ReadonlySet<string> = new Set(),
 ) {
-  return admissions.reduce((sum, admission) => sum + admission.ticket_count, 0) + sponsorAllowance;
+  return admissions.reduce(
+    (sum, admission) => sum + (admission.id && sponsorProjectionTicketIds.has(admission.id) ? 0 : admission.ticket_count),
+    0,
+  ) + sponsorAllowance;
 }
 
 export function attendanceProgressPercent(attended: number, expected: number) {

@@ -552,8 +552,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     () =>
       compTickets
         .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "complimentary")
+        .filter((item) => !sponsorReservedProjectionTicketIds.has(item.id))
         .reduce((sum, item) => sum + item.checked_in_count, 0),
-    [compTickets],
+    [compTickets, sponsorReservedProjectionTicketIds],
   );
   const sponsorCompTicketsAllowed = useMemo(
     () => showSponsors.reduce((sum, sponsor) => sum + sponsor.comp_ticket_allowance, 0),
@@ -585,7 +586,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const totalAttendance =
     totalPaidAttendance + compCheckedInTickets + sponsorCompTicketsCheckedIn + manualCheckedInTickets;
   const totalRevenue = doorPaidRevenue + prepaidOnlineRevenue;
-  const expectedAttendance = expectedDoorAttendance(compTickets, sponsorCompTicketsAllowed);
+  const expectedAttendance = expectedDoorAttendance(compTickets, sponsorCompTicketsAllowed, sponsorReservedProjectionTicketIds);
   const attendanceProgress = attendanceProgressPercent(totalAttendance, expectedAttendance);
   void attendanceProgress;
   const formattedCurrentTime = currentTime.toLocaleTimeString([], {
