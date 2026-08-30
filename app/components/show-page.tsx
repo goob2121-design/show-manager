@@ -9029,6 +9029,7 @@ export function ShowPage({
     compTickets,
     sponsorTicketReservedLinks,
     sponsorTicketReservedAssignments,
+    sponsorReservedProjectionTicketIds,
     sponsorTicketSponsorId,
     selectedSponsorTicketSeatIds,
     activeSponsorTicketTemplateUrl,

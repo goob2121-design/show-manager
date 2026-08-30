@@ -38,6 +38,7 @@ type TicketPrintBuilderContext = {
   compTickets: ShowCompTicket[];
   sponsorTicketReservedLinks: ShowReservedSeatingLink[];
   sponsorTicketReservedAssignments: ShowReservedSeatAssignment[];
+  sponsorReservedProjectionTicketIds: ReadonlySet<string>;
   sponsorTicketSponsorId: string;
   selectedSponsorTicketSeatIds: string[];
   activeSponsorTicketTemplateUrl: string | null | undefined;
@@ -60,6 +61,7 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
     compTickets,
     sponsorTicketReservedLinks,
     sponsorTicketReservedAssignments,
+    sponsorReservedProjectionTicketIds,
     sponsorTicketSponsorId,
     selectedSponsorTicketSeatIds,
     activeSponsorTicketTemplateUrl,
@@ -177,6 +179,7 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
   }
 
   function isSponsorProjectionTicket(item: ShowCompTicket) {
+    if (sponsorReservedProjectionTicketIds.has(item.id)) return true;
     return sponsorTicketReservedLinks.some(
       (link) => {
         if (link.source_ticket_id !== item.id || !link.is_complimentary) return false;

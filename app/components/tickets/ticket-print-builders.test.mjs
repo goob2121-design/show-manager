@@ -14,12 +14,12 @@ function builders({ legacy = false } = {}) {
     { id: "guest-1", guest_name: "Guest Artist", ticket_type: "guest_list", ticket_count: 1, checked_in_count: 0, notes: "[comp type: guest]" },
   ];
   const links = [
-    { id: "link-1", source_ticket_id: "projection-1", source_show_sponsor_id: legacy ? null : "sponsor-1", customer_name: "Peace Keepers Firearms Training", is_complimentary: true, source_note: legacy ? "Reserved seating comp" : "" },
-    { id: "link-2", source_ticket_id: "projection-2", source_show_sponsor_id: "sponsor-2", customer_name: "Second Sponsor", is_complimentary: true, source_note: "[comp type: sponsor]" },
+    { id: "link-1", source_ticket_id: legacy ? "projection-1" : null, source_show_sponsor_id: legacy ? null : "sponsor-1", customer_name: "Peace Keepers Firearms Training", is_complimentary: true, source_note: legacy ? "Reserved seating comp" : "" },
+    { id: "link-2", source_ticket_id: legacy ? "projection-2" : null, source_show_sponsor_id: "sponsor-2", customer_name: "Second Sponsor", is_complimentary: true, source_note: "[comp type: sponsor]" },
   ];
   const assignments = [
-    { id: "assignment-1", seating_link_id: "link-1", seat_id: "R-J9", customer_name: "Peace Keepers Firearms Training", seat_category: "comp" },
-    { id: "assignment-2", seating_link_id: "link-1", seat_id: "R-J10", customer_name: "Peace Keepers Firearms Training", seat_category: "comp" },
+    { id: "assignment-1", seating_link_id: "link-1", seat_id: "L-J1", customer_name: "Peace Keepers Firearms Training", seat_category: "comp" },
+    { id: "assignment-2", seating_link_id: "link-1", seat_id: "L-J2", customer_name: "Peace Keepers Firearms Training", seat_category: "comp" },
   ];
 
   return createTicketPrintBuilders({
@@ -28,6 +28,7 @@ function builders({ legacy = false } = {}) {
     compTickets,
     sponsorTicketReservedLinks: links,
     sponsorTicketReservedAssignments: assignments,
+    sponsorReservedProjectionTicketIds: legacy ? new Set() : new Set(["projection-1", "projection-2"]),
     sponsorTicketSponsorId: "",
     selectedSponsorTicketSeatIds: [],
     activeSponsorTicketTemplateUrl: "sponsor.png",
@@ -53,18 +54,30 @@ test("ticket printing hides linked sponsor projections and keeps canonical spons
     ["Second Sponsor", 1],
   ]);
   assert.equal(rows.some((row) => row.id === "comp-projection-1" || row.id === "comp-projection-2"), false);
-  assert.equal(rows.find((row) => row.id === "sponsor-sponsor-1")?.reservedSeats, "R-J9, R-J10");
+  assert.equal(rows.find((row) => row.id === "sponsor-sponsor-1")?.reservedSeats, "L-J1, L-J2");
   assert.equal(print.getCompTicketPrintRows("all").reduce((sum, row) => sum + row.quantity, 0), 7);
   assert.equal(print.getCompTicketPrintRows("sponsor").length, 2);
   assert.deepEqual(print.getCompTicketPrintRows("non_sponsor").map((row) => row.name), ["Legitimate Other", "Guest Artist"]);
 
   const html = print.buildCompTicketPrintHtml({ printMode: "pdf", scope: "row:sponsor-sponsor-1" }) ?? "";
-  assert.match(html, /R-J9/);
-  assert.match(html, /R-J10/);
+  assert.match(html, /L-J1/);
+  assert.match(html, /L-J2/);
 });
 
 test("ticket printing cautiously deduplicates an exact-name legacy sponsor projection", () => {
   const rows = builders({ legacy: true }).buildCompListReportRows();
   assert.equal(rows.some((row) => row.id === "comp-projection-1"), false);
   assert.equal(rows.some((row) => row.id === "comp-other-1"), true);
+});
+
+test("canonical projection identity does not depend on matching names, seats, or quantities", () => {
+  const print = builders();
+  const projection = print.buildCompListReportRows().find((row) => row.id === "comp-projection-1");
+  assert.equal(projection, undefined);
+
+  const rows = print.buildCompListReportRows();
+  assert.equal(rows.filter((row) => row.category === "sponsor").length, 2);
+  assert.equal(rows.some((row) => row.id === "comp-other-1"), true);
+  assert.equal(rows.some((row) => row.id === "comp-guest-1"), true);
+  assert.equal(rows.reduce((sum, row) => sum + row.quantity, 0), 7);
 });
