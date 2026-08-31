@@ -31,3 +31,9 @@ test("bulk delivery uses the same combined recipient and branded HTML renderer a
   assert.match(source, /html: item\.renderedEmail\.html/);
   assert.match(source, /text: item\.renderedEmail\.text/);
 });
+
+test("bulk history loads linked webhook events with campaign deliveries in one query", async () => {
+  const source = await readFile(routePath, "utf8");
+  assert.match(source, /\.in\("bulk_operation_id", operationIds\)/);
+  assert.match(source, /events:manual_email_events\(event_type\)/);
+});

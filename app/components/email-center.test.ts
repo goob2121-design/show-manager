@@ -105,6 +105,16 @@ test("Composer separates sender/search and recipient details into responsive row
   assert.match(fields, /function selectRecipient|selectRecipient\(recipient\)/);
 });
 
+test("bulk campaigns expose expandable linked-delivery analytics without replacing recipient rows", async () => {
+  const source = await readFile(componentPath, "utf8");
+  for (const label of ["Campaign Analytics", "Overall", "By Email Provider", "Provider Recipients", "Domain Details", "Insights"]) assert.match(source, new RegExp(label));
+  assert.match(source, /buildCampaignAnalytics\(deliveries\)/);
+  assert.match(source, /bulkDeliveries\.filter\(\(delivery\) => delivery\.bulk_operation_id === operation\.id\)/);
+  assert.match(source, /Open tracking is approximate/);
+  assert.match(source, /delivery rate/); assert.match(source, /open rate/); assert.match(source, /click rate/);
+  assert.match(source, /deliveries\.map\(\(delivery\)/);
+});
+
 test("Mailing List bulk preview cycles real deduplicated recipients through the shared delivery renderer", async () => {
   const source = await readFile(componentPath, "utf8");
   assert.match(source, /renderEmailCenterRecipientEmail/);

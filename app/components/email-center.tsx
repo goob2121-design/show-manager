@@ -32,6 +32,7 @@ import {
   type ManualEmailTemplateKey,
 } from "@/lib/manual-email-center";
 import { PRESALE_EMAIL_TEMPLATE_KEY, validatePresaleEmailFields, withPresaleGreetingFallback } from "@/lib/email-center-presale";
+import { buildCampaignAnalytics, formatCampaignRate, type CampaignDelivery } from "@/lib/email-campaign-analytics";
 
 type Recipient = EmailCenterAudienceRecipient;
 type EmailEvent = { id: string; type: string; createdAt: string; recipient: string | null; clickedUrl: string | null; detail: string | null };
@@ -46,7 +47,7 @@ type BulkOperation = {
   sent_count: number; failed_count: number; skipped_count: number; operation_status: string;
   completed_at: string | null; created_at: string;
 };
-type BulkDelivery = {
+type BulkDelivery = CampaignDelivery & {
   id: string; bulk_operation_id: string; recipient_name: string | null; recipient_email: string;
   subject: string; current_status: string; error_message: string | null; created_at: string;
 };
@@ -77,6 +78,47 @@ function statusLabel(status: string) {
 }
 function eventLabel(type: string) {
   return statusLabel(type.replace("email.", ""));
+}
+
+function CampaignAnalyticsPanel({ deliveries }: { deliveries: BulkDelivery[] }) {
+  const analytics = buildCampaignAnalytics(deliveries);
+  const overallMetrics = [
+    ["Total recipients", analytics.recipients], ["Accepted", analytics.accepted], ["Delivered", analytics.delivered],
+    ["Pending", analytics.pending], ["Opened", analytics.opened], ["Clicked", analytics.clicked],
+    ["Bounced", analytics.bounced], ["Failed", analytics.failed], ["Complained", analytics.complained],
+    ["Problems", analytics.problems],
+  ] as const;
+  const insights = [
+    ...analytics.providers.slice(0, 3).map((provider) => `${provider.provider}: ${provider.delivered} of ${provider.recipients} delivered`),
+    ...(analytics.pending ? [`${analytics.pending} recipient${analytics.pending === 1 ? " has" : "s have"} not reported delivery yet`] : []),
+    ...(analytics.bounced ? [`${analytics.bounced} delivery${analytics.bounced === 1 ? "" : "ies"} bounced`] : []),
+  ];
+
+  return <details className="mt-4 rounded-xl border border-sky-400/25 bg-sky-500/[0.06] p-3">
+    <summary className="cursor-pointer text-sm font-bold text-sky-100">Campaign Analytics</summary>
+    <div className="mt-4 grid gap-5 border-t border-white/10 pt-4">
+      <section aria-label="Overall campaign analytics">
+        <h4 className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Overall</h4>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">{overallMetrics.map(([label, value]) => <div key={label} className="rounded-lg border border-white/10 bg-black/20 p-3"><p className="text-[0.68rem] font-bold uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 text-lg font-black text-white">{value}</p></div>)}</div>
+        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+          <p><strong>{formatCampaignRate(analytics.deliveryRate)}</strong> delivery rate <span className="text-slate-400">({analytics.delivered}/{analytics.accepted} accepted)</span></p>
+          <p><strong>{formatCampaignRate(analytics.openRate)}</strong> open rate <span className="text-slate-400">({analytics.opened}/{analytics.delivered} delivered)</span></p>
+          <p><strong>{formatCampaignRate(analytics.clickRate)}</strong> click rate <span className="text-slate-400">({analytics.clicked}/{analytics.delivered} delivered)</span></p>
+        </div>
+        <p className="mt-2 text-xs text-slate-400" title="Open tracking is approximate because email apps handle tracking differently.">Open tracking is approximate. Some email apps may block tracking or report opens automatically.</p>
+      </section>
+      <section aria-label="Campaign analytics by email provider">
+        <h4 className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">By Email Provider</h4>
+        <div className="mt-3 overflow-x-auto rounded-xl border border-white/10"><table className="min-w-[680px] w-full text-left text-xs"><thead className="bg-white/[0.05] text-slate-400"><tr><th className="p-3">Provider</th><th>Recipients</th><th>Delivered</th><th>Opened</th><th>Open Rate</th><th>Clicked</th><th>Problems</th></tr></thead><tbody>{analytics.providers.map((provider) => <tr key={provider.provider} className="border-t border-white/10"><th className="p-3 text-white">{provider.provider}</th><td>{provider.recipients}</td><td>{provider.delivered}</td><td>{provider.opened}</td><td>{formatCampaignRate(provider.openRate)}</td><td>{provider.clicked}</td><td>{provider.problems}</td></tr>)}</tbody></table></div>
+      </section>
+      <section aria-label="Provider recipient details" className="grid gap-2">
+        <h4 className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Provider Recipients</h4>
+        {analytics.providers.map((provider) => <details key={provider.provider} className="rounded-xl border border-white/10 bg-black/15 p-3"><summary className="cursor-pointer text-sm font-bold">{provider.provider} — {provider.recipients} recipient{provider.recipients === 1 ? "" : "s"}</summary><div className="mt-3 grid gap-2">{provider.recipientRows.map((recipient) => <div key={recipient.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs"><span className="min-w-0"><strong className="block truncate text-white">{recipient.recipient_name || recipient.recipient_email}</strong><span className="block break-all text-slate-400">{recipient.recipient_email}</span></span><span className={`rounded-full border px-2 py-1 ${statusTone(recipient.current_status)}`}>{statusLabel(recipient.current_status)}</span></div>)}</div></details>)}
+      </section>
+      <details className="rounded-xl border border-white/10 bg-black/15 p-3"><summary className="cursor-pointer text-sm font-bold">Domain Details</summary><div className="mt-3 grid gap-3 sm:grid-cols-2">{analytics.providers.map((provider) => <div key={provider.provider}><p className="text-xs font-bold uppercase tracking-wider text-slate-400">{provider.provider} ({provider.recipients})</p>{provider.domains.map((domain) => <p key={domain.domain} className="mt-1 flex justify-between gap-3 text-xs"><span className="break-all">{domain.domain}</span><strong>{domain.recipients}</strong></p>)}</div>)}</div></details>
+      {insights.length ? <section aria-label="Campaign insights"><h4 className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Insights</h4><ul className="mt-2 grid gap-1 text-sm text-slate-300">{insights.map((insight) => <li key={insight}>• {insight}</li>)}</ul></section> : null}
+    </div>
+  </details>;
 }
 
 export function EmailCenter({ slug }: { slug: string }) {
@@ -567,17 +609,15 @@ export function EmailCenter({ slug }: { slug: string }) {
           <div className="mt-5 grid gap-3">
             {bulkOperations.length ? bulkOperations.map((operation) => {
               const deliveries = bulkDeliveries.filter((delivery) => delivery.bulk_operation_id === operation.id);
-              const delivered = deliveries.filter((delivery) => delivery.current_status === "delivered").length;
-              const opened = deliveries.filter((delivery) => delivery.current_status === "opened").length;
-              const clicked = deliveries.filter((delivery) => delivery.current_status === "clicked").length;
-              const problems = deliveries.filter((delivery) => ["bounced", "failed", "complained", "delivery_delayed"].includes(delivery.current_status)).length;
+              const analytics = buildCampaignAnalytics(deliveries);
               return <details key={operation.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                 <summary className="cursor-pointer list-none"><div className="grid gap-2 sm:grid-cols-[2fr_auto_auto]">
                   <div><strong>{templateLabels[operation.template_key] ?? operation.template_key}</strong><p className="text-sm text-slate-300">{operation.audience_label} - {operation.selected_recipient_count} recipients</p></div>
                   <span className="text-xs text-slate-400">{formatDateTime(operation.completed_at || operation.created_at)}</span>
                   <span className={`w-fit rounded-full border px-2 py-1 text-xs font-bold ${statusTone(operation.failed_count ? "failed" : "delivered")}`}>{operation.sent_count} accepted - {operation.failed_count} failed</span>
                 </div></summary>
-                <p className="mt-3 text-sm">Delivered {delivered} - Opened {opened} - Clicked {clicked} - Problems {problems}</p>
+                <p className="mt-3 text-sm">Delivered {analytics.delivered} - Opened {analytics.opened} - Clicked {analytics.clicked} - Problems {analytics.problems}</p>
+                <CampaignAnalyticsPanel deliveries={deliveries} />
                 <div className="mt-3 grid gap-2">{deliveries.map((delivery) => <div key={delivery.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 p-3 text-sm">
                   <span><strong>{delivery.recipient_name || delivery.recipient_email}</strong><span className="ml-2 text-slate-400">{delivery.recipient_email}</span></span>
                   <span className={`rounded-full border px-2 py-1 text-xs ${statusTone(delivery.current_status)}`}>{statusLabel(delivery.current_status)}</span>

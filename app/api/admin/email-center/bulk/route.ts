@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     const operationIds = (operations ?? []).map((operation) => operation.id);
     const { data: deliveries, error: deliveryError } = operationIds.length
       ? await access.supabase.from("manual_email_history")
-        .select("id,bulk_operation_id,recipient_name,recipient_email,subject,current_status,error_message,created_at")
+        .select("id,bulk_operation_id,recipient_name,recipient_email,subject,current_status,error_message,created_at,events:manual_email_events(event_type)")
         .in("bulk_operation_id", operationIds).order("created_at", { ascending: true })
       : { data: [], error: null };
     if (deliveryError) throw deliveryError;
