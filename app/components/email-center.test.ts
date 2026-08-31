@@ -16,7 +16,7 @@ test("Email Center supports known-recipient search and editable manual recipient
 
 test("Email Center previews resolved content, validates, confirms, and prevents repeat clicks", async () => {
   const source = await readFile(componentPath, "utf8");
-  assert.match(source, /resolveEmailCenterMergeFields\(subject, mergeFields\)/);
+  assert.match(source, /resolveEmailCenterMergeFields\(subject, effectiveMergeFields\)/);
   assert.match(source, /findUnresolvedEmailCenterMergeFields/);
   assert.match(source, /Ready to Send/);
   assert.match(source, /window\.confirm/);
@@ -103,4 +103,18 @@ test("Composer separates sender/search and recipient details into responsive row
   assert.match(fields, /w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl/);
   assert.match(fields, /id="recipient-search"[\s\S]*?className="w-full min-w-0/);
   assert.match(fields, /function selectRecipient|selectRecipient\(recipient\)/);
+});
+
+test("Mailing List bulk preview cycles real deduplicated recipients through the shared delivery renderer", async () => {
+  const source = await readFile(componentPath, "utf8");
+  assert.match(source, /renderEmailCenterRecipientEmail/);
+  assert.match(source, /Previewing \{boundedPreviewIndex \+ 1\} of \{previewRows\.length\} recipients/);
+  assert.match(source, /previewRow\.recipient\.name/);
+  assert.match(source, /previewRow\.recipient\.email/);
+  assert.match(source, />Previous</);
+  assert.match(source, />Next</);
+  assert.match(source, /srcDoc=\{previewRow\.renderedEmail\.html\}/);
+  assert.match(source, /Mailing List · \{readyAudienceRows\.length\} recipient/);
+  assert.match(source, /setAudienceKey\(value\);[\s\S]*setPreviewRecipientIndex\(0\);[\s\S]*if \(!value\)/);
+  assert.match(source, /cannot be rendered and will not be sent broken content/);
 });

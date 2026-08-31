@@ -22,5 +22,12 @@ test("Resend batches preserve unique provider IDs and handle chunk failures", as
   assert.match(source, /resend_message_id: providerId/); assert.match(source, /send_status: "failed"/);
   assert.match(source, /failedCount \+= 1/);
   assert.match(source, /html: item\.renderedEmail\.html/); assert.match(source, /text: item\.renderedEmail\.text/);
-  assert.match(source, /renderEmailCenterEmail/);
+  assert.match(source, /renderEmailCenterRecipientEmail/);
+});
+
+test("bulk delivery uses the same combined recipient and branded HTML renderer as preview", async () => {
+  const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+  assert.match(source, /renderEmailCenterRecipientEmail/);
+  assert.match(source, /html: item\.renderedEmail\.html/);
+  assert.match(source, /text: item\.renderedEmail\.text/);
 });

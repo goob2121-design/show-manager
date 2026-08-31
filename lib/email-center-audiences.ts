@@ -1,6 +1,7 @@
 import { findUnresolvedEmailCenterMergeFields, resolveEmailCenterMergeFields, type EmailCenterMergeValues } from "./email-center";
 import { isValidManualEmailAddress } from "./manual-email-center";
 import { PRESALE_EMAIL_TEMPLATE_KEY, withPresaleGreetingFallback } from "./email-center-presale";
+import { renderEmailCenterEmail } from "./email-center-renderer";
 
 export const EMAIL_CENTER_AUDIENCES = [
   { key: "advance_ticket_buyers", label: "All Advance Ticket Buyers" },
@@ -68,6 +69,11 @@ export function dedupeEmailCenterAudienceRecipients(records: EmailCenterAudience
 export function recipientsForEmailCenterAudience(records: EmailCenterAudienceRecipient[], audienceKey: EmailCenterAudienceKey) {
   return dedupeEmailCenterAudienceRecipients(records.filter((record) => record.audienceKeys.includes(audienceKey)));
 }
+export function normalizeMailingListFirstName(value: unknown) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || "CMMS Family";
+}
+
 
 export function renderEmailCenterRecipient(input: {
   recipient: EmailCenterAudienceRecipient;
@@ -81,9 +87,12 @@ export function renderEmailCenterRecipient(input: {
   promoCodeTemplate?: string;
   senderValid: boolean;
 }) {
-  const mergeFields = input.templateKey === PRESALE_EMAIL_TEMPLATE_KEY
-    ? withPresaleGreetingFallback(input.recipient.mergeFields)
+  const recipientMergeFields = input.recipient.id.startsWith("mailing:")
+    ? { ...input.recipient.mergeFields, first_name: normalizeMailingListFirstName(input.recipient.mergeFields.first_name) }
     : input.recipient.mergeFields;
+  const mergeFields = input.templateKey === PRESALE_EMAIL_TEMPLATE_KEY
+    ? withPresaleGreetingFallback(recipientMergeFields)
+    : recipientMergeFields;
   const subject = resolveEmailCenterMergeFields(input.subjectTemplate, mergeFields).rendered;
   const message = resolveEmailCenterMergeFields(input.messageTemplate, mergeFields).rendered;
   const heading = resolveEmailCenterMergeFields(input.headingTemplate ?? "", mergeFields).rendered;
@@ -103,4 +112,22 @@ export function renderEmailCenterRecipient(input: {
   for (const field of unresolved) problems.push(`${field} unavailable`);
   if (Boolean(promoOffer.trim()) !== Boolean(promoCode.trim())) problems.push("Promo offer and code must both be provided");
   return { subject, message, heading, ctaLabel, ctaUrl, promoOffer, promoCode, problems, ready: problems.length === 0 };
+}
+
+export function renderEmailCenterRecipientEmail(input: Parameters<typeof renderEmailCenterRecipient>[0] & {
+  unsubscribeUrl?: string;
+}) {
+  const content = renderEmailCenterRecipient(input);
+  return {
+    ...content,
+    renderedEmail: renderEmailCenterEmail({
+      heading: content.heading,
+      message: content.message,
+      ctaLabel: content.ctaLabel,
+      ctaUrl: content.ctaUrl,
+      promoOffer: content.promoOffer,
+      promoCode: content.promoCode,
+      unsubscribeUrl: input.unsubscribeUrl,
+    }),
+  };
 }

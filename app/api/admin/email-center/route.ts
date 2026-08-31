@@ -161,7 +161,7 @@ export async function loadEmailCenterRecipients(
     const names = splitEmailCenterName([row.first_name, row.last_name].filter(Boolean).join(" "));
     const email = row.email.trim().toLowerCase();
     recipients.push({ id: `mailing:${row.id}`, name: names.fullName, email, sourceLabel: "Mailing List", detail: "Active subscriber",
-      mergeFields: { ...shared, first_name: names.firstName || "Friend", last_name: names.lastName, full_name: names.fullName || "CMMS Friend", email }, audienceKeys: ["mailing_list_subscribers"] });
+      mergeFields: { ...shared, first_name: names.firstName, last_name: names.lastName, full_name: names.fullName || "CMMS Friend", email }, audienceKeys: ["mailing_list_subscribers"] });
   }
   return recipients.sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
 }

@@ -6,11 +6,10 @@ import { getAdminSessionCookieName, verifyAdminSessionCookieValue } from "@/lib/
 import {
   EMAIL_CENTER_AUDIENCES,
   recipientsForEmailCenterAudience,
-  renderEmailCenterRecipient,
+  renderEmailCenterRecipientEmail,
   type EmailCenterAudienceKey,
 } from "@/lib/email-center-audiences";
 import { getManualEmailSender, getManualEmailTemplate, MANUAL_EMAIL_REPLY_TO } from "@/lib/manual-email-center";
-import { renderEmailCenterEmail } from "@/lib/email-center-renderer";
 import { PRESALE_EMAIL_TEMPLATE_KEY, validatePresaleEmailFields } from "@/lib/email-center-presale";
 import { mailingListUnsubscribeUrl } from "@/lib/mailing-list";
 import { emailCenterShowMergeFields, loadEmailCenterRecipients } from "../route";
@@ -108,10 +107,10 @@ export async function POST(request: NextRequest) {
     const rendered = selected.map((recipient) => {
       const templateFields = templateKey === PRESALE_EMAIL_TEMPLATE_KEY ? presaleShowFields : {};
       const campaignRecipient = { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields, ...templateFields } };
-      const content = renderEmailCenterRecipient({ recipient: campaignRecipient, templateKey, subjectTemplate, messageTemplate, headingTemplate, ctaLabelTemplate, ctaUrlTemplate, promoOfferTemplate: campaignMergeFields.promo_offer, promoCodeTemplate: campaignMergeFields.promo_code, senderValid: true });
       const subscriberId = audienceKey === "mailing_list_subscribers" && recipient.id.startsWith("mailing:") ? recipient.id.slice(8) : null;
       const unsubscribeUrl = subscriberId ? mailingListUnsubscribeUrl(request.nextUrl.origin, subscriberId) : undefined;
-      return { recipient, subscriberId, ...content, renderedEmail: renderEmailCenterEmail({ heading: content.heading, message: content.message, ctaLabel: content.ctaLabel, ctaUrl: content.ctaUrl, promoOffer: content.promoOffer, promoCode: content.promoCode, unsubscribeUrl }) };
+      const content = renderEmailCenterRecipientEmail({ recipient: campaignRecipient, templateKey, subjectTemplate, messageTemplate, headingTemplate, ctaLabelTemplate, ctaUrlTemplate, promoOfferTemplate: campaignMergeFields.promo_offer, promoCodeTemplate: campaignMergeFields.promo_code, senderValid: true, unsubscribeUrl });
+      return { recipient, subscriberId, ...content };
     });
     const ready = rendered.filter((item) => item.ready);
     const skippedCount = audienceResult.recipients.length - ready.length;

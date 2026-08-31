@@ -10,6 +10,7 @@ import {
   dedupeEmailCenterAudienceRecipients,
   recipientsForEmailCenterAudience,
   renderEmailCenterRecipient,
+  renderEmailCenterRecipientEmail,
   type EmailCenterAudienceKey,
   type EmailCenterAudienceRecipient,
 } from "@/lib/email-center-audiences";
@@ -89,6 +90,7 @@ export function EmailCenter({ slug }: { slug: string }) {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [audienceKey, setAudienceKey] = useState<EmailCenterAudienceKey | "">("");
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
+  const [previewRecipientIndex, setPreviewRecipientIndex] = useState(0);
   const [bulkProgress, setBulkProgress] = useState<string | null>(null);
   const [templateKey, setTemplateKey] = useState<ManualEmailTemplateKey>(initialTemplate.key);
   const [subject, setSubject] = useState<string>(initialTemplate.subject);
@@ -128,10 +130,23 @@ export function EmailCenter({ slug }: { slug: string }) {
     : { recipients: [], recordsFound: 0, duplicatesRemoved: 0, uniqueRecipients: 0 }, [recipients, audienceKey]);
   const audienceRows = useMemo(() => audienceResult.recipients.map((recipient) => ({
     recipient,
-    ...renderEmailCenterRecipient({ recipient: { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields } }, templateKey, subjectTemplate: subject, messageTemplate: message, headingTemplate: heading, ctaLabelTemplate: ctaLabel, ctaUrlTemplate: ctaUrl, promoOfferTemplate: mergeFields.promo_offer, promoCodeTemplate: mergeFields.promo_code, senderValid: Boolean(selectedSender) }),
+    ...renderEmailCenterRecipientEmail({
+      recipient: { ...recipient, mergeFields: { ...recipient.mergeFields, ...campaignMergeFields } },
+      templateKey, subjectTemplate: subject, messageTemplate: message, headingTemplate: heading,
+      ctaLabelTemplate: ctaLabel, ctaUrlTemplate: ctaUrl,
+      promoOfferTemplate: mergeFields.promo_offer, promoCodeTemplate: mergeFields.promo_code,
+      senderValid: Boolean(selectedSender),
+      unsubscribeUrl: recipient.id.startsWith("mailing:")
+        ? "https://stageflow.cumberlandmountainmusic.com/mailing-list/unsubscribe?token=recipient-specific-secure-link"
+        : undefined,
+    }),
   })), [audienceResult.recipients, templateKey, subject, message, heading, ctaLabel, ctaUrl, selectedSender, mergeFields.promo_code, mergeFields.promo_offer, mergeFields.ticket_link]);
   const selectedRecipientSet = useMemo(() => new Set(selectedRecipientIds), [selectedRecipientIds]);
   const selectedReadyRows = audienceRows.filter((row) => row.ready && selectedRecipientSet.has(row.recipient.id));
+  const readyAudienceRows = audienceRows.filter((row) => row.ready);
+  const previewRows = audienceRows.filter((row) => isValidManualEmailAddress(row.recipient.email));
+  const boundedPreviewIndex = Math.min(previewRecipientIndex, Math.max(previewRows.length - 1, 0));
+  const previewRow = previewRows[boundedPreviewIndex] ?? null;
   const problemRows = audienceRows.filter((row) => !row.ready);
   const excludedCount = audienceRows.filter((row) => row.ready && !selectedRecipientSet.has(row.recipient.id)).length;
   const renderedSubject = useMemo(() => resolveEmailCenterMergeFields(subject, effectiveMergeFields).rendered, [subject, effectiveMergeFields]);
@@ -222,6 +237,7 @@ export function EmailCenter({ slug }: { slug: string }) {
   function chooseAudience(value: EmailCenterAudienceKey | "") {
     setAudienceKey(value);
     setResultMessage(null);
+    setPreviewRecipientIndex(0);
     if (!value) {
       setSelectedRecipientIds([]);
       return;
@@ -452,6 +468,7 @@ export function EmailCenter({ slug }: { slug: string }) {
               <div aria-label="Preview and validation" className="grid min-w-0 gap-5 xl:sticky xl:top-6">
 
             {audienceKey ? (
+              <div className="grid gap-5">
               <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -470,6 +487,10 @@ export function EmailCenter({ slug }: { slug: string }) {
                   {" - "}<span className="text-amber-300">Needs Attention: {problemRows.length}</span>
                   {" - "}Selected: {selectedReadyRows.length}
                 </p>
+                {audienceKey === "mailing_list_subscribers" ? <p className="mt-2 text-sm font-semibold text-white">Mailing List · {readyAudienceRows.length} recipient{readyAudienceRows.length === 1 ? "" : "s"}</p> : null}
+                {audienceResult.duplicatesRemoved || problemRows.length ? <p className="mt-1 text-xs text-amber-200">
+                  Excluded: {audienceResult.duplicatesRemoved} duplicate{audienceResult.duplicatesRemoved === 1 ? "" : "s"}; {problemRows.length} invalid, missing, or unrenderable recipient{problemRows.length === 1 ? "" : "s"}.
+                </p> : null}
                 <div className="mt-4 max-h-96 overflow-y-auto rounded-xl border border-white/10">
                   {audienceRows.map((row) => (
                     <label key={row.recipient.id} className="flex gap-3 border-b border-white/10 p-3 last:border-0">
@@ -486,6 +507,29 @@ export function EmailCenter({ slug }: { slug: string }) {
                   ))}
                 </div>
               </section>
+              <section className="rounded-2xl border border-white/10 bg-black/20 p-4" aria-label="Bulk recipient email preview">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-bold">Final Recipient Preview</h3>
+                    {previewRow ? <>
+                      <p className="mt-1 text-sm text-white">Previewing {boundedPreviewIndex + 1} of {previewRows.length} recipients</p>
+                      <p className="text-xs text-slate-300">{previewRow.recipient.name ? `${previewRow.recipient.name} · ` : ""}{previewRow.recipient.email}</p>
+                    </> : <p className="mt-1 text-sm text-amber-200">No valid recipients are available to preview.</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setPreviewRecipientIndex((current) => Math.max(0, current - 1))} disabled={!previewRow || boundedPreviewIndex === 0} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+                    <button type="button" onClick={() => setPreviewRecipientIndex((current) => Math.min(previewRows.length - 1, current + 1))} disabled={!previewRow || boundedPreviewIndex >= previewRows.length - 1} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+                  </div>
+                </div>
+                {previewRow ? <>
+                  <p className="mt-4 text-xs font-bold uppercase tracking-wider text-slate-400">Subject</p>
+                  <p className="mt-1 text-sm text-white">{previewRow.subject || "-"}</p>
+                  {!previewRow.ready ? <div role="alert" className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">Cannot render this recipient: {previewRow.problems.join("; ")}</div> : null}
+                  {problemRows.length ? <div role="alert" className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">Warning: {problemRows.length} audience recipient{problemRows.length === 1 ? "" : "s"} cannot be rendered and will not be sent broken content.</div> : null}
+                  <iframe title="Rendered bulk recipient email preview" srcDoc={previewRow.renderedEmail.html} className="mt-4 h-[680px] w-full rounded-xl border border-white/10 bg-white" sandbox="" />
+                </> : null}
+              </section>
+              </div>
             ) : (
               <div className="grid gap-5">
                 <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
