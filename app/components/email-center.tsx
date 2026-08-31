@@ -124,6 +124,7 @@ export function EmailCenter({ slug }: { slug: string }) {
           : showContext?.effectiveTicketSaleStatus === "public" ? "Presale has ended; this show is now in Public Sale."
             : showContext?.effectiveTicketSaleStatus === "not_on_sale" ? "Presale is scheduled but has not started yet."
               : "Ticket sale status is unavailable for this show.";
+  const usesAudienceRecipients = Boolean(audienceKey);
   const uniqueRecipients = useMemo(() => dedupeEmailCenterAudienceRecipients(recipients).recipients, [recipients]);
   const audienceResult = useMemo(() => audienceKey
     ? recipientsForEmailCenterAudience(recipients, audienceKey)
@@ -160,7 +161,7 @@ export function EmailCenter({ slug }: { slug: string }) {
   const renderedEmail = useMemo(() => renderEmailCenterEmail({ heading: renderedHeading, message: renderedMessage, ctaLabel: renderedCtaLabel, ctaUrl: renderedCtaUrl, unsubscribeUrl: previewUnsubscribeUrl, promoOffer: renderedPromoOffer, promoCode: renderedPromoCode }), [renderedHeading, renderedMessage, renderedCtaLabel, renderedCtaUrl, previewUnsubscribeUrl, renderedPromoOffer, renderedPromoCode]);
   const unresolvedFields = useMemo(() => findUnresolvedEmailCenterMergeFields(renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl, renderedPromoOffer, renderedPromoCode), [renderedSubject, renderedMessage, renderedHeading, renderedCtaLabel, renderedCtaUrl, renderedPromoOffer, renderedPromoCode]);
   const checks = [
-    { label: "Recipient", ok: isValidManualEmailAddress(recipientEmail), issue: "Enter a valid recipient email." },
+    { label: "Recipient", ok: usesAudienceRecipients || isValidManualEmailAddress(recipientEmail), issue: "Enter a valid recipient email." },
     { label: "Sender", ok: Boolean(selectedSender), issue: "Select an allowlisted sender." },
     { label: "Subject", ok: Boolean(renderedSubject.trim()), issue: "Subject is blank." },
     { label: "Message", ok: Boolean(renderedMessage.trim()), issue: "Message is blank." },
@@ -334,7 +335,7 @@ export function EmailCenter({ slug }: { slug: string }) {
   }
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (audienceKey) {
+    if (usesAudienceRecipients) {
       await handleBulkSubmit();
       return;
     }
@@ -440,10 +441,10 @@ export function EmailCenter({ slug }: { slug: string }) {
               </div>
               <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <label className="grid min-w-0 gap-2 text-sm font-semibold">Recipient name
-                  <input value={recipientName} onChange={(event) => { const name = splitEmailCenterName(event.target.value); setRecipientName(event.target.value); setSelectedRecipientId(null); setMergeFields((current) => ({ ...current, first_name: name.firstName, last_name: name.lastName, full_name: name.fullName })); }} placeholder="Optional for manual recipients" className="w-full min-w-0 rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+                  <input value={recipientName} disabled={usesAudienceRecipients} onChange={(event) => { const name = splitEmailCenterName(event.target.value); setRecipientName(event.target.value); setSelectedRecipientId(null); setMergeFields((current) => ({ ...current, first_name: name.firstName, last_name: name.lastName, full_name: name.fullName })); }} placeholder={usesAudienceRecipients ? "Uses selected audience recipients" : "Optional for manual recipients"} className="w-full min-w-0 rounded-xl border border-white/15 bg-slate-950 px-3 py-3 disabled:cursor-not-allowed disabled:opacity-50" />
                 </label>
                 <label className="grid min-w-0 gap-2 text-sm font-semibold">To
-                  <input type="email" required value={recipientEmail} onChange={(event) => changeRecipientEmail(event.target.value)} placeholder="recipient@example.com" className="w-full min-w-0 rounded-xl border border-white/15 bg-slate-950 px-3 py-3" />
+                  <input type="email" required={!usesAudienceRecipients} disabled={usesAudienceRecipients} value={recipientEmail} onChange={(event) => changeRecipientEmail(event.target.value)} placeholder={usesAudienceRecipients ? "Uses selected audience recipients" : "recipient@example.com"} className="w-full min-w-0 rounded-xl border border-white/15 bg-slate-950 px-3 py-3 disabled:cursor-not-allowed disabled:opacity-50" />
                 </label>
               </div>
             </div>
@@ -550,7 +551,7 @@ export function EmailCenter({ slug }: { slug: string }) {
             </div>
             {bulkProgress ? <div className="rounded-xl bg-sky-500/10 px-4 py-3 text-sm text-sky-100">{bulkProgress}</div> : null}
             {resultMessage ? <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${resultTone === "success" ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" : "border-rose-400/30 bg-rose-500/10 text-rose-100"}`}>{resultMessage}</div> : null}
-            <button type="submit" disabled={isSending || (audienceKey ? !selectedReadyRows.length : !ready)} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 font-bold disabled:cursor-not-allowed disabled:bg-slate-700 sm:w-fit sm:min-w-44">{isSending ? (audienceKey ? `Sending ${selectedReadyRows.length} emails...` : "Sending...") : audienceKey ? `SEND ${selectedReadyRows.length} EMAILS` : "Send Email"}</button>
+            <button type="submit" disabled={isSending || (usesAudienceRecipients ? !selectedReadyRows.length : !ready)} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 font-bold disabled:cursor-not-allowed disabled:bg-slate-700 sm:w-fit sm:min-w-44">{isSending ? (usesAudienceRecipients ? `Sending ${selectedReadyRows.length} emails...` : "Sending...") : usesAudienceRecipients ? `SEND ${selectedReadyRows.length} EMAILS` : "Send Email"}</button>
           </form>
         </section> : null}
 

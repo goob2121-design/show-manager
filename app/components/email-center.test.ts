@@ -10,7 +10,7 @@ test("Email Center supports known-recipient search and editable manual recipient
   assert.match(source, /Search name or email/);
   assert.match(source, /recipient\.name.*recipient\.email/);
   assert.match(source, /function selectRecipient/);
-  assert.match(source, /type="email" required value=\{recipientEmail\}/);
+  assert.match(source, /type="email" required=\{!usesAudienceRecipients\} disabled=\{usesAudienceRecipients\} value=\{recipientEmail\}/);
   assert.match(source, /function changeRecipientEmail/);
 });
 
@@ -23,7 +23,7 @@ test("Email Center previews resolved content, validates, confirms, and prevents 
   assert.match(source, /To: \$\{recipientName/);
   assert.match(source, /From: \$\{selectedSender\.from\}/);
   assert.match(source, /if \(isSending \|\| !ready/);
-  assert.match(source, /disabled=\{isSending \|\| \(audienceKey \? !selectedReadyRows\.length : !ready\)\}/);
+  assert.match(source, /disabled=\{isSending \|\| \(usesAudienceRecipients \? !selectedReadyRows\.length : !ready\)\}/);
   assert.match(source, /crypto\.randomUUID\(\)/);
 });
 
@@ -117,4 +117,17 @@ test("Mailing List bulk preview cycles real deduplicated recipients through the 
   assert.match(source, /Mailing List · \{readyAudienceRows\.length\} recipient/);
   assert.match(source, /setAudienceKey\(value\);[\s\S]*setPreviewRecipientIndex\(0\);[\s\S]*if \(!value\)/);
   assert.match(source, /cannot be rendered and will not be sent broken content/);
+
+});
+test("dynamic audiences bypass manual To validation while preserving manual and empty-audience safeguards", async () => {
+  const source = await readFile(componentPath, "utf8");
+  assert.match(source, /const usesAudienceRecipients = Boolean\(audienceKey\)/);
+  assert.match(source, /required=\{!usesAudienceRecipients\}/);
+  assert.match(source, /disabled=\{usesAudienceRecipients\}/);
+  assert.match(source, /ok: usesAudienceRecipients \|\| isValidManualEmailAddress\(recipientEmail\)/);
+  assert.match(source, /if \(usesAudienceRecipients\) \{[\s\S]*await handleBulkSubmit\(\)/);
+  assert.match(source, /usesAudienceRecipients \? !selectedReadyRows\.length : !ready/);
+  assert.match(source, /const ready = checks\.every/);
+  assert.match(source, /isValidManualEmailAddress\(recipientEmail\)/);
+  assert.match(source, /srcDoc=\{previewRow\.renderedEmail\.html\}/);
 });
