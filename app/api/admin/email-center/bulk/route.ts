@@ -37,7 +37,7 @@ async function authorize(slug: string) {
   }
   const supabase = serviceClient();
   const { data: show, error } = await supabase.from("shows")
-    .select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link").eq("slug", slug).maybeSingle();
+    .select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link,presale_access_code").eq("slug", slug).maybeSingle();
   if (error) throw error;
   if (!show) return { ok: false as const, status: 404, error: "Show was not found." };
   return { ok: true as const, supabase, show };

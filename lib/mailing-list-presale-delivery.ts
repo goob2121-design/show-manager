@@ -10,6 +10,7 @@ type PresaleShow = {
   ticket_sale_status: unknown;
   presale_starts_at: string | null;
   public_sale_starts_at: string | null;
+  presale_access_code: string | null;
 };
 
 export function isActiveMailingListPresale(show: PresaleShow, now = new Date()) {
@@ -28,7 +29,7 @@ export async function sendAutomaticMailingListPresaleAccess(input: {
     const now = input.now ?? new Date();
     const today = now.toISOString().slice(0, 10);
     const { data: show, error: showError } = await input.supabase.from("shows")
-      .select("id,name,show_date,ticket_link,ticket_sale_status,presale_starts_at,public_sale_starts_at")
+      .select("id,name,show_date,ticket_link,ticket_sale_status,presale_starts_at,public_sale_starts_at,presale_access_code")
       .eq("is_archived", false).gte("show_date", today).order("show_date", { ascending: true }).limit(1).maybeSingle();
     if (showError) throw showError;
     const currentShow = show as PresaleShow | null;
@@ -55,6 +56,7 @@ export async function sendAutomaticMailingListPresaleAccess(input: {
       showName: currentShow.name,
       ticketUrl,
       publicSaleStartsAt: currentShow.public_sale_starts_at,
+      presaleCode: currentShow.presale_access_code,
       apiKey: input.apiKey,
       idempotencyKey: providerIdempotencyKey,
     });

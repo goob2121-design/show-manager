@@ -14,14 +14,14 @@ export type ScheduledPresaleCampaignRow = {
   subject_template: string; heading_template: string; message_template: string;
   cta_label_template: string; cta_url_template: string; show_name_snapshot: string;
   show_date_snapshot: string | null; presale_starts_at_snapshot: string;
-  public_sale_starts_at_snapshot: string | null; ticket_url_snapshot: string;
+  public_sale_starts_at_snapshot: string | null; ticket_url_snapshot: string; presale_access_code_snapshot: string | null;
   scheduled_for: string; status: "scheduled" | "processing" | "completed" | "failed" | "cancelled";
   recipient_count_at_schedule: number; final_recipient_count: number | null;
   bulk_operation_id: string | null; error_message: string | null; started_at: string | null;
   completed_at: string | null; cancelled_at: string | null; created_at: string; updated_at: string;
 };
 
-type ShowRow = { id: string; slug: string; name: string; show_date: string | null; show_start_time: string | null; ticket_sale_status: unknown; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null };
+type ShowRow = { id: string; slug: string; name: string; show_date: string | null; show_start_time: string | null; ticket_sale_status: unknown; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null; presale_access_code: string | null };
 type SubscriberRow = { id: string; email: string; first_name: string | null; last_name: string | null; source: string; status: string };
 
 export function scheduledCampaignRecipients(subscribers: SubscriberRow[], show: ShowRow) {
@@ -56,7 +56,7 @@ export async function processScheduledPresaleCampaign(input: { supabase: Supabas
   const campaign = claimed as ScheduledPresaleCampaignRow;
   try {
     const { data: showData, error: showError } = await input.supabase.from("shows")
-      .select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link").eq("id", campaign.show_id).maybeSingle();
+      .select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link,presale_access_code").eq("id", campaign.show_id).maybeSingle();
     if (showError) throw showError;
     const show = showData as ShowRow | null;
     if (!show) throw new Error("The scheduled show no longer exists.");
@@ -74,7 +74,7 @@ export async function processScheduledPresaleCampaign(input: { supabase: Supabas
     if (subscriberError) throw subscriberError;
     const snapshotShow: ShowRow = { ...show, name: campaign.show_name_snapshot, show_date: campaign.show_date_snapshot,
       presale_starts_at: campaign.presale_starts_at_snapshot, public_sale_starts_at: campaign.public_sale_starts_at_snapshot,
-      ticket_link: campaign.ticket_url_snapshot };
+      ticket_link: campaign.ticket_url_snapshot, presale_access_code: campaign.presale_access_code_snapshot };
     const audience = scheduledCampaignRecipients((subscriberData ?? []) as SubscriberRow[], snapshotShow);
     const operationId = campaign.id;
     const { error: operationError } = await input.supabase.from("manual_email_bulk_operations").insert({

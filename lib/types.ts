@@ -68,6 +68,7 @@ export type ShowRecord = {
   ticket_sale_status: TicketSaleStatus;
   presale_starts_at: string | null;
   public_sale_starts_at: string | null;
+  presale_access_code: string | null;
   opening_script: string | null;
   intermission_script: string | null;
   closing_script: string | null;
@@ -617,4 +618,5 @@ export type ShowDetailsFormState = {
   ticketSaleStatus: TicketSaleStatus;
   presaleStartsAt: string;
   publicSaleStartsAt: string;
+  presaleAccessCode: string;
 };

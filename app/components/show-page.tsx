@@ -312,6 +312,7 @@ const initialShowDetailsFormState: ShowDetailsFormState = {
   ticketSaleStatus: "public",
   presaleStartsAt: "",
   publicSaleStartsAt: "",
+  presaleAccessCode: "",
 };
 
 const DEFAULT_GUEST_WELCOME_MESSAGE_INTRO =
@@ -6340,6 +6341,7 @@ function mapShowToDetailsFormState(show: ShowRecord): ShowDetailsFormState {
     ticketSaleStatus: normalizeTicketSaleStatus(show.ticket_sale_status),
     presaleStartsAt: toDateTimeLocal(show.presale_starts_at),
     publicSaleStartsAt: toDateTimeLocal(show.public_sale_starts_at),
+    presaleAccessCode: show.presale_access_code ?? "",
   };
 }
 
@@ -12313,6 +12315,7 @@ export function ShowPage({
         ticket_sale_status: normalizeTicketSaleStatus(showDetailsFormState.ticketSaleStatus),
         presale_starts_at: normalizeOptionalDateTime(showDetailsFormState.presaleStartsAt),
         public_sale_starts_at: normalizeOptionalDateTime(showDetailsFormState.publicSaleStartsAt),
+        presale_access_code: normalizeOptionalField(showDetailsFormState.presaleAccessCode),
       };
 
       const { data, error } = await supabase
@@ -21028,6 +21031,20 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                     />
                   </label>
                 </div>
+                <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  Presale Access Code
+                  <input
+                    type="text"
+                    name="presaleAccessCode"
+                    value={showDetailsFormState.presaleAccessCode}
+                    onChange={handleShowDetailsChange}
+                    autoComplete="off"
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+                  />
+                  <span className="text-xs font-normal leading-5 text-stone-500">
+                    Used only during the Early Access Presale. Mailing-list members may enter this code on the CMMS website to access tickets.
+                  </span>
+                </label>
                 {effectiveTicketSaleState.configurationError ? <p className="text-sm font-semibold text-red-700">{effectiveTicketSaleState.configurationError}</p>
                   : effectiveTicketSaleState.manualOverride ? <p className="text-sm font-semibold text-red-700">Manual override active — ticket sales are disabled.</p>
                     : effectiveTicketSaleState.scheduleEnabled ? <div><p className="text-sm font-semibold text-emerald-700">Automatic schedule enabled</p><p className="text-xs text-stone-500">StageFlow will use these dates to switch the effective sale state automatically.</p></div>

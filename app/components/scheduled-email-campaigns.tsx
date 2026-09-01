@@ -9,7 +9,7 @@ type Campaign = {
   id: string; template_key: string; audience_label: string; subject_template: string; heading_template: string;
   message_template: string; cta_label_template: string; cta_url_template: string; show_name_snapshot: string;
   show_date_snapshot: string | null; presale_starts_at_snapshot: string; public_sale_starts_at_snapshot: string | null;
-  ticket_url_snapshot: string; scheduled_for: string; status: "scheduled" | "processing" | "completed" | "failed" | "cancelled";
+  ticket_url_snapshot: string; presale_access_code_snapshot: string | null; scheduled_for: string; status: "scheduled" | "processing" | "completed" | "failed" | "cancelled";
   recipient_count_at_schedule: number; final_recipient_count: number | null; error_message: string | null;
 };
 type Recipient = { id: string; name: string; email: string; source: string };
@@ -45,7 +45,7 @@ export function ScheduledEmailCampaigns({ slug }: { slug: string }) {
   const preview = useMemo(() => {
     if (!campaign) return null;
     const firstName = fallbackPreview ? "" : recipients[0]?.name.split(/\s+/)[0] ?? "";
-    const fields = withPresaleGreetingFallback({ first_name: firstName, show_name: campaign.show_name_snapshot, show_date: showDate(campaign.show_date_snapshot), presale_start: formatEmailCenterSaleDate(campaign.presale_starts_at_snapshot), public_sale_start: formatEmailCenterSaleDate(campaign.public_sale_starts_at_snapshot), ticket_link: campaign.ticket_url_snapshot } satisfies EmailCenterMergeValues);
+    const fields = withPresaleGreetingFallback({ first_name: firstName, show_name: campaign.show_name_snapshot, show_date: showDate(campaign.show_date_snapshot), presale_start: formatEmailCenterSaleDate(campaign.presale_starts_at_snapshot), public_sale_start: formatEmailCenterSaleDate(campaign.public_sale_starts_at_snapshot), ticket_link: campaign.ticket_url_snapshot, presale_code: campaign.presale_access_code_snapshot ?? "" } satisfies EmailCenterMergeValues);
     return { subject: resolveEmailCenterMergeFields(campaign.subject_template, fields).rendered, html: renderEmailCenterEmail({ heading: resolveEmailCenterMergeFields(campaign.heading_template, fields).rendered, message: resolveEmailCenterMergeFields(campaign.message_template, fields).rendered, ctaLabel: resolveEmailCenterMergeFields(campaign.cta_label_template, fields).rendered, ctaUrl: resolveEmailCenterMergeFields(campaign.cta_url_template, fields).rendered, unsubscribeUrl: "https://stageflow.cumberlandmountainmusic.com/mailing-list/unsubscribe?token=recipient-specific-secure-link" }).html };
   }, [campaign, fallbackPreview, recipients]);
   async function schedule() {

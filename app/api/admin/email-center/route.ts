@@ -64,7 +64,7 @@ async function authorize(slug: string) {
   }
   const supabase = serviceClient();
   const { data: show, error } = await supabase.from("shows")
-    .select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link").eq("slug", slug).maybeSingle();
+    .select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link,presale_access_code").eq("slug", slug).maybeSingle();
   if (error) throw error;
   if (!show) return { ok: false as const, status: 404, error: "Show was not found." };
   return { ok: true as const, supabase, show };
@@ -83,17 +83,18 @@ function publicHistory(row: ManualEmailHistoryRow) {
     })),
   };
 }
-export function emailCenterShowMergeFields(show: { name: string; show_date: string | null; show_start_time: string | null; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null }) {
+export function emailCenterShowMergeFields(show: { name: string; show_date: string | null; show_start_time: string | null; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null; presale_access_code: string | null }) {
   return {
     show_name: show.name, show_date: displayShowDate(show.show_date), show_time: show.show_start_time ?? "",
     presale_start: formatEmailCenterSaleDate(show.presale_starts_at),
     public_sale_start: formatEmailCenterSaleDate(show.public_sale_starts_at),
     ticket_link: show.ticket_link?.trim() ?? "",
+    presale_code: show.presale_access_code?.trim() ?? "",
   } satisfies EmailCenterMergeValues;
 }
 export async function loadEmailCenterRecipients(
   supabase: ReturnType<typeof serviceClient>,
-  show: { id: string; name: string; show_date: string | null; show_start_time: string | null; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null },
+  show: { id: string; name: string; show_date: string | null; show_start_time: string | null; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null; presale_access_code: string | null },
   requestOrigin: string,
 ) {
   const [linksResult, assignmentsResult, compsResult, guestsResult, sponsorsResult, mailingListResult] = await Promise.all([

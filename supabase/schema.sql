@@ -35,7 +35,8 @@ alter table public.shows
 alter table public.shows
   add column if not exists ticket_sale_status text not null default 'public',
   add column if not exists presale_starts_at timestamptz,
-  add column if not exists public_sale_starts_at timestamptz;
+  add column if not exists public_sale_starts_at timestamptz,
+  add column if not exists presale_access_code text;
 
 alter table public.shows
   drop constraint if exists shows_ticket_sale_status_check;

@@ -39,12 +39,13 @@ export function buildMailingListPresaleAccessEmail(input: {
   showName: string;
   ticketUrl: string;
   publicSaleStartsAt: string | null;
+  presaleCode?: string | null;
 }) {
   const greeting = input.firstName.trim() ? `Hi ${input.firstName.trim()},` : "Hi there,";
   const publicSaleDate = formatPublicSaleDate(input.publicSaleStartsAt);
   return renderEmailCenterEmail({
     heading: "Your CMMS Early Access Ticket Link",
-    message: `${greeting}\n\nSince you're on the CMMS Mailing List, I wanted to send you the early-access ticket link for ${input.showName}.${publicSaleDate ? `\n\nTickets open to the general public on ${publicSaleDate}. This gives you the first opportunity to purchase tickets and choose from the available reserved seats.` : ""}\n\nThanks for supporting the Cumberland Mountain Music Show!`,
+    message: `${greeting}\n\nSince you're on the CMMS Mailing List, I wanted to send you the early-access ticket link for ${input.showName}.${publicSaleDate ? `\n\nTickets open to the general public on ${publicSaleDate}. This gives you the first opportunity to purchase tickets and choose from the available reserved seats.` : ""}${input.presaleCode?.trim() ? `\n\nPrefer to go through the CMMS website?\n\nYour Presale Access Code:\n${input.presaleCode.trim()}` : ""}\n\nThanks for supporting the Cumberland Mountain Music Show!`,
     ctaLabel: "EARLY ACCESS TICKETS",
     ctaUrl: input.ticketUrl,
   });
@@ -57,6 +58,7 @@ export async function sendMailingListPresaleAccessEmail(
     showName: string;
     ticketUrl: string;
     publicSaleStartsAt: string | null;
+    presaleCode?: string | null;
     apiKey: string | undefined;
     idempotencyKey: string;
   },

@@ -15,7 +15,7 @@ async function authorize(slug: string) {
   const cookieStore = await cookies();
   if (!verifyAdminSessionCookieValue(slug, cookieStore.get(getAdminSessionCookieName(slug))?.value)) return { ok: false as const, status: 401, error: "Admin access is required." };
   const supabase = serviceClient();
-  const { data: show, error } = await supabase.from("shows").select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link").eq("slug", slug).maybeSingle();
+  const { data: show, error } = await supabase.from("shows").select("id,slug,name,show_date,show_start_time,ticket_sale_status,presale_starts_at,public_sale_starts_at,ticket_link,presale_access_code").eq("slug", slug).maybeSingle();
   if (error) throw error;
   if (!show) return { ok: false as const, status: 404, error: "Show was not found." };
   return { ok: true as const, supabase, show };
@@ -70,7 +70,8 @@ export async function POST(request: NextRequest) {
       heading_template: template.heading, message_template: template.message, cta_label_template: template.ctaLabel,
       cta_url_template: "{{ticket_link}}", show_name_snapshot: access.show.name, show_date_snapshot: access.show.show_date,
       presale_starts_at_snapshot: access.show.presale_starts_at, public_sale_starts_at_snapshot: access.show.public_sale_starts_at,
-      ticket_url_snapshot: fields.ticket_link, scheduled_for: access.show.presale_starts_at, status: "scheduled",
+      ticket_url_snapshot: fields.ticket_link, presale_access_code_snapshot: fields.presale_code,
+      scheduled_for: access.show.presale_starts_at, status: "scheduled",
       recipient_count_at_schedule: audience.recipients.length, final_recipient_count: null, bulk_operation_id: null,
       error_message: null, started_at: null, completed_at: null, cancelled_at: null, updated_at: new Date().toISOString() };
     const { data: existing, error: existingError } = await access.supabase.from("scheduled_presale_campaigns").select("id,status,bulk_operation_id").eq("show_id", access.show.id).maybeSingle();
