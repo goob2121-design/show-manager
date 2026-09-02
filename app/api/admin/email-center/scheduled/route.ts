@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       const { data: campaign, error: campaignError } = await access.supabase.from("scheduled_presale_campaigns").select("*").eq("show_id", access.show.id).eq("id", text(body.campaignId)).eq("status", "scheduled").maybeSingle();
       if (campaignError) throw campaignError;
       if (!campaign) return NextResponse.json({ success: false, error: "Only an existing scheduled campaign can be sent now." }, { status: 409 });
-      const result = await processScheduledPresaleCampaign({ supabase: access.supabase, campaign: campaign as ScheduledPresaleCampaignRow, origin: request.nextUrl.origin, apiKey: process.env.RESEND_API_KEY });
+      const result = await processScheduledPresaleCampaign({ supabase: access.supabase, campaign: campaign as ScheduledPresaleCampaignRow, origin: request.nextUrl.origin, apiKey: process.env.RESEND_API_KEY, trigger: "manual" });
       if (result.status === "not_claimed") return NextResponse.json({ success: false, error: "This campaign cannot send before the presale opens, or it has already been claimed." }, { status: 409 });
       if (result.status === "failed") return NextResponse.json({ success: false, error: result.error }, { status: 500 });
       return NextResponse.json({ success: true, result });
@@ -73,7 +73,8 @@ export async function POST(request: NextRequest) {
       ticket_url_snapshot: fields.ticket_link, presale_access_code_snapshot: fields.presale_code,
       scheduled_for: access.show.presale_starts_at, status: "scheduled",
       recipient_count_at_schedule: audience.recipients.length, final_recipient_count: null, bulk_operation_id: null,
-      error_message: null, started_at: null, completed_at: null, cancelled_at: null, updated_at: new Date().toISOString() };
+      error_message: null, started_at: null, completed_at: null, cancelled_at: null,
+      delivery_trigger: null, manually_sent_at: null, updated_at: new Date().toISOString() };
     const { data: existing, error: existingError } = await access.supabase.from("scheduled_presale_campaigns").select("id,status,bulk_operation_id").eq("show_id", access.show.id).maybeSingle();
     if (existingError) throw existingError;
     if (existing?.status === "completed" || existing?.status === "processing") return NextResponse.json({ success: false, error: "This show's presale campaign has already started or completed." }, { status: 409 });

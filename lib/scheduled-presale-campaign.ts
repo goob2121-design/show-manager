@@ -19,6 +19,7 @@ export type ScheduledPresaleCampaignRow = {
   recipient_count_at_schedule: number; final_recipient_count: number | null;
   bulk_operation_id: string | null; error_message: string | null; started_at: string | null;
   completed_at: string | null; cancelled_at: string | null; created_at: string; updated_at: string;
+  delivery_trigger: "automatic" | "manual" | null; manually_sent_at: string | null;
 };
 
 type ShowRow = { id: string; slug: string; name: string; show_date: string | null; show_start_time: string | null; ticket_sale_status: unknown; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null; presale_access_code: string | null };
@@ -45,11 +46,12 @@ async function markCampaignFailed(supabase: SupabaseClient, id: string, message:
   ]);
 }
 
-export async function processScheduledPresaleCampaign(input: { supabase: SupabaseClient; campaign: ScheduledPresaleCampaignRow; origin: string; apiKey: string | undefined; now?: Date }) {
+export async function processScheduledPresaleCampaign(input: { supabase: SupabaseClient; campaign: ScheduledPresaleCampaignRow; origin: string; apiKey: string | undefined; now?: Date; trigger?: "automatic" | "manual" }) {
   const now = input.now ?? new Date();
   const startedAt = now.toISOString();
+  const deliveryTrigger = input.trigger ?? "automatic";
   const { data: claimed, error: claimError } = await input.supabase.from("scheduled_presale_campaigns")
-    .update({ status: "processing", started_at: startedAt, error_message: null, updated_at: startedAt })
+    .update({ status: "processing", delivery_trigger: deliveryTrigger, started_at: startedAt, error_message: null, updated_at: startedAt })
     .eq("id", input.campaign.id).eq("status", "scheduled").lte("scheduled_for", startedAt).select("*").maybeSingle();
   if (claimError) throw claimError;
   if (!claimed) return { status: "not_claimed" as const };
@@ -154,7 +156,7 @@ export async function processScheduledPresaleCampaign(input: { supabase: Supabas
     const completedAt = new Date().toISOString();
     await Promise.all([
       input.supabase.from("manual_email_bulk_operations").update({ operation_status: failedCount === ready.length && ready.length ? "failed" : "completed", sent_count: sentCount, failed_count: failedCount, completed_at: completedAt }).eq("id", operationId),
-      input.supabase.from("scheduled_presale_campaigns").update({ status: failedCount === ready.length && ready.length ? "failed" : "completed", final_recipient_count: ready.length, bulk_operation_id: operationId, error_message: failedCount ? `${failedCount} recipient delivery failed.` : null, completed_at: completedAt, updated_at: completedAt }).eq("id", campaign.id).eq("status", "processing"),
+      input.supabase.from("scheduled_presale_campaigns").update({ status: failedCount === ready.length && ready.length ? "failed" : "completed", final_recipient_count: ready.length, bulk_operation_id: operationId, error_message: failedCount ? `${failedCount} recipient delivery failed.` : null, completed_at: completedAt, manually_sent_at: deliveryTrigger === "manual" ? completedAt : null, updated_at: completedAt }).eq("id", campaign.id).eq("status", "processing").eq("delivery_trigger", deliveryTrigger),
     ]);
     return { status: "completed" as const, sentCount, failedCount };
   } catch (error) {

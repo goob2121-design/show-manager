@@ -33,6 +33,7 @@ import {
 } from "@/lib/manual-email-center";
 import { PRESALE_EMAIL_TEMPLATE_KEY, validatePresaleEmailFields, withPresaleGreetingFallback } from "@/lib/email-center-presale";
 import { buildCampaignAnalytics, formatCampaignRate, type CampaignDelivery } from "@/lib/email-campaign-analytics";
+import { scheduledEmailRunForEasternDate } from "@/lib/scheduled-email-time";
 
 type Recipient = EmailCenterAudienceRecipient;
 type EmailEvent = { id: string; type: string; createdAt: string; recipient: string | null; clickedUrl: string | null; detail: string | null };
@@ -147,6 +148,7 @@ export function EmailCenter({ slug }: { slug: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [resultTone, setResultTone] = useState<"success" | "error">("success");
 
@@ -350,6 +352,39 @@ export function EmailCenter({ slug }: { slug: string }) {
     } finally {
       setIsSending(false);
     }
+  }
+
+  async function scheduleBulkCampaign() {
+    if (!audienceKey || !selectedSender || !selectedReadyRows.length || !scheduleDate) return;
+    const audience = EMAIL_CENTER_AUDIENCES.find((item) => item.key === audienceKey);
+    const expected = scheduledEmailRunForEasternDate(scheduleDate);
+    if (!audience || !expected) { setResultTone("error"); setResultMessage("Choose a future Eastern date with an available scheduler run."); return; }
+    const confirmation = [
+      `Schedule: ${subject}`,
+      `Audience: ${audience.label}`,
+      `Currently Eligible: ${selectedReadyRows.length}`,
+      `Expected Send: ${new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeStyle: "short", timeZone: "America/New_York", timeZoneName: "short" }).format(expected)}`,
+      "",
+      "Recipients will be re-evaluated at send time.",
+      "This uses StageFlow's once-daily Vercel Hobby scheduler.",
+      "",
+      "Schedule this campaign?",
+    ].join("\n");
+    if (!window.confirm(confirmation)) return;
+    setIsSending(true); setResultMessage(null);
+    try {
+      const response = await fetch("/api/admin/email-center/scheduled-general", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, audienceKey, senderKey, templateKey, subject, message, heading, ctaLabel, ctaUrl, campaignMergeFields, sendDate: scheduleDate }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; expectedSend?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to schedule this campaign.");
+      setResultTone("success");
+      setResultMessage(`Campaign scheduled for the next available daily run: ${payload.expectedSend ? new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeStyle: "short", timeZone: "America/New_York", timeZoneName: "short" }).format(new Date(payload.expectedSend)) : "scheduled"}.`);
+      window.dispatchEvent(new Event("email-center-scheduled"));
+    } catch (error) {
+      setResultTone("error"); setResultMessage(error instanceof Error ? error.message : "Unable to schedule this campaign.");
+    } finally { setIsSending(false); }
   }
 
   function selectRecipient(recipient: Recipient) {
@@ -593,7 +628,16 @@ export function EmailCenter({ slug }: { slug: string }) {
             </div>
             {bulkProgress ? <div className="rounded-xl bg-sky-500/10 px-4 py-3 text-sm text-sky-100">{bulkProgress}</div> : null}
             {resultMessage ? <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${resultTone === "success" ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" : "border-rose-400/30 bg-rose-500/10 text-rose-100"}`}>{resultMessage}</div> : null}
-            <button type="submit" disabled={isSending || (usesAudienceRecipients ? !selectedReadyRows.length : !ready)} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 font-bold disabled:cursor-not-allowed disabled:bg-slate-700 sm:w-fit sm:min-w-44">{isSending ? (usesAudienceRecipients ? `Sending ${selectedReadyRows.length} emails...` : "Sending...") : usesAudienceRecipients ? `SEND ${selectedReadyRows.length} EMAILS` : "Send Email"}</button>
+            <div className="flex flex-wrap items-end gap-3">
+              <button type="submit" disabled={isSending || (usesAudienceRecipients ? !selectedReadyRows.length : !ready)} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 font-bold disabled:cursor-not-allowed disabled:bg-slate-700 sm:w-fit sm:min-w-44">{isSending ? (usesAudienceRecipients ? `Sending ${selectedReadyRows.length} emails...` : "Sending...") : usesAudienceRecipients ? `SEND NOW — ${selectedReadyRows.length} EMAILS` : "Send Email"}</button>
+              {usesAudienceRecipients ? <>
+                <label className="grid gap-1 text-xs font-bold text-slate-300">Send date (Eastern)
+                  <input type="date" value={scheduleDate} onChange={(event) => setScheduleDate(event.target.value)} className="min-h-12 rounded-xl border border-white/15 bg-slate-950 px-3 text-sm text-white" />
+                </label>
+                <button type="button" onClick={() => void scheduleBulkCampaign()} disabled={isSending || !selectedReadyRows.length || !scheduleDate} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-amber-400/40 px-5 py-3 font-bold text-amber-100 disabled:cursor-not-allowed disabled:opacity-40">Schedule Send</button>
+                <p className="w-full text-xs text-slate-400">StageFlow runs scheduled email once daily at the production cron opportunity. The exact expected time is shown before approval. Recipients will be re-evaluated at send time.</p>
+              </> : null}
+            </div>
           </form>
         </section> : null}
 
