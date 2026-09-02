@@ -6,6 +6,8 @@ export type SponsorCompPanelRow = {
   id: string;
   name: string;
   category: string;
+  admissionPassReady: boolean;
+  admissionPassStatus: string;
   categoryLabel: string;
   quantity: number;
   checkedIn: number;
@@ -74,6 +76,8 @@ export function SponsorCompPanel<RowType extends SponsorCompPanelRow>({
   onChangeSeatsForCompEntry,
   onPrintCompEntry,
 }: SponsorCompPanelProps<RowType>) {
+  const printableSponsorPasses = compRows.filter((row) => row.category === "sponsor" && row.admissionPassReady);
+  const sponsorPassHref = printStudioExportContext?.showSlug ? `/admin/${printStudioExportContext.showSlug}/print/sponsor-admission-pass?scope=all` : null;
   const sponsorCompTotal = compRows.filter((row) => row.category === "sponsor").reduce((sum, row) => sum + row.quantity, 0);
   const nonSponsorCompTotal = compRows.filter((row) => row.category !== "sponsor").reduce((sum, row) => sum + row.quantity, 0);
   const checkedInTotal = compRows.reduce((sum, row) => sum + row.checkedIn, 0);
@@ -121,6 +125,13 @@ export function SponsorCompPanel<RowType extends SponsorCompPanelRow>({
         {totalTickets > 0 ? (
           <div className="flex flex-col gap-2 sm:items-end">
             <div className="flex flex-wrap gap-2">
+              {sponsorPassHref && printableSponsorPasses.length > 0 ? (
+                <a href={sponsorPassHref} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100">
+                  Print Sponsor Packet Passes ({printableSponsorPasses.length})
+                </a>
+              ) : (
+                <span className="inline-flex items-center rounded-xl border border-stone-200 bg-stone-100 px-4 py-2.5 text-sm font-semibold text-stone-500">Sponsor passes not ready</span>
+              )}
               <button
                 type="button"
                 onClick={() => handleExportForPrintStudio(selectedRows, "selected")}
@@ -181,6 +192,13 @@ export function SponsorCompPanel<RowType extends SponsorCompPanelRow>({
                       <td className="px-3 py-2 text-stone-700">{row.reservedSeats || "-"}</td>
                       <td className="px-3 py-2 text-stone-700">{row.checkedIn} of {row.quantity}</td>
                       <td className="px-3 py-2 text-stone-600">{row.notes || "-"}</td>
+                          {row.admissionPassReady && printStudioExportContext?.showSlug ? (
+                            <a href={`/admin/${printStudioExportContext.showSlug}/print/sponsor-admission-pass?id=${encodeURIComponent(row.id)}`} target="_blank" rel="noreferrer" className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-100">
+                              Print Admission Pass
+                            </a>
+                          ) : (
+                            <span className="self-center text-[11px] text-stone-500">{row.admissionPassStatus}</span>
+                          )}
                       <td className="px-3 py-2">
                         <div className="flex flex-wrap gap-1.5">
                           <button type="button" onClick={() => onEditCompEntry(row)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Edit</button>

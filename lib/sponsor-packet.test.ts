@@ -62,7 +62,13 @@ test("builder uses SELECT-only reads, printable pages, optional sections, and no
   assert.match(source, /packet-screen-only \{ display: none/);
   assert.match(source, /window\.print\(\)/);
   assert.match(source, /draft\.sections\.specialGuest/);
-  assert.match(source, /draft\.sections\.complimentaryTickets/);
+  assert.match(source, /buildSponsorAdmissionPasses/);
+  assert.match(source, /\.from\("show_sponsors"\)\.select\("id, show_id, sponsor_id, comp_ticket_allowance, recognition_notes"\)/);
+  assert.match(source, /ReservationTicketCode scanToken=\{admissionPass\.scanToken\}/);
+  assert.match(source, /admissionPass\.quantity/);
+  assert.match(source, /admissionPass\.seats\.map/);
+  assert.match(source, /links: sources\.reservedLinks\.filter\(\(link\) => link\.show_id === draft\.showId\)/);
+  assert.match(source, /assignments: sources\.seatAssignments\.filter\(\(assignment\) => assignment\.show_id === draft\.showId\)/);
   assert.match(source, /showSponsorLogoOnCover: true/);
   assert.match(source, /\["showSponsorLogoOnCover", "Show Sponsor Logo on Cover"\]/);
   assert.match(source, /presentationSections\.showSponsorLogoOnCover && draft\.sponsorLogoUrl/);

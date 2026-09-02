@@ -14,6 +14,8 @@ export type CompListReportRow = {
   category: "sponsor" | "band" | "guest" | "volunteer" | "media" | "staff" | "other";
   categoryLabel: string;
   admissionType: CompAdmissionType;
+  admissionPassReady: boolean;
+  admissionPassStatus: string;
   quantity: number;
   reservedSeats: string;
   checkedIn: number;
@@ -224,9 +226,23 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
     if (category === "band") return "Band Comp";
     if (category === "guest") return "Guest Comp";
     if (category === "volunteer") return "Volunteer Comp";
+
     if (category === "media") return "Media Comp";
     if (category === "staff") return "Staff Comp";
     return "Other Comp";
+  }
+
+  function getAdmissionPassAvailability(links: ShowReservedSeatingLink[]) {
+    const complimentaryLinks = links.filter((link) => link.is_complimentary);
+    const readyLink = complimentaryLinks.find((link) => Boolean(link.scan_token?.trim()) && link.ticket_count > 0);
+    if (readyLink) return { admissionPassReady: true, admissionPassStatus: "Ready to print" };
+    if (!complimentaryLinks.length) return { admissionPassReady: false, admissionPassStatus: "Create the reserved-seating admission first" };
+    if (!complimentaryLinks.some((link) => link.ticket_count > 0)) return { admissionPassReady: false, admissionPassStatus: "No admissions are available" };
+    return { admissionPassReady: false, admissionPassStatus: "Entry code is not available yet" };
+  }
+
+  function getSponsorAdmissionPassAvailability(sponsor: ShowSponsor) {
+    return getAdmissionPassAvailability(sponsorTicketReservedLinks.filter((link) => link.source_show_sponsor_id === sponsor.id));
   }
 
   function getCompAdmissionTypeLabel(admissionType: CompAdmissionType) {
@@ -236,14 +252,14 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
   function buildCompListReportRows() {
     const sponsorRows: CompListReportRow[] = sponsorsWithCompTickets.map((sponsor) => {
       const name = getSponsorTicketSponsorName(sponsor);
-      return { id: `sponsor-${sponsor.id}`, name, category: "sponsor", categoryLabel: "Sponsor Comp", quantity: Math.max(0, sponsor.comp_ticket_allowance ?? 0), reservedSeats: getSponsorReservedSeats(sponsor, name), checkedIn: Math.max(0, sponsor.comp_tickets_checked_in ?? 0), notes: stripCompMetadataFromNotes(sponsor.recognition_notes), admissionType: parseCompAdmissionTypeFromText(sponsor.recognition_notes ?? "") };
+      return { id: `sponsor-${sponsor.id}`, name, category: "sponsor", categoryLabel: "Sponsor Comp", quantity: Math.max(0, sponsor.comp_ticket_allowance ?? 0), reservedSeats: getSponsorReservedSeats(sponsor, name), checkedIn: Math.max(0, sponsor.comp_tickets_checked_in ?? 0), notes: stripCompMetadataFromNotes(sponsor.recognition_notes), admissionType: parseCompAdmissionTypeFromText(sponsor.recognition_notes ?? ""), ...getSponsorAdmissionPassAvailability(sponsor) };
     });
     const compRows: CompListReportRow[] = compTickets.filter((item) => {
       const ticketType = normalizeGuestListTicketType(item.ticket_type);
       return ticketType !== "paid_online" && ticketType !== "door_paid" && !isSponsorProjectionTicket(item);
     }).map((item) => {
       const category = classifyCompTicket(item);
-      return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompReservedSeats(item), checkedIn: item.checked_in_count, notes: stripCompMetadataFromNotes(item.notes), admissionType: parseCompAdmissionTypeFromText(item.notes ?? "") };
+      return { id: `comp-${item.id}`, name: item.guest_name, category, categoryLabel: getCompListCategoryLabel(category), quantity: item.ticket_count, reservedSeats: getCompReservedSeats(item), checkedIn: item.checked_in_count, notes: stripCompMetadataFromNotes(item.notes), admissionType: parseCompAdmissionTypeFromText(item.notes ?? ""), ...getAdmissionPassAvailability(sponsorTicketReservedLinks.filter((link) => link.source_ticket_id === item.id)) };
     });
     const existingKeys = new Set([...sponsorRows, ...compRows].map((row) => row.name.trim().toLowerCase()).filter(Boolean));
     const reservedOnlyRowsByName = new Map<string, CompListReportRow>();
@@ -259,7 +275,7 @@ export function createTicketPrintBuilders(context: TicketPrintBuilderContext) {
         current.quantity += 1;
         current.reservedSeats = current.reservedSeats ? `${current.reservedSeats}, ${seatLabel}` : seatLabel;
       } else {
-        reservedOnlyRowsByName.set(key, { id: `reserved-comp-${assignment.id}`, name, category, categoryLabel: getCompListCategoryLabel(category), admissionType: parseCompAdmissionTypeFromText(linkedSourceNote), quantity: 1, reservedSeats: seatLabel, checkedIn: 0, notes: stripCompMetadataFromNotes(linkedSourceNote) || "Reserved seating comp" });
+        reservedOnlyRowsByName.set(key, { id: `reserved-comp-${assignment.id}`, name, category, categoryLabel: getCompListCategoryLabel(category), admissionType: parseCompAdmissionTypeFromText(linkedSourceNote), quantity: 1, reservedSeats: seatLabel, checkedIn: 0, notes: stripCompMetadataFromNotes(linkedSourceNote) || "Reserved seating comp", admissionPassReady: false, admissionPassStatus: "Source admission record is not linked" });
       }
     });
     return [...sponsorRows, ...compRows, ...reservedOnlyRowsByName.values()];

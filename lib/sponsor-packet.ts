@@ -121,9 +121,9 @@ export type SponsorPacketSeatSummary = {
   groups: SponsorPacketSeatSummaryGroup[];
 };
 
-export type SponsorPacketShowSource = { id: string; slug: string; name: string; show_date: string | null; venue: string | null; venue_address: string | null; show_start_time: string | null };
+export type SponsorPacketShowSource = { id: string; slug: string; name: string; show_date: string | null; venue: string | null; venue_address: string | null; guest_arrival_time: string | null; show_start_time: string | null; ticket_code_format: "qr" | "code128" | "both" | null };
 export type SponsorPacketSponsorSource = { id: string; name: string; sponsor_code?: string | null; logo_url?: string | null; recognition_notes?: string | null };
-export type SponsorPacketShowSponsorSource = { show_id: string; sponsor_id: string | null; comp_ticket_allowance: number; recognition_notes: string | null };
+export type SponsorPacketShowSponsorSource = { id: string; show_id: string; sponsor_id: string | null; comp_ticket_allowance: number; recognition_notes: string | null };
 export type SponsorPacketGuestSource = { show_id: string; name: string | null; greeting_name?: string | null; short_bio: string | null; full_bio: string | null; photo_url: string | null };
 export type SponsorPacketReservedLinkSource = { id: string; show_id: string; customer_name: string };
 export type SponsorPacketSeatAssignmentSource = { show_id: string; seating_link_id: string | null; seat_id: string };

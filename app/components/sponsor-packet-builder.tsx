@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReservedSeatMap, type ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
+import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
 import {
   DEFAULT_VENUE_ADDRESS,
   DEFAULT_VENUE_NAME,
@@ -27,6 +28,8 @@ import {
   type SponsorPacketShowSponsorSource,
   type SponsorPacketSponsorSource,
 } from "@/lib/sponsor-packet";
+import { buildSponsorAdmissionPasses, sponsorAdmissionSeatSummary } from "@/lib/sponsor-admission-pass";
+import type { ShowReservedSeatAssignment, ShowReservedSeatingLink, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 
 type SponsorPacketBuilderProps = { showSlug: string };
@@ -36,8 +39,8 @@ type PacketSources = {
   sponsors: SponsorPacketSponsorSource[];
   showSponsors: SponsorPacketShowSponsorSource[];
   guests: SponsorPacketGuestSource[];
-  reservedLinks: SponsorPacketReservedLinkSource[];
-  seatAssignments: SponsorPacketSeatAssignmentSource[];
+  reservedLinks: ShowReservedSeatingLink[];
+  seatAssignments: ShowReservedSeatAssignment[];
 };
 
 const EMPTY_SOURCES: PacketSources = { shows: [], sponsors: [], showSponsors: [], guests: [], reservedLinks: [], seatAssignments: [] };
@@ -170,14 +173,14 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
       ] = await Promise.all([
         supabase.from("shows").select("id, slug, name, show_date").order("show_date", { ascending: false }),
         supabase.from("sponsor_library").select("id, name, sponsor_code").order("name"),
-        supabase.from("shows").select("id, venue, venue_address, show_start_time"),
+        supabase.from("shows").select("id, venue, venue_address, guest_arrival_time, show_start_time, ticket_code_format"),
         supabase.from("sponsor_library").select("id, logo_url"),
         supabase.from("sponsor_library").select("id, recognition_notes"),
-        supabase.from("show_sponsors").select("show_id, sponsor_id, comp_ticket_allowance, recognition_notes"),
+        supabase.from("show_sponsors").select("id, show_id, sponsor_id, comp_ticket_allowance, recognition_notes"),
         supabase.from("guest_profiles").select("show_id, name, short_bio, full_bio").order("created_at", { ascending: true }),
         supabase.from("guest_profiles").select("show_id, photo_url"),
-        supabase.from("show_reserved_seating_links").select("id, show_id, customer_name"),
-        supabase.from("show_reserved_seat_assignments").select("show_id, seating_link_id, seat_id"),
+        supabase.from("show_reserved_seating_links").select("*").eq("is_complimentary", true),
+        supabase.from("show_reserved_seat_assignments").select("*").eq("assignment_type", "customer"),
       ]);
       if (!active) return;
       const coreError = showsCoreResult.error || sponsorsCoreResult.error;
@@ -188,7 +191,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
       }
 
       const showDetailsById = new Map(
-        ((showDetailsResult.error ? [] : showDetailsResult.data ?? []) as Array<{ id: string; venue: string | null; venue_address: string | null; show_start_time: string | null }>).map((item) => [item.id, item]),
+        ((showDetailsResult.error ? [] : showDetailsResult.data ?? []) as Array<{ id: string; venue: string | null; venue_address: string | null; guest_arrival_time: string | null; show_start_time: string | null; ticket_code_format: "qr" | "code128" | "both" | null }>).map((item) => [item.id, item]),
       );
       const sponsorLogosById = new Map(
         ((sponsorLogosResult.error ? [] : sponsorLogosResult.data ?? []) as Array<{ id: string; logo_url: string | null }>).map((item) => [item.id, item.logo_url]),
@@ -206,6 +209,8 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
           venue: showDetailsById.get(item.id)?.venue ?? null,
           venue_address: showDetailsById.get(item.id)?.venue_address ?? null,
           show_start_time: showDetailsById.get(item.id)?.show_start_time ?? null,
+          guest_arrival_time: showDetailsById.get(item.id)?.guest_arrival_time ?? null,
+          ticket_code_format: showDetailsById.get(item.id)?.ticket_code_format ?? null,
         })),
         sponsors: ((sponsorsCoreResult.data ?? []) as Array<Pick<SponsorPacketSponsorSource, "id" | "name">>).map((item) => ({
           ...item,
@@ -217,8 +222,8 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
           ...item,
           photo_url: guestPhotosByShowId.get(item.show_id) ?? null,
         })),
-        reservedLinks: (linksResult.error ? [] : linksResult.data ?? []) as SponsorPacketReservedLinkSource[],
-        seatAssignments: (assignmentsResult.error ? [] : assignmentsResult.data ?? []) as SponsorPacketSeatAssignmentSource[],
+        reservedLinks: (linksResult.error ? [] : linksResult.data ?? []) as ShowReservedSeatingLink[],
+        seatAssignments: (assignmentsResult.error ? [] : assignmentsResult.data ?? []) as ShowReservedSeatAssignment[],
       };
       const selectedShow = nextSources.shows.find((item) => item.slug === showSlug) ?? nextSources.shows[0];
       const assignedSponsorId = nextSources.showSponsors.find((item) => item.show_id === selectedShow?.id && item.sponsor_id)?.sponsor_id;
@@ -329,15 +334,28 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
 
   const ticketParagraph = buildSponsorTicketParagraph(draft);
   const mailingLines = [draft.address1, draft.address2, [draft.city, draft.state, draft.zip].filter(Boolean).join(" ")].filter(Boolean);
-  const reservedSeatSummary = buildSponsorPacketSeatSummary(draft.seatLabels.split(",").map((seatLabel) => seatLabel.trim()).filter(Boolean));
+  const selectedShow = sources.shows.find((show) => show.id === draft.showId) ?? null;
+  const selectedSponsor = sources.sponsors.find((sponsor) => sponsor.id === draft.sponsorId) ?? null;
+  const selectedShowSponsor = sources.showSponsors.find((item) => item.show_id === draft.showId && item.sponsor_id === draft.sponsorId) ?? null;
+  const admissionPassResult = buildSponsorAdmissionPasses({
+    sponsors: selectedShowSponsor && selectedSponsor ? [{ ...selectedShowSponsor, sponsor: selectedSponsor } as unknown as ShowSponsor & { sponsor: SponsorLibraryEntry }] : [],
+    compTickets: [],
+    links: sources.reservedLinks.filter((link) => link.show_id === draft.showId),
+    assignments: sources.seatAssignments.filter((assignment) => assignment.show_id === draft.showId),
+  });
+  const admissionPass = selectedShowSponsor ? admissionPassResult.passes.find((pass) => pass.rowId === `sponsor-${selectedShowSponsor.id}`) ?? null : null;
+  const admissionPassNotReady = selectedShowSponsor ? admissionPassResult.unavailable.find((item) => item.rowId === `sponsor-${selectedShowSponsor.id}`)?.reason ?? "Create the sponsor's reserved-seating admission before printing the packet." : "This sponsor is not connected to the selected show.";
+  const packetSeatIds = admissionPass?.seats.map((seat) => seat.seat_id) ?? draft.seatLabels.split(",").map((seatLabel) => seatLabel.trim()).filter(Boolean);
+  const reservedSeatSummary = buildSponsorPacketSeatSummary(packetSeatIds);
   const hasMailingAddress = Boolean(draft.sponsorName || draft.contactPerson || mailingLines.length > 0);
-  const selectedShowName = sources.shows.find((show) => show.id === draft.showId)?.name || "Cumberland Mountain Music Show";
+  const selectedShowName = selectedShow?.name || "Cumberland Mountain Music Show";
   const sponsorCode = sources.sponsors.find((sponsor) => sponsor.id === draft.sponsorId)?.sponsor_code?.trim() ?? "";
   const sponsorRsvpQr = sponsorCode ? `/api/sponsor-rsvp/qr?code=${encodeURIComponent(sponsorCode)}` : "";
   const hasShowPage = draft.sections.showInformation || draft.sections.specialGuest || draft.sections.venueDirections || draft.sections.bandInformation || draft.sections.sponsorRecognition || draft.sections.contactInformation;
-  const hasTicketPage = Boolean(draft.includeTickets && ticketParagraph && (draft.sections.complimentaryTickets || (draft.sections.reservedSeating && draft.admissionType === "reserved")));
+  const hasAdmissionPass = Boolean(admissionPass);
   const showReservedSeatSummary = draft.includeTickets && draft.admissionType === "reserved" && draft.sections.reservedSeating && reservedSeatSummary.validSeatIds.length > 0;
   const showReservedSeatMap = showReservedSeatSummary && presentationSections.reservedSeatLocationMap;
+  const hasSeatLocationPage = Boolean(showReservedSeatMap);
   const reservedSeatMapStates: Record<string, ReservedSeatMapSeatState> = Object.fromEntries(
     reservedSeatSummary.validSeatIds.map((seatId) => [
       seatId,
@@ -354,10 +372,11 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
     presentationSections.personalizedLetter ? "letter" : null,
     hasShowPage ? "show" : null,
     presentationSections.sponsorRsvp && sponsorCode ? "rsvp" : null,
-    hasTicketPage ? "tickets" : null,
     presentationSections.eventFlyerPlaceholder ? "flyer" : null,
     presentationSections.businessCardPlaceholder ? "business-card" : null,
     presentationSections.assemblyChecklist ? "checklist" : null,
+    hasAdmissionPass ? "admission-pass" : null,
+    hasSeatLocationPage ? "seat-location" : null,
   ].filter((page): page is string => Boolean(page));
   const showTableOfContents = presentationSections.tableOfContents && basePages.length > 2;
   const packetPages = [...basePages];
@@ -370,8 +389,8 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
     draft.sections.specialGuest && (draft.guestName || draft.guestBio) ? { label: "Featured Guest", page: "show" } : null,
     presentationSections.sponsorRsvp && sponsorCode ? { label: "Sponsor RSVP", page: "rsvp" } : null,
     draft.sections.bandInformation && (draft.bandHeading || draft.bandDescription || draft.bandMembers.some((member) => member.included)) ? { label: "CMMS Band", page: "show" } : null,
-    hasTicketPage && draft.sections.reservedSeating && draft.admissionType === "reserved" ? { label: "Reserved Seating", page: "tickets" } : null,
-    hasTicketPage && draft.sections.complimentaryTickets ? { label: "Complimentary Tickets", page: "tickets" } : null,
+    hasAdmissionPass ? { label: "Official Admission Pass", page: "admission-pass" } : null,
+    hasSeatLocationPage ? { label: "Your Reserved Seat Location", page: "seat-location" } : null,
     draft.sections.venueDirections ? { label: "Venue Information", page: "show" } : null,
     draft.sections.sponsorRecognition && draft.sponsorRecognition ? { label: "Your Sponsorship Recognition", page: "show" } : null,
     draft.sections.contactInformation && (draft.contactEmail || draft.contactPhone) ? { label: "Contact Information", page: "show" } : null,
@@ -427,23 +446,23 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
           .packet-show-page .show-sections { gap: 0.62rem !important; margin-top: 0.9rem !important; }
           .packet-show-page .packet-section-heading { color: #0f5c53 !important; border-color: #0f5c53 !important; font-size: 16pt !important; font-weight: 700 !important; line-height: 1.15 !important; margin-bottom: 0.1rem; padding-bottom: 0.12rem; }
           .packet-show-page .packet-featured-guest-body { margin-top: 0.3rem !important; }
-          .packet-ticket-page { font-size: 9.85pt !important; line-height: 1.28 !important; }
-          .packet-ticket-page .packet-ticket-content { margin-top: 0.5rem !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; }
+          .packet-seat-location-page { font-size: 9.85pt !important; line-height: 1.28 !important; }
+          .packet-seat-location-page .packet-ticket-content { margin-top: 0.5rem !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; }
           .packet-ticket-seat-summary,
           .packet-ticket-seat-map { break-inside: avoid; page-break-inside: avoid; }
-          .packet-ticket-page .packet-ticket-seat-summary { margin-top: 0.35rem !important; padding: 0.2rem 0 0.1rem 0.45rem !important; border: 0 !important; border-left: 2.5px solid #0f5c53 !important; border-radius: 0 !important; background: transparent !important; color: #050505 !important; }
-          .packet-ticket-page .packet-ticket-seat-summary .packet-ticket-seat-summary-heading { font-size: 9.75pt !important; font-weight: 700 !important; letter-spacing: 0.14em !important; color: #7a5a14 !important; }
-          .packet-ticket-page .packet-ticket-seat-summary .packet-ticket-seat-ids { margin-top: 0.1rem !important; font-size: 9pt !important; color: #333333 !important; }
-          .packet-ticket-page .packet-ticket-seat-summary .packet-ticket-seat-ids strong { color: #050505 !important; font-weight: 700 !important; }
-          .packet-ticket-page .packet-ticket-seat-summary .packet-ticket-seat-id-value { color: #050505 !important; font-weight: 700 !important; }
-          .packet-ticket-page .packet-ticket-seat-summary .packet-ticket-seat-separator { color: #444444 !important; font-weight: 600 !important; }
-          .packet-ticket-page .packet-ticket-map-heading { margin-top: 0.4rem !important; padding-top: 0.22rem !important; border-top: 1px solid #0f5c53 !important; }
-          .packet-ticket-page .packet-ticket-map-heading .packet-heading { color: #0f5c53 !important; font-weight: 700 !important; }
-          .packet-ticket-page .packet-ticket-map-caption { margin-top: 0.08rem !important; font-size: 8.85pt !important; color: #333333 !important; }
-          .packet-ticket-page .packet-ticket-seat-map { margin-top: 0.18rem !important; }
-          .packet-ticket-page .packet-seat-map-frame { padding: 0 !important; border: 1px solid #a8a29e !important; border-radius: 0.45rem !important; background: white !important; transform: scale(0.74); transform-origin: top center; margin: 0 auto -4.2rem !important; box-shadow: none !important; }
-          .packet-ticket-page .packet-seat-map-frame > * { overflow: visible !important; }
-          .packet-ticket-page .packet-footer { margin-top: 0.06in !important; padding-top: 0.06in !important; }
+          .packet-seat-location-page .packet-ticket-seat-summary { margin-top: 0.35rem !important; padding: 0.2rem 0 0.1rem 0.45rem !important; border: 0 !important; border-left: 2.5px solid #0f5c53 !important; border-radius: 0 !important; background: transparent !important; color: #050505 !important; }
+          .packet-seat-location-page .packet-ticket-seat-summary .packet-ticket-seat-summary-heading { font-size: 9.75pt !important; font-weight: 700 !important; letter-spacing: 0.14em !important; color: #7a5a14 !important; }
+          .packet-seat-location-page .packet-ticket-seat-summary .packet-ticket-seat-ids { margin-top: 0.1rem !important; font-size: 9pt !important; color: #333333 !important; }
+          .packet-seat-location-page .packet-ticket-seat-summary .packet-ticket-seat-ids strong { color: #050505 !important; font-weight: 700 !important; }
+          .packet-seat-location-page .packet-ticket-seat-summary .packet-ticket-seat-id-value { color: #050505 !important; font-weight: 700 !important; }
+          .packet-seat-location-page .packet-ticket-seat-summary .packet-ticket-seat-separator { color: #444444 !important; font-weight: 600 !important; }
+          .packet-seat-location-page .packet-ticket-map-heading { margin-top: 0.4rem !important; padding-top: 0.22rem !important; border-top: 1px solid #0f5c53 !important; }
+          .packet-seat-location-page .packet-ticket-map-heading .packet-heading { color: #0f5c53 !important; font-weight: 700 !important; }
+          .packet-seat-location-page .packet-ticket-map-caption { margin-top: 0.08rem !important; font-size: 8.85pt !important; color: #333333 !important; }
+          .packet-seat-location-page .packet-ticket-seat-map { margin-top: 0.18rem !important; }
+          .packet-seat-location-page .packet-seat-map-frame { padding: 0 !important; border: 1px solid #a8a29e !important; border-radius: 0.45rem !important; background: white !important; transform: scale(0.74); transform-origin: top center; margin: 0 auto -4.2rem !important; box-shadow: none !important; }
+          .packet-seat-location-page .packet-seat-map-frame > * { overflow: visible !important; }
+          .packet-seat-location-page .packet-footer { margin-top: 0.06in !important; padding-top: 0.06in !important; }
           .packet-cover-page .packet-cover-label { color: #23433d !important; opacity: 1 !important; -webkit-text-fill-color: #23433d !important; }
           .packet-cover-page .packet-cover-title { color: #111111 !important; font-weight: 800 !important; opacity: 1 !important; -webkit-text-fill-color: #111111 !important; }
           .packet-cover-page .packet-cover-title-underline { background: #b68a2c !important; }
@@ -508,6 +527,7 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
               <label className="flex items-center gap-2"><input type="checkbox" checked={printed} onChange={(event) => setPrinted(event.target.checked)} /> Printed</label>
               <label className="flex items-center gap-2"><input type="checkbox" checked={mailed} onChange={(event) => setMailed(event.target.checked)} /> Mailed</label>
             </div>
+              <p><span aria-hidden="true">{hasAdmissionPass ? "✓" : "□"}</span> {hasAdmissionPass ? "Official Admission Pass Ready" : `Admission Pass Not Ready — ${admissionPassNotReady}`}</p>
             <p className="mt-2 text-xs text-stone-500">Printed and mailed indicators are informational for this browser session only.</p>
           </section>
           <FormSection title="Sponsor information">
@@ -608,7 +628,8 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
             <section className="packet-rsvp-content mt-7 text-center"><h3 className="packet-heading text-2xl font-semibold">Will You Be Joining Us?</h3><div className="packet-rsvp-intro mx-auto mt-4 max-w-2xl space-y-2 text-left"><p>Thank you again for supporting the Cumberland Mountain Music Show.</p><p>If you&rsquo;ll be attending, we&rsquo;ll make sure your reserved seats are waiting for you.</p><p>If you won&rsquo;t be able to attend, that&rsquo;s completely okay. We truly appreciate your support either way.</p><p>We simply ask that you let us know so we can make those reserved seats available to other guests who would enjoy the show.</p></div><div className="packet-keep packet-rsvp-action mt-5 rounded-2xl border border-stone-300 bg-stone-50 p-5"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Your Sponsor ID</p><p className="packet-rsvp-code mt-2 text-5xl font-black tracking-[0.22em] text-stone-950">{sponsorCode}</p><p className="packet-rsvp-website mt-4 text-sm font-semibold uppercase tracking-[0.12em] text-stone-500">Sponsor RSVP Website</p><p className="font-semibold">https://www.cumberlandmountainmusic.com/sponsor-rsvp</p>{sponsorRsvpQr ? <Image src={sponsorRsvpQr} alt="QR code for the Sponsor RSVP page" width={210} height={210} unoptimized className="packet-rsvp-qr mx-auto mt-4 h-44 w-44 object-contain" /> : null}<div className="packet-rsvp-instructions mt-3"><p>Scan this QR code or visit the website above.</p><p>Enter your Sponsor ID and let us know whether you&rsquo;ll be attending.</p><p>The process only takes about a minute.</p></div><div className="packet-rsvp-reminder mt-4 border-t border-stone-300 pt-3 text-sm"><p className="font-semibold">Your complimentary sponsor tickets have already been prepared for you.</p><p>Your RSVP simply helps us prepare seating for show night.</p></div></div></section>
             <PacketFooter page={pageNumberFor("rsvp")} total={totalPages} />
           </article> : null}
-          {hasTicketPage ? <article className="packet-page packet-ticket-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-[11pt] leading-7 text-stone-900 shadow-lg"><header className="border-b-2 border-emerald-800 pb-3"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">Complimentary Admission</p><h2 className="packet-heading text-3xl font-semibold">Ticket Information</h2></header><section className="packet-ticket-content packet-keep mt-8 rounded-xl border border-stone-300 p-6"><p>{ticketParagraph}</p>{showReservedSeatSummary ? <div className="packet-ticket-seat-summary mt-5 rounded-xl border border-amber-300/70 bg-amber-50/60 p-4"><p className="packet-ticket-seat-summary-heading text-xs font-semibold uppercase tracking-[0.18em] text-amber-900">Your Reserved Seats</p><div className="mt-1 grid gap-1">{reservedSeatSummary.groups.map((group) => <p key={`${group.section}-${group.rowLabel}`} className="packet-paragraph"><strong>{group.sectionLabel}</strong><span className="packet-ticket-seat-separator mx-2 text-stone-400">•</span>Row {group.rowLabel}<span className="packet-ticket-seat-separator mx-2 text-stone-400">•</span>{group.seatNumbers.length === 1 ? "Seat" : "Seats"} {group.seatNumbers.join(", ")}</p>)}</div><p className="packet-ticket-seat-ids mt-2 text-sm text-stone-600"><strong>Seat IDs:</strong> {reservedSeatSummary.validSeatIds.map((seatId, index) => <span key={seatId}>{index > 0 ? <span className="packet-ticket-seat-separator"> • </span> : null}<span className="packet-ticket-seat-id-value">{seatId}</span></span>)}</p></div> : null}{draft.sections.reservedSeating && draft.admissionType === "reserved" && reservedSeatSummary.validSeatIds.length === 0 ? <p className="mt-3 text-stone-700">Reserved seating is included. Seat information will be provided separately.</p> : null}{showReservedSeatMap ? <div className="packet-ticket-seat-map packet-keep mt-4"><div className="packet-ticket-map-heading"><p className="packet-heading text-lg font-semibold text-stone-900">Reserved Seat Location Map</p><p className="packet-ticket-map-caption text-sm text-stone-600">{draft.sponsorName ? `Highlighted seats are reserved for ${draft.sponsorName}.` : "Highlighted seats are your reserved seats."}</p></div><div className="packet-seat-map-frame overflow-hidden rounded-xl border border-stone-300 bg-stone-50 p-3"><ReservedSeatMap seatStates={reservedSeatMapStates} showCustomerSeatDetails={false} includeSelectedLegend={false} legendVariant="sponsor-packet" chromeVariant="sponsor-packet" sizeVariant="compact" /></div></div> : null}{draft.seatInstructions ? <div className="mt-3"><PacketParagraphs value={draft.seatInstructions} /></div> : null}{draft.ticketEnclosureNote ? <div className="mt-2"><PacketParagraphs value={draft.ticketEnclosureNote} /></div> : null}</section><PacketFooter page={pageNumberFor("tickets")} total={totalPages} /></article> : null}
+          {admissionPass && selectedShow ? <article className="packet-page packet-admission-pass-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-stone-900 shadow-lg"><header className="border-b-2 border-stone-900 pb-5 text-center"><Image src="/cmms-logo.png" alt="Cumberland Mountain Music Show" width={320} height={120} className="mx-auto max-h-24 w-auto object-contain" /><p className="mt-4 text-xs font-black uppercase tracking-[0.3em] text-amber-700">Cumberland Mountain Music Show</p><h2 className="mt-2 text-3xl font-black tracking-[0.08em]">OFFICIAL ADMISSION PASS</h2></header><section className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3 rounded-xl border border-stone-300 bg-stone-50 p-4 text-sm"><div><strong className="block text-[10px] uppercase tracking-widest text-stone-500">Show</strong>{selectedShow.name}</div><div><strong className="block text-[10px] uppercase tracking-widest text-stone-500">Date</strong>{formatSponsorPacketDate(selectedShow.show_date ?? "")}</div><div><strong className="block text-[10px] uppercase tracking-widest text-stone-500">Venue</strong>{selectedShow.venue || "Venue TBD"}</div><div><strong className="block text-[10px] uppercase tracking-widest text-stone-500">Doors / Show</strong>{selectedShow.guest_arrival_time || "6:00 PM"} / {selectedShow.show_start_time || "TBD"}</div></section><section className="mt-5 text-center"><p className="text-xs font-black uppercase tracking-[0.22em] text-amber-700">{admissionPass.admissionLabel}</p><h3 className="mt-2 text-3xl font-black">{admissionPass.sponsorName}</h3>{admissionPass.contactName && admissionPass.contactName !== admissionPass.sponsorName ? <p className="mt-1 text-base text-stone-600">Issued to {admissionPass.contactName}</p> : null}<p className="mt-2 text-sm font-bold">{admissionPass.quantity} admission{admissionPass.quantity === 1 ? "" : "s"}</p></section>{(() => { const seating = sponsorAdmissionSeatSummary(admissionPass); return <section className="mt-5 rounded-2xl border-2 border-stone-900 px-6 py-5 text-center"><p className="text-xs font-black uppercase tracking-[0.25em] text-stone-600">{seating.heading}</p>{seating.lines.map((line, index) => <p key={line} className={index === seating.lines.length - 1 ? "mt-1 text-3xl font-black" : "mt-2 text-xl font-black"}>{line}</p>)}</section>; })()}<section className="mt-5 text-center"><p className="text-base font-black uppercase tracking-[0.16em]">Present this page at the door</p><div className="mt-2"><ReservationTicketCode scanToken={admissionPass.scanToken} format={selectedShow.ticket_code_format} purchaserName={admissionPass.contactName || admissionPass.sponsorName} ticketCount={admissionPass.quantity} seatLabels={admissionPass.seats.map((seat) => seat.seat_id)} printable /></div><p className="mt-2 font-mono text-sm font-bold tracking-[0.08em]">Entry Code: {admissionPass.scanToken}</p>{admissionPass.quantity > 1 ? <p className="mt-2 text-sm font-semibold">One scan admits all {admissionPass.quantity} admissions listed on this pass.</p> : null}</section><PacketFooter page={pageNumberFor("admission-pass")} total={totalPages} /></article> : null}
+          {hasSeatLocationPage ? <article className="packet-page packet-seat-location-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-[11pt] leading-7 text-stone-900 shadow-lg"><header className="border-b-2 border-emerald-800 pb-3"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">Reserved Seating</p><h2 className="packet-heading text-3xl font-semibold">Your Reserved Seat Location</h2><p className="mt-2 text-stone-600">Your reserved seats are highlighted below so you can easily see their location in the auditorium.</p></header><section className="packet-ticket-content packet-keep mt-8">{showReservedSeatSummary ? <div className="packet-ticket-seat-summary rounded-xl border border-amber-300/70 bg-amber-50/60 p-4"><div className="grid gap-1">{reservedSeatSummary.groups.map((group) => <p key={`${group.section}-${group.rowLabel}`} className="packet-paragraph"><strong>{group.sectionLabel}</strong><span className="packet-ticket-seat-separator mx-2 text-stone-400">•</span>Row {group.rowLabel}<span className="packet-ticket-seat-separator mx-2 text-stone-400">•</span>{group.seatNumbers.length === 1 ? "Seat" : "Seats"} {group.seatNumbers.join(", ")}</p>)}</div></div> : null}<div className="packet-ticket-seat-map packet-keep mt-4"><div className="packet-ticket-map-heading"><p className="packet-ticket-map-caption text-sm text-stone-600">Highlighted seats are reserved for {admissionPass?.sponsorName || draft.sponsorName}.</p></div><div className="packet-seat-map-frame overflow-hidden rounded-xl border border-stone-300 bg-stone-50 p-3"><ReservedSeatMap seatStates={reservedSeatMapStates} showCustomerSeatDetails={false} includeSelectedLegend={false} legendVariant="sponsor-packet" chromeVariant="sponsor-packet" sizeVariant="compact" /></div></div></section><PacketFooter page={pageNumberFor("seat-location")} total={totalPages} /></article> : null}
 
           {presentationSections.eventFlyerPlaceholder ? <article className="packet-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-stone-900 shadow-lg"><div className="flex flex-1 items-center justify-center"><div className="w-full rounded-2xl border-2 border-dashed border-stone-300 p-16 text-center"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Insert Location</p><h2 className="packet-heading mt-3 text-3xl font-semibold">Event Flyer</h2><p className="mt-3 text-stone-600">Place the current Cumberland Mountain Music Show event flyer here.</p></div></div><PacketFooter page={pageNumberFor("flyer")} total={totalPages} /></article> : null}
           {presentationSections.businessCardPlaceholder ? <article className="packet-page mx-auto min-h-[11in] w-full max-w-[8.5in] bg-white p-[0.7in] text-stone-900 shadow-lg"><div className="flex flex-1 items-center justify-center"><div className="w-full rounded-2xl border-2 border-dashed border-stone-300 p-16 text-center"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Insert Location</p><h2 className="packet-heading mt-3 text-3xl font-semibold">Business Card</h2><p className="mt-3 text-stone-600">Attach or insert a Cumberland Mountain Music Show contact card here.</p></div></div><PacketFooter page={pageNumberFor("business-card")} total={totalPages} /></article> : null}
