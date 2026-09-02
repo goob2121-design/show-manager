@@ -35,13 +35,14 @@ function formatPublicSaleDate(value: string | null) {
 }
 
 export function buildMailingListPresaleAccessEmail(input: {
-  firstName: string;
+  firstName: string | null | undefined;
   showName: string;
   ticketUrl: string;
   publicSaleStartsAt: string | null;
   presaleCode?: string | null;
 }) {
-  const greeting = input.firstName.trim() ? `Hi ${input.firstName.trim()},` : "Hi there,";
+  const firstName = input.firstName?.trim() ?? "";
+  const greeting = firstName ? `Hey ${firstName}!` : "Hey CMMS Family!";
   const publicSaleDate = formatPublicSaleDate(input.publicSaleStartsAt);
   return renderEmailCenterEmail({
     heading: "Your CMMS Early Access Ticket Link",
@@ -54,7 +55,7 @@ export function buildMailingListPresaleAccessEmail(input: {
 export async function sendMailingListPresaleAccessEmail(
   input: {
     email: string;
-    firstName: string;
+    firstName: string | null | undefined;
     showName: string;
     ticketUrl: string;
     publicSaleStartsAt: string | null;
