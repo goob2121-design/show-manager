@@ -17,6 +17,11 @@ export function SponsorCompRedemptionTokenManager({ showId, showSlug, showSponso
     return `/api/admin/shows/${encodeURIComponent(showId)}/sponsor-comp-redemption-tokens/${encodeURIComponent(tokenId)}/barcode?${query}`;
   }
 
+  function barcodeArchiveUrl() {
+    const query = new URLSearchParams({ slug: showSlug, showSponsorId });
+    return `/api/admin/shows/${encodeURIComponent(showId)}/sponsor-comp-redemption-tokens/barcodes?${query}`;
+  }
+
   async function loadTokens() {
     setLoading(true); setError(null);
     try {
@@ -53,7 +58,14 @@ export function SponsorCompRedemptionTokenManager({ showId, showSlug, showSponso
   return <div className="mt-2 min-w-64 text-xs">
     <button type="button" onClick={() => void toggle()} className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">{open ? "Hide Individual Barcodes" : "Manage Individual Barcodes"}</button>
     {open ? <div className="mt-2 rounded-lg border border-stone-200 bg-stone-50 p-2">
-      <p className="font-bold text-stone-900">Individual Redemption Barcodes</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-bold text-stone-900">Individual Redemption Barcodes</p>
+        {tokens.length > 0 ? (
+          <a href={barcodeArchiveUrl()} download className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 font-semibold text-emerald-800">Download All {tokens.length} Barcodes</a>
+        ) : (
+          <button type="button" disabled className="rounded border border-stone-200 bg-stone-100 px-2 py-1 font-semibold text-stone-400">Download All 0 Barcodes</button>
+        )}
+      </div>
       {loading ? <p className="mt-1 text-stone-500">Loading…</p> : null}
       {error ? <p className="mt-1 text-red-700">{error}</p> : null}
       {!loading && tokens.length === 0 ? <button type="button" onClick={() => void generate()} disabled={allowance <= 0} className="mt-2 rounded-lg bg-emerald-700 px-3 py-1.5 font-bold text-white disabled:opacity-40">Generate {allowance} Individual Barcodes</button> : null}
