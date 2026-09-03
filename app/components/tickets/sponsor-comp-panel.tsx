@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SponsorCompRedemptionTokenManager } from "@/app/components/tickets/sponsor-comp-redemption-token-manager";
 
 export type SponsorCompPanelRow = {
   id: string;
@@ -192,6 +193,8 @@ export function SponsorCompPanel<RowType extends SponsorCompPanelRow>({
                       <td className="px-3 py-2 text-stone-700">{row.reservedSeats || "-"}</td>
                       <td className="px-3 py-2 text-stone-700">{row.checkedIn} of {row.quantity}</td>
                       <td className="px-3 py-2 text-stone-600">{row.notes || "-"}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1.5">
                           {row.admissionPassReady && printStudioExportContext?.showSlug ? (
                             <a href={`/admin/${printStudioExportContext.showSlug}/print/sponsor-admission-pass?id=${encodeURIComponent(row.id)}`} target="_blank" rel="noreferrer" className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-100">
                               Print Admission Pass
@@ -199,12 +202,19 @@ export function SponsorCompPanel<RowType extends SponsorCompPanelRow>({
                           ) : (
                             <span className="self-center text-[11px] text-stone-500">{row.admissionPassStatus}</span>
                           )}
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-1.5">
                           <button type="button" onClick={() => onEditCompEntry(row)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Edit</button>
                           <button type="button" onClick={() => onChangeSeatsForCompEntry(row)} className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-50">Seats</button>
                           <button type="button" onClick={() => onPrintCompEntry(row)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100">Print</button>
                         </div>
+                        {row.category === "sponsor" && printStudioExportContext?.showId && printStudioExportContext.showSlug ? (
+                          <SponsorCompRedemptionTokenManager
+                            showId={printStudioExportContext.showId}
+                            showSlug={printStudioExportContext.showSlug}
+                            showSponsorId={row.id.replace(/^sponsor-/, "")}
+                            sponsorName={row.name}
+                            allowance={row.quantity}
+                          />
+                        ) : null}
                       </td>
                     </tr>
                   ))}

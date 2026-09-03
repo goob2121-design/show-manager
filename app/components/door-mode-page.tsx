@@ -67,12 +67,14 @@ type DoorScanBehavior = "review" | "auto";
 type DoorScanFoundResult = Extract<DoorModeScanLookupResponse, { success: true }>["result"] & {
   kind: "found";
 };
+type DoorSponsorScanResult = Extract<DoorModeScanLookupResponse, { success: true; result: { kind: "sponsor_comp_redemption" } }>["result"];
 
 type DoorScanState =
   | { kind: "idle" }
   | { kind: "invalid" }
   | { kind: "not_found" }
   | { kind: "error"; message: string }
+  | { kind: "sponsor_comp_redemption"; lookup: DoorSponsorScanResult }
   | { kind: "found"; lookup: DoorScanFoundResult };
 
 const DOOR_SCAN_BEHAVIOR_STORAGE_KEY = "stageflow-door-scan-behavior";
@@ -826,6 +828,22 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
         throw new Error(payload && "error" in payload ? payload.error : "Unable to scan this ticket right now.");
       }
 
+      if (payload.result.kind === "sponsor_comp_redemption") {
+        const redemption = payload.result.redemption;
+        if (redemption.showSponsorId && redemption.checkedIn !== null) {
+          setShowSponsors((current) => current.map((sponsor) => sponsor.id === redemption.showSponsorId
+            ? {
+                ...sponsor,
+                comp_tickets_checked_in: redemption.checkedIn ?? sponsor.comp_tickets_checked_in,
+              }
+            : sponsor));
+        }
+        setScanState({ kind: "sponsor_comp_redemption", lookup: payload.result });
+        setScanInput("");
+        focusScanInput();
+        return;
+      }
+
       if (payload.result.kind !== "found") {
         setScanState({ kind: "not_found" });
         setScanInput("");
@@ -1525,6 +1543,22 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                   <p className="mt-1">{scanState.message}</p>
                   <button type="button" onClick={() => resetScanState()} className="mt-2 rounded-lg border border-rose-700/70 px-3 py-2 text-sm font-semibold">Dismiss</button>
                 </div>
+              ) : null}
+
+              {scanState.kind === "sponsor_comp_redemption" ? (
+                <article className={`rounded-xl border px-3 py-3 ${scanState.lookup.redemption.resultStatus === "REDEEMED" ? "border-emerald-800/70 bg-emerald-500/10" : "border-amber-700/70 bg-amber-500/10"}`}>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-200">Complimentary Sponsor Ticket</p>
+                  <h3 className="mt-1 text-xl font-semibold text-gray-50">{scanState.lookup.redemption.sponsorName ?? "Sponsor"}</h3>
+                  <p className="mt-1 text-sm text-gray-200">Ticket {scanState.lookup.redemption.ordinal} of {scanState.lookup.redemption.allowance}</p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+                    <span className="rounded-full border border-gray-700 px-2.5 py-1 text-gray-100">Checked In: {scanState.lookup.redemption.checkedIn} of {scanState.lookup.redemption.allowance}</span>
+                    <span className="rounded-full border border-gray-700 px-2.5 py-1 text-gray-100">Remaining: {scanState.lookup.redemption.remaining}</span>
+                  </div>
+                  <p className="mt-3 font-bold uppercase tracking-[0.12em] text-gray-50">
+                    {scanState.lookup.redemption.resultStatus === "REDEEMED" ? "✓ Checked In" : scanState.lookup.redemption.resultStatus === "ALREADY_REDEEMED" ? "Already Redeemed" : scanState.lookup.redemption.resultStatus === "ALLOCATION_FULL" ? "Sponsor Allocation Full" : "Token Voided"}
+                  </p>
+                  <button type="button" onClick={() => resetScanState()} className="mt-3 min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100">Dismiss</button>
+                </article>
               ) : null}
 
               {scanState.kind === "found" ? (

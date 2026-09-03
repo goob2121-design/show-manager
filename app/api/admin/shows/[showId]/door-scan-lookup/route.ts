@@ -12,6 +12,7 @@ import { getAdminSessionCookieName } from "@/lib/admin-session";
 import { resolveDoorAccess } from "@/lib/door-access";
 import { getDoorStaffSessionCookieName } from "@/lib/door-staff-session";
 import type { ShowReservedSeatingLink } from "@/lib/types";
+import { isSponsorCompRedemptionToken, type SponsorCompRedemptionResult } from "@/lib/sponsor-comp-redemption-tokens";
 
 export const runtime = "nodejs";
 
@@ -104,6 +105,32 @@ export async function POST(request: Request, context: DoorScanLookupRouteContext
     });
     if (!accessRole) {
       return NextResponse.json({ success: false, error: "Door Mode access is required." } satisfies DoorModeScanLookupResponse, { status: 401 });
+    }
+
+    if (isSponsorCompRedemptionToken(normalizedToken)) {
+      const { data, error } = await supabase.rpc("redeem_sponsor_comp_redemption_token", {
+        p_show_id: show.id, p_show_slug: show.slug, p_token: normalizedToken, p_redeemed_by: accessRole,
+      });
+      if (error) throw error;
+      const row = (data as Array<Record<string, unknown>> | null)?.[0];
+      if (!row || row.result_status === "WRONG_SHOW") {
+        return NextResponse.json({ success: true, result: { kind: "not_found" } } satisfies DoorModeScanLookupResponse);
+      }
+      const redemption: SponsorCompRedemptionResult = {
+        resultStatus: row.result_status as SponsorCompRedemptionResult["resultStatus"],
+        tokenId: row.token_id as string | null,
+        showSponsorId: row.show_sponsor_id as string | null,
+        sponsorName: row.sponsor_name as string | null,
+        ordinal: row.ordinal as number | null,
+        allowance: row.allowance as number | null,
+        checkedIn: row.checked_in as number | null,
+        remaining: row.remaining as number | null,
+        redeemedAt: row.redeemed_at as string | null,
+      };
+      return NextResponse.json({
+        success: true,
+        result: { kind: "sponsor_comp_redemption", redemption },
+      } satisfies DoorModeScanLookupResponse);
     }
 
     const { data: linkData, error: linkError } = await supabase

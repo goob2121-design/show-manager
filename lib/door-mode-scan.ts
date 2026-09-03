@@ -1,6 +1,7 @@
 import { checkInAdmissionLabel } from "@/lib/check-in-ticket-classification";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import type { ShowCompTicket, ShowReservedSeatingLink } from "@/lib/types";
+import type { SponsorCompRedemptionResult } from "@/lib/sponsor-comp-redemption-tokens";
 
 const MAX_SCANNED_TOKEN_LENGTH = 128;
 
@@ -19,6 +20,7 @@ export type DoorModeScanLookupTicket = Pick<
 
 export type DoorModeScanLookupResponse =
   | { success: true; result: { kind: "not_found" } }
+  | { success: true; result: { kind: "sponsor_comp_redemption"; redemption: SponsorCompRedemptionResult } }
   | {
       success: true;
       result: {
