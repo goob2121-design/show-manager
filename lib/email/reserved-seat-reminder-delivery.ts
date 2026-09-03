@@ -80,6 +80,7 @@ export async function deliverReservedSeatReminder(input: {
   if (!show || !link) return { reservationId: input.reservationId, outcome: "not_eligible", reason: "general_admission", deliveryId: null, sequenceNumber: null, resendEmailId: null, error: null };
   link.email = await resolveReservedSeatRecipientEmail(input.supabase, {
     showId: link.show_id, customerName: link.customer_name, email: link.email,
+    reservedSeatLinkId: link.id,
     sourceTicketId: link.source_ticket_id, sourceShowSponsorId: link.source_show_sponsor_id,
     isComplimentary: link.is_complimentary, seatCategory: link.seat_category,
   });
@@ -124,5 +125,7 @@ export async function deliverReservedSeatReminder(input: {
   const sentAt = new Date().toISOString();
   const { error: updateError } = await input.supabase.from("reserved_seat_email_deliveries").update({ send_status: "accepted", resend_email_id: result.resendId, sent_at: sentAt, failed_at: null, error_message: null }).eq("id", delivery.id);
   if (updateError) throw updateError;
+  const { error: linkStatusError } = await input.supabase.from("show_reserved_seating_links").update({ last_email_error: null }).eq("id", link.id).eq("show_id", link.show_id);
+  if (linkStatusError) console.error("Reserved-seat reminder sent, but the current link error status could not be cleared.", linkStatusError);
   return { reservationId: link.id, outcome: "sent", reason: null, deliveryId: delivery.id, sequenceNumber: delivery.sequence_number, resendEmailId: result.resendId, error: null };
 }

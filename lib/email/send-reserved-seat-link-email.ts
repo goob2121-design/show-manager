@@ -136,6 +136,7 @@ export async function sendTrackedReservedSeatEmail(
   if (!link) return { success: false, resendId: null, error: "Reserved seating link was not found.", sentAt: null, ...deliveryFlags("failed") };
   link.email = await resolveReservedSeatRecipientEmail(supabase, {
     showId: link.show_id, customerName: link.customer_name, email: link.email,
+    reservedSeatLinkId: link.id,
     sourceTicketId: link.source_ticket_id, sourceShowSponsorId: link.source_show_sponsor_id,
     isComplimentary: link.is_complimentary, seatCategory: link.seat_category,
   });
