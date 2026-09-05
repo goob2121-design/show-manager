@@ -13,6 +13,7 @@ import {
   type DoorModeScanLookupResponse,
   type DoorModeScanLookupTicket,
 } from "@/lib/door-mode-scan";
+import { eligibleDoorModeKeypadQuantity } from "@/lib/door-mode-keyboard-shortcuts";
 import {
   addRecentGuestCheckIn,
   admissionMatchesDoorSearch,
@@ -362,6 +363,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const guestSearchRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const recentScanRef = useRef<{ token: string; timestamp: number } | null>(null);
+  const keypadShortcutInFlightRef = useRef(false);
 
   const loadDoorModeData = useCallback(async () => {
     setIsLoading(true);
@@ -1112,6 +1114,53 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     }
   }
 
+  useEffect(() => {
+    function handleDoorModeKeypadShortcut(event: KeyboardEvent) {
+      const target = event.target instanceof Element ? event.target : null;
+      const isScannerTarget = target === scanInputRef.current;
+      const isEditableTarget = Boolean(
+        target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'),
+      );
+      const modalActive =
+        isTotalsPanelOpen ||
+        isSpecialAdmissionsPanelOpen ||
+        isSponsorCompPanelOpen ||
+        Boolean(seatView) ||
+        isPrintMenuOpen ||
+        Boolean(document.querySelector('[role="dialog"][aria-modal="true"]'));
+      const quantity = eligibleDoorModeKeypadQuantity({
+        key: event.key,
+        repeat: event.repeat,
+        isEditableTarget,
+        isScannerTarget,
+        scannerValue: scanInput,
+        scanLookupPending: isScanLookupPending,
+        actionActive: Boolean(activeActionId) || !show,
+        modalActive,
+        shortcutInFlight: keypadShortcutInFlightRef.current,
+      });
+
+      if (quantity === null) return;
+      event.preventDefault();
+      keypadShortcutInFlightRef.current = true;
+      void handleAddDoorSale(quantity).finally(() => {
+        keypadShortcutInFlightRef.current = false;
+      });
+    }
+
+    document.addEventListener("keydown", handleDoorModeKeypadShortcut);
+    return () => document.removeEventListener("keydown", handleDoorModeKeypadShortcut);
+  }, [
+    activeActionId,
+    isPrintMenuOpen,
+    isScanLookupPending,
+    isSpecialAdmissionsPanelOpen,
+    isSponsorCompPanelOpen,
+    isTotalsPanelOpen,
+    scanInput,
+    seatView,
+    show,
+  ]);
   async function handleSubtractDoorSale() {
     if (!show) {
       return;
