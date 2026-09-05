@@ -97,6 +97,7 @@ export async function processScheduledPresaleCampaign(input: { supabase: Supabas
         subscriber_id: subscriberId, show_id: show.id, recipient: recipient.email,
         subject: campaign.subject_template, ticket_url_snapshot: campaign.ticket_url_snapshot,
         provider_idempotency_key: providerKey, send_status: "pending",
+        delivery_source: "scheduled_campaign",
       }).select("id").single();
       if (error?.code === "23505") continue;
       if (error) throw error;

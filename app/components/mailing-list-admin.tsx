@@ -1,10 +1,13 @@
 "use client";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { deriveMailingListPresaleTracking, type MailingListPresaleDeliveryEvent } from "@/lib/mailing-list-presale-tracking";
 type Subscriber = { id: string; email: string; first_name: string | null; last_name: string | null; status: "active" | "unsubscribed"; source: string; subscribed_at: string; unsubscribed_at: string | null };
 type PresaleDelivery = {
   id: string; recipient: string; send_status: "pending" | "accepted" | "failed"; resend_message_id: string | null;
+  delivery_source: "automatic_signup" | "scheduled_campaign" | null;
   error_message: string | null; sent_at: string | null; failed_at: string | null; created_at: string;
+  events: MailingListPresaleDeliveryEvent[];
   subscriber: { first_name: string | null; last_name: string | null } | null;
   show: { name: string; show_date: string | null } | null;
 };
@@ -27,6 +30,31 @@ function deliveryStatusLabel(status: PresaleDelivery["send_status"]) {
   return status === "accepted" ? "Sent" : status === "failed" ? "Failed" : "Sending";
 }
 
+function lifecycleStatusClass(label: string) {
+  if (/failed|bounced|spam/i.test(label)) return "bg-rose-500/15 text-rose-200";
+  if (/sending|delayed/i.test(label)) return "bg-amber-500/15 text-amber-200";
+  return "bg-emerald-500/15 text-emerald-200";
+}
+
+function deliverySourceLabel(source: PresaleDelivery["delivery_source"]) {
+  return source === "automatic_signup" ? "Automatic signup" : source === "scheduled_campaign" ? "Scheduled campaign" : "Legacy / unknown source";
+}
+
+function PresaleLifecycleDetails({ delivery }: { delivery: PresaleDelivery }) {
+  const tracking = deriveMailingListPresaleTracking({
+    sendStatus: delivery.send_status, sentAt: delivery.sent_at, failedAt: delivery.failed_at,
+    events: delivery.events ?? [],
+  });
+  return <details>
+    <summary className="cursor-pointer text-xs font-bold text-sky-200">View lifecycle</summary>
+    <div className="mt-2 grid gap-1 rounded-lg bg-white/[0.04] p-2 text-xs text-slate-300">
+      <p className="text-slate-400">{deliverySourceLabel(delivery.delivery_source)}</p>
+      {tracking.history.length ? tracking.history.map((line, index) => <p key={`${line.label}-${line.timestamp}-${index}`}><span className="font-semibold text-white">{line.label}:</span> {formatDeliveryDate(line.timestamp)}</p>) : <p>{deliveryStatusLabel(delivery.send_status)}: {formatDeliveryDate(delivery.created_at)}</p>}
+      {delivery.error_message ? <p className="break-words text-rose-200"><span className="font-semibold">Error:</span> {delivery.error_message}</p> : null}
+    </div>
+  </details>;
+}
+
 export function MailingListAdmin({ slug }: { slug: string }) {
   const [items, setItems] = useState<Subscriber[]>([]);
   const [query, setQuery] = useState("");
@@ -36,6 +64,7 @@ export function MailingListAdmin({ slug }: { slug: string }) {
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
   const [presaleDeliveries, setPresaleDeliveries] = useState<PresaleDelivery[]>([]);
+  const [presaleQuery, setPresaleQuery] = useState("");
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/admin/mailing-list?slug=${encodeURIComponent(slug)}`, { cache: "no-store" });
@@ -91,6 +120,12 @@ export function MailingListAdmin({ slug }: { slug: string }) {
     failed: presaleDeliveries.filter((item) => item.send_status === "failed").length,
     pending: presaleDeliveries.filter((item) => item.send_status === "pending").length,
   }), [presaleDeliveries]);
+  const filteredPresaleDeliveries = useMemo(() => {
+    const needle = presaleQuery.trim().toLowerCase();
+    if (!needle) return presaleDeliveries;
+    return presaleDeliveries.filter((delivery) =>
+      `${delivery.subscriber?.first_name ?? ""} ${delivery.subscriber?.last_name ?? ""} ${delivery.recipient}`.toLowerCase().includes(needle));
+  }, [presaleDeliveries, presaleQuery]);
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
@@ -118,36 +153,41 @@ export function MailingListAdmin({ slug }: { slug: string }) {
             </span>
           </summary>
           <div className="border-t border-white/10 p-4 sm:p-5">
+            <input value={presaleQuery} onChange={(event) => setPresaleQuery(event.target.value)} placeholder="Search presale history by name or email" className="mb-4 w-full rounded-xl bg-slate-950 px-3 py-3 text-sm" />
             {presaleDeliveries.length === 0 ? (
-              <p className="text-sm text-slate-400">No automatic presale deliveries have been recorded yet.</p>
+              <p className="text-sm text-slate-400">No presale deliveries have been recorded yet.</p>
+            ) : filteredPresaleDeliveries.length === 0 ? (
+              <p className="text-sm text-slate-400">No presale deliveries match that name or email.</p>
             ) : (
               <>
                 <div className="grid gap-3 md:hidden">
-                  {presaleDeliveries.map((delivery) => {
+                  {filteredPresaleDeliveries.map((delivery) => {
                     const subscriberName = [delivery.subscriber?.first_name, delivery.subscriber?.last_name].filter(Boolean).join(" ") || "—";
                     const attemptedAt = delivery.sent_at ?? delivery.failed_at ?? delivery.created_at;
+                    const tracking = deriveMailingListPresaleTracking({ sendStatus: delivery.send_status, sentAt: delivery.sent_at, failedAt: delivery.failed_at, events: delivery.events ?? [] });
                     return <article key={delivery.id} className="min-w-0 rounded-xl border border-white/10 bg-slate-950 p-4 text-sm">
-                      <div className="flex items-start justify-between gap-3"><p className="font-bold text-white">{subscriberName}</p><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${delivery.send_status === "accepted" ? "bg-emerald-500/15 text-emerald-200" : delivery.send_status === "failed" ? "bg-rose-500/15 text-rose-200" : "bg-amber-500/15 text-amber-200"}`}>{deliveryStatusLabel(delivery.send_status)}</span></div>
+                      <div className="flex items-start justify-between gap-3"><p className="font-bold text-white">{subscriberName}</p><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${lifecycleStatusClass(tracking.currentLabel)}`}>{tracking.currentLabel}</span></div>
                       <a href={`mailto:${delivery.recipient}`} className="mt-2 block break-all text-sky-300 underline">{delivery.recipient}</a>
                       <p className="mt-2 text-slate-300">{formatShow(delivery)}</p>
-                      <p className="mt-1 text-xs text-slate-400">{formatDeliveryDate(attemptedAt)}</p>
-                      {delivery.send_status === "failed" && delivery.error_message ? <details className="mt-3"><summary className="cursor-pointer text-xs font-bold text-rose-200">Failure details</summary><p className="mt-2 break-words rounded-lg bg-rose-500/10 p-2 text-xs text-rose-100">{delivery.error_message}</p></details> : null}
+                      <p className="mt-1 text-xs text-slate-400">Accepted / attempted: {formatDeliveryDate(attemptedAt)}</p>
+                      <div className="mt-3"><PresaleLifecycleDetails delivery={delivery} /></div>
                     </article>;
                   })}
                 </div>
                 <div className="hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead><tr className="text-slate-400"><th className="p-2">Subscriber</th><th>Email</th><th>Show</th><th>Status</th><th>Sent / Attempted</th><th>Details</th></tr></thead>
-                    <tbody>{presaleDeliveries.map((delivery) => {
+                    <tbody>{filteredPresaleDeliveries.map((delivery) => {
                       const subscriberName = [delivery.subscriber?.first_name, delivery.subscriber?.last_name].filter(Boolean).join(" ") || "—";
                       const attemptedAt = delivery.sent_at ?? delivery.failed_at ?? delivery.created_at;
+                      const tracking = deriveMailingListPresaleTracking({ sendStatus: delivery.send_status, sentAt: delivery.sent_at, failedAt: delivery.failed_at, events: delivery.events ?? [] });
                       return <tr key={delivery.id} className="border-t border-white/10 align-top">
                         <td className="p-2">{subscriberName}</td>
                         <td className="py-2 pr-3"><a href={`mailto:${delivery.recipient}`} className="break-all text-sky-300 underline">{delivery.recipient}</a></td>
                         <td className="py-2 pr-3">{formatShow(delivery)}</td>
-                        <td className="py-2 pr-3"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${delivery.send_status === "accepted" ? "bg-emerald-500/15 text-emerald-200" : delivery.send_status === "failed" ? "bg-rose-500/15 text-rose-200" : "bg-amber-500/15 text-amber-200"}`}>{deliveryStatusLabel(delivery.send_status)}</span></td>
+                        <td className="py-2 pr-3"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${lifecycleStatusClass(tracking.currentLabel)}`}>{tracking.currentLabel}</span></td>
                         <td className="py-2 pr-3">{formatDeliveryDate(attemptedAt)}</td>
-                        <td className="py-2">{delivery.send_status === "failed" && delivery.error_message ? <details><summary className="cursor-pointer text-xs font-bold text-rose-200">View failure</summary><p className="mt-2 max-w-xs break-words rounded-lg bg-rose-500/10 p-2 text-xs text-rose-100">{delivery.error_message}</p></details> : "—"}</td>
+                        <td className="py-2"><PresaleLifecycleDetails delivery={delivery} /></td>
                       </tr>;
                     })}</tbody>
                   </table>

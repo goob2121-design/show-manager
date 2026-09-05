@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const [subscriberResult, deliveryResult] = await Promise.all([
     supabase.from("mailing_list_subscribers").select("id,email,first_name,last_name,status,source,subscribed_at,unsubscribed_at,created_at,updated_at").order("created_at", { ascending: false }),
     supabase.from("mailing_list_presale_deliveries")
-      .select("id,recipient,send_status,resend_message_id,error_message,sent_at,failed_at,created_at,subscriber:mailing_list_subscribers(first_name,last_name),show:shows(name,show_date)")
+      .select("id,subscriber_id,recipient,send_status,resend_message_id,delivery_source,error_message,sent_at,failed_at,created_at,subscriber:mailing_list_subscribers(first_name,last_name),show:shows(name,show_date),events:mailing_list_presale_delivery_events(id,resend_message_id,event_type,provider_occurred_at,received_at,recipient,clicked_url,detail)")
       .order("created_at", { ascending: false }).limit(50),
   ]);
   if (subscriberResult.error || deliveryResult.error) return NextResponse.json({ success: false, error: "Unable to load mailing list records." }, { status: 500 });

@@ -46,6 +46,7 @@ export async function sendAutomaticMailingListPresaleAccess(input: {
       ticket_url_snapshot: ticketUrl,
       provider_idempotency_key: providerIdempotencyKey,
       send_status: "pending",
+      delivery_source: "automatic_signup",
     }).select("id").single();
     if (claimError?.code === "23505") return { status: "duplicate" as const };
     if (claimError) throw claimError;
