@@ -1430,9 +1430,36 @@ alter table public.mailing_list_presale_deliveries enable row level security;
 revoke all on table public.mailing_list_presale_deliveries from public, anon, authenticated;
 grant all on table public.mailing_list_presale_deliveries to service_role;
 
+create table if not exists public.mailing_list_presale_delivery_attempts (
+  id uuid primary key,
+  presale_delivery_id uuid not null references public.mailing_list_presale_deliveries(id) on delete cascade,
+  request_id uuid not null unique,
+  attempt_type text not null check (attempt_type in ('manual_resend')),
+  recipient text not null,
+  subject text not null,
+  ticket_url_snapshot text not null,
+  presale_code_snapshot text,
+  rendered_text_snapshot text,
+  administrative_reason text,
+  provider_idempotency_key text not null unique,
+  resend_message_id text,
+  send_status text not null default 'pending' check (send_status in ('pending', 'accepted', 'failed')),
+  error_message text,
+  sent_at timestamptz,
+  failed_at timestamptz,
+  requested_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists mailing_list_presale_delivery_attempts_resend_id_unique on public.mailing_list_presale_delivery_attempts(resend_message_id) where resend_message_id is not null;
+create index if not exists mailing_list_presale_delivery_attempts_delivery_requested_idx on public.mailing_list_presale_delivery_attempts(presale_delivery_id, requested_at desc);
+alter table public.mailing_list_presale_delivery_attempts enable row level security;
+revoke all on table public.mailing_list_presale_delivery_attempts from public, anon, authenticated;
+grant all on table public.mailing_list_presale_delivery_attempts to service_role;
+
 create table if not exists public.mailing_list_presale_delivery_events (
   id uuid primary key default gen_random_uuid(),
   presale_delivery_id uuid not null references public.mailing_list_presale_deliveries(id) on delete cascade,
+  presale_delivery_attempt_id uuid references public.mailing_list_presale_delivery_attempts(id) on delete cascade,
   resend_message_id text not null,
   event_type text not null check (event_type in ('email.sent', 'email.delivered', 'email.delivery_delayed', 'email.complained', 'email.bounced', 'email.opened', 'email.clicked', 'email.failed')),
   provider_event_id text,
@@ -1446,6 +1473,7 @@ create table if not exists public.mailing_list_presale_delivery_events (
 );
 create unique index if not exists mailing_list_presale_delivery_events_fingerprint_unique on public.mailing_list_presale_delivery_events(event_fingerprint);
 create index if not exists mailing_list_presale_delivery_events_delivery_occurred_idx on public.mailing_list_presale_delivery_events(presale_delivery_id, provider_occurred_at asc);
+create index if not exists mailing_list_presale_delivery_events_attempt_occurred_idx on public.mailing_list_presale_delivery_events(presale_delivery_attempt_id, provider_occurred_at asc) where presale_delivery_attempt_id is not null;
 alter table public.mailing_list_presale_delivery_events enable row level security;
 revoke all on table public.mailing_list_presale_delivery_events from public, anon, authenticated;
 grant all on table public.mailing_list_presale_delivery_events to service_role;

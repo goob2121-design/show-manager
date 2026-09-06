@@ -2,6 +2,7 @@ import type { SupportedResendEmailEventType } from "./reserved-seat-email-tracki
 
 export type MailingListPresaleDeliveryEvent = {
   id: string;
+  presale_delivery_attempt_id?: string | null;
   resend_message_id: string;
   event_type: SupportedResendEmailEventType;
   provider_occurred_at: string;

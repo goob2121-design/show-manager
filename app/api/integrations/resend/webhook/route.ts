@@ -98,6 +98,40 @@ async function storeMailingListPresaleEvent(
   return { matched: true, duplicate };
 }
 
+async function storeMailingListPresaleAttemptEvent(
+  supabase: ReturnType<typeof createServiceRoleSupabaseClient>,
+  event: VerifiedResendEmailWebhookEvent,
+  resendEmailId: string,
+  providerEventId: string | null,
+) {
+  const { data: matches, error: lookupError } = await supabase.from("mailing_list_presale_delivery_attempts")
+    .select("id,presale_delivery_id").eq("resend_message_id", resendEmailId);
+  if (lookupError) throw lookupError;
+  if ((matches ?? []).length !== 1) {
+    if ((matches ?? []).length > 1) console.error("Resend webhook found multiple mailing-list presale attempt matches.", { emailId: resendEmailId, matchCount: matches?.length });
+    return { matched: false, duplicate: false };
+  }
+  const attempt = matches![0];
+  const clickedUrl = event.type === "email.clicked" ? event.data.click?.link ?? null : null;
+  const fingerprint = emailCenterEventFingerprint({ providerEventId, resendMessageId: resendEmailId,
+    eventType: event.type, createdAt: event.created_at, clickedUrl });
+  const { error: insertError } = await supabase.from("mailing_list_presale_delivery_events").insert({
+    presale_delivery_id: attempt.presale_delivery_id,
+    presale_delivery_attempt_id: attempt.id,
+    resend_message_id: resendEmailId,
+    event_type: event.type,
+    provider_event_id: providerEventId,
+    recipient: event.data.to[0] ?? null,
+    provider_occurred_at: event.created_at,
+    clicked_url: sanitizeTrackedEmailUrl(clickedUrl),
+    detail: safeEventDetail(event),
+    event_fingerprint: fingerprint,
+  });
+  const duplicate = isDuplicateInsertError(insertError);
+  if (insertError && !duplicate) throw insertError;
+  return { matched: true, duplicate };
+}
+
 export async function POST(request: Request) {
   const webhookSecret = process.env.RESEND_WEBHOOK_SECRET?.trim() ?? "";
   if (!webhookSecret) return NextResponse.json({ success: false, error: "Webhook signing secret is not configured." }, { status: 500 });
@@ -147,8 +181,10 @@ export async function POST(request: Request) {
       const emailCenterResult = await storeEmailCenterEvent(supabase, event, resendEmailId, headerValues.id || null);
       if (emailCenterResult.matched) return NextResponse.json({ success: true, ...emailCenterResult });
       const presaleResult = await storeMailingListPresaleEvent(supabase, event, resendEmailId, headerValues.id || null);
-      if (!presaleResult.matched) console.warn("Resend webhook received for unmatched email.", { emailId: resendEmailId, type: event.type });
-      return NextResponse.json({ success: true, ...presaleResult });
+      if (presaleResult.matched) return NextResponse.json({ success: true, ...presaleResult });
+      const attemptResult = await storeMailingListPresaleAttemptEvent(supabase, event, resendEmailId, headerValues.id || null);
+      if (!attemptResult.matched) console.warn("Resend webhook received for unmatched email.", { emailId: resendEmailId, type: event.type });
+      return NextResponse.json({ success: true, ...attemptResult });
     } catch (error) {
       console.error("Resend webhook non-reserved event storage failed.", { message: error instanceof Error ? error.message : "Unknown error", emailId: resendEmailId, type: event.type });
       return NextResponse.json({ success: false, error: "Unable to store webhook event." }, { status: 500 });

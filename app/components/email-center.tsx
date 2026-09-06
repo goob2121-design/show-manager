@@ -38,6 +38,7 @@ import { scheduledEmailRunForEasternDate } from "@/lib/scheduled-email-time";
 type Recipient = EmailCenterAudienceRecipient;
 type EmailEvent = { id: string; type: string; createdAt: string; recipient: string | null; clickedUrl: string | null; detail: string | null };
 type HistoryItem = {
+  activityType: "email_center" | "automatic_presale" | "presale_resend"; displayType: string;
   id: string; recipientName: string | null; recipientEmail: string; fromAddress: string; replyTo: string | null;
   subject: string; message: string | null; templateKey: string; sendStatus: string; currentStatus: string;
   resendMessageId: string | null; errorMessage: string | null; sentAt: string | null;
@@ -145,6 +146,7 @@ export function EmailCenter({ slug }: { slug: string }) {
   const [bulkOperations, setBulkOperations] = useState<BulkOperation[]>([]);
   const [bulkDeliveries, setBulkDeliveries] = useState<BulkDelivery[]>([]);
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [historySearch, setHistorySearch] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -223,9 +225,11 @@ export function EmailCenter({ slug }: { slug: string }) {
   }, [recipientQuery, uniqueRecipients]);
   const templateLabels = useMemo(() => Object.fromEntries(manualEmailTemplates.map((item) => [item.key, item.label])), []);
   const filteredHistory = history.filter((item) => {
-    if (historyFilter === "all") return true;
-    if (historyFilter === "problems") return ["bounced", "failed", "complained", "delivery_delayed"].includes(item.currentStatus);
-    return item.currentStatus === historyFilter;
+    const statusMatches = historyFilter === "all"
+      || (historyFilter === "problems" ? ["bounced", "failed", "complained", "delivery_delayed"].includes(item.currentStatus) : item.currentStatus === historyFilter);
+    const needle = historySearch.trim().toLowerCase();
+    const searchMatches = !needle || `${item.recipientName ?? ""} ${item.recipientEmail} ${item.subject} ${item.displayType}`.toLowerCase().includes(needle);
+    return statusMatches && searchMatches;
   });
 
   const today = new Date().toISOString().slice(0, 10);
@@ -673,6 +677,7 @@ export function EmailCenter({ slug }: { slug: string }) {
 
         {activeSection === "sent" ? <section className="rounded-3xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl sm:p-7">
           <h2 className="text-xl font-black">Recent Emails</h2><p className="mt-1 text-sm text-slate-400">Immutable message snapshots and Resend delivery activity for this show.</p>
+          <input value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="Search recipient, email, subject, or activity type" className="mt-4 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-3 text-sm text-white" />
           <div className="mt-4 flex flex-wrap gap-2">{(["all","sent","delivered","opened","clicked","problems"] as HistoryFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setHistoryFilter(filter)} className={`rounded-full border px-3 py-1.5 text-xs font-bold uppercase ${historyFilter === filter ? "border-emerald-400 bg-emerald-500/20 text-emerald-100" : "border-white/15 text-slate-300"}`}>{filter}</button>)}</div>
           {isLoading ? <p className="mt-5 text-sm text-slate-400">Loading Email Center...</p> : null}
           {loadError ? <p className="mt-5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{loadError}</p> : null}
@@ -680,7 +685,7 @@ export function EmailCenter({ slug }: { slug: string }) {
           <div className="mt-5 grid gap-3">{filteredHistory.map((item) => <details key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <summary className="cursor-pointer list-none">
               <div className="grid gap-2 sm:grid-cols-[1.2fr_2fr_auto_auto] sm:items-center">
-                <div><p className="font-bold text-white">{item.recipientName || item.recipientEmail}</p><p className="text-xs text-slate-400">{item.recipientEmail}</p></div>
+                <div><p className="font-bold text-white">{item.recipientName || item.recipientEmail}</p><p className="text-xs text-slate-400">{item.recipientEmail}</p><p className="mt-1 text-[0.68rem] font-bold uppercase tracking-wider text-amber-200">{item.displayType}</p></div>
                 <p className="text-sm text-slate-200">{item.subject}</p><p className="text-xs text-slate-400">{formatDateTime(item.createdAt)}</p>
                 <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-bold uppercase ${statusTone(item.currentStatus)}`}>{statusLabel(item.currentStatus)}'</span>
               </div>
@@ -689,10 +694,10 @@ export function EmailCenter({ slug }: { slug: string }) {
               <div className="grid gap-2 text-sm"><h3 className="font-bold uppercase tracking-wider text-slate-400">Message Details</h3>
                 <p><span className="text-slate-400">To:</span> {item.recipientName ? `${item.recipientName} <${item.recipientEmail}>` : item.recipientEmail}</p>
                 <p><span className="text-slate-400">From:</span> {item.fromAddress}</p><p><span className="text-slate-400">Reply-To:</span> {item.replyTo || ""}</p>
-                <p><span className="text-slate-400">Template:</span> {templateLabels[item.templateKey] ?? item.templateKey}</p>
+                <p><span className="text-slate-400">Type:</span> {item.displayType}</p><p><span className="text-slate-400">Template:</span> {templateLabels[item.templateKey] ?? item.templateKey}</p>
                 <p><span className="text-slate-400">Subject:</span> {item.subject}</p><p><span className="text-slate-400">Sent:</span> {formatDateTime(item.sentAt)}</p>
                 <p><span className="text-slate-400">Resend ID:</span> {item.resendMessageId || ""}</p>
-                <pre className="mt-2 whitespace-pre-wrap rounded-xl bg-slate-950 p-3 font-sans text-sm leading-6">{item.message || "Historical message body unavailable."}</pre>
+                <pre className="mt-2 whitespace-pre-wrap rounded-xl bg-slate-950 p-3 font-sans text-sm leading-6">{item.message || (item.activityType === "automatic_presale" ? "Automatic presale body snapshot was not stored for this delivery." : "Historical message body unavailable.")}</pre>
               </div>
               <div><h3 className="font-bold uppercase tracking-wider text-slate-400">Email Activity</h3>
                 <ol className="mt-3 grid gap-3 text-sm"><li><span className="text-slate-400">{formatDateTime(item.createdAt)}</span>  Email created</li>

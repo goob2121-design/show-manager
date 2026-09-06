@@ -22,6 +22,8 @@ import { formatEmailCenterSaleDate, PRESALE_EMAIL_TEMPLATE_KEY, validatePresaleE
 import { getEffectiveTicketSaleState } from "@/lib/ticket-sale-status";
 import { formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { buildReservedSeatSelectionUrl } from "@/lib/server/stageflow-public-url";
+import { deriveMailingListPresaleTracking, type MailingListPresaleDeliveryEvent } from "@/lib/mailing-list-presale-tracking";
+import { MAILING_LIST_WELCOME_SENDER } from "@/lib/mailing-list-welcome-email";
 
 export const runtime = "nodejs";
 
@@ -35,6 +37,19 @@ type ManualEmailHistoryRow = {
   send_status: "queued" | "sent" | "failed"; current_status: string | null;
   resend_message_id: string | null; error_message: string | null; sent_at: string | null;
   last_activity_at: string | null; created_at: string; manual_email_events?: EmailEventRow[];
+};
+type PresaleAttemptRow = {
+  id: string; recipient: string; subject: string; rendered_text_snapshot: string | null;
+  send_status: "pending" | "accepted" | "failed"; resend_message_id: string | null;
+  error_message: string | null; sent_at: string | null; failed_at: string | null; requested_at: string;
+  events?: MailingListPresaleDeliveryEvent[];
+};
+type PresaleDeliveryRow = {
+  id: string; recipient: string; subject: string; delivery_source: "automatic_signup" | "scheduled_campaign" | null;
+  send_status: "pending" | "accepted" | "failed"; resend_message_id: string | null;
+  error_message: string | null; sent_at: string | null; failed_at: string | null; created_at: string;
+  subscriber: { first_name: string | null; last_name: string | null } | Array<{ first_name: string | null; last_name: string | null }> | null;
+  events?: MailingListPresaleDeliveryEvent[]; attempts?: PresaleAttemptRow[];
 };
 type Recipient = {
   id: string; name: string; email: string; sourceLabel: string; detail: string;
@@ -71,6 +86,7 @@ async function authorize(slug: string) {
 }
 function publicHistory(row: ManualEmailHistoryRow) {
   return {
+    activityType: "email_center" as const, displayType: "Email Center",
     id: row.id, recipientName: row.recipient_name, recipientEmail: row.recipient_email,
     fromAddress: row.from_address, replyTo: row.reply_to, subject: row.subject,
     message: row.message_text, templateKey: row.template_key, sendStatus: row.send_status,
@@ -81,6 +97,32 @@ function publicHistory(row: ManualEmailHistoryRow) {
       id: event.id, type: event.event_type, createdAt: event.event_created_at,
       recipient: event.recipient, clickedUrl: event.safe_clicked_url, detail: event.detail,
     })),
+  };
+}
+function presaleCurrentStatus(label: string) {
+  if (label === "Delivery Delayed") return "delivery_delayed";
+  if (label === "Reported as Spam") return "complained";
+  return label.toLowerCase().replace(" (estimated)", "").replace(/\s+/g, "_");
+}
+function publicPresaleActivity(input: {
+  id: string; activityType: "automatic_presale" | "presale_resend"; recipient: string; subject: string;
+  message: string | null; sendStatus: "pending" | "accepted" | "failed"; resendMessageId: string | null;
+  errorMessage: string | null; sentAt: string | null; failedAt: string | null; createdAt: string;
+  recipientName: string | null; events: MailingListPresaleDeliveryEvent[];
+}) {
+  const tracking = deriveMailingListPresaleTracking({ sendStatus: input.sendStatus, sentAt: input.sentAt, failedAt: input.failedAt, events: input.events });
+  return {
+    id: input.id, activityType: input.activityType,
+    displayType: input.activityType === "automatic_presale" ? "Automatic Presale Access" : "Presale Access Resend",
+    recipientName: input.recipientName, recipientEmail: input.recipient,
+    fromAddress: MAILING_LIST_WELCOME_SENDER.from, replyTo: MANUAL_EMAIL_REPLY_TO,
+    subject: input.subject, message: input.message, templateKey: PRESALE_EMAIL_TEMPLATE_KEY,
+    sendStatus: input.sendStatus, currentStatus: presaleCurrentStatus(tracking.currentLabel),
+    resendMessageId: input.resendMessageId, errorMessage: input.errorMessage,
+    sentAt: input.sentAt, lastActivityAt: tracking.currentTimestamp ?? input.createdAt, createdAt: input.createdAt,
+    events: input.events.map((event) => ({ id: event.id, type: event.event_type,
+      createdAt: event.provider_occurred_at, recipient: event.recipient,
+      clickedUrl: event.clicked_url, detail: event.detail })),
   };
 }
 export function emailCenterShowMergeFields(show: { name: string; show_date: string | null; show_start_time: string | null; presale_starts_at: string | null; public_sale_starts_at: string | null; ticket_link: string | null; presale_access_code: string | null }) {
@@ -185,11 +227,40 @@ export async function GET(request: NextRequest) {
         showContext: { slug: access.show.slug, name: access.show.name, showDate: access.show.show_date, ticketSaleStatus: access.show.ticket_sale_status, effectiveTicketSaleStatus: effectiveSaleState.status, ticketSaleManualOverride: effectiveSaleState.manualOverride, ticketSaleConfigurationError: effectiveSaleState.configurationError },
         currentUpcomingShow: currentUpcomingShow ? { slug: currentUpcomingShow.slug, name: currentUpcomingShow.name, showDate: currentUpcomingShow.show_date } : null });
     }
-    const { data, error } = await access.supabase.from("manual_email_history").select(HISTORY_SELECT)
-      .eq("show_id", access.show.id).order("created_at", { ascending: false })
-      .order("event_created_at", { referencedTable: "manual_email_events", ascending: true }).limit(50);
-    if (error) throw error;
-    return NextResponse.json({ success: true, history: ((data ?? []) as unknown as ManualEmailHistoryRow[]).map(publicHistory) });
+    const [manualResult, presaleResult] = await Promise.all([
+      access.supabase.from("manual_email_history").select(HISTORY_SELECT)
+        .eq("show_id", access.show.id).order("created_at", { ascending: false })
+        .order("event_created_at", { referencedTable: "manual_email_events", ascending: true }).limit(50),
+      access.supabase.from("mailing_list_presale_deliveries")
+        .select("id,recipient,subject,delivery_source,send_status,resend_message_id,error_message,sent_at,failed_at,created_at,subscriber:mailing_list_subscribers(first_name,last_name),events:mailing_list_presale_delivery_events(id,presale_delivery_attempt_id,resend_message_id,event_type,provider_occurred_at,received_at,recipient,clicked_url,detail),attempts:mailing_list_presale_delivery_attempts(id,recipient,subject,rendered_text_snapshot,send_status,resend_message_id,error_message,sent_at,failed_at,requested_at,events:mailing_list_presale_delivery_events(id,presale_delivery_attempt_id,resend_message_id,event_type,provider_occurred_at,received_at,recipient,clicked_url,detail))")
+        .eq("show_id", access.show.id),
+    ]);
+    if (manualResult.error || presaleResult.error) throw manualResult.error ?? presaleResult.error;
+    const manual = ((manualResult.data ?? []) as unknown as ManualEmailHistoryRow[]).map(publicHistory);
+    const presale = (presaleResult.data ?? []) as unknown as PresaleDeliveryRow[];
+    const presaleActivity = presale.flatMap((delivery) => {
+      const subscriber = Array.isArray(delivery.subscriber) ? delivery.subscriber[0] : delivery.subscriber;
+      const recipientName = [subscriber?.first_name, subscriber?.last_name].filter(Boolean).join(" ") || null;
+      const originalEvents = (delivery.events ?? []).filter((event) => !event.presale_delivery_attempt_id);
+      const original = delivery.delivery_source === "automatic_signup" ? [publicPresaleActivity({
+        id: `presale:${delivery.id}`, activityType: "automatic_presale", recipient: delivery.recipient,
+        subject: delivery.subject, message: null, sendStatus: delivery.send_status,
+        resendMessageId: delivery.resend_message_id, errorMessage: delivery.error_message,
+        sentAt: delivery.sent_at, failedAt: delivery.failed_at, createdAt: delivery.created_at,
+        recipientName, events: originalEvents,
+      })] : [];
+      const attempts = (delivery.attempts ?? []).map((attempt) => publicPresaleActivity({
+        id: `presale-attempt:${attempt.id}`, activityType: "presale_resend", recipient: attempt.recipient,
+        subject: attempt.subject, message: attempt.rendered_text_snapshot, sendStatus: attempt.send_status,
+        resendMessageId: attempt.resend_message_id, errorMessage: attempt.error_message,
+        sentAt: attempt.sent_at, failedAt: attempt.failed_at, createdAt: attempt.requested_at,
+        recipientName, events: attempt.events ?? [],
+      }));
+      return [...original, ...attempts];
+    });
+    const history = [...manual, ...presaleActivity]
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()).slice(0, 50);
+    return NextResponse.json({ success: true, history });
   } catch (error) {
     console.error("Email Center history lookup failed.", { message: error instanceof Error ? error.message : "Unknown error" });
     return NextResponse.json({ success: false, error: "Unable to load Email Center data." }, { status: 500 });

@@ -52,7 +52,7 @@ test("Add Subscriber captures the form before awaiting and resets only after suc
 test("Email Center continues resolving edited first and last names from subscriber lookup", async () => {
   const source = await readFile(emailCenterRouteUrl, "utf8");
   assert.match(source, /from\("mailing_list_subscribers"\)\.select\("id,email,first_name,last_name"\)\.eq\("status", "active"\)/);
-  assert.match(source, /first_name: names\.firstName \|\| "Friend", last_name: names\.lastName/);
+  assert.match(source, /first_name: names\.firstName, last_name: names\.lastName/);
 });
 
 test("schema already has nullable name columns and public routes cannot invoke admin name updates", async () => {

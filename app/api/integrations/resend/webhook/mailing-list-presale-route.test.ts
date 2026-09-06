@@ -10,12 +10,13 @@ test("verified unmatched events next try exact mailing-list presale provider mat
   const reserved = source.indexOf('from("reserved_seat_email_deliveries")');
   const manual = source.indexOf("storeEmailCenterEvent(supabase");
   const presale = source.indexOf("storeMailingListPresaleEvent(supabase");
-  assert.ok(reserved >= 0 && reserved < manual && manual < presale);
+  const presaleAttempt = source.indexOf("storeMailingListPresaleAttemptEvent(supabase");
+  assert.ok(reserved >= 0 && reserved < manual && manual < presale && presale < presaleAttempt);
   assert.match(source, /from\("mailing_list_presale_deliveries"\)[\s\S]*?eq\("resend_message_id", resendEmailId\)/);
   assert.match(source, /from\("mailing_list_presale_delivery_events"\)\.insert/);
   assert.match(source, /sanitizeTrackedEmailUrl\(clickedUrl\)/);
   assert.match(source, /event_fingerprint: fingerprint/);
-  assert.match(source, /if \(!presaleResult\.matched\) console\.warn\("Resend webhook received for unmatched email\./);
+  assert.match(source, /if \(!attemptResult\.matched\) console\.warn\("Resend webhook received for unmatched email\./);
 });
 
 test("new automatic and scheduled claims record their source without changing historical rows", async () => {
@@ -23,6 +24,15 @@ test("new automatic and scheduled claims record their source without changing hi
   const scheduled = await readFile(new URL("../../../../../lib/scheduled-presale-campaign.ts", import.meta.url), "utf8");
   assert.match(automatic, /delivery_source: "automatic_signup"/);
   assert.match(scheduled, /delivery_source: "scheduled_campaign"/);
+});
+
+test("manual resend provider IDs match only after original presale delivery matching", async () => {
+  const source = await readFile(routeUrl, "utf8");
+  const original = source.indexOf("storeMailingListPresaleEvent(supabase");
+  const attempt = source.indexOf("storeMailingListPresaleAttemptEvent(supabase");
+  assert.ok(original >= 0 && original < attempt);
+  assert.match(source, /from\("mailing_list_presale_delivery_attempts"\)[\s\S]*?eq\("resend_message_id", resendEmailId\)/);
+  assert.match(source, /presale_delivery_attempt_id: attempt\.id/);
 });
 
 test("presale webhook storage is append-only and does not alter sends or operations", async () => {
