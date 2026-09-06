@@ -33,11 +33,11 @@ test("database migration defaults existing shows off and enforces gross-sale uni
   assert.match(source, /System-managed Finance items are read-only/);
 });
 
-test("Finance UI identifies Square-managed rows and blocks edit/delete while manual forms remain", async () => {
+test("Finance UI identifies Square-managed rows and blocks system-managed edit/delete while manual forms remain", async () => {
   const source = await readFile(showPageUrl, "utf8");
   assert.match(source, /Square · Auto/);
-  assert.match(source, /item\.is_system_managed && item\.source === "square"/);
-  assert.match(source, /Square-managed Finance items are read-only/);
+  assert.match(source, /return item\.is_system_managed/);
+  assert.match(source, /System-managed Finance items are read-only/);
   assert.match(source, /Add manual income items for this show/);
   assert.match(source, /Add manual expenses for this show/);
   assert.match(source, /\.from\("show_finance_items"\)[\s\S]*?\.insert\(\{/);

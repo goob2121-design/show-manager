@@ -10,7 +10,8 @@ import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { buildShowTimelineMessages } from "@/lib/show-reminders";
 import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
 import { createClient } from "@/lib/supabase/client";
-import type { GuestProfile, SetlistEntry, ShowCompTicket, ShowFinanceItem, ShowGuestSong, ShowRecord, ShowReservedSeatingLink } from "@/lib/types";
+import { aggregateFinanceItems, normalizePersonnelPayout } from "@/lib/show-personnel";
+import type { GuestProfile, SetlistEntry, ShowCompTicket, ShowFinanceItem, ShowGuestSong, ShowPayoutItem, ShowRecord, ShowReservedSeatingLink } from "@/lib/types";
 
 type SetlistEntryRow = SetlistEntry & {
   guest_song?: ShowGuestSong | ShowGuestSong[] | null;
@@ -1316,21 +1317,31 @@ export default function ShowsDashboardPage() {
       const nextCurrentShow =
         nextShows.find((show) => !show.is_archived && show.show_date && show.show_date >= new Date().toISOString().slice(0, 10)) ??
         null;
-      const [{ data: financeItemsData, error: financeItemsError }] = await Promise.all([
+      const [
+        { data: financeItemsData, error: financeItemsError },
+        { data: personnelItemsData, error: personnelItemsError },
+      ] = await Promise.all([
         supabase.from("show_finance_items").select("*"),
+        supabase.from("show_payout_items").select("*").eq("entry_kind", "personnel"),
       ]);
 
-      if (financeItemsError) {
-        console.error("Failed to load yearly finance summary items.", financeItemsError);
+      if (financeItemsError || personnelItemsError) {
+        const financeLoadError = financeItemsError ?? personnelItemsError;
+        console.error("Failed to load yearly finance summary items.", financeLoadError);
         setFinanceItems([]);
-        setFinanceSummaryErrorMessage(getErrorMessage(financeItemsError));
+        setFinanceSummaryErrorMessage(getErrorMessage(financeLoadError));
       } else {
         setFinanceItems(
-          Array.isArray(financeItemsData)
-            ? financeItemsData.map((item) =>
+          aggregateFinanceItems(
+            Array.isArray(financeItemsData)
+              ? financeItemsData.map((item) =>
                 normalizeShowFinanceItem(item as Partial<ShowFinanceItem> & { amount?: unknown }),
               )
-            : [],
+              : [],
+            Array.isArray(personnelItemsData)
+              ? personnelItemsData.map((item) => normalizePersonnelPayout(item as ShowPayoutItem))
+              : [],
+          ),
         );
       }
 

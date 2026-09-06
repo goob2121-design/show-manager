@@ -340,7 +340,26 @@ export type ShowPayoutItem = {
   amount: number;
   paid: boolean;
   payment_method: string | null;
+  entry_kind: "general" | "personnel";
+  personnel_profile_id: string | null;
+  guest_profile_id: string | null;
+  role_snapshot: string | null;
+  paid_at: string | null;
+  payment_note: string | null;
+  display_order: number;
   created_at: string;
+  updated_at: string;
+};
+
+export type PersonnelProfile = {
+  id: string;
+  display_name: string;
+  default_role: string | null;
+  default_pay_amount: number;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ShowCompTicket = {

@@ -505,6 +505,31 @@ create table if not exists public.show_checklist_items (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.personnel_profiles (
+  id uuid primary key default gen_random_uuid(),
+  display_name text not null,
+  default_role text,
+  default_pay_amount numeric(12,2) not null default 0,
+  is_active boolean not null default true,
+  display_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint personnel_profiles_display_name_nonblank check (btrim(display_name) <> ''),
+  constraint personnel_profiles_default_pay_nonnegative check (default_pay_amount >= 0)
+);
+
+create unique index if not exists personnel_profiles_display_name_unique
+  on public.personnel_profiles (lower(btrim(display_name)));
+
+alter table public.personnel_profiles enable row level security;
+revoke all on table public.personnel_profiles from public, anon, authenticated;
+grant select, insert, update, delete on table public.personnel_profiles to service_role;
+
+drop policy if exists "service role manages personnel profiles" on public.personnel_profiles;
+create policy "service role manages personnel profiles"
+  on public.personnel_profiles for all to service_role
+  using (true) with check (true);
+
 create table if not exists public.show_payout_items (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows(id) on delete cascade,
@@ -514,7 +539,16 @@ create table if not exists public.show_payout_items (
   amount numeric not null default 0,
   paid boolean not null default false,
   payment_method text,
-  created_at timestamptz not null default now()
+  entry_kind text not null default 'general' check (entry_kind in ('general', 'personnel')),
+  personnel_profile_id uuid references public.personnel_profiles(id) on delete restrict,
+  guest_profile_id uuid references public.guest_profiles(id) on delete set null,
+  role_snapshot text,
+  paid_at timestamptz,
+  payment_note text,
+  display_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint show_payout_items_amount_nonnegative check (amount >= 0)
 );
 
 create table if not exists public.show_comp_tickets (
@@ -588,6 +622,14 @@ create index if not exists show_checklist_items_show_id_created_at_idx
 
 create index if not exists show_payout_items_show_id_created_at_idx
   on public.show_payout_items(show_id, created_at);
+
+create unique index if not exists show_payout_items_personnel_profile_unique
+  on public.show_payout_items(show_id, personnel_profile_id)
+  where entry_kind = 'personnel' and personnel_profile_id is not null;
+
+create unique index if not exists show_payout_items_personnel_guest_unique
+  on public.show_payout_items(show_id, guest_profile_id)
+  where entry_kind = 'personnel' and guest_profile_id is not null;
 
 create index if not exists show_comp_tickets_show_id_created_at_idx
   on public.show_comp_tickets(show_id, created_at);

@@ -7,6 +7,7 @@ import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
+import { ShowPersonnelPanel } from "@/app/components/show-personnel-panel";
 import { SongEditorPanel } from "@/app/components/song-editor-panel";
 import { SponsorLibraryProfileFields } from "@/app/components/sponsor-library-profile-fields";
 import { SponsorRsvpAdminPanel } from "@/app/components/sponsor-rsvp-admin-panel";
@@ -60,6 +61,7 @@ import {
 } from "@/lib/show-reminders";
 import { buildMcPlacementSponsors, sortMcSponsorReads } from "@/lib/mc-sponsor-reads";
 import { createClient } from "@/lib/supabase/client";
+import { aggregateFinanceItems, normalizePersonnelPayout } from "@/lib/show-personnel";
 import type {
   CompTicketFormState,
   FinanceItemFormState,
@@ -165,7 +167,7 @@ type AdminTab =
 type BandTab = "setlist" | "songs" | "rehearsal" | "itinerary" | "promo-materials";
 type GuestTab = "welcome" | "songs" | "artist-info" | "itinerary" | "promo-materials";
 type SponsorAdminTab = "library" | "current-show" | "rsvp" | "print";
-type FinanceAdminSubTab = "reporting" | "payouts";
+type FinanceAdminSubTab = "reporting" | "personnel" | "payouts";
 type MusicAdminSubTab = "setlist" | "songs";
 type SetlistSectionConfig = {
   key: SetSection;
@@ -251,9 +253,14 @@ const financeAdminSubTabItems: Array<{
     description: "Current show finance and yearly reporting tools.",
   },
   {
+    key: "personnel",
+    label: "Personnel Pay",
+    description: "Show staffing, committed pay, settlement, and personnel printing.",
+  },
+  {
     key: "payouts",
-    label: "Payout Sheet",
-    description: "Night-of-show payout tracking and printing.",
+    label: "Other Payouts",
+    description: "Non-personnel night-of-show payout tracking and printing.",
   },
 ];
 
@@ -1910,28 +1917,15 @@ function sortFinanceItems(items: ShowFinanceItem[]) {
   return [...items].sort((itemA, itemB) => itemB.created_at.localeCompare(itemA.created_at));
 }
 
-function isSquareManagedFinanceItem(item: ShowFinanceItem) {
-  return item.is_system_managed && item.source === "square";
+function isSystemManagedFinanceItem(item: ShowFinanceItem) {
+  return item.is_system_managed;
 }
 
 function normalizeShowPayoutItem(
   item: Omit<ShowPayoutItem, "amount"> & { amount: number | string | null },
 ): ShowPayoutItem {
-  const parsedAmount =
-    typeof item.amount === "number"
-      ? item.amount
-      : typeof item.amount === "string"
-        ? Number.parseFloat(item.amount)
-        : 0;
-
-  return {
-    ...item,
-    amount: Number.isFinite(parsedAmount) ? parsedAmount : 0,
-    category: item.category ?? null,
-    description: item.description ?? null,
-    payment_method: item.payment_method ?? null,
-    paid: item.paid ?? false,
-  };
+  return normalizePersonnelPayout({ ...item, category: item.category ?? null, description: item.description ?? null,
+    payment_method: item.payment_method ?? null, paid: item.paid ?? false });
 }
 
 function buildPayoutFormState(item: ShowPayoutItem): PayoutFormState {
@@ -6980,6 +6974,8 @@ export function ShowPage({
   const shouldShowAdminFinanceTab = isAdminView && activeAdminTab === "finance";
   const shouldShowFinanceReportingSubTab =
     shouldShowAdminFinanceTab && activeFinanceAdminSubTab === "reporting";
+  const shouldShowFinancePersonnelSubTab =
+    shouldShowAdminFinanceTab && activeFinanceAdminSubTab === "personnel";
   const shouldShowFinancePayoutSubTab =
     shouldShowAdminFinanceTab && activeFinanceAdminSubTab === "payouts";
   const shouldShowSongSubmissionForm = shouldShowAdminSongSubmission;
@@ -7032,33 +7028,47 @@ export function ShowPage({
           ),
     [promoMaterialFilter, promoMaterials],
   );
+  const aggregatedFinanceItems = useMemo(
+    () => aggregateFinanceItems(financeItems, payoutItems),
+    [financeItems, payoutItems],
+  );
   const totalIncome = useMemo(
     () =>
-      financeItems
+      aggregatedFinanceItems
         .filter((item) => item.type === "income")
         .reduce((sum, item) => sum + item.amount, 0),
-    [financeItems],
+    [aggregatedFinanceItems],
   );
   const totalExpenses = useMemo(
     () =>
-      financeItems
+      aggregatedFinanceItems
         .filter((item) => item.type === "expense")
         .reduce((sum, item) => sum + item.amount, 0),
-    [financeItems],
+    [aggregatedFinanceItems],
   );
   const netProfit = totalIncome - totalExpenses;
   const profitMargin = formatProfitMargin(totalIncome, netProfit);
   const incomeFinanceItems = useMemo(
-    () => financeItems.filter((item) => item.type === "income"),
-    [financeItems],
+    () => aggregatedFinanceItems.filter((item) => item.type === "income"),
+    [aggregatedFinanceItems],
   );
   const expenseFinanceItems = useMemo(
-    () => financeItems.filter((item) => item.type === "expense"),
-    [financeItems],
+    () => aggregatedFinanceItems.filter((item) => item.type === "expense"),
+    [aggregatedFinanceItems],
   );
-  const payoutTotalAmount = useMemo(
-    () => payoutItems.reduce((sum, item) => sum + item.amount, 0),
+  const generalPayoutItems = useMemo(
+    () => payoutItems.filter((item) => item.entry_kind !== "personnel"),
     [payoutItems],
+  );
+  const handlePersonnelChange = useCallback((personnelItems: ShowPayoutItem[]) => {
+    setPayoutItems((currentItems) => [
+      ...currentItems.filter((item) => item.entry_kind !== "personnel"),
+      ...personnelItems,
+    ]);
+  }, []);
+  const payoutTotalAmount = useMemo(
+    () => generalPayoutItems.reduce((sum, item) => sum + item.amount, 0),
+    [generalPayoutItems],
   );
   const paidOnlineOrders = useMemo(
     () =>
@@ -7140,10 +7150,10 @@ export function ShowPage({
     return payoutCategoryOptions
       .map((category) => ({
         category,
-        items: payoutItems.filter((item) => (item.category ?? "Other Expense") === category),
+        items: generalPayoutItems.filter((item) => (item.category ?? "Other Expense") === category),
       }))
       .filter((group) => group.items.length > 0);
-  }, [payoutItems]);
+  }, [generalPayoutItems]);
   const availableYearlyFinanceYears = useMemo(() => {
     const years = new Set<number>([new Date().getUTCFullYear()]);
 
@@ -7714,7 +7724,7 @@ export function ShowPage({
   }
 
   function startEditingFinanceItem(item: ShowFinanceItem) {
-    if (isSquareManagedFinanceItem(item)) return;
+    if (isSystemManagedFinanceItem(item)) return;
     setEditingFinanceItemId(item.id);
     setEditingFinanceItemFormState(buildFinanceItemFormState(item));
     setFinanceErrorMessage(null);
@@ -7792,8 +7802,8 @@ export function ShowPage({
   }
 
   async function handleSaveFinanceItem(item: ShowFinanceItem) {
-    if (isSquareManagedFinanceItem(item)) {
-      setFinanceErrorMessage("Square-managed Finance items are read-only.");
+    if (isSystemManagedFinanceItem(item)) {
+      setFinanceErrorMessage("System-managed Finance items are read-only.");
       return;
     }
 
@@ -7857,8 +7867,8 @@ export function ShowPage({
   }
 
   async function handleDeleteFinanceItem(item: ShowFinanceItem) {
-    if (isSquareManagedFinanceItem(item)) {
-      setFinanceErrorMessage("Square-managed Finance items are read-only.");
+    if (isSystemManagedFinanceItem(item)) {
+      setFinanceErrorMessage("System-managed Finance items are read-only.");
       return;
     }
 
@@ -9316,7 +9326,7 @@ export function ShowPage({
     const printHtml = buildPayoutSheetHtml({
       showName: show.name,
       showDate: show.show_date,
-      payoutItems,
+      payoutItems: generalPayoutItems,
     });
     openPrintDocumentWindow(printHtml);
   }
@@ -9333,7 +9343,7 @@ export function ShowPage({
       showName: show?.name ?? "Show",
       showDate: show?.show_date ?? null,
       venue: show?.venue ?? null,
-      financeItems,
+      financeItems: aggregatedFinanceItems,
     });
 
     const triggerPrint = () => {
@@ -9977,7 +9987,11 @@ export function ShowPage({
     async function loadYearlyFinanceSummary() {
       try {
         const supabase = createClient();
-        const [{ data: yearlyShowsData, error: yearlyShowsError }, { data: yearlyItemsData, error: yearlyItemsError }] =
+        const [
+          { data: yearlyShowsData, error: yearlyShowsError },
+          { data: yearlyItemsData, error: yearlyItemsError },
+          { data: yearlyPersonnelData, error: yearlyPersonnelError },
+        ] =
           await Promise.all([
             supabase
               .from("shows")
@@ -9985,6 +9999,7 @@ export function ShowPage({
               .order("show_date", { ascending: true, nullsFirst: false })
               .order("created_at", { ascending: false }),
             supabase.from("show_finance_items").select("*"),
+            supabase.from("show_payout_items").select("*").eq("entry_kind", "personnel"),
           ]);
 
         if (yearlyShowsError) {
@@ -9995,19 +10010,28 @@ export function ShowPage({
           throw yearlyItemsError;
         }
 
+        if (yearlyPersonnelError) {
+          throw yearlyPersonnelError;
+        }
+
         if (isCancelled) {
           return;
         }
 
         setYearlyFinanceShows((yearlyShowsData ?? []) as ShowRecord[]);
         setYearlyFinanceItems(
-          Array.isArray(yearlyItemsData)
-            ? yearlyItemsData.map((item) =>
+          aggregateFinanceItems(
+            Array.isArray(yearlyItemsData)
+              ? yearlyItemsData.map((item) =>
                 normalizeShowFinanceItem(
                   item as Omit<ShowFinanceItem, "amount"> & { amount: number | string | null },
                 ),
               )
-            : [],
+              : [],
+            Array.isArray(yearlyPersonnelData)
+              ? yearlyPersonnelData.map((item) => normalizeShowPayoutItem(item as ShowPayoutItem))
+              : [],
+          ),
         );
         setYearlyFinanceErrorMessage(null);
         setHasLoadedYearlyFinanceSummary(true);
@@ -22566,9 +22590,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                     {item.category}
                                   </span>
                                 ) : null}
-                                {isSquareManagedFinanceItem(item) ? (
+                                {isSystemManagedFinanceItem(item) ? (
                                   <span className="rounded-full border border-sky-700/60 bg-sky-950/60 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-200">
-                                    Square · Auto
+                                    {item.source === "square" ? "Square · Auto" : "Personnel · Auto"}
                                   </span>
                                 ) : null}
                               </div>
@@ -22584,7 +22608,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <button
                                 type="button"
                                 onClick={() => startEditingFinanceItem(item)}
-                                disabled={isSquareManagedFinanceItem(item)}
+                                disabled={isSystemManagedFinanceItem(item)}
                                 className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-xs font-semibold text-stone-200 transition hover:bg-stone-800"
                               >
                                 Edit
@@ -22592,7 +22616,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <button
                                 type="button"
                                 onClick={() => void handleDeleteFinanceItem(item)}
-                                disabled={isSquareManagedFinanceItem(item) || activeFinanceActionId === `delete-${item.id}`}
+                                disabled={isSystemManagedFinanceItem(item) || activeFinanceActionId === `delete-${item.id}`}
                                 className="rounded-lg border border-rose-900/60 bg-rose-950/60 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {activeFinanceActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
@@ -22794,7 +22818,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <button
                                 type="button"
                                 onClick={() => startEditingFinanceItem(item)}
-                                disabled={isSquareManagedFinanceItem(item)}
+                                disabled={isSystemManagedFinanceItem(item)}
                                 className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-xs font-semibold text-stone-200 transition hover:bg-stone-800"
                               >
                                 Edit
@@ -22802,7 +22826,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                               <button
                                 type="button"
                                 onClick={() => void handleDeleteFinanceItem(item)}
-                                disabled={isSquareManagedFinanceItem(item) || activeFinanceActionId === `delete-${item.id}`}
+                                disabled={isSystemManagedFinanceItem(item) || activeFinanceActionId === `delete-${item.id}`}
                                 className="rounded-lg border border-rose-900/60 bg-rose-950/60 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {activeFinanceActionId === `delete-${item.id}` ? "Deleting..." : "Delete"}
@@ -23489,6 +23513,17 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           </section>
         ) : null}
 
+        {shouldShowFinancePersonnelSubTab && show ? (
+          <ShowPersonnelPanel
+            showId={show.id}
+            showSlug={show.slug}
+            showName={show.name}
+            showDate={show.show_date}
+            manualFinanceItems={financeItems}
+            onPersonnelChange={handlePersonnelChange}
+          />
+        ) : null}
+
         {shouldShowFinancePayoutSubTab ? (
           <section className="print-hidden flex flex-col gap-6 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -23535,7 +23570,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   Paid Items
                 </p>
                 <p className="mt-3 text-2xl font-semibold text-emerald-700">
-                  {payoutItems.filter((item) => item.paid).length}
+                  {generalPayoutItems.filter((item) => item.paid).length}
                 </p>
               </article>
               <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
@@ -23543,7 +23578,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   Unpaid Items
                 </p>
                 <p className="mt-3 text-2xl font-semibold text-rose-700">
-                  {payoutItems.filter((item) => !item.paid).length}
+                  {generalPayoutItems.filter((item) => !item.paid).length}
                 </p>
               </article>
               <article className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
@@ -23551,7 +23586,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   Total Rows
                 </p>
                 <p className="mt-3 text-2xl font-semibold text-stone-900">
-                  {payoutItems.length}
+                  {generalPayoutItems.length}
                 </p>
               </article>
             </div>
@@ -23718,7 +23753,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   </p>
                 </div>
 
-                {payoutItems.length === 0 ? (
+                {generalPayoutItems.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm text-stone-500">
                     No payout items added yet.
                   </div>
