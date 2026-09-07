@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import Link from "next/link";
 import type {
   PersonnelProfile,
   ShowFinanceItem,
@@ -166,6 +167,39 @@ export function ShowPersonnelPanel(props: Props) {
       setBusy(null);
     }
   }
+  async function addStandardRoster() {
+    const count = availableProfiles.length;
+    if (!count) { setError("All active regular personnel are already on this show."); return; }
+    if (!window.confirm(`Add ${count} regular personnel to this show?`)) return;
+    setBusy("standard-roster"); setError(null);
+    try {
+      const response = await fetch(`/api/admin/shows/${props.showId}/personnel/roster?slug=${encodeURIComponent(props.showSlug)}`, { method: "POST" });
+      const payload = await response.json() as { error?: string; added?: number; skipped?: number };
+      if (!response.ok) throw new Error(payload.error || "Unable to add the standard roster.");
+      setError(`Standard roster: ${payload.added ?? 0} added, ${payload.skipped ?? 0} skipped.`);
+      await load();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to add the standard roster."); }
+    finally { setBusy(null); }
+  }
+
+  async function copyPreviousPersonnel() {
+    if (busy) return;
+    setBusy("previous-personnel"); setError(null);
+    try {
+      const url = `/api/admin/shows/${props.showId}/personnel/previous?slug=${encodeURIComponent(props.showSlug)}`;
+      const previewResponse = await fetch(url, { cache: "no-store" });
+      const preview = await previewResponse.json() as { error?: string; previous?: { name: string | null; showDate: string; personnelCount: number; totalPersonnelPay: number } | null };
+      if (!previewResponse.ok) throw new Error(preview.error || "Unable to load previous personnel.");
+      if (!preview.previous) { setError("No previous show with personnel was found."); return; }
+      const prior = preview.previous;
+      if (!window.confirm(`Copy personnel from ${prior.name || prior.showDate}?\n\n${prior.personnelCount} personnel\n${money(prior.totalPersonnelPay)} total personnel pay`)) return;
+      const response = await fetch(url, { method: "POST" }); const result = await response.json() as { error?: string; added?: number; skipped?: number; customSkipped?: number };
+      if (!response.ok) throw new Error(result.error || "Unable to copy previous personnel.");
+      setError(`Added ${result.added ?? 0} personnel. ${result.skipped ?? 0} already existed.${result.customSkipped ? ` ${result.customSkipped} custom/show-only personnel were not copied automatically and can be added manually.` : ""}`);
+      await load();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to copy previous personnel."); } finally { setBusy(null); }
+  }
+
   function startEdit(item: ShowPayoutItem) {
     setEditing(item.id);
     setDraft({
@@ -289,13 +323,24 @@ export function ShowPersonnelPanel(props: Props) {
             Configure who is working this show and track committed pay.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={print}
-          className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold"
-        >
-          Print Personnel Pay Sheet
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => void addStandardRoster()} disabled={busy !== null} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+            Add Standard Roster
+          </button>
+          <Link href={`/admin/${encodeURIComponent(props.showSlug)}/personnel`} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold">
+            Manage Personnel Directory
+          </Link>
+          <button
+            type="button"
+            onClick={print}
+            className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold"
+          >
+            Print Personnel Pay Sheet
+          </button>
+          <button type="button" onClick={() => void copyPreviousPersonnel()} disabled={busy !== null} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50">
+            Copy From Previous Show
+          </button>
+        </div>
       </div>
       {hasPossibleManualPersonnelOverlap(props.manualFinanceItems) ? (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
