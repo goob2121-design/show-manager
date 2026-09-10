@@ -84,7 +84,7 @@ type DoorScanState =
   | { kind: "invalid" }
   | { kind: "not_found" }
   | { kind: "error"; message: string }
-  | { kind: "sponsor_comp_redemption"; lookup: DoorSponsorScanResult }
+  | { kind: "sponsor_comp_redemption"; lookup: DoorSponsorScanResult; activityId: string | null }
   | { kind: "sponsor_comp_redemption_undone"; result: SponsorCompRedemptionUndoResult }
   | { kind: "found"; lookup: DoorScanFoundResult };
 
@@ -914,6 +914,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
 
       if (payload.result.kind === "sponsor_comp_redemption") {
         const redemption = payload.result.redemption;
+        let sponsorCompActivityId: string | null = null;
         if (redemption.showSponsorId && redemption.checkedIn !== null) {
           setShowSponsors((current) => current.map((sponsor) => sponsor.id === redemption.showSponsorId
             ? {
@@ -929,8 +930,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           && redemption.allowance !== null
         ) {
           const sponsorName = redemption.sponsorName ?? "Sponsor";
+          sponsorCompActivityId = `sponsor-comp-token-${redemption.tokenId}-${crypto.randomUUID()}`;
           pushRecentActivity({
-            id: `sponsor-comp-token-${redemption.tokenId}-${Date.now()}`,
+            id: sponsorCompActivityId,
             label: `${sponsorName} · Ticket ${redemption.ordinal} of ${redemption.allowance} — Checked In`,
             undoneLabel: `${sponsorName} · Ticket ${redemption.ordinal} of ${redemption.allowance} — Check-In Undone`,
             sponsorCompTokenId: redemption.tokenId,
@@ -938,7 +940,11 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             undo: () => undoSponsorCompRedemption(redemption),
           });
         }
-        setScanState({ kind: "sponsor_comp_redemption", lookup: payload.result });
+        setScanState({
+          kind: "sponsor_comp_redemption",
+          lookup: payload.result,
+          activityId: sponsorCompActivityId,
+        });
         setScanInput("");
         focusScanInput();
         return;
@@ -1535,12 +1541,15 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
       scanState.kind !== "sponsor_comp_redemption"
       || scanState.lookup.redemption.resultStatus !== "REDEEMED"
       || !scanState.lookup.redemption.tokenId
+      || !scanState.activityId
     ) {
       return;
     }
 
     const activity = recentActivities.find((item) =>
-      item.sponsorCompTokenId === scanState.lookup.redemption.tokenId && item.undo,
+      item.id === scanState.activityId
+      && item.sponsorCompTokenId === scanState.lookup.redemption.tokenId
+      && item.undo,
     );
     if (!activity) {
       setErrorMessage("The exact sponsor ticket check-in is no longer available to undo.");
