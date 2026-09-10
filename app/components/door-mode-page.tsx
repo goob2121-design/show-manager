@@ -552,14 +552,14 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const doorPaidTickets = useMemo(
     () =>
       compTickets
-        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "door_paid")
+        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "door_paid" && !item.pay_at_door)
         .reduce((sum, item) => sum + item.checked_in_count, 0),
     [compTickets],
   );
   const prepaidOnlineTickets = useMemo(
     () =>
       compTickets
-        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "paid_online")
+        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "paid_online" && !item.pay_at_door)
         .reduce((sum, item) => sum + item.checked_in_count, 0),
     [compTickets],
   );
@@ -567,6 +567,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     () =>
       compTickets
         .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "complimentary")
+        .filter((item) => !item.pay_at_door)
         .filter((item) => !sponsorReservedProjectionTicketIds.has(item.id))
         .reduce((sum, item) => sum + item.checked_in_count, 0),
     [compTickets, sponsorReservedProjectionTicketIds],
@@ -590,17 +591,23 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const manualCheckedInTickets = useMemo(
     () =>
       compTickets
-        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "manual")
+        .filter((item) => normalizeGuestListTicketType(item.ticket_type) === "manual" && !item.pay_at_door)
         .reduce((sum, item) => sum + item.checked_in_count, 0),
     [compTickets],
   );
   const doorPaidRevenue = doorPaidTickets * DOOR_TICKET_PRICE;
+  const reservedPayAtDoorRevenue = compTickets
+    .filter((item) => item.pay_at_door_paid_at)
+    .reduce((sum, item) => sum + (item.pay_at_door_amount ?? 0), 0);
+  const reservedPayAtDoorAttendance = compTickets
+    .filter((item) => item.pay_at_door)
+    .reduce((sum, item) => sum + item.checked_in_count, 0);
   const prepaidOnlineRevenue = prepaidOnlineTickets * PAID_ONLINE_TICKET_PRICE;
   const estimatedCompValue = compCheckedInTickets * COMP_TICKET_VALUE;
-  const totalPaidAttendance = doorPaidTickets + prepaidOnlineTickets;
+  const totalPaidAttendance = doorPaidTickets + prepaidOnlineTickets + reservedPayAtDoorAttendance;
   const totalAttendance =
     totalPaidAttendance + compCheckedInTickets + sponsorCompTicketsCheckedIn + manualCheckedInTickets;
-  const totalRevenue = doorPaidRevenue + prepaidOnlineRevenue;
+  const totalRevenue = doorPaidRevenue + prepaidOnlineRevenue + reservedPayAtDoorRevenue;
   const expectedAttendance = expectedDoorAttendance(compTickets, sponsorCompTicketsAllowed, sponsorReservedProjectionTicketIds);
   const attendanceProgress = attendanceProgressPercent(totalAttendance, expectedAttendance);
   void attendanceProgress;
@@ -998,6 +1005,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
         autoQuantities &&
         !autoQuantities.isFullyCheckedIn &&
         autoQuantities.remainingTickets > 0
+        && !(autoTicket.pay_at_door && !autoTicket.pay_at_door_paid_at)
       ) {
         await handleAdjustTicketCheckIn(
           autoTicket,
@@ -1536,6 +1544,75 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     }
   }
 
+  async function handlePayAtDoor(method: "cash" | "external_card") {
+    if (!show || !scannedTicket || !scannedTicket.pay_at_door || scannedTicket.pay_at_door_paid_at) return;
+    setActiveActionId(`pay-at-door-${scannedTicket.id}`);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    try {
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(show.id)}/pay-at-door`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: show.slug, ticketId: scannedTicket.id, method }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        success?: boolean;
+        error?: string;
+        result?: { resultStatus?: string; amount?: number; paymentMethod?: "cash" | "external_card"; paidAt?: string; checkedInCount?: number; ticketCount?: number };
+      } | null;
+      if (!response.ok || !payload?.success || payload.result?.resultStatus !== "PAID_AND_CHECKED_IN") {
+        throw new Error(payload?.error ?? `Pay at Door failed with HTTP ${response.status}.`);
+      }
+      setCompTickets((current) => current.map((ticket) => ticket.id === scannedTicket.id ? {
+        ...ticket,
+        checked_in: true,
+        checked_in_count: payload.result?.checkedInCount ?? ticket.ticket_count,
+        pay_at_door_paid_at: payload.result?.paidAt ?? new Date().toISOString(),
+        pay_at_door_payment_method: payload.result?.paymentMethod ?? method,
+      } : ticket));
+      const paidTicketCount = payload.result?.checkedInCount ?? scannedTicket.ticket_count;
+      setRecentGuestCheckIns((current) => addRecentGuestCheckIn(current, {
+        id: `${scannedTicket.id}-pay-at-door-${Date.now()}`,
+        guestName: scannedTicket.guest_name,
+        quantity: paidTicketCount,
+        resultingTotal: paidTicketCount,
+        ticketCount: scannedTicket.ticket_count,
+        createdAt: Date.now(),
+      }));
+      publishWelcome({
+        showSlug,
+        displayName: scannedTicket.guest_name,
+        quantityCheckedIn: paidTicketCount,
+        ticketQuantity: scannedTicket.ticket_count,
+        checkedInTotal: paidTicketCount,
+        assignedSeatLabels: scanState.kind === "found" ? scanState.lookup.reservation.seatLabels : [],
+        admissionCategory: checkInAdmissionLabel(scannedTicket.ticket_type, scannedTicket.notes),
+      });
+      pushRecentActivity({
+        id: `pay-at-door-${scannedTicket.id}-${Date.now()}`,
+        label: `${scannedTicket.guest_name} paid at door and checked in`,
+        createdAt: Date.now(),
+        undo: async () => {
+          const { data, error } = await createClient().from("show_comp_tickets")
+            .update({ checked_in: false, checked_in_count: 0 })
+            .eq("id", scannedTicket.id).eq("show_id", scannedTicket.show_id).select("*").single();
+          if (error) throw error;
+          const restored = normalizeShowCompTicket(data as ShowCompTicket);
+          setCompTickets((current) => current.map((ticket) => ticket.id === restored.id ? restored : ticket));
+        },
+      });
+      setStatusMessage(method === "cash" ? "PAID CASH — CHECKED IN" : "PAID CARD — CHECKED IN · External card reader");
+      if (method === "cash") {
+        void openCashDrawerAfterPaidSale().catch(() => setErrorMessage("Payment and check-in succeeded, but cash drawer did not open."));
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to complete Pay at Door.");
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
   async function handleUndoLastAction() {
     const lastAction = recentActivities.find((activity) => activity.undo);
 
@@ -1794,6 +1871,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
 
               {scanState.kind === "found" ? (
                 <article className={`rounded-xl border px-3 py-3 shadow-sm shadow-slate-950/10 ${
+                  scannedTicket?.pay_at_door && !scannedTicket.pay_at_door_paid_at
+                    ? "border-rose-500 bg-rose-950/60"
+                    :
                   scannedReservationQuantities?.isFullyCheckedIn
                     ? "border-amber-700/70 bg-amber-500/10"
                     : "border-emerald-800/70 bg-emerald-500/10"
@@ -1806,6 +1886,11 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                         </p>
                         <h3 className="text-xl font-semibold text-gray-50 sm:text-2xl">{scanState.lookup.reservation.customerName}</h3>
                       </div>
+                      {scannedTicket?.pay_at_door && !scannedTicket.pay_at_door_paid_at ? (
+                        <p className="mt-3 text-2xl font-black uppercase tracking-[0.08em] text-rose-200">Payment Due — {formatCurrency(scannedTicket.pay_at_door_amount ?? DOOR_TICKET_PRICE)}</p>
+                      ) : scannedTicket?.pay_at_door_paid_at ? (
+                        <p className="mt-3 font-bold uppercase tracking-[0.08em] text-emerald-200">Paid at Door · {scannedTicket.pay_at_door_payment_method === "cash" ? "Cash" : "Card"}</p>
+                      ) : null}
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                         <span className="rounded-full border border-sky-700/70 bg-sky-500/10 px-2.5 py-1 font-semibold uppercase tracking-[0.12em] text-sky-200">
                           {scannedTicket ? checkInAdmissionLabel(scannedTicket.ticket_type, scannedTicket.notes) : scanState.lookup.reservation.admissionLabel}
@@ -1828,9 +1913,15 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                     </div>
 
                     <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
-                      <button type="button" onClick={() => resetScanState()} className="min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800">Dismiss</button>
+                      <button type="button" onClick={() => resetScanState()} className="min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800">{scannedTicket?.pay_at_door && !scannedTicket.pay_at_door_paid_at ? "Cancel" : "Dismiss"}</button>
+                      {scannedTicket?.pay_at_door && !scannedTicket.pay_at_door_paid_at ? (
+                        <>
+                          <button type="button" onClick={() => void handlePayAtDoor("cash")} disabled={Boolean(activeActionId)} className="min-h-12 rounded-lg bg-emerald-600 px-6 text-lg font-black text-white disabled:opacity-50">Cash</button>
+                          <button type="button" onClick={() => void handlePayAtDoor("external_card")} disabled={Boolean(activeActionId)} className="min-h-12 rounded-lg bg-sky-600 px-6 text-lg font-black text-white disabled:opacity-50">Card</button>
+                        </>
+                      ) : null}
                       <button type="button" onClick={handleSearchScannedGuest} className="min-h-10 rounded-lg border border-sky-800/80 bg-sky-500/[0.07] px-3 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/10">Search Manually</button>
-                      {scannedTicket ? (
+                      {scannedTicket && !(scannedTicket.pay_at_door && !scannedTicket.pay_at_door_paid_at) ? (
                         <>
                           {scannedReservationQuantities?.isMultiTicket ? (
                             <button type="button" onClick={() => void handleAdjustTicketCheckIn(scannedTicket, scannedReservationQuantities.remainingTickets)} disabled={Boolean(activeActionId) || scannedReservationQuantities.isFullyCheckedIn} className="min-h-10 rounded-lg border border-emerald-700 bg-emerald-500/10 px-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40">Check In All</button>

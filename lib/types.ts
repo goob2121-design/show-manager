@@ -374,6 +374,12 @@ export type ShowCompTicket = {
   notes: string | null;
   checked_in: boolean;
   checked_in_count: number;
+  pay_at_door?: boolean;
+  pay_at_door_amount?: number | null;
+  pay_at_door_paid_at?: string | null;
+  pay_at_door_payment_method?: "cash" | "external_card" | null;
+  pay_at_door_handled_by?: string | null;
+  pay_at_door_finance_item_id?: string | null;
   external_source?: string | null;
   external_event_id?: string | null;
   external_payment_id?: string | null;
@@ -556,6 +562,7 @@ export type ShowReservedSeatingLink = {
   source_import_key: string | null;
   seat_category: ReservedSeatCategory | string;
   seat_preference: ReservedSeatPreference;
+  pay_at_door_intent?: boolean;
   created_at: string;
 };
 

@@ -61,7 +61,7 @@ async function loadLookupTicket(
 
   const { data: ticketData, error: ticketError } = await supabase
     .from("show_comp_tickets")
-    .select("id, show_id, guest_name, ticket_count, ticket_type, notes, checked_in, checked_in_count, created_at")
+    .select("id, show_id, guest_name, ticket_count, ticket_type, notes, checked_in, checked_in_count, pay_at_door, pay_at_door_amount, pay_at_door_paid_at, pay_at_door_payment_method, pay_at_door_handled_by, pay_at_door_finance_item_id, created_at")
     .eq("show_id", showId)
     .eq("id", ticketId)
     .maybeSingle();

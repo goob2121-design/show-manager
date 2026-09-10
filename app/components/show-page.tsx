@@ -8209,6 +8209,7 @@ export function ShowPage({
       return;
     }
 
+
     setCompTicketErrorMessage(null);
     setCompTicketStatusMessage(null);
     setActiveCompTicketActionId("create");
@@ -8314,6 +8315,7 @@ export function ShowPage({
       setCompTicketErrorMessage("Enter a valid number of tickets.");
       return;
     }
+
 
     setCompTicketErrorMessage(null);
     setCompTicketStatusMessage(null);
@@ -21563,6 +21565,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 />
               </label>
 
+
               <div className="flex justify-start">
                 <button
                   type="submit"
@@ -22005,6 +22008,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                           />
                         </label>
 
+
                         <div className="flex flex-col gap-3 sm:flex-row">
                           <button
                             type="button"
@@ -22046,6 +22050,11 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-800">
                                     {checkInAdmissionLabel(item.ticket_type, item.notes)}
                                   </span>
+                                  {item.pay_at_door ? (
+                                    <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] ${item.pay_at_door_paid_at ? "bg-emerald-100 text-emerald-800" : "bg-amber-200 text-amber-950"}`}>
+                                      {item.pay_at_door_paid_at ? `Paid at Door · ${item.pay_at_door_payment_method === "cash" ? "Cash" : "Card"}` : `Pay at Door · $${(item.pay_at_door_amount ?? 10).toFixed(2)} due`}
+                                    </span>
+                                  ) : null}
                                   {normalizeGuestListTicketType(item.ticket_type) !== "paid_online" && normalizeGuestListTicketType(item.ticket_type) !== "door_paid" ? (
                                     <select
                                       value={classifyCompTicket(item)}

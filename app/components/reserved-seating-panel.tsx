@@ -66,7 +66,10 @@ type LinkFormState = {
   sourceNote: string;
   isComplimentary: boolean;
   seatCategory: ReservedSeatCategory;
+  payAtDoor: boolean;
 };
+
+type PayAtDoorDisplay = { paidAt: string | null; method: "cash" | "external_card" | null };
 
 type LinkWithSeats = ShowReservedSeatingLink & {
   seatIds: string[];
@@ -100,6 +103,7 @@ const initialLinkFormState: LinkFormState = {
   sourceNote: "",
   isComplimentary: false,
   seatCategory: "paid_reserved",
+  payAtDoor: false,
 };
 
 function formatShowDate(showDate: string | null) {
@@ -260,6 +264,7 @@ export function ReservedSeatingPanel({
   const [emailStatuses, setEmailStatuses] = useState<Record<string, ReservedSeatEmailStatus>>({});
   const [emailTrackingRequestState, setEmailTrackingRequestState] = useState<ReservedSeatEmailTrackingRequestState>("loading");
   const [ticketCodeActionId, setTicketCodeActionId] = useState<string | null>(null);
+  const [payAtDoorByLinkId, setPayAtDoorByLinkId] = useState<Record<string, PayAtDoorDisplay>>({});
   const [postAssignmentPromptLinkId, setPostAssignmentPromptLinkId] = useState<string | null>(null);
   const [showBulkReminderConfirmation, setShowBulkReminderConfirmation] = useState(false);
   const supabase = useMemo(() => createClient(), []);
@@ -421,6 +426,11 @@ export function ReservedSeatingPanel({
       }
 
       const nextLinks = (linkRows ?? []) as ShowReservedSeatingLink[];
+      const statusResponse = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/pay-at-door-status?slug=${encodeURIComponent(showSlug)}`, { credentials: "same-origin" });
+      const statusPayload = await statusResponse.json().catch(() => null) as { success?: boolean; statuses?: Array<{ linkId: string; paidAt: string | null; method: "cash" | "external_card" | null }> } | null;
+      setPayAtDoorByLinkId(statusResponse.ok && statusPayload?.success && statusPayload.statuses
+        ? Object.fromEntries(statusPayload.statuses.map((status) => [status.linkId, { paidAt: status.paidAt, method: status.method }]))
+        : {});
       setLinks(nextLinks);
       setAssignments((assignmentRows ?? []) as ShowReservedSeatAssignment[]);
       await loadReservedSeatEmailStatuses(nextLinks);
@@ -583,6 +593,7 @@ export function ReservedSeatingPanel({
         is_complimentary: formState.isComplimentary,
         source_note: formState.sourceNote.trim() || null,
         seat_category: formState.seatCategory,
+        pay_at_door_intent: !formState.isComplimentary && formState.seatCategory === "paid_reserved" && formState.payAtDoor,
       });
 
       if (error) {
@@ -1254,7 +1265,7 @@ export function ReservedSeatingPanel({
               </button>
               <button
                 type="button"
-                onClick={() => setFormState((current) => ({ ...current, isComplimentary: true, seatCategory: "comp" }))}
+                onClick={() => setFormState((current) => ({ ...current, isComplimentary: true, seatCategory: "comp", payAtDoor: false }))}
                 className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition ${
                   formState.isComplimentary
                     ? "border border-violet-400/25 bg-violet-500/15 text-violet-100"
@@ -1342,6 +1353,7 @@ export function ReservedSeatingPanel({
                     ...current,
                     seatCategory: event.target.value as ReservedSeatCategory,
                     isComplimentary: event.target.value === "comp",
+                    payAtDoor: event.target.value === "paid_reserved" ? current.payAtDoor : false,
                   }))}
                   className="rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500"
                 >
@@ -1352,6 +1364,12 @@ export function ReservedSeatingPanel({
                   ))}
                 </select>
               </label>
+              {!formState.isComplimentary && formState.seatCategory === "paid_reserved" ? (
+                <label className="flex items-center gap-3 rounded-xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-sm font-bold text-amber-100">
+                  <input type="checkbox" checked={formState.payAtDoor} onChange={(event) => setFormState((current) => ({ ...current, payAtDoor: event.target.checked }))} />
+                  Pay at Door · $10 due
+                </label>
+              ) : null}
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
                 Optional Note / Source
                 <input
@@ -1478,6 +1496,7 @@ export function ReservedSeatingPanel({
               const reminderEligibility = reminderEligibilityByLink[link.id];
               const emailStatusToneClasses = getEmailStatusToneClasses(emailStatusDisplay.statusTone);
               const officialTicketReadiness = getOfficialTicketReadiness(link.ticket_emailed_at);
+              const payAtDoor = payAtDoorByLinkId[link.id];
               return (
                 <article key={link.id} className={`rounded-2xl border border-l-2 p-4 transition ${isManualAssigning ? "border-violet-400/30 bg-violet-500/10" : index % 2 === 0 ? "border-white/20 border-l-slate-500/60 bg-[#07111f] shadow-[0_10px_24px_rgba(2,6,23,0.22)]" : "border-white/25 border-l-slate-400/70 bg-[#142238] shadow-[0_10px_24px_rgba(2,6,23,0.28)]"}`}>
                   <details className="group">
@@ -1492,6 +1511,11 @@ export function ReservedSeatingPanel({
                           <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                             {link.ticket_count} seat{link.ticket_count === 1 ? "" : "s"}
                           </span>
+                          {link.pay_at_door_intent ? (
+                            <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] ${payAtDoor?.paidAt ? "border-emerald-300/40 bg-emerald-500/20 text-emerald-100" : "border-amber-300/50 bg-amber-400/20 text-amber-100"}`}>
+                              {payAtDoor?.paidAt ? `Paid at Door · ${payAtDoor.method === "cash" ? "Cash" : "Card"}` : "Pay at Door · $10 due"}
+                            </span>
+                          ) : null}
                           <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] shadow-sm ${link.seat_preference === "auto_assign" ? "border-fuchsia-300/60 bg-fuchsia-500/25 text-fuchsia-50 shadow-fuchsia-950/30" : "border-white/10 bg-white/[0.05] text-slate-200"}`}>
                             {link.seat_preference === "auto_assign" ? "\u{1F91D} Auto Assign Requested" : "Customer Selecting Seats"}
                           </span>
