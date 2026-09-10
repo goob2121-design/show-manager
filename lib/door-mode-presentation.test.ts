@@ -226,7 +226,7 @@ test("Paid Door remains a compact responsive strip with its existing controls an
   assert.match(source, /disabled=\{Boolean\(activeActionId\) \|\| doorPaidTickets <= 0\}/);
   assert.match(source, />\s*-1\s*</);
   assert.match(source, /onClick=\{\(\) => void handleUndoLastAction\(\)\}/);
-  assert.match(source, /disabled=\{Boolean\(activeActionId\) \|\| recentActivities\.length === 0\}/);
+  assert.match(source, /disabled=\{Boolean\(activeActionId\) \|\| !recentActivities\.some\(\(activity\) => activity\.undo\)\}/);
   assert.match(source, />\s*Undo Last\s*</);
 
   const compactStripIndex = source.indexOf('data-testid="paid-door-compact-strip"');

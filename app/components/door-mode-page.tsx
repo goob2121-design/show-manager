@@ -32,6 +32,11 @@ import {
 import { RESERVED_SEAT_DEFINITIONS } from "@/lib/reserved-seating";
 import { printDoorSeatMap } from "@/lib/door-seat-map-print";
 import type { DoorModeSeatAssignment } from "@/lib/door-mode-seat-assignments";
+import type {
+  SponsorCompRedemptionResult,
+  SponsorCompRedemptionUndoResponse,
+  SponsorCompRedemptionUndoResult,
+} from "@/lib/sponsor-comp-redemption-tokens";
 import {
   createDoorWelcomeEvent,
   createDoorWelcomeSeatViewClearEvent,
@@ -55,7 +60,8 @@ type DoorModeActivity = {
   id: string;
   label: string;
   createdAt: number;
-  undo: () => Promise<void>;
+  undo: (() => Promise<void>) | null;
+  undoneLabel?: string;
 };
 
 type DoorSeatView = {
@@ -777,6 +783,19 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     setRecentActivities((current) => current.filter((item) => item.id !== activityId));
   }
 
+  function markRecentActivityUndone(activity: DoorModeActivity) {
+    if (!activity.undoneLabel) {
+      removeRecentActivity(activity.id);
+      return;
+    }
+
+    setRecentActivities((current) => current.map((item) =>
+      item.id === activity.id
+        ? { ...item, label: activity.undoneLabel ?? item.label, undo: null }
+        : item,
+    ));
+  }
+
   function focusScanInput() {
     window.requestAnimationFrame(() => scanInputRef.current?.focus());
   }
@@ -785,6 +804,55 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     setScanState(nextState);
     setScanInput("");
     focusScanInput();
+  }
+
+  function applySponsorCompUndoTotals(result: SponsorCompRedemptionUndoResult) {
+    if (!result.showSponsorId || result.checkedIn === null) return;
+
+    setShowSponsors((current) => current.map((sponsor) =>
+      sponsor.id === result.showSponsorId
+        ? { ...sponsor, comp_tickets_checked_in: result.checkedIn ?? sponsor.comp_tickets_checked_in }
+        : sponsor,
+    ));
+  }
+
+  async function undoSponsorCompRedemption(redemption: SponsorCompRedemptionResult) {
+    if (!show || !redemption.tokenId) {
+      throw new Error("This sponsor ticket check-in does not include an exact token identity.");
+    }
+
+    const response = await fetch(
+      `/api/admin/shows/${encodeURIComponent(show.id)}/sponsor-comp-redemption-token-undo`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: show.slug, tokenId: redemption.tokenId }),
+      },
+    );
+    const payload = (await response.json().catch(() => null)) as SponsorCompRedemptionUndoResponse | null;
+
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload && "error" in payload ? payload.error : "Unable to undo this sponsor ticket check-in.");
+    }
+
+    if (payload.result.resultStatus !== "UNDONE") {
+      const messages: Record<Exclude<SponsorCompRedemptionUndoResult["resultStatus"], "UNDONE">, string> = {
+        NOT_REDEEMED: "This sponsor ticket is already available and was not decremented again.",
+        COUNT_ZERO: "The sponsor check-in count is already zero, so the ticket was not changed.",
+        VOIDED: "This sponsor ticket is voided and cannot be reactivated.",
+        WRONG_SHOW: "This sponsor ticket does not belong to this show.",
+      };
+      throw new Error(messages[payload.result.resultStatus]);
+    }
+
+    applySponsorCompUndoTotals(payload.result);
+    setScanState((current) =>
+      current.kind === "sponsor_comp_redemption"
+        && current.lookup.redemption.tokenId === payload.result.tokenId
+        ? { kind: "idle" }
+        : current,
+    );
   }
 
   async function handleScannedLookup(rawValue: string) {
@@ -841,6 +909,21 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                 comp_tickets_checked_in: redemption.checkedIn ?? sponsor.comp_tickets_checked_in,
               }
             : sponsor));
+        }
+        if (
+          redemption.resultStatus === "REDEEMED"
+          && redemption.tokenId
+          && redemption.ordinal !== null
+          && redemption.allowance !== null
+        ) {
+          const sponsorName = redemption.sponsorName ?? "Sponsor";
+          pushRecentActivity({
+            id: `sponsor-comp-token-${redemption.tokenId}-${Date.now()}`,
+            label: `${sponsorName} · Ticket ${redemption.ordinal} of ${redemption.allowance} — Checked In`,
+            undoneLabel: `${sponsorName} · Ticket ${redemption.ordinal} of ${redemption.allowance} — Check-In Undone`,
+            createdAt: Date.now(),
+            undo: () => undoSponsorCompRedemption(redemption),
+          });
         }
         setScanState({ kind: "sponsor_comp_redemption", lookup: payload.result });
         setScanInput("");
@@ -1400,27 +1483,33 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     }
   }
 
+  async function handleUndoActivity(activity: DoorModeActivity, actionId: string) {
+    if (!activity.undo) return;
+
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setActiveActionId(actionId);
+
+    try {
+      await activity.undo();
+      markRecentActivityUndone(activity);
+      setStatusMessage(`Undid: ${activity.label}`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to undo the selected action.");
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
   async function handleUndoLastAction() {
-    const lastAction = recentActivities[0];
+    const lastAction = recentActivities.find((activity) => activity.undo);
 
     if (!lastAction) {
       setErrorMessage("There is no recent action to undo.");
       return;
     }
 
-    setStatusMessage(null);
-    setErrorMessage(null);
-    setActiveActionId("undo-last");
-
-    try {
-      await lastAction.undo();
-      removeRecentActivity(lastAction.id);
-      setStatusMessage(`Undid: ${lastAction.label}`);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to undo the last action.");
-    } finally {
-      setActiveActionId(null);
-    }
+    await handleUndoActivity(lastAction, "undo-last");
   }
 
   async function handleDoorStaffLogout() {
@@ -1717,7 +1806,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                 <button
                   type="button"
                   onClick={() => void handleUndoLastAction()}
-                  disabled={Boolean(activeActionId) || recentActivities.length === 0}
+                  disabled={Boolean(activeActionId) || !recentActivities.some((activity) => activity.undo)}
                   className="min-h-8 rounded-md border border-sky-800/80 bg-sky-500/[0.07] px-2.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Undo Last
@@ -1965,16 +2054,28 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                       recentActivities.map((activity) => (
                         <div
                           key={activity.id}
-                          className="rounded-2xl border border-gray-700 bg-gray-900/50 px-4 py-3"
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-700 bg-gray-900/50 px-4 py-3"
                         >
-                          <p className="text-sm font-semibold text-gray-100">{activity.label}</p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.14em] text-gray-500">
-                            {new Date(activity.createdAt).toLocaleTimeString([], {
-                              hour: "numeric",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })}
-                          </p>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-100">{activity.label}</p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.14em] text-gray-500">
+                              {new Date(activity.createdAt).toLocaleTimeString([], {
+                                hour: "numeric",
+                                minute: "2-digit",
+                                second: "2-digit",
+                              })}
+                            </p>
+                          </div>
+                          {activity.undoneLabel && activity.undo ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleUndoActivity(activity, `undo-${activity.id}`)}
+                              disabled={Boolean(activeActionId)}
+                              className="min-h-9 rounded-lg border border-sky-800/80 bg-sky-500/[0.07] px-3 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Undo
+                            </button>
+                          ) : null}
                         </div>
                       ))
                     )}

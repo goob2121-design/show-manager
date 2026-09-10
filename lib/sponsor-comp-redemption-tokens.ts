@@ -16,6 +16,29 @@ export type SponsorCompRedemptionResult = {
   redeemedAt: string | null;
 };
 
+export type SponsorCompRedemptionUndoStatus =
+  | "UNDONE"
+  | "NOT_REDEEMED"
+  | "COUNT_ZERO"
+  | "VOIDED"
+  | "WRONG_SHOW";
+
+export type SponsorCompRedemptionUndoResult = {
+  resultStatus: SponsorCompRedemptionUndoStatus;
+  tokenId: string | null;
+  showSponsorId: string | null;
+  sponsorName: string | null;
+  ordinal: number | null;
+  allowance: number | null;
+  checkedIn: number | null;
+  remaining: number | null;
+  redeemedAt: string | null;
+};
+
+export type SponsorCompRedemptionUndoResponse =
+  | { success: true; result: SponsorCompRedemptionUndoResult }
+  | { success: false; error: string };
+
 export function isSponsorCompRedemptionToken(value: string | null | undefined) {
   return value?.startsWith(SPONSOR_COMP_TOKEN_PREFIX) ?? false;
 }
