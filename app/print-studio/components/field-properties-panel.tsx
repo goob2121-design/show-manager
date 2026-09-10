@@ -55,6 +55,7 @@ export default function FieldPropertiesPanel({
   const labelClass = "text-xs font-bold uppercase tracking-wide text-slate-400";
   const variableKey = getPrintFieldVariableKey(field);
   const isVariableField = Boolean(variableKey);
+  const isSponsorCompBarcode = field.type === "sponsor_comp_redemption_barcode";
   const resolution = getPrintFieldResolution(field, previewRecord, sharedValues);
   const canCopyToShared = Boolean(variableKey && variableKey !== "ticket_number");
   const sharedValue = variableKey ? sharedValues?.[variableKey] || "" : "";
@@ -203,6 +204,10 @@ export default function FieldPropertiesPanel({
             </div>
           ) : null}
         </>
+      ) : isSponsorCompBarcode ? (
+        <p className="mt-3 rounded-md border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-slate-300">
+          This barcode is populated from the selected Sponsor Comp record and cannot be edited.
+        </p>
       ) : (
         <label className={`mt-3 block ${labelClass}`}>
           Text shown on ticket

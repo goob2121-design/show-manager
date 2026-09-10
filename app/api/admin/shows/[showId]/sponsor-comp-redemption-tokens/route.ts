@@ -30,9 +30,17 @@ export async function GET(request: Request, context: Context) {
     const showSponsorId = url.searchParams.get("showSponsorId")?.trim() ?? "";
     const supabase = createServiceClient();
     if (!slug || !showSponsorId || !(await authorize(showId, slug, supabase))) return NextResponse.json({ success: false, error: "Admin access is required." }, { status: 401 });
+    const { data: sponsor, error: sponsorError } = await supabase.from("show_sponsors").select("id,comp_ticket_allowance,sponsor:sponsor_id(name)").eq("id", showSponsorId).eq("show_id", showId).maybeSingle();
+    if (sponsorError) throw sponsorError;
+    if (!sponsor) return NextResponse.json({ success: false, error: "Sponsor allocation not found." }, { status: 404 });
+    const { data: show, error: showError } = await supabase.from("shows").select("id,name,show_date").eq("id", showId).maybeSingle();
+    if (showError) throw showError;
+    if (!show) return NextResponse.json({ success: false, error: "Show not found." }, { status: 404 });
     const { data, error } = await supabase.from("show_sponsor_comp_redemption_tokens").select("id,show_id,show_sponsor_id,token,ordinal,redeemed_at,redeemed_by,voided_at,created_at").eq("show_id", showId).eq("show_sponsor_id", showSponsorId).order("ordinal");
     if (error) throw error;
-    return NextResponse.json({ success: true, tokens: data ?? [] });
+    const sponsorRecord = sponsor as { id: string; comp_ticket_allowance: number | null; sponsor?: { name: string | null } | Array<{ name: string | null }> | null };
+    const sponsorLibrary = Array.isArray(sponsorRecord.sponsor) ? sponsorRecord.sponsor[0] : sponsorRecord.sponsor;
+    return NextResponse.json({ success: true, tokens: data ?? [], sponsor: { id: sponsorRecord.id, name: sponsorLibrary?.name ?? "Sponsor", allowance: Number(sponsorRecord.comp_ticket_allowance) || 0 }, show: show });
   } catch (error) {
     console.error("Unable to load sponsor comp redemption tokens.", error);
     return NextResponse.json({ success: false, error: "Unable to load individual redemption barcodes." }, { status: 500 });

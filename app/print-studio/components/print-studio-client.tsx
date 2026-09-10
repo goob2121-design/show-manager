@@ -16,11 +16,14 @@ import PrintPreview from "./print-preview";
 import TicketRenderer from "./ticket-renderer";
 import { createDefaultBatchSettings, createDefaultTemplate, fieldLabels, sampleTicketData } from "./sample-data";
 import { isPrintStudioVariableKey, PRINT_STUDIO_VARIABLE_KEYS } from "./variable-contract";
+import { buildSponsorCompPrintRecords, type SponsorCompPrintToken } from "@/lib/sponsor-comp-print-studio";
 import type { BatchSettings, BatchVariableFieldType, PrintField, PrintFieldType, PrintRecord, PrintTemplate } from "./types";
 
 type PrintMode = "none" | "single" | "batch";
 
 const MIN_FIELD_SIZE = 1;
+const SPONSOR_COMP_BARCODE_MIN_WIDTH = 42;
+const SPONSOR_COMP_BARCODE_MIN_HEIGHT = 22;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -74,6 +77,8 @@ function normalizeField(field: PrintField): PrintField {
   const valueMode = field.valueMode ?? (source === "variable" ? "record" : "override");
   const sampleText = field.sampleText ?? (source === "variable" ? field.textOverride ?? sampleTicketData[variableKey ?? field.type] : field.customText ?? field.textOverride ?? sampleTicketData[field.type]);
   const overrideText = source === "variable" ? field.overrideText : field.overrideText ?? field.customText ?? field.textOverride;
+  const minimumWidth = field.type === "sponsor_comp_redemption_barcode" ? SPONSOR_COMP_BARCODE_MIN_WIDTH : MIN_FIELD_SIZE;
+  const minimumHeight = field.type === "sponsor_comp_redemption_barcode" ? SPONSOR_COMP_BARCODE_MIN_HEIGHT : MIN_FIELD_SIZE;
 
   return {
     ...field,
@@ -82,10 +87,10 @@ function normalizeField(field: PrintField): PrintField {
     valueMode,
     sampleText,
     overrideText,
-    x: clamp(field.x, 0, 100 - Math.max(MIN_FIELD_SIZE, field.width)),
-    y: clamp(field.y, 0, 100 - Math.max(MIN_FIELD_SIZE, field.height)),
-    width: clamp(field.width, MIN_FIELD_SIZE, 100),
-    height: clamp(field.height, MIN_FIELD_SIZE, 100),
+    x: clamp(field.x, 0, 100 - Math.max(minimumWidth, field.width)),
+    y: clamp(field.y, 0, 100 - Math.max(minimumHeight, field.height)),
+    width: clamp(field.width, minimumWidth, 100),
+    height: clamp(field.height, minimumHeight, 100),
   };
 }
 
@@ -150,6 +155,24 @@ export default function PrintStudioClient() {
   const [importedJsonWarnings, setImportedJsonWarnings] = useState<string[]>([]);
   const [importedJsonErrors, setImportedJsonErrors] = useState<string[]>([]);
   const [importedJsonSource, setImportedJsonSource] = useState("");
+  const [sponsorCompSource, setSponsorCompSource] = useState<{ showId: string; slug: string; showSponsorId: string } | null>(null);
+  const [sponsorCompTokens, setSponsorCompTokens] = useState<SponsorCompPrintToken[]>([]);
+  const [sponsorCompMetadata, setSponsorCompMetadata] = useState<{ sponsor: { name: string; allowance: number }; show: { name: string; show_date: string | null } } | null>(null);
+  const [sponsorCompSourceError, setSponsorCompSourceError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("source") !== "sponsor-comp") return;
+    const showId = params.get("showId")?.trim() ?? "";
+    const slug = params.get("slug")?.trim() ?? "";
+    const showSponsorId = params.get("showSponsorId")?.trim() ?? "";
+    if (!showId || !slug || !showSponsorId) return;
+    setSponsorCompSource({ showId, slug, showSponsorId });
+    const query = new URLSearchParams({ slug, showSponsorId });
+    void fetch(`/api/admin/shows/${encodeURIComponent(showId)}/sponsor-comp-redemption-tokens?${query}`, { credentials: "same-origin" })
+      .then(async (response) => { const payload = await response.json() as { success: boolean; tokens?: SponsorCompPrintToken[]; sponsor?: { name: string; allowance: number }; show?: { name: string; show_date: string | null }; error?: string }; if (!response.ok || !payload.success || !payload.sponsor || !payload.show) throw new Error(payload.error ?? "Unable to load individual sponsor tickets."); setSponsorCompTokens(payload.tokens ?? []); setSponsorCompMetadata({ sponsor: payload.sponsor, show: payload.show }); })
+      .catch((error) => setSponsorCompSourceError(error instanceof Error ? error.message : "Unable to load individual sponsor tickets."));
+  }, []);
 
   const generatedBatchResult = useMemo(() => generateBatchRecords(batchSettings), [batchSettings]);
   const importedBatchResult = useMemo(() => {
@@ -168,7 +191,8 @@ export default function PrintStudioClient() {
     });
     return { records, warnings: [...importedJsonWarnings, ...importedJsonErrors] };
   }, [batchSettings, importedJsonErrors, importedJsonRecords, importedJsonWarnings]);
-  const batchResult = batchSettings.mode === "imported_json" ? importedBatchResult : generatedBatchResult;
+  const sponsorCompRecords = useMemo(() => sponsorCompSource && sponsorCompMetadata && !sponsorCompSourceError ? buildSponsorCompPrintRecords({ sponsorName: sponsorCompMetadata.sponsor.name, showName: sponsorCompMetadata.show.name, showDate: sponsorCompMetadata.show.show_date ?? "Date TBD", allowance: sponsorCompMetadata.sponsor.allowance, tokens: sponsorCompTokens }) : [], [sponsorCompMetadata, sponsorCompSource, sponsorCompSourceError, sponsorCompTokens]);
+  const batchResult = sponsorCompSource && !sponsorCompSourceError ? { records: sponsorCompRecords, warnings: [] } : batchSettings.mode === "imported_json" ? importedBatchResult : generatedBatchResult;
   const batchPaper = getBatchPaperDimensions(batchSettings);
   const batchLayout = calculateBatchPageLayout(template, batchSettings);
   const batchRecords = batchResult.records;
@@ -481,6 +505,10 @@ export default function PrintStudioClient() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h1 className="text-3xl font-black tracking-normal text-white">Print Studio</h1>
+              {sponsorCompSource ? <p className="mt-2 text-sm font-bold text-amber-200">Individual Sponsor Comp Tickets <span className="font-normal text-slate-400">· Sponsor ticket source selected</span></p> : null}
+              {sponsorCompSource ? <p className="mt-1 text-xs text-slate-300">Issued: {sponsorCompTokens.length} · Redeemed: {sponsorCompTokens.filter((token) => token.redeemed_at).length} · Available: {sponsorCompTokens.filter((token) => !token.redeemed_at && !token.voided_at).length}</p> : null}
+              {sponsorCompSource && !sponsorCompSourceError && sponsorCompTokens.length === 0 ? <p className="mt-1 text-xs font-semibold text-amber-200">Generate Individual Barcodes first.</p> : null}
+              {sponsorCompSourceError ? <p className="mt-1 text-xs font-semibold text-rose-300">{sponsorCompSourceError}</p> : null}
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={resetTemplate} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-bold text-slate-100">

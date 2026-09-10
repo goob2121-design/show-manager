@@ -55,13 +55,17 @@ export function SponsorCompRedemptionTokenManager({ showId, showSlug, showSponso
 
   const redeemed = tokens.filter((token) => token.redeemed_at).length;
   const available = tokens.filter((token) => !token.redeemed_at && !token.voided_at).length;
+  const printTicketsHref = `/print-studio?source=sponsor-comp&showId=${encodeURIComponent(showId)}&slug=${encodeURIComponent(showSlug)}&showSponsorId=${encodeURIComponent(showSponsorId)}`;
   return <div className="mt-2 min-w-64 text-xs">
     <button type="button" onClick={() => void toggle()} className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">{open ? "Hide Individual Barcodes" : "Manage Individual Barcodes"}</button>
     {open ? <div className="mt-2 rounded-lg border border-stone-200 bg-stone-50 p-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-bold text-stone-900">Individual Redemption Barcodes</p>
         {tokens.length > 0 ? (
+          <>
           <a href={barcodeArchiveUrl()} download className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 font-semibold text-emerald-800">Download All {tokens.length} Barcodes</a>
+          <a href={printTicketsHref} className="rounded border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-900">Print Individual Tickets</a>
+          </>
         ) : (
           <button type="button" disabled className="rounded border border-stone-200 bg-stone-100 px-2 py-1 font-semibold text-stone-400">Download All 0 Barcodes</button>
         )}

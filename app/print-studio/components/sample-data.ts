@@ -15,6 +15,7 @@ export const sampleTicketData: SampleTicketData = {
   seat: "A12",
   section: "Center",
   ticket_number: "000123",
+  sponsor_comp_redemption_barcode: "stf_scomp_SAMPLE1234",
   custom_text: "Custom Text",
 };
 
@@ -23,6 +24,7 @@ export const fieldLabels: Record<PrintFieldType, string> = {
     labels[definition.key] = definition.label;
     return labels;
   }, {} as Record<BatchVariableFieldType, string>),
+  sponsor_comp_redemption_barcode: "Sponsor Comp Redemption Barcode",
   custom_text: "Custom Text",
 };
 
@@ -38,6 +40,7 @@ export const fieldTypes: PrintFieldType[] = [
   "seat",
   "section",
   "ticket_number",
+  "sponsor_comp_redemption_barcode",
   "custom_text",
 ];
 
