@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { getSponsorCompPrintBarcode } from "@/lib/sponsor-comp-print-barcode";
 import { isPrintStudioVariableKey } from "./variable-contract";
 import type { BatchVariableFieldType, PrintField, PrintRecord } from "./types";
 
@@ -84,6 +85,7 @@ export default function PrintFieldRenderer({
   onPointerDown,
   onKeyboardSelect,
 }: PrintFieldRendererProps) {
+  const sponsorBarcode = field.type === "sponsor_comp_redemption_barcode" ? getSponsorCompPrintBarcode(record) : null;
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (!onKeyboardSelect) return;
     if (event.key === "Enter" || event.key === " ") {
@@ -108,7 +110,7 @@ export default function PrintFieldRenderer({
       style={getPrintFieldStyle(field)}
       title={field.label}
     >
-      <span className="block w-full overflow-hidden text-clip whitespace-nowrap">{children ?? getPrintFieldText(field, record)}</span>
+      {field.type === "sponsor_comp_redemption_barcode" ? (sponsorBarcode ? <span className="block h-full w-full [&>svg]:h-full [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: sponsorBarcode.svg }} /> : <span className="block w-full text-center text-xs">Sponsor token required</span>) : <span className="block w-full overflow-hidden text-clip whitespace-nowrap">{children ?? getPrintFieldText(field, record)}</span>}
     </div>
   );
 }
