@@ -62,6 +62,7 @@ type DoorModeActivity = {
   createdAt: number;
   undo: (() => Promise<void>) | null;
   undoneLabel?: string;
+  sponsorCompTokenId?: string;
 };
 
 type DoorSeatView = {
@@ -84,6 +85,7 @@ type DoorScanState =
   | { kind: "not_found" }
   | { kind: "error"; message: string }
   | { kind: "sponsor_comp_redemption"; lookup: DoorSponsorScanResult }
+  | { kind: "sponsor_comp_redemption_undone"; result: SponsorCompRedemptionUndoResult }
   | { kind: "found"; lookup: DoorScanFoundResult };
 
 const DOOR_SCAN_BEHAVIOR_STORAGE_KEY = "stageflow-door-scan-behavior";
@@ -855,7 +857,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     setScanState((current) =>
       current.kind === "sponsor_comp_redemption"
         && current.lookup.redemption.tokenId === payload.result.tokenId
-        ? { kind: "idle" }
+        ? { kind: "sponsor_comp_redemption_undone", result: payload.result }
         : current,
     );
   }
@@ -931,6 +933,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             id: `sponsor-comp-token-${redemption.tokenId}-${Date.now()}`,
             label: `${sponsorName} · Ticket ${redemption.ordinal} of ${redemption.allowance} — Checked In`,
             undoneLabel: `${sponsorName} · Ticket ${redemption.ordinal} of ${redemption.allowance} — Check-In Undone`,
+            sponsorCompTokenId: redemption.tokenId,
             createdAt: Date.now(),
             undo: () => undoSponsorCompRedemption(redemption),
           });
@@ -1527,6 +1530,26 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     await handleUndoActivity(lastAction, "undo-last");
   }
 
+  async function handleUndoScannedSponsorComp() {
+    if (
+      scanState.kind !== "sponsor_comp_redemption"
+      || scanState.lookup.redemption.resultStatus !== "REDEEMED"
+      || !scanState.lookup.redemption.tokenId
+    ) {
+      return;
+    }
+
+    const activity = recentActivities.find((item) =>
+      item.sponsorCompTokenId === scanState.lookup.redemption.tokenId && item.undo,
+    );
+    if (!activity) {
+      setErrorMessage("The exact sponsor ticket check-in is no longer available to undo.");
+      return;
+    }
+
+    await handleUndoActivity(activity, `undo-${activity.id}`);
+  }
+
   async function handleDoorStaffLogout() {
     await fetch(`/api/door-staff-session?slug=${encodeURIComponent(showSlug)}`, { method: "DELETE" }).catch(() => null);
     window.location.assign(`/admin/${encodeURIComponent(showSlug)}/door/login`);
@@ -1720,6 +1743,34 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                   <p className="mt-3 font-bold uppercase tracking-[0.12em] text-gray-50">
                     {scanState.lookup.redemption.resultStatus === "REDEEMED" ? "✓ Checked In" : scanState.lookup.redemption.resultStatus === "ALREADY_REDEEMED" ? "Already Redeemed" : scanState.lookup.redemption.resultStatus === "ALLOCATION_FULL" ? "Sponsor Allocation Full" : "Token Voided"}
                   </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {scanState.lookup.redemption.resultStatus === "REDEEMED" ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleUndoScannedSponsorComp()}
+                        disabled={Boolean(activeActionId)}
+                        className="min-h-10 rounded-lg bg-sky-700 px-3 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {activeActionId?.startsWith("undo-sponsor-comp-token-")
+                          ? "Undoing..."
+                          : "Undo This Check-In"}
+                      </button>
+                    ) : null}
+                    <button type="button" onClick={() => resetScanState()} disabled={Boolean(activeActionId)} className="min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100 disabled:cursor-not-allowed disabled:opacity-50">Dismiss</button>
+                  </div>
+                </article>
+              ) : null}
+
+              {scanState.kind === "sponsor_comp_redemption_undone" ? (
+                <article className="rounded-xl border border-sky-800/70 bg-sky-500/10 px-3 py-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-200">Complimentary Sponsor Ticket</p>
+                  <h3 className="mt-1 text-xl font-semibold text-gray-50">{scanState.result.sponsorName ?? "Sponsor"}</h3>
+                  <p className="mt-1 text-sm text-gray-200">Ticket {scanState.result.ordinal} of {scanState.result.allowance}</p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+                    <span className="rounded-full border border-gray-700 px-2.5 py-1 text-gray-100">Checked In: {scanState.result.checkedIn} of {scanState.result.allowance}</span>
+                    <span className="rounded-full border border-gray-700 px-2.5 py-1 text-gray-100">Remaining: {scanState.result.remaining}</span>
+                  </div>
+                  <p className="mt-3 font-bold uppercase tracking-[0.12em] text-sky-100">Check-In Undone</p>
                   <button type="button" onClick={() => resetScanState()} className="mt-3 min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100">Dismiss</button>
                 </article>
               ) : null}
