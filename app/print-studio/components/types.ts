@@ -10,6 +10,7 @@ export type PrintFieldType =
   | "seat"
   | "section"
   | "ticket_number"
+  | "sponsor_comp_redemption_barcode"
   | "custom_text";
 
 export type BatchVariableFieldType = Exclude<PrintFieldType, "custom_text">;
@@ -69,6 +70,7 @@ export type PrintTemplate = {
 export type PrintRecord = Partial<Record<PrintFieldType, string>> & {
   id: string;
   displayName?: string;
+  sponsor_comp_redemption_token?: string;
 };
 
 export type BatchMode = "sequential" | "custom_list" | "imported_json";
