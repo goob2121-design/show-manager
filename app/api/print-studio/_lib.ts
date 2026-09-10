@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { PRINT_STUDIO_VARIABLE_KEYS } from "@/app/print-studio/components/variable-contract";
-import type { BatchSettings, PrintTemplate } from "@/app/print-studio/components/types";
+import { PRINT_STUDIO_FIELD_TYPES, type BatchSettings, type PrintTemplate } from "@/app/print-studio/components/types";
 
 const MAX_TEMPLATE_JSON_BYTES = 500_000;
 const MAX_BACKGROUND_BYTES = 10 * 1024 * 1024;
@@ -43,7 +43,7 @@ function validateField(field: unknown) {
   if (!isPlainObject(field)) return "Each field must be an object.";
   if (typeof field.id !== "string" || !field.id.trim()) return "Each field needs an id.";
   if (typeof field.type !== "string") return "Each field needs a type.";
-  if (field.type !== "custom_text" && !PRINT_STUDIO_VARIABLE_KEYS.includes(field.type as never)) return "Field type is not allowed.";
+  if (!PRINT_STUDIO_FIELD_TYPES.includes(field.type as never)) return "Field type is not allowed.";
   if (field.variableKey !== undefined && !PRINT_STUDIO_VARIABLE_KEYS.includes(field.variableKey as never)) return "Field variable key is not allowed.";
   for (const key of ["x", "y", "width", "height", "rotation", "zIndex", "fontSize", "fontWeight", "letterSpacing", "lineHeight"] as const) {
     if (field[key] !== undefined && getNumber(field[key]) === undefined) return `Field ${key} must be numeric.`;

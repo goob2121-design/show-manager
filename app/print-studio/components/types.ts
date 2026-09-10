@@ -1,17 +1,20 @@
-export type PrintFieldType =
-  | "event_name"
-  | "show_date"
-  | "show_time"
-  | "venue"
-  | "purchaser_name"
-  | "guest_name"
-  | "sponsor_name"
-  | "ticket_type"
-  | "seat"
-  | "section"
-  | "ticket_number"
-  | "sponsor_comp_redemption_barcode"
-  | "custom_text";
+export const PRINT_STUDIO_FIELD_TYPES = [
+  "event_name",
+  "show_date",
+  "show_time",
+  "venue",
+  "purchaser_name",
+  "guest_name",
+  "sponsor_name",
+  "ticket_type",
+  "seat",
+  "section",
+  "ticket_number",
+  "sponsor_comp_redemption_barcode",
+  "custom_text",
+] as const;
+
+export type PrintFieldType = (typeof PRINT_STUDIO_FIELD_TYPES)[number];
 
 export type BatchVariableFieldType = Exclude<PrintFieldType, "custom_text">;
 export type PrintOrientation = "portrait" | "landscape";
