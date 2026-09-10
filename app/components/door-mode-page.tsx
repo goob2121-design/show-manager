@@ -371,6 +371,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const guestSearchRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const recentScanRef = useRef<{ token: string; timestamp: number } | null>(null);
+  const scanRequestGenerationRef = useRef(0);
   const keypadShortcutInFlightRef = useRef(false);
 
   const loadDoorModeData = useCallback(async () => {
@@ -821,6 +822,10 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
       throw new Error("This sponsor ticket check-in does not include an exact token identity.");
     }
 
+    // An older scan response must not overwrite the authoritative undo result.
+    scanRequestGenerationRef.current += 1;
+    setIsScanLookupPending(false);
+
     const response = await fetch(
       `/api/admin/shows/${encodeURIComponent(show.id)}/sponsor-comp-redemption-token-undo`,
       {
@@ -856,7 +861,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   }
 
   async function handleScannedLookup(rawValue: string) {
-    if (!show) {
+    if (!show || activeActionId) {
       return;
     }
 
@@ -878,6 +883,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     }
 
     recentScanRef.current = { token: normalizedToken, timestamp: now };
+    const scanRequestGeneration = ++scanRequestGenerationRef.current;
     setIsScanLookupPending(true);
     setStatusMessage(null);
     setErrorMessage(null);
@@ -895,6 +901,10 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
         }),
       });
       const payload = (await response.json().catch(() => null)) as DoorModeScanLookupResponse | null;
+
+      if (scanRequestGeneration !== scanRequestGenerationRef.current) {
+        return;
+      }
 
       if (!response.ok || !payload?.success) {
         throw new Error(payload && "error" in payload ? payload.error : "Unable to scan this ticket right now.");
@@ -975,6 +985,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
         );
       }
     } catch (error) {
+      if (scanRequestGeneration !== scanRequestGenerationRef.current) {
+        return;
+      }
       setScanState({
         kind: "error",
         message: error instanceof Error ? error.message : "Unable to scan this ticket right now.",
@@ -982,7 +995,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
       setScanInput("");
       focusScanInput();
     } finally {
-      setIsScanLookupPending(false);
+      if (scanRequestGeneration === scanRequestGenerationRef.current) {
+        setIsScanLookupPending(false);
+      }
     }
   }
 
@@ -1642,6 +1657,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                 placeholder="Scan Ticket Code"
                 value={scanInput}
                 onChange={(event) => setScanInput(event.target.value)}
+                disabled={Boolean(activeActionId)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
@@ -1655,7 +1671,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
               <button
                 type="button"
                 onClick={() => void handleScannedLookup(scanInput)}
-                disabled={isScanLookupPending}
+                disabled={isScanLookupPending || Boolean(activeActionId)}
                 className="h-10 flex-1 whitespace-nowrap rounded-lg bg-amber-600 px-3 text-xs font-semibold text-gray-950 transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-700 disabled:text-amber-100 md:flex-none"
               >
                 {isScanLookupPending ? "Scanning..." : "Scan Ticket"}
