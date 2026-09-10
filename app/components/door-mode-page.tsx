@@ -1481,21 +1481,24 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
               <p className="text-3xl font-semibold tracking-[0.04em] text-gray-100 sm:text-4xl">{formattedCurrentTime}</p>
               <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Local time</p>
             </div>
-            <div className="flex items-center gap-3 lg:justify-self-end">
-              <p className="text-lg font-semibold text-gray-200 sm:text-xl">Door Check-In</p>
-              {accessRole === "door_staff" ? (
-                <button type="button" onClick={() => void handleDoorStaffLogout()} className="min-h-9 rounded-lg border border-slate-600 bg-slate-800 px-3 text-xs font-semibold text-slate-200 transition hover:bg-slate-700">
-                  Log Out
-                </button>
-              ) : null}
-              <div aria-label="Connected" className="flex min-h-9 items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-500/5 px-3">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">Connected</span>
+            <div className="flex w-full flex-col items-start gap-1.5 lg:w-auto lg:items-end lg:justify-self-end">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-lg font-semibold text-gray-200 sm:text-xl">Door Check-In</p>
+                {accessRole === "door_staff" ? (
+                  <button type="button" onClick={() => void handleDoorStaffLogout()} className="min-h-9 rounded-lg border border-slate-600 bg-slate-800 px-3 text-xs font-semibold text-slate-200 transition hover:bg-slate-700">
+                    Log Out
+                  </button>
+                ) : null}
+                <div aria-label="Connected" className="flex min-h-9 items-center gap-2 rounded-lg border border-emerald-900/60 bg-emerald-500/5 px-3">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">Connected</span>
+                </div>
               </div>
+              <CashDrawerControls compact />
             </div>
           </div>
         </section>
-        <CashDrawerControls />
+
         <div aria-live="polite" aria-atomic="true">
           {statusMessage ? (
             <div className="rounded-2xl border border-emerald-800 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
