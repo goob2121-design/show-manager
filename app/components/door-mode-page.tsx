@@ -84,7 +84,7 @@ type DoorScanState =
   | { kind: "invalid" }
   | { kind: "not_found" }
   | { kind: "error"; message: string }
-  | { kind: "sponsor_comp_redemption"; lookup: DoorSponsorScanResult; activityId: string | null }
+  | { kind: "sponsor_comp_redemption"; lookup: DoorSponsorScanResult }
   | { kind: "sponsor_comp_redemption_undone"; result: SponsorCompRedemptionUndoResult }
   | { kind: "found"; lookup: DoorScanFoundResult };
 
@@ -840,8 +840,25 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     const payload = (await response.json().catch(() => null)) as SponsorCompRedemptionUndoResponse | null;
 
     if (!response.ok || !payload?.success) {
-      throw new Error(payload && "error" in payload ? payload.error : "Unable to undo this sponsor ticket check-in.");
+      console.error("Sponsor comp barcode undo HTTP failure.", {
+        showId: show.id,
+        tokenId: redemption.tokenId,
+        httpStatus: response.status,
+        responseBody: payload,
+      });
+      const detail = payload && "error" in payload
+        ? payload.error
+        : `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}; no JSON error response`;
+      throw new Error(`Unable to undo sponsor ticket: ${detail}`);
     }
+
+    console.info("Sponsor comp barcode undo HTTP success.", {
+      showId: show.id,
+      tokenId: redemption.tokenId,
+      httpStatus: response.status,
+      resultStatus: payload.result.resultStatus,
+      responseBody: payload,
+    });
 
     if (payload.result.resultStatus !== "UNDONE") {
       const messages: Record<Exclude<SponsorCompRedemptionUndoResult["resultStatus"], "UNDONE">, string> = {
@@ -914,7 +931,6 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
 
       if (payload.result.kind === "sponsor_comp_redemption") {
         const redemption = payload.result.redemption;
-        let sponsorCompActivityId: string | null = null;
         if (redemption.showSponsorId && redemption.checkedIn !== null) {
           setShowSponsors((current) => current.map((sponsor) => sponsor.id === redemption.showSponsorId
             ? {
@@ -930,9 +946,8 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           && redemption.allowance !== null
         ) {
           const sponsorName = redemption.sponsorName ?? "Sponsor";
-          sponsorCompActivityId = `sponsor-comp-token-${redemption.tokenId}-${crypto.randomUUID()}`;
           pushRecentActivity({
-            id: sponsorCompActivityId,
+            id: `sponsor-comp-token-${redemption.tokenId}-${Date.now()}`,
             label: `${sponsorName} · Ticket ${redemption.ordinal} of ${redemption.allowance} — Checked In`,
             undoneLabel: `${sponsorName} · Ticket ${redemption.ordinal} of ${redemption.allowance} — Check-In Undone`,
             sponsorCompTokenId: redemption.tokenId,
@@ -940,11 +955,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             undo: () => undoSponsorCompRedemption(redemption),
           });
         }
-        setScanState({
-          kind: "sponsor_comp_redemption",
-          lookup: payload.result,
-          activityId: sponsorCompActivityId,
-        });
+        setScanState({ kind: "sponsor_comp_redemption", lookup: payload.result });
         setScanInput("");
         focusScanInput();
         return;
@@ -1541,15 +1552,12 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
       scanState.kind !== "sponsor_comp_redemption"
       || scanState.lookup.redemption.resultStatus !== "REDEEMED"
       || !scanState.lookup.redemption.tokenId
-      || !scanState.activityId
     ) {
       return;
     }
 
     const activity = recentActivities.find((item) =>
-      item.id === scanState.activityId
-      && item.sponsorCompTokenId === scanState.lookup.redemption.tokenId
-      && item.undo,
+      item.sponsorCompTokenId === scanState.lookup.redemption.tokenId && item.undo,
     );
     if (!activity) {
       setErrorMessage("The exact sponsor ticket check-in is no longer available to undo.");

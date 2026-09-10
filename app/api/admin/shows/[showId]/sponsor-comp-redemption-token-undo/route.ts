@@ -15,6 +15,27 @@ interface SponsorCompRedemptionTokenUndoRouteContext {
   params: Promise<{ showId: string }>;
 }
 
+function rpcErrorDiagnostic(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return { message: error instanceof Error ? error.message : "Unknown RPC error" };
+  }
+
+  const value = error as Record<string, unknown>;
+  return {
+    code: typeof value.code === "string" ? value.code : undefined,
+    message: typeof value.message === "string" ? value.message : "Unknown RPC error",
+    details: typeof value.details === "string" ? value.details : undefined,
+    hint: typeof value.hint === "string" ? value.hint : undefined,
+  };
+}
+
+function rpcErrorMessage(error: unknown) {
+  const diagnostic = rpcErrorDiagnostic(error);
+  const code = diagnostic.code ? ` ${diagnostic.code}` : "";
+  const context = [diagnostic.details, diagnostic.hint].filter(Boolean).join("; ");
+  return `Sponsor ticket undo RPC${code}: ${diagnostic.message}${context ? ` (${context})` : ""}`;
+}
+
 function createServiceClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE;
@@ -27,6 +48,9 @@ function createServiceClient() {
 }
 
 export async function POST(request: Request, context: SponsorCompRedemptionTokenUndoRouteContext) {
+  let requestShowId: string | null = null;
+  let requestTokenId: string | null = null;
+
   try {
     const { showId } = await context.params;
     const body = (await request.json().catch(() => null)) as {
@@ -35,6 +59,10 @@ export async function POST(request: Request, context: SponsorCompRedemptionToken
     } | null;
     const slug = body?.slug?.trim() ?? "";
     const tokenId = body?.tokenId?.trim() ?? "";
+    requestShowId = showId;
+    requestTokenId = tokenId;
+
+    console.info("Sponsor comp barcode undo request.", { showId, tokenId });
 
     if (!showId?.trim() || !slug || !tokenId) {
       return NextResponse.json(
@@ -64,9 +92,25 @@ export async function POST(request: Request, context: SponsorCompRedemptionToken
       p_token_id: tokenId,
       p_undone_by: accessRole,
     });
-    if (error) throw error;
+    if (error) {
+      console.error("Sponsor comp barcode undo RPC error.", {
+        showId,
+        tokenId,
+        rpcError: rpcErrorDiagnostic(error),
+      });
+      return NextResponse.json(
+        { success: false, error: rpcErrorMessage(error) } satisfies SponsorCompRedemptionUndoResponse,
+        { status: 500 },
+      );
+    }
 
     const row = (data as Array<Record<string, unknown>> | null)?.[0];
+    console.info("Sponsor comp barcode undo RPC response.", {
+      showId,
+      tokenId,
+      resultStatus: row?.result_status ?? null,
+      row: row ?? null,
+    });
     if (!row) {
       throw new Error("Sponsor comp barcode undo returned no result.");
     }
@@ -85,9 +129,17 @@ export async function POST(request: Request, context: SponsorCompRedemptionToken
 
     return NextResponse.json({ success: true, result } satisfies SponsorCompRedemptionUndoResponse);
   } catch (error) {
-    console.error("Sponsor comp barcode undo failed.", error);
+    const diagnostic = rpcErrorDiagnostic(error);
+    console.error("Sponsor comp barcode undo route failed.", {
+      showId: requestShowId,
+      tokenId: requestTokenId,
+      error: diagnostic,
+    });
     return NextResponse.json(
-      { success: false, error: "Unable to undo this sponsor ticket check-in." } satisfies SponsorCompRedemptionUndoResponse,
+      {
+        success: false,
+        error: `Sponsor ticket undo route failed: ${diagnostic.message}`,
+      } satisfies SponsorCompRedemptionUndoResponse,
       { status: 500 },
     );
   }
