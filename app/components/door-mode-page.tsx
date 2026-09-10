@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { CashDrawerControls } from "@/app/components/cash-drawer-controls";
+import { openCashDrawerAfterPaidSale } from "@/lib/cash-drawer-controller";
 import { ReservedSeatMap, type ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -1107,6 +1108,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
 
           setCompTickets((current) => current.filter((item) => item.id !== insertedTicket.id));
         },
+      });
+      void openCashDrawerAfterPaidSale().catch(() => {
+        setErrorMessage("Sale recorded, but cash drawer did not open.");
       });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to add paid door tickets.");
