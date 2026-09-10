@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { CashDrawerControls } from "@/app/components/cash-drawer-controls";
 import { ReservedSeatMap, type ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -1490,6 +1491,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             </div>
           </div>
         </section>
+        <CashDrawerControls />
         <div aria-live="polite" aria-atomic="true">
           {statusMessage ? (
             <div className="rounded-2xl border border-emerald-800 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
