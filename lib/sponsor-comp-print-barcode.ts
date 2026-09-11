@@ -6,5 +6,14 @@ type SponsorCompBarcodeRecord = {
 
 export function getSponsorCompPrintBarcode(record?: SponsorCompBarcodeRecord): GeneratedScanAsset | null {
   const token = record?.sponsor_comp_redemption_token?.trim() ?? "";
-  return token ? generateCode128(token) : null;
+  if (!token) return null;
+
+  const barcode = generateCode128(token);
+  return {
+    ...barcode,
+    svg: barcode.svg.replace(
+      "<svg ",
+      '<svg width="100%" height="100%" preserveAspectRatio="none" ',
+    ),
+  };
 }

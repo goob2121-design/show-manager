@@ -22,6 +22,7 @@ test("Sponsor Comp barcode is available in the toolbar and remains record-driven
   assert.match(sampleData, /"sponsor_comp_redemption_barcode"/);
   assert.match(renderer, /getSponsorCompPrintBarcode/);
   assert.match(renderer, /dangerouslySetInnerHTML/);
+  assert.match(renderer, /\[&>svg\]:h-full \[&>svg\]:w-full/);
   assert.match(renderer, /Sponsor token required/);
   assert.match(properties, /isSponsorCompBarcode/);
   assert.match(properties, /cannot be edited/);
