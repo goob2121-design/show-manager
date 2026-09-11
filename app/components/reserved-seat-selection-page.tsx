@@ -11,6 +11,7 @@ import {
   formatReservedSeatLabel,
   sortReservedSeatIds,
 } from "@/lib/reserved-seating";
+import { formatReservedSeatPayAtDoorDue, type ReservedSeatPayAtDoorTicket } from "@/lib/reserved-seat-pay-at-door-ticket";
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
 type PublicSeatAssignment = Pick<ShowReservedSeatAssignment, "seat_id" | "seating_link_id" | "assignment_type">;
@@ -19,6 +20,7 @@ type ReservedSeatSelectionPageProps = {
   show: Pick<ShowRecord, "name" | "show_date" | "show_start_time" | "venue" | "show_logo_url" | "ticket_code_format">;
   seatingLink: ShowReservedSeatingLink;
   assignments: PublicSeatAssignment[];
+  payAtDoorTicket: ReservedSeatPayAtDoorTicket | null;
 };
 
 function formatShowDate(showDate: string | null) {
@@ -51,7 +53,7 @@ function parseSeatDetails(seatId: string) {
   };
 }
 
-export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: ReservedSeatSelectionPageProps) {
+export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payAtDoorTicket }: ReservedSeatSelectionPageProps) {
   const [venuePhotoSrc, setVenuePhotoSrc] = useState<string>(RESERVED_SEATING_VENUE.venuePhotoPath);
   const linkAssignments = useMemo(
     () => assignments.filter((assignment) => assignment.seating_link_id === seatingLink.id),
@@ -562,6 +564,13 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                 {seatingLink.email?.trim() ? <p className="mt-1 text-sm text-slate-300">{seatingLink.email}</p> : null}
               </div>
 
+              {payAtDoorTicket?.isPayAtDoor ? (
+                <div className="mt-4 rounded-2xl border-2 border-amber-300 bg-amber-400/15 px-4 py-3 text-amber-100">
+                  <p className="text-sm font-black uppercase tracking-[0.18em]">Pay at Door</p>
+                  <p className="mt-1 text-xl font-black">{formatReservedSeatPayAtDoorDue(payAtDoorTicket.amount)}</p>
+                </div>
+              ) : null}
+
               <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Your Selected Seats</p>
                 {seatsToShow.length > 0 ? (
@@ -894,6 +903,13 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments }: Re
                   printable
                 />
               </div>
+
+              {payAtDoorTicket?.isPayAtDoor ? (
+                <div className="mt-6 rounded-xl border-2 border-black px-4 py-3 text-center">
+                  <p className="text-sm font-black uppercase tracking-[0.18em]">Pay at Door</p>
+                  <p className="mt-1 text-2xl font-black">{formatReservedSeatPayAtDoorDue(payAtDoorTicket.amount)}</p>
+                </div>
+              ) : null}
 
               <p className="ticket-print-footer mt-8 text-sm">
                 Please bring this confirmation or give your name at the door.

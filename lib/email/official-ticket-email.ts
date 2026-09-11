@@ -16,6 +16,7 @@ import {
 import { RESERVED_SEATING_VENUE, formatReservedSeatLabel, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { buildReservedSeatSelectionUrl, isStageFlowPublicUrl } from "@/lib/server/stageflow-public-url";
 import { resolveReservedSeatRecipientEmail } from "@/lib/email/resolve-reserved-seat-recipient";
+import { formatReservedSeatPayAtDoorDue, loadReservedSeatPayAtDoorTicket } from "@/lib/reserved-seat-pay-at-door-ticket";
 
 type OfficialTicketLinkRow = {
   id: string;
@@ -55,6 +56,8 @@ export type OfficialTicketEmailInput = {
   ticketCodeFormat: string | null;
   viewTicketUrl: string;
   printTicketUrl: string;
+  payAtDoor?: boolean;
+  payAtDoorAmount?: number | null;
   publicOrigin?: string;
 };
 
@@ -116,9 +119,13 @@ export function buildOfficialTicketEmail(input: OfficialTicketEmailInput, logoSr
     ["Venue", safe.venueName],
     ["Address", safe.venueAddress],
     ["Reserved Seats", safe.seats],
+    ...(input.payAtDoor ? [["Payment", `PAY AT DOOR · ${escapeHtml(formatReservedSeatPayAtDoorDue(input.payAtDoorAmount))}`]] : []),
   ].map(([label, value]) => `<tr><td style="padding:6px 12px 6px 0;color:#64748b;font-size:14px;vertical-align:top;">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:14px;font-weight:600;vertical-align:top;">${value}</td></tr>`).join("");
+  const payAtDoorNotice = input.payAtDoor
+    ? `<div style="margin:0 0 24px;padding:14px 16px;border:2px solid #b45309;background:#fffbeb;color:#78350f;text-align:center;font-size:16px;font-weight:700;"><span style="display:block;font-size:12px;letter-spacing:.12em;">PAY AT DOOR</span>${escapeHtml(formatReservedSeatPayAtDoorDue(input.payAtDoorAmount))}</div>`
+    : "";
   const subject = `Your Official Tickets - ${input.eventName.trim() || RESERVED_SEAT_EMAIL_EVENT_NAME}`;
-  const html = `<!doctype html><html><body style="margin:0;background:#e2e8f0;font-family:Arial,sans-serif;color:#0f172a;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#e2e8f0;"><tr><td align="center" style="padding:24px 12px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:8px;overflow:hidden;"><tr><td align="center" style="background:#071426;padding:24px;">${logoSrc ? `<img src="${escapeHtml(logoSrc)}" alt="Cumberland Mountain Music Show" width="260" style="display:block;width:100%;max-width:260px;height:auto;border:0;">` : `<div style="color:#fbbf24;font-size:20px;font-weight:700;">The Cumberland Mountain Music Show</div>`}</td></tr><tr><td style="padding:32px 28px;"><h1 style="margin:0 0 8px;text-align:center;color:#071426;font-size:28px;line-height:1.2;">Your Seats Are Confirmed</h1><p style="margin:0 0 24px;text-align:center;color:#a36b12;font-size:13px;font-weight:700;">OFFICIAL TICKET</p><p style="margin:0 0 18px;font-size:18px;font-weight:700;color:#071426;">Hi ${safe.customerName},</p><p style="margin:0 0 20px;font-size:16px;line-height:1.6;">Your seats are confirmed.</p><p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Present this QR code or barcode on your phone when you arrive, or print this email.</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;"><tr><td style="padding:18px;"><table role="presentation" cellspacing="0" cellpadding="0">${details}</table></td></tr></table>${codeSection.html}<p style="margin:28px 0 6px;text-align:center;color:#071426;font-size:16px;font-weight:700;line-height:1.5;">Most guests simply use their phone at the door.</p><p style="margin:0 0 18px;text-align:center;color:#334155;font-size:14px;line-height:1.6;">Tap &quot;Phone-Friendly Ticket&quot; for the quickest entry. You may also print your ticket if you prefer.</p><table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto 12px;"><tr><td align="center" bgcolor="#d89b2b" style="border-radius:5px;"><a href="${safe.phoneTicketUrl}" style="display:block;width:250px;padding:14px 18px;color:#071426;font-size:15px;font-weight:700;text-decoration:none;">&#128241; Phone-Friendly Ticket</a></td></tr><tr><td height="10"></td></tr><tr><td align="center" style="border:1px solid #0f3b5f;border-radius:5px;"><a href="${safe.printTicketUrl}" style="display:block;width:250px;padding:13px 18px;color:#0f3b5f;font-size:15px;font-weight:700;text-decoration:none;">&#128424;&#65039; Print Ticket</a></td></tr><tr><td height="10"></td></tr><tr><td align="center" style="border:1px solid #64748b;border-radius:5px;"><a href="${safe.viewTicketUrl}" style="display:block;width:250px;padding:13px 18px;color:#334155;font-size:15px;font-weight:700;text-decoration:none;">&#127760; View Standard Ticket</a></td></tr></table></td></tr><tr><td align="center" style="background:#071426;padding:28px 24px;color:#cbd5e1;font-size:13px;line-height:1.8;"><strong style="color:#ffffff;">The Cumberland Mountain Music Show</strong><br>Big-Time Show, Small-Town Hospitality</td></tr></table></td></tr></table></body></html>`;
+  const html = `<!doctype html><html><body style="margin:0;background:#e2e8f0;font-family:Arial,sans-serif;color:#0f172a;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#e2e8f0;"><tr><td align="center" style="padding:24px 12px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:8px;overflow:hidden;"><tr><td align="center" style="background:#071426;padding:24px;">${logoSrc ? `<img src="${escapeHtml(logoSrc)}" alt="Cumberland Mountain Music Show" width="260" style="display:block;width:100%;max-width:260px;height:auto;border:0;">` : `<div style="color:#fbbf24;font-size:20px;font-weight:700;">The Cumberland Mountain Music Show</div>`}</td></tr><tr><td style="padding:32px 28px;"><h1 style="margin:0 0 8px;text-align:center;color:#071426;font-size:28px;line-height:1.2;">Your Seats Are Confirmed</h1><p style="margin:0 0 24px;text-align:center;color:#a36b12;font-size:13px;font-weight:700;">OFFICIAL TICKET</p><p style="margin:0 0 18px;font-size:18px;font-weight:700;color:#071426;">Hi ${safe.customerName},</p><p style="margin:0 0 20px;font-size:16px;line-height:1.6;">Your seats are confirmed.</p><p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Present this QR code or barcode on your phone when you arrive, or print this email.</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;"><tr><td style="padding:18px;"><table role="presentation" cellspacing="0" cellpadding="0">${details}</table></td></tr></table>${payAtDoorNotice}${codeSection.html}<p style="margin:28px 0 6px;text-align:center;color:#071426;font-size:16px;font-weight:700;line-height:1.5;">Most guests simply use their phone at the door.</p><p style="margin:0 0 18px;text-align:center;color:#334155;font-size:14px;line-height:1.6;">Tap &quot;Phone-Friendly Ticket&quot; for the quickest entry. You may also print your ticket if you prefer.</p><table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto 12px;"><tr><td align="center" bgcolor="#d89b2b" style="border-radius:5px;"><a href="${safe.phoneTicketUrl}" style="display:block;width:250px;padding:14px 18px;color:#071426;font-size:15px;font-weight:700;text-decoration:none;">&#128241; Phone-Friendly Ticket</a></td></tr><tr><td height="10"></td></tr><tr><td align="center" style="border:1px solid #0f3b5f;border-radius:5px;"><a href="${safe.printTicketUrl}" style="display:block;width:250px;padding:13px 18px;color:#0f3b5f;font-size:15px;font-weight:700;text-decoration:none;">&#128424;&#65039; Print Ticket</a></td></tr><tr><td height="10"></td></tr><tr><td align="center" style="border:1px solid #64748b;border-radius:5px;"><a href="${safe.viewTicketUrl}" style="display:block;width:250px;padding:13px 18px;color:#334155;font-size:15px;font-weight:700;text-decoration:none;">&#127760; View Standard Ticket</a></td></tr></table></td></tr><tr><td align="center" style="background:#071426;padding:28px 24px;color:#cbd5e1;font-size:13px;line-height:1.8;"><strong style="color:#ffffff;">The Cumberland Mountain Music Show</strong><br>Big-Time Show, Small-Town Hospitality</td></tr></table></td></tr></table></body></html>`;
   const text = [
     "YOUR SEATS ARE CONFIRMED",
     "",
@@ -132,6 +139,7 @@ export function buildOfficialTicketEmail(input: OfficialTicketEmailInput, logoSr
     `Venue: ${input.venueName}`,
     `Address: ${input.venueAddress}`,
     `Reserved Seats: ${input.seatLabels.join(" • ")}`,
+    ...(input.payAtDoor ? ["", "PAY AT DOOR", formatReservedSeatPayAtDoorDue(input.payAtDoorAmount)] : []),
     "",
     codeSection.text,
     "Most guests simply use their phone at the door.",
@@ -201,9 +209,10 @@ export async function deliverOfficialTicketEmail(
   if (!link.submitted_at) return { success: false, resendId: null, error: "Seats must be confirmed before tickets can be emailed.", reservationId: link.id };
   if (!link.scan_token) return { success: false, resendId: null, error: "This reservation does not have an entry code.", reservationId: link.id };
 
-  const [{ data: showData, error: showError }, { data: assignmentData, error: assignmentError }] = await Promise.all([
+  const [{ data: showData, error: showError }, { data: assignmentData, error: assignmentError }, payAtDoorTicket] = await Promise.all([
     supabase.from("shows").select("name,show_date,show_start_time,venue,venue_address,ticket_code_format").eq("id", link.show_id).maybeSingle(),
     supabase.from("show_reserved_seat_assignments").select("seat_id").eq("seating_link_id", link.id).order("created_at", { ascending: true }),
+    loadReservedSeatPayAtDoorTicket(supabase, link),
   ]);
   if (showError) throw showError;
   if (assignmentError) throw assignmentError;
@@ -240,6 +249,8 @@ export async function deliverOfficialTicketEmail(
       ticketCodeFormat: show.ticket_code_format,
       viewTicketUrl,
       printTicketUrl: `${viewTicketUrl}?print=1`,
+      payAtDoor: payAtDoorTicket?.isPayAtDoor,
+      payAtDoorAmount: payAtDoorTicket?.amount,
       publicOrigin: options.requestOrigin,
     });
     if (result.success) {

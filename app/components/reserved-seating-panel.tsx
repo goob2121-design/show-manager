@@ -128,6 +128,10 @@ function getCustomerLinkUrl(token: string) {
   return `${window.location.origin}/reserved-seating/${token}`;
 }
 
+function getCustomerPrintTicketUrl(token: string) {
+  return `${getCustomerLinkUrl(token)}?print=1`;
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
@@ -674,6 +678,10 @@ export function ReservedSeatingPanel({
       setActiveActionId(null);
     }
   }
+  function handlePrintTicket(link: LinkWithSeats) {
+    window.open(getCustomerPrintTicketUrl(link.selection_token), "_blank", "noopener,noreferrer");
+  }
+
   async function copyReservedSeatingMessageText(value: string, target: Exclude<CopyFeedbackTarget, null>) {
     try {
       if (!navigator.clipboard?.writeText) {
@@ -1770,6 +1778,15 @@ export function ReservedSeatingPanel({
                           className="rounded-xl border border-amber-300/25 bg-amber-400/10 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {activeActionId === `ticket-email-${link.id}` ? "Sending Ticket..." : link.ticket_emailed_at ? "Resend Ticket Email" : "Email Ticket"}
+                        </button>
+                      ) : null}
+                      {link.submitted_at && link.scan_token ? (
+                        <button
+                          type="button"
+                          onClick={() => handlePrintTicket(link)}
+                          className="rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/25"
+                        >
+                          Print Ticket
                         </button>
                       ) : null}
                       <button

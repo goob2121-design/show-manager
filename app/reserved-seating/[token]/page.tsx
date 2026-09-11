@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 import { ReservedSeatSelectionPage } from "@/app/components/reserved-seat-selection-page";
+import { loadReservedSeatPayAtDoorTicket } from "@/lib/reserved-seat-pay-at-door-ticket";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
@@ -10,6 +12,13 @@ export const runtime = "nodejs";
 type ReservedSeatingPageProps = {
   params: Promise<{ token: string }>;
 };
+
+function createReadOnlyServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !serviceRoleKey) throw new Error("Reserved-seat ticket details are not configured.");
+  return createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+}
 
 export default async function ReservedSeatingPage({ params }: ReservedSeatingPageProps) {
   const { token } = await params;
@@ -46,11 +55,14 @@ export default async function ReservedSeatingPage({ params }: ReservedSeatingPag
     notFound();
   }
 
+  const payAtDoorTicket = await loadReservedSeatPayAtDoorTicket(createReadOnlyServiceClient(), typedSeatingLink);
+
   return (
     <ReservedSeatSelectionPage
       show={typedShow}
       seatingLink={typedSeatingLink}
       assignments={typedAssignments}
+      payAtDoorTicket={payAtDoorTicket}
     />
   );
 }

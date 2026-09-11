@@ -337,6 +337,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const [isSpecialAdmissionsPanelOpen, setIsSpecialAdmissionsPanelOpen] = useState(false);
   const [isSponsorCompPanelOpen, setIsSponsorCompPanelOpen] = useState(false);
   const [sponsorCompCustomAmounts, setSponsorCompCustomAmounts] = useState<Record<string, string>>({});
+  const [pendingPayAtDoorTicket, setPendingPayAtDoorTicket] = useState<ShowCompTicket | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -999,6 +1000,10 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             })
           : null;
 
+      if (autoTicket?.pay_at_door && !autoTicket.pay_at_door_paid_at) {
+        openPayAtDoorConfirmation(autoTicket);
+      }
+
       if (
         scanBehavior === "auto" &&
         autoTicket &&
@@ -1429,6 +1434,12 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   }
 
   async function handleAdjustTicketCheckIn(item: ShowCompTicket, delta: number) {
+    if (item.pay_at_door && !item.pay_at_door_paid_at) {
+      setStatusMessage(null);
+      setErrorMessage(`Payment is due for ${item.guest_name}. Use Collect Cash or Card & Check In.`);
+      return;
+    }
+
     const nextCheckedInCount = clampCheckedInCount(item.checked_in_count + delta, item.ticket_count);
 
     if (nextCheckedInCount === item.checked_in_count) {
@@ -1544,9 +1555,16 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     }
   }
 
-  async function handlePayAtDoor(method: "cash" | "external_card") {
-    if (!show || !scannedTicket || !scannedTicket.pay_at_door || scannedTicket.pay_at_door_paid_at) return;
-    setActiveActionId(`pay-at-door-${scannedTicket.id}`);
+  function openPayAtDoorConfirmation(ticket: ShowCompTicket) {
+    if (!ticket.pay_at_door || ticket.pay_at_door_paid_at) return;
+    setErrorMessage(null);
+    setStatusMessage(null);
+    setPendingPayAtDoorTicket(ticket);
+  }
+
+  async function handlePayAtDoor(ticket: ShowCompTicket, method: "cash" | "external_card") {
+    if (!show || !ticket.pay_at_door || ticket.pay_at_door_paid_at) return;
+    setActiveActionId(`pay-at-door-${ticket.id}`);
     setErrorMessage(null);
     setStatusMessage(null);
     try {
@@ -1554,7 +1572,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug: show.slug, ticketId: scannedTicket.id, method }),
+        body: JSON.stringify({ slug: show.slug, ticketId: ticket.id, method }),
       });
       const payload = await response.json().catch(() => null) as {
         success?: boolean;
@@ -1564,44 +1582,49 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
       if (!response.ok || !payload?.success || payload.result?.resultStatus !== "PAID_AND_CHECKED_IN") {
         throw new Error(payload?.error ?? `Pay at Door failed with HTTP ${response.status}.`);
       }
-      setCompTickets((current) => current.map((ticket) => ticket.id === scannedTicket.id ? {
-        ...ticket,
+      setCompTickets((current) => current.map((currentTicket) => currentTicket.id === ticket.id ? {
+        ...currentTicket,
         checked_in: true,
-        checked_in_count: payload.result?.checkedInCount ?? ticket.ticket_count,
+        checked_in_count: payload.result?.checkedInCount ?? currentTicket.ticket_count,
         pay_at_door_paid_at: payload.result?.paidAt ?? new Date().toISOString(),
         pay_at_door_payment_method: payload.result?.paymentMethod ?? method,
-      } : ticket));
-      const paidTicketCount = payload.result?.checkedInCount ?? scannedTicket.ticket_count;
+      } : currentTicket));
+      const paidTicketCount = payload.result?.checkedInCount ?? ticket.ticket_count;
       setRecentGuestCheckIns((current) => addRecentGuestCheckIn(current, {
-        id: `${scannedTicket.id}-pay-at-door-${Date.now()}`,
-        guestName: scannedTicket.guest_name,
+        id: `${ticket.id}-pay-at-door-${Date.now()}`,
+        guestName: ticket.guest_name,
         quantity: paidTicketCount,
         resultingTotal: paidTicketCount,
-        ticketCount: scannedTicket.ticket_count,
+        ticketCount: ticket.ticket_count,
         createdAt: Date.now(),
       }));
       publishWelcome({
         showSlug,
-        displayName: scannedTicket.guest_name,
+        displayName: ticket.guest_name,
         quantityCheckedIn: paidTicketCount,
-        ticketQuantity: scannedTicket.ticket_count,
+        ticketQuantity: ticket.ticket_count,
         checkedInTotal: paidTicketCount,
-        assignedSeatLabels: scanState.kind === "found" ? scanState.lookup.reservation.seatLabels : [],
-        admissionCategory: checkInAdmissionLabel(scannedTicket.ticket_type, scannedTicket.notes),
+        assignedSeatLabels: scanState.kind === "found" && scannedTicket?.id === ticket.id
+          ? scanState.lookup.reservation.seatLabels
+          : seatIdsByTicketId[ticket.id] ?? [],
+        admissionCategory: checkInAdmissionLabel(ticket.ticket_type, ticket.notes),
       });
       pushRecentActivity({
-        id: `pay-at-door-${scannedTicket.id}-${Date.now()}`,
-        label: `${scannedTicket.guest_name} paid at door and checked in`,
+        id: `pay-at-door-${ticket.id}-${Date.now()}`,
+        label: `${ticket.guest_name} paid at door and checked in`,
         createdAt: Date.now(),
         undo: async () => {
           const { data, error } = await createClient().from("show_comp_tickets")
             .update({ checked_in: false, checked_in_count: 0 })
-            .eq("id", scannedTicket.id).eq("show_id", scannedTicket.show_id).select("*").single();
+            .eq("id", ticket.id).eq("show_id", ticket.show_id).select("*").single();
           if (error) throw error;
           const restored = normalizeShowCompTicket(data as ShowCompTicket);
-          setCompTickets((current) => current.map((ticket) => ticket.id === restored.id ? restored : ticket));
+          setCompTickets((current) => current.map((currentTicket) => currentTicket.id === restored.id ? restored : currentTicket));
         },
       });
+      if (pendingPayAtDoorTicket?.id === ticket.id) {
+        setPendingPayAtDoorTicket(null);
+      }
       setStatusMessage(method === "cash" ? "PAID CASH — CHECKED IN" : "PAID CARD — CHECKED IN · External card reader");
       if (method === "cash") {
         void openCashDrawerAfterPaidSale().catch(() => setErrorMessage("Payment and check-in succeeded, but cash drawer did not open."));
@@ -1915,10 +1938,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                     <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
                       <button type="button" onClick={() => resetScanState()} className="min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800">{scannedTicket?.pay_at_door && !scannedTicket.pay_at_door_paid_at ? "Cancel" : "Dismiss"}</button>
                       {scannedTicket?.pay_at_door && !scannedTicket.pay_at_door_paid_at ? (
-                        <>
-                          <button type="button" onClick={() => void handlePayAtDoor("cash")} disabled={Boolean(activeActionId)} className="min-h-12 rounded-lg bg-emerald-600 px-6 text-lg font-black text-white disabled:opacity-50">Cash</button>
-                          <button type="button" onClick={() => void handlePayAtDoor("external_card")} disabled={Boolean(activeActionId)} className="min-h-12 rounded-lg bg-sky-600 px-6 text-lg font-black text-white disabled:opacity-50">Card</button>
-                        </>
+                        <button type="button" onClick={() => openPayAtDoorConfirmation(scannedTicket)} disabled={Boolean(activeActionId)} className="min-h-12 rounded-lg bg-rose-600 px-6 text-lg font-black text-white disabled:opacity-50">Pay</button>
                       ) : null}
                       <button type="button" onClick={handleSearchScannedGuest} className="min-h-10 rounded-lg border border-sky-800/80 bg-sky-500/[0.07] px-3 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/10">Search Manually</button>
                       {scannedTicket && !(scannedTicket.pay_at_door && !scannedTicket.pay_at_door_paid_at) ? (
@@ -2130,39 +2150,57 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                         {renderPaidAdmissionMetadata(item)}
                       </div>
 
-                      <div className="grid gap-2 sm:grid-cols-3 min-[900px]:gap-1.5 2xl:gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void handleAdjustTicketCheckIn(
-                              item,
-                              item.ticket_count - item.checked_in_count,
-                            )
-                          }
-                          disabled={
-                            Boolean(activeActionId) || item.checked_in_count >= item.ticket_count
-                          }
-                          className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-3 py-3 text-sm font-semibold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-xs 2xl:px-3 2xl:py-3 2xl:text-sm text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Check In All
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleAdjustTicketCheckIn(item, 1)}
-                          disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
-                          className="rounded-xl bg-emerald-700 px-4 py-4 text-base font-bold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-sm 2xl:px-4 2xl:py-4 2xl:text-base text-gray-50 shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
-                        >
-                          +1 Check In
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleAdjustTicketCheckIn(item, -1)}
-                          disabled={Boolean(activeActionId) || item.checked_in_count <= 0}
-                          className="rounded-xl border border-gray-700 bg-gray-800 px-3 py-3 text-sm font-semibold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-xs 2xl:px-3 2xl:py-3 2xl:text-sm text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          -1 Undo
-                        </button>
-                      </div>
+                      {item.pay_at_door && !item.pay_at_door_paid_at ? (
+                        <div className="space-y-2">
+                          <p className="text-base font-black uppercase tracking-[0.12em] text-rose-300">
+                            Pay at Door — {item.pay_at_door_amount == null ? "Amount unavailable" : `${formatCurrency(item.pay_at_door_amount)} Due`}
+                          </p>
+                          <div className="grid gap-2 sm:grid-cols-3 min-[900px]:gap-1.5 2xl:gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openPayAtDoorConfirmation(item)}
+                              disabled={Boolean(activeActionId)}
+                              className="rounded-xl border border-rose-700 bg-rose-500/10 px-3 py-3 text-sm font-semibold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-xs 2xl:px-3 2xl:py-3 2xl:text-sm text-rose-200 transition hover:bg-rose-600/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              Pay
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid gap-2 sm:grid-cols-3 min-[900px]:gap-1.5 2xl:gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleAdjustTicketCheckIn(
+                                item,
+                                item.ticket_count - item.checked_in_count,
+                              )
+                            }
+                            disabled={
+                              Boolean(activeActionId) || item.checked_in_count >= item.ticket_count
+                            }
+                            className="rounded-xl border border-emerald-700 bg-emerald-500/10 px-3 py-3 text-sm font-semibold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-xs 2xl:px-3 2xl:py-3 2xl:text-sm text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Check In All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleAdjustTicketCheckIn(item, 1)}
+                            disabled={Boolean(activeActionId) || item.checked_in_count >= item.ticket_count}
+                            className="rounded-xl bg-emerald-700 px-4 py-4 text-base font-bold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-sm 2xl:px-4 2xl:py-4 2xl:text-base text-gray-50 shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40"
+                          >
+                            +1 Check In
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleAdjustTicketCheckIn(item, -1)}
+                            disabled={Boolean(activeActionId) || item.checked_in_count <= 0}
+                            className="rounded-xl border border-gray-700 bg-gray-800 px-3 py-3 text-sm font-semibold min-[900px]:px-2 min-[900px]:py-2.5 min-[900px]:text-xs 2xl:px-3 2xl:py-3 2xl:text-sm text-gray-100 transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            -1 Undo
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </article>
                 ))
@@ -2495,6 +2533,58 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           </div>
         ) : null}
       </div>
+      {pendingPayAtDoorTicket ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-5">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="door-pay-at-door-dialog-title"
+            data-testid="door-pay-at-door-dialog"
+            className="w-full max-w-md rounded-[20px] border border-rose-500/70 bg-gray-800 p-5 shadow-xl shadow-slate-950/30"
+          >
+            <h2 id="door-pay-at-door-dialog-title" className="text-2xl font-semibold text-gray-50">
+              {pendingPayAtDoorTicket.guest_name}
+            </h2>
+            <p className="mt-1 text-sm font-semibold text-gray-300">
+              {pendingPayAtDoorTicket.ticket_count} {pendingPayAtDoorTicket.ticket_count === 1 ? "Seat" : "Seats"}
+            </p>
+            <div className="mt-5 rounded-xl border border-rose-500/70 bg-rose-950/50 px-4 py-5 text-center">
+              <p className="text-sm font-black uppercase tracking-[0.16em] text-rose-200">Pay at Door</p>
+              <p className="mt-2 text-3xl font-black text-rose-100">
+                {pendingPayAtDoorTicket.pay_at_door_amount == null
+                  ? "Amount unavailable"
+                  : `${formatCurrency(pendingPayAtDoorTicket.pay_at_door_amount)} Due`}
+              </p>
+            </div>
+            <div className="mt-5 grid gap-2">
+              <button
+                type="button"
+                onClick={() => void handlePayAtDoor(pendingPayAtDoorTicket, "cash")}
+                disabled={Boolean(activeActionId)}
+                className="min-h-12 rounded-xl bg-emerald-600 px-4 text-base font-black text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Collect Cash &amp; Check In
+              </button>
+              <button
+                type="button"
+                onClick={() => void handlePayAtDoor(pendingPayAtDoorTicket, "external_card")}
+                disabled={Boolean(activeActionId)}
+                className="min-h-12 rounded-xl bg-sky-600 px-4 text-base font-black text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Collect Card &amp; Check In
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingPayAtDoorTicket(null)}
+                disabled={Boolean(activeActionId)}
+                className="min-h-11 rounded-xl border border-gray-600 bg-gray-700 px-4 text-sm font-semibold text-gray-100 transition hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {seatView ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-5"
