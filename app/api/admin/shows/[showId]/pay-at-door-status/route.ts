@@ -38,13 +38,13 @@ export async function GET(request: Request, context: { params: Promise<{ showId:
     ((projections ?? []) as Array<{ source_id: string; projected_ticket_id: string }>).forEach((row) => ticketIdByLinkId.set(row.source_id, row.projected_ticket_id));
     const ticketIds = [...new Set(ticketIdByLinkId.values())];
     const { data: tickets, error: ticketError } = ticketIds.length
-      ? await supabase.from("show_comp_tickets").select("id, pay_at_door_paid_at, pay_at_door_payment_method").in("id", ticketIds)
+      ? await supabase.from("show_comp_tickets").select("id, pay_at_door_amount, pay_at_door_paid_at, pay_at_door_payment_method").in("id", ticketIds)
       : { data: [], error: null };
     if (ticketError) throw ticketError;
-    const byTicket = new Map(((tickets ?? []) as Array<{ id: string; pay_at_door_paid_at: string | null; pay_at_door_payment_method: string | null }>).map((ticket) => [ticket.id, ticket]));
+    const byTicket = new Map(((tickets ?? []) as Array<{ id: string; pay_at_door_amount: number | null; pay_at_door_paid_at: string | null; pay_at_door_payment_method: string | null }>).map((ticket) => [ticket.id, ticket]));
     return NextResponse.json({ success: true, statuses: [...ticketIdByLinkId].flatMap(([linkId, ticketId]) => {
       const ticket = byTicket.get(ticketId);
-      return ticket ? [{ linkId, paidAt: ticket.pay_at_door_paid_at, method: ticket.pay_at_door_payment_method }] : [];
+      return ticket ? [{ linkId, amount: ticket.pay_at_door_amount, paidAt: ticket.pay_at_door_paid_at, method: ticket.pay_at_door_payment_method }] : [];
     }) });
   } catch (error) {
     console.error("Pay at Door status failed.", error);

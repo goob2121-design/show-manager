@@ -24,6 +24,7 @@ import {
   buildReservedSeatingMessageSubject,
 } from "@/lib/reserved-seat-generated-message";
 import { tryGenerateReservationScanToken } from "@/lib/reservation-scan-tokens";
+import { formatReservedSeatPayAtDoorAmount, normalizeReservedSeatPayAtDoorQuantity } from "@/lib/reserved-seat-pay-at-door";
 import { getOfficialTicketReadiness } from "@/lib/official-ticket-readiness";
 import { getReservedSeatReminderEligibility } from "@/lib/reserved-seat-reminder-eligibility";
 import { createClient } from "@/lib/supabase/client";
@@ -69,7 +70,7 @@ type LinkFormState = {
   payAtDoor: boolean;
 };
 
-type PayAtDoorDisplay = { paidAt: string | null; method: "cash" | "external_card" | null };
+type PayAtDoorDisplay = { amount: number | null; paidAt: string | null; method: "cash" | "external_card" | null };
 
 type LinkWithSeats = ShowReservedSeatingLink & {
   seatIds: string[];
@@ -267,6 +268,7 @@ export function ReservedSeatingPanel({
   const [payAtDoorByLinkId, setPayAtDoorByLinkId] = useState<Record<string, PayAtDoorDisplay>>({});
   const [postAssignmentPromptLinkId, setPostAssignmentPromptLinkId] = useState<string | null>(null);
   const [showBulkReminderConfirmation, setShowBulkReminderConfirmation] = useState(false);
+  const payAtDoorFormAmount = formatReservedSeatPayAtDoorAmount(formState.ticketCount);
   const supabase = useMemo(() => createClient(), []);
 
   async function loadReservedSeatEmailStatuses(nextLinks: ShowReservedSeatingLink[]) {
@@ -427,9 +429,9 @@ export function ReservedSeatingPanel({
 
       const nextLinks = (linkRows ?? []) as ShowReservedSeatingLink[];
       const statusResponse = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/pay-at-door-status?slug=${encodeURIComponent(showSlug)}`, { credentials: "same-origin" });
-      const statusPayload = await statusResponse.json().catch(() => null) as { success?: boolean; statuses?: Array<{ linkId: string; paidAt: string | null; method: "cash" | "external_card" | null }> } | null;
+      const statusPayload = await statusResponse.json().catch(() => null) as { success?: boolean; statuses?: Array<{ linkId: string; amount: number | null; paidAt: string | null; method: "cash" | "external_card" | null }> } | null;
       setPayAtDoorByLinkId(statusResponse.ok && statusPayload?.success && statusPayload.statuses
-        ? Object.fromEntries(statusPayload.statuses.map((status) => [status.linkId, { paidAt: status.paidAt, method: status.method }]))
+        ? Object.fromEntries(statusPayload.statuses.map((status) => [status.linkId, { amount: status.amount, paidAt: status.paidAt, method: status.method }]))
         : {});
       setLinks(nextLinks);
       setAssignments((assignmentRows ?? []) as ShowReservedSeatAssignment[]);
@@ -582,7 +584,7 @@ export function ReservedSeatingPanel({
     setErrorMessage(null);
 
     try {
-      const ticketCount = Math.max(1, Number.parseInt(formState.ticketCount.trim(), 10) || 1);
+      const ticketCount = normalizeReservedSeatPayAtDoorQuantity(formState.ticketCount);
       const { error } = await supabase.from("show_reserved_seating_links").insert({
         show_id: showId,
         customer_name: formState.customerName.trim(),
@@ -1367,7 +1369,7 @@ export function ReservedSeatingPanel({
               {!formState.isComplimentary && formState.seatCategory === "paid_reserved" ? (
                 <label className="flex items-center gap-3 rounded-xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-sm font-bold text-amber-100">
                   <input type="checkbox" checked={formState.payAtDoor} onChange={(event) => setFormState((current) => ({ ...current, payAtDoor: event.target.checked }))} />
-                  Pay at Door · $10 due
+                  Pay at Door · {payAtDoorFormAmount} due
                 </label>
               ) : null}
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
@@ -1513,7 +1515,7 @@ export function ReservedSeatingPanel({
                           </span>
                           {link.pay_at_door_intent ? (
                             <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] ${payAtDoor?.paidAt ? "border-emerald-300/40 bg-emerald-500/20 text-emerald-100" : "border-amber-300/50 bg-amber-400/20 text-amber-100"}`}>
-                              {payAtDoor?.paidAt ? `Paid at Door · ${payAtDoor.method === "cash" ? "Cash" : "Card"}` : "Pay at Door · $10 due"}
+                              {payAtDoor?.paidAt ? `Paid at Door · ${payAtDoor.method === "cash" ? "Cash" : "Card"}` : ["Pay at Door · ", payAtDoor?.amount == null ? formatReservedSeatPayAtDoorAmount(link.ticket_count) : [String.fromCharCode(36), payAtDoor.amount.toFixed(0)].join(""), " due"].join("")}
                             </span>
                           ) : null}
                           <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] shadow-sm ${link.seat_preference === "auto_assign" ? "border-fuchsia-300/60 bg-fuchsia-500/25 text-fuchsia-50 shadow-fuchsia-950/30" : "border-white/10 bg-white/[0.05] text-slate-200"}`}>
