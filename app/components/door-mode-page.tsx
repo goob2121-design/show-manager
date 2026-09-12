@@ -63,6 +63,7 @@ type DoorModeActivity = {
   undo: (() => Promise<void>) | null;
   undoneLabel?: string;
   sponsorCompTokenId?: string;
+  receiptTicketId?: string;
 };
 
 type DoorSeatView = {
@@ -333,6 +334,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const [compTickets, setCompTickets] = useState<ShowCompTicket[]>([]);
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
   const [recentActivities, setRecentActivities] = useState<DoorModeActivity[]>([]);
+  const [latestDoorSaleReceiptId, setLatestDoorSaleReceiptId] = useState<string | null>(null);
   const [isTotalsPanelOpen, setIsTotalsPanelOpen] = useState(false);
   const [isSpecialAdmissionsPanelOpen, setIsSpecialAdmissionsPanelOpen] = useState(false);
   const [isSponsorCompPanelOpen, setIsSponsorCompPanelOpen] = useState(false);
@@ -1200,6 +1202,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           notes: "Door Mode sale",
           checked_in: true,
           checked_in_count: quantity,
+          door_payment_method: "cash",
+          door_unit_price: DOOR_TICKET_PRICE,
+          door_sale_total: quantity * DOOR_TICKET_PRICE,
         })
         .select("*")
         .single();
@@ -1210,6 +1215,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
 
       const insertedTicket = normalizeShowCompTicket(data as ShowCompTicket);
       setCompTickets((current) => sortCompTickets([...current, insertedTicket]));
+      setLatestDoorSaleReceiptId(insertedTicket.id);
       setStatusMessage(`Added ${quantity} paid door ticket${quantity === 1 ? "" : "s"}.`);
       publishWelcome({
         showSlug,
@@ -1225,6 +1231,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
         id: `door-add-${insertedTicket.id}`,
         label: `Paid door +${quantity}`,
         createdAt: Date.now(),
+        receiptTicketId: insertedTicket.id,
         undo: async () => {
           const undoSupabase = createClient();
           const { error: undoError } = await undoSupabase
@@ -1238,6 +1245,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           }
 
           setCompTickets((current) => current.filter((item) => item.id !== insertedTicket.id));
+          setLatestDoorSaleReceiptId((current) => current === insertedTicket.id ? null : current);
         },
       });
       void openCashDrawerAfterPaidSale().catch(() => {
@@ -1750,6 +1758,19 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             </div>
           ) : null}
         </div>
+
+        {latestDoorSaleReceiptId && show ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-800 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            <span>Cash sale recorded.</span>
+            <button
+              type="button"
+              onClick={() => window.open(`/admin/${encodeURIComponent(show.slug)}/print/door-receipt/${encodeURIComponent(latestDoorSaleReceiptId)}`, "_blank", "noopener,noreferrer")}
+              className="min-h-9 rounded-lg border border-emerald-500/60 bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-600"
+            >
+              Print Receipt
+            </button>
+          </div>
+        ) : null}
 
         {errorMessage ? (
           <div className="rounded-2xl border border-rose-800 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
@@ -2279,6 +2300,15 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                               })}
                             </p>
                           </div>
+                          {activity.receiptTicketId && show ? (
+                            <button
+                              type="button"
+                              onClick={() => window.open(`/admin/${encodeURIComponent(show.slug)}/print/door-receipt/${encodeURIComponent(activity.receiptTicketId ?? "")}`, "_blank", "noopener,noreferrer")}
+                              className="min-h-9 rounded-lg border border-emerald-800/80 bg-emerald-500/[0.07] px-3 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/10"
+                            >
+                              Print Receipt
+                            </button>
+                          ) : null}
                           {activity.undoneLabel && activity.undo ? (
                             <button
                               type="button"

@@ -374,6 +374,9 @@ export type ShowCompTicket = {
   notes: string | null;
   checked_in: boolean;
   checked_in_count: number;
+  door_payment_method?: "cash" | null;
+  door_unit_price?: number | null;
+  door_sale_total?: number | null;
   pay_at_door?: boolean;
   pay_at_door_amount?: number | null;
   pay_at_door_paid_at?: string | null;
