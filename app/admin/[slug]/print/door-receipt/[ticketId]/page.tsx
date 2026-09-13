@@ -9,6 +9,7 @@ import type { ShowCompTicket, ShowRecord } from "@/lib/types";
 
 type Props = {
   params: Promise<{ slug: string; ticketId: string }>;
+  searchParams: Promise<{ autoClose?: string }>;
 };
 
 function formatCurrency(value: number) {
@@ -33,8 +34,8 @@ function formatSaleDateTime(value: string) {
   }).format(new Date(value));
 }
 
-export default async function DoorReceiptPrintPage({ params }: Props) {
-  const { slug, ticketId } = await params;
+export default async function DoorReceiptPrintPage({ params, searchParams }: Props) {
+  const [{ slug, ticketId }, query] = await Promise.all([params, searchParams]);
   const supabase = await createServerSupabaseClient();
   const { data: showData } = await supabase.from("shows").select("*").eq("slug", slug).maybeSingle();
   const show = showData as ShowRecord | null;
@@ -55,7 +56,7 @@ export default async function DoorReceiptPrintPage({ params }: Props) {
   return (
     <AdminGate slug={slug} resourceLabel={`door-sale receipt for ${show.name}`} continueLabel="Continue to Receipt">
       <main className="min-h-screen bg-stone-200 p-4 text-stone-950 print:bg-white print:p-0">
-        <AutoPrintOnMount />
+        <AutoPrintOnMount closeAfterPrint={query.autoClose === "1"} />
         <style>{`
           @page { size: 8.5in 3.5in; margin: 0; }
           .door-sale-receipt-sheet { position: relative; width: 8.5in; height: 3.5in; overflow: hidden; }

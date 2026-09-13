@@ -2,11 +2,29 @@
 
 import { useEffect, useRef } from "react";
 
-export function AutoPrintOnMount() {
+type AutoPrintOnMountProps = {
+  closeAfterPrint?: boolean;
+};
+
+export function AutoPrintOnMount({ closeAfterPrint = false }: AutoPrintOnMountProps) {
   const hasPrintedRef = useRef(false);
+  const hasRequestedCloseRef = useRef(false);
 
   useEffect(() => {
-    if (hasPrintedRef.current) return;
+    const handleAfterPrint = () => {
+      if (!closeAfterPrint || hasRequestedCloseRef.current) return;
+      hasRequestedCloseRef.current = true;
+
+      try {
+        window.close();
+      } catch {
+        // Browsers may refuse to close a tab; leave the receipt available for manual printing.
+      }
+    };
+
+    if (closeAfterPrint) {
+      window.addEventListener("afterprint", handleAfterPrint);
+    }
 
     const timerId = window.setTimeout(() => {
       if (hasPrintedRef.current) return;
@@ -14,8 +32,13 @@ export function AutoPrintOnMount() {
       window.print();
     }, 0);
 
-    return () => window.clearTimeout(timerId);
-  }, []);
+    return () => {
+      window.clearTimeout(timerId);
+      if (closeAfterPrint) {
+        window.removeEventListener("afterprint", handleAfterPrint);
+      }
+    };
+  }, [closeAfterPrint]);
 
   return null;
 }

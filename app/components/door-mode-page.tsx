@@ -1764,7 +1764,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             <span>Cash sale recorded.</span>
             <button
               type="button"
-              onClick={() => window.open(`/admin/${encodeURIComponent(show.slug)}/print/door-receipt/${encodeURIComponent(latestDoorSaleReceiptId)}`, "_blank", "noopener,noreferrer")}
+              onClick={() => window.open(`/admin/${encodeURIComponent(show.slug)}/print/door-receipt/${encodeURIComponent(latestDoorSaleReceiptId)}?autoClose=1`, "_blank", "noopener,noreferrer")}
               className="min-h-9 rounded-lg border border-emerald-500/60 bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-600"
             >
               Print Receipt
@@ -2303,7 +2303,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                           {activity.receiptTicketId && show ? (
                             <button
                               type="button"
-                              onClick={() => window.open(`/admin/${encodeURIComponent(show.slug)}/print/door-receipt/${encodeURIComponent(activity.receiptTicketId ?? "")}`, "_blank", "noopener,noreferrer")}
+                              onClick={() => window.open(`/admin/${encodeURIComponent(show.slug)}/print/door-receipt/${encodeURIComponent(activity.receiptTicketId ?? "")}?autoClose=1`, "_blank", "noopener,noreferrer")}
                               className="min-h-9 rounded-lg border border-emerald-800/80 bg-emerald-500/[0.07] px-3 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/10"
                             >
                               Print Receipt
