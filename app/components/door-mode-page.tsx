@@ -335,6 +335,8 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const [showSponsors, setShowSponsors] = useState<ShowSponsor[]>([]);
   const [recentActivities, setRecentActivities] = useState<DoorModeActivity[]>([]);
   const [latestDoorSaleReceiptId, setLatestDoorSaleReceiptId] = useState<string | null>(null);
+  const [pendingDoorSaleQuantity, setPendingDoorSaleQuantity] = useState<number | null>(null);
+  const [completedCashDoorSale, setCompletedCashDoorSale] = useState<ShowCompTicket | null>(null);
   const [isTotalsPanelOpen, setIsTotalsPanelOpen] = useState(false);
   const [isSpecialAdmissionsPanelOpen, setIsSpecialAdmissionsPanelOpen] = useState(false);
   const [isSponsorCompPanelOpen, setIsSponsorCompPanelOpen] = useState(false);
@@ -378,6 +380,8 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const recentScanRef = useRef<{ token: string; timestamp: number } | null>(null);
   const scanRequestGenerationRef = useRef(0);
   const keypadShortcutInFlightRef = useRef(false);
+  const doorSaleModalOpenRef = useRef(false);
+  const doorSaleSubmissionRef = useRef(false);
 
   const loadDoorModeData = useCallback(async () => {
     setIsLoading(true);
@@ -1179,14 +1183,39 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     await handleAdjustSponsorCompCheckIn(sponsor, customAmount);
   }
 
-  async function handleAddDoorSale(quantity: number) {
+  function openDoorSaleConfirmation(quantity: number) {
+    if (!show || quantity <= 0 || doorSaleModalOpenRef.current) return;
+
+    doorSaleModalOpenRef.current = true;
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setCompletedCashDoorSale(null);
+    setPendingDoorSaleQuantity(quantity);
+  }
+
+  function closeDoorSaleConfirmation() {
+    if (activeActionId) return;
+
+    doorSaleModalOpenRef.current = false;
+    doorSaleSubmissionRef.current = false;
+    keypadShortcutInFlightRef.current = false;
+    setPendingDoorSaleQuantity(null);
+    setCompletedCashDoorSale(null);
+  }
+
+  function openDoorSaleReceipt(ticketId: string) {
+    if (!show) return;
+    window.open(`/admin/${encodeURIComponent(show.slug)}/print/door-receipt/${encodeURIComponent(ticketId)}?autoClose=1`, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleAddDoorSale(quantity: number, paymentMethod: "cash" | "card"): Promise<ShowCompTicket | null> {
     if (!show || quantity <= 0) {
-      return;
+      return null;
     }
 
     setStatusMessage(null);
     setErrorMessage(null);
-    setActiveActionId(`door-add-${quantity}`);
+    setActiveActionId(`door-add-${paymentMethod}-${quantity}`);
 
     try {
       const supabase = createClient();
@@ -1202,7 +1231,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           notes: "Door Mode sale",
           checked_in: true,
           checked_in_count: quantity,
-          door_payment_method: "cash",
+          door_payment_method: paymentMethod,
           door_unit_price: DOOR_TICKET_PRICE,
           door_sale_total: quantity * DOOR_TICKET_PRICE,
         })
@@ -1215,7 +1244,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
 
       const insertedTicket = normalizeShowCompTicket(data as ShowCompTicket);
       setCompTickets((current) => sortCompTickets([...current, insertedTicket]));
-      setLatestDoorSaleReceiptId(insertedTicket.id);
+      if (paymentMethod === "cash") {
+        setLatestDoorSaleReceiptId(insertedTicket.id);
+      }
       setStatusMessage(`Added ${quantity} paid door ticket${quantity === 1 ? "" : "s"}.`);
       publishWelcome({
         showSlug,
@@ -1229,7 +1260,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
 
       pushRecentActivity({
         id: `door-add-${insertedTicket.id}`,
-        label: `Paid door +${quantity}`,
+        label: `Paid door +${quantity} · ${paymentMethod === "cash" ? "Cash" : "Card"}`,
         createdAt: Date.now(),
         receiptTicketId: insertedTicket.id,
         undo: async () => {
@@ -1248,16 +1279,42 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           setLatestDoorSaleReceiptId((current) => current === insertedTicket.id ? null : current);
         },
       });
-      void openCashDrawerAfterPaidSale().catch(() => {
-        setErrorMessage("Sale recorded, but cash drawer did not open.");
-      });
+      if (paymentMethod === "cash") {
+        void openCashDrawerAfterPaidSale().catch(() => {
+          setErrorMessage("Sale recorded, but cash drawer did not open.");
+        });
+      }
+      return insertedTicket;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to add paid door tickets.");
+      return null;
     } finally {
       setActiveActionId(null);
     }
   }
 
+  async function handleCompleteDoorSale(paymentMethod: "cash" | "card") {
+    if (pendingDoorSaleQuantity === null || doorSaleSubmissionRef.current) return;
+
+    doorSaleSubmissionRef.current = true;
+    let keepSubmissionLock = false;
+    try {
+      const insertedTicket = await handleAddDoorSale(pendingDoorSaleQuantity, paymentMethod);
+      if (!insertedTicket) return;
+
+      if (paymentMethod === "cash") {
+        keepSubmissionLock = true;
+        setCompletedCashDoorSale(insertedTicket);
+        return;
+      }
+
+      closeDoorSaleConfirmation();
+    } finally {
+      if (!keepSubmissionLock) {
+        doorSaleSubmissionRef.current = false;
+      }
+    }
+  }
   useEffect(() => {
     function handleDoorModeKeypadShortcut(event: KeyboardEvent) {
       const target = event.target instanceof Element ? event.target : null;
@@ -1287,9 +1344,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
       if (quantity === null) return;
       event.preventDefault();
       keypadShortcutInFlightRef.current = true;
-      void handleAddDoorSale(quantity).finally(() => {
-        keypadShortcutInFlightRef.current = false;
-      });
+      openDoorSaleConfirmation(quantity);
     }
 
     document.addEventListener("keydown", handleDoorModeKeypadShortcut);
@@ -2004,7 +2059,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                   <button
                     key={`door-plus-${quantity}`}
                     type="button"
-                    onClick={() => void handleAddDoorSale(quantity)}
+                    onClick={() => openDoorSaleConfirmation(quantity)}
                     disabled={Boolean(activeActionId)}
                     className="min-h-8 rounded-md bg-emerald-700 px-2.5 text-sm font-semibold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800"
                   >
@@ -2563,6 +2618,83 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           </div>
         ) : null}
       </div>
+      {pendingDoorSaleQuantity !== null ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-5">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="door-sale-payment-dialog-title"
+            data-testid="door-sale-payment-dialog"
+            className="w-full max-w-md rounded-[20px] border border-emerald-500/70 bg-gray-800 p-5 shadow-xl shadow-slate-950/30"
+          >
+            {completedCashDoorSale ? (
+              <>
+                <h2 id="door-sale-payment-dialog-title" className="text-center text-2xl font-semibold text-gray-50">Payment Complete</h2>
+                <p className="mt-4 text-center text-base font-semibold text-gray-200">
+                  {completedCashDoorSale.ticket_count} General Admission Ticket{completedCashDoorSale.ticket_count === 1 ? "" : "s"}
+                </p>
+                <p className="mt-2 text-center text-3xl font-black text-emerald-200">
+                  {formatCurrency(completedCashDoorSale.door_sale_total ?? completedCashDoorSale.ticket_count * DOOR_TICKET_PRICE)} Cash
+                </p>
+                {errorMessage ? <p className="mt-4 rounded-xl border border-rose-700 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200">{errorMessage}</p> : null}
+                <div className="mt-5 grid gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openDoorSaleReceipt(completedCashDoorSale.id)}
+                    className="min-h-12 rounded-xl bg-emerald-600 px-4 text-base font-black text-white transition hover:bg-emerald-500"
+                  >
+                    Print Receipt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeDoorSaleConfirmation}
+                    className="min-h-11 rounded-xl border border-gray-600 bg-gray-700 px-4 text-sm font-semibold text-gray-100 transition hover:bg-gray-600"
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 id="door-sale-payment-dialog-title" className="text-center text-2xl font-semibold text-gray-50">Door Admission</h2>
+                <p className="mt-4 text-center text-base font-semibold text-gray-200">
+                  {pendingDoorSaleQuantity} General Admission Ticket{pendingDoorSaleQuantity === 1 ? "" : "s"}
+                </p>
+                <p className="mt-2 text-center text-3xl font-black text-emerald-200">
+                  {formatCurrency(pendingDoorSaleQuantity * DOOR_TICKET_PRICE)} Due
+                </p>
+                {errorMessage ? <p className="mt-4 rounded-xl border border-rose-700 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200">{errorMessage}</p> : null}
+                <div className="mt-5 grid gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleCompleteDoorSale("cash")}
+                    disabled={Boolean(activeActionId)}
+                    className="min-h-12 rounded-xl bg-emerald-600 px-4 text-base font-black text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Collect Cash
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleCompleteDoorSale("card")}
+                    disabled={Boolean(activeActionId)}
+                    className="min-h-12 rounded-xl bg-sky-600 px-4 text-base font-black text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Collect Card
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeDoorSaleConfirmation}
+                    disabled={Boolean(activeActionId)}
+                    className="min-h-11 rounded-xl border border-gray-600 bg-gray-700 px-4 text-sm font-semibold text-gray-100 transition hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      ) : null}
       {pendingPayAtDoorTicket ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-5">
           <section
