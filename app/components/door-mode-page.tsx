@@ -2640,7 +2640,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                 <div className="mt-5 grid gap-2">
                   <button
                     type="button"
-                    onClick={() => openDoorSaleReceipt(completedCashDoorSale.id)}
+                    onClick={() => { openDoorSaleReceipt(completedCashDoorSale.id); closeDoorSaleConfirmation(); }}
                     className="min-h-12 rounded-xl bg-emerald-600 px-4 text-base font-black text-white transition hover:bg-emerald-500"
                   >
                     Print Receipt
