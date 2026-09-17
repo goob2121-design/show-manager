@@ -55,18 +55,21 @@ export default async function DoorReceiptPrintPage({ params, searchParams }: Pro
 
   return (
     <AdminGate slug={slug} resourceLabel={`door-sale receipt for ${show.name}`} continueLabel="Continue to Receipt">
-      <main className="min-h-screen bg-stone-200 p-4 text-stone-950 print:bg-white print:p-0">
+      <main className="min-h-screen bg-stone-200 p-4 text-stone-950 print:min-h-0 print:bg-white print:p-0">
         <AutoPrintOnMount closeAfterPrint={query.autoClose === "1"} />
         <style>{`
-          @page { size: 8.5in 3.5in; margin: 0; }
-          .door-sale-receipt-sheet { position: relative; width: 8.5in; height: 3.5in; overflow: hidden; }
-          .door-sale-receipt { position: absolute; top: -0.2in; left: 8.5in; box-sizing: border-box; width: 3.5in; height: 8.5in; overflow: hidden; transform: rotate(90deg); transform-origin: top left; }
+          @page { size: 58mm 210mm; margin: 0; }
+          .door-sale-receipt-sheet { box-sizing: border-box; width: 58mm; break-inside: avoid; page-break-inside: avoid; }
+          .door-sale-receipt { box-sizing: border-box; width: 58mm; padding: 3mm 5mm 2mm 5mm; break-inside: avoid; page-break-inside: avoid; overflow-wrap: anywhere; }
+          .door-sale-receipt > *, .door-sale-receipt section > div, .door-sale-receipt section > div > div { box-sizing: border-box; width: 100%; min-width: 0; }
           @media print {
-            html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-            .door-sale-receipt-sheet, .door-sale-receipt { margin: 0 !important; box-shadow: none !important; }
+            html, body { width: 58mm; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+            .door-sale-receipt-sheet, .door-sale-receipt, .door-sale-receipt footer { margin: 0 !important; box-shadow: none !important; break-inside: avoid; page-break-inside: avoid; }
+            .door-sale-receipt, .door-sale-receipt * { color: #000 !important; opacity: 1 !important; border-color: #000 !important; }
+            .door-sale-receipt img { filter: grayscale(1) contrast(2); }
           }
         `}</style>
-        <div className="mx-auto mb-4 flex max-w-[8.5in] items-center justify-between gap-3 print:hidden">
+        <div className="mx-auto mb-4 flex max-w-[58mm] items-center justify-between gap-3 print:hidden">
           <Link href={`/admin/${slug}/door`} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold">
             Back to Door Mode
           </Link>
@@ -74,41 +77,41 @@ export default async function DoorReceiptPrintPage({ params, searchParams }: Pro
         </div>
 
         <div className="door-sale-receipt-sheet mx-auto bg-white shadow-xl print:shadow-none">
-          <article className="door-sale-receipt flex flex-col bg-white px-[0.28in] py-[0.34in] text-stone-950">
-            <header className="border-b-2 border-stone-950 pb-3 text-center">
-              <img src="/cmms-logo.png" alt="Cumberland Mountain Music Show logo" className="mx-auto h-auto max-h-[58px] max-w-[200px] object-contain grayscale contrast-200" />
-              <h1 className="mt-2 text-[15px] font-black uppercase tracking-[0.08em]">Cumberland Mountain Music Show</h1>
-              <p className="mt-1 text-sm font-bold">{formatShowDate(show.show_date)}</p>
-              <p className="text-sm font-semibold">{show.venue || "Cumberland Gap, Tennessee"}</p>
+          <article className="door-sale-receipt bg-white text-stone-950">
+            <header className="border-b-2 border-stone-950 pb-2 text-center">
+              <img src="/cmms-logo.png" alt="Cumberland Mountain Music Show logo" className="mx-auto h-auto max-h-10 max-w-[128px] object-contain" />
+              <h1 className="mt-2 text-[13px] font-black uppercase leading-4 tracking-[0.06em]">Cumberland Mountain Music Show</h1>
+              <p className="mt-1 text-[11px] font-bold">{formatShowDate(show.show_date)}</p>
+              <p className="text-[11px] font-bold leading-4">{show.venue || "Cumberland Gap, Tennessee"}</p>
             </header>
 
             {receiptSnapshot ? (
-              <section className="mt-4">
-                <p className="text-center text-sm font-black uppercase tracking-[0.18em]">Door Admission</p>
-                <div className="mt-3 border-y border-dashed border-stone-600 py-3 text-base font-semibold">
-                  <div className="flex justify-between gap-3"><span>{ticket.ticket_count} Ticket{ticket.ticket_count === 1 ? "" : "s"} @ {formatCurrency(receiptSnapshot.unitPrice)}</span><span>{formatCurrency(receiptSnapshot.total)}</span></div>
+              <section className="mt-3">
+                <p className="text-center text-[12px] font-black uppercase tracking-[0.14em]">Door Admission</p>
+                <div className="mt-3 border-y border-dashed border-stone-950 py-2 text-[11px] font-bold">
+                  <div className="flex justify-between gap-2"><span>{ticket.ticket_count} Ticket{ticket.ticket_count === 1 ? "" : "s"} @ {formatCurrency(receiptSnapshot.unitPrice)}</span><span>{formatCurrency(receiptSnapshot.total)}</span></div>
                 </div>
-                <div className="mt-4 flex items-end justify-between gap-4 border-b-2 border-stone-950 pb-3">
-                  <span className="text-lg font-black uppercase tracking-[0.14em]">Total</span>
-                  <span className="text-3xl font-black">{formatCurrency(receiptSnapshot.total)}</span>
+                <div className="mt-3 flex items-end justify-between gap-3 border-b-2 border-stone-950 pb-2">
+                  <span className="text-[14px] font-black uppercase tracking-[0.1em]">Total</span>
+                  <span className="text-[22px] font-black leading-none">{formatCurrency(receiptSnapshot.total)}</span>
                 </div>
-                <div className="mt-3 flex justify-between border-b border-stone-600 pb-3 text-base font-black uppercase tracking-[0.12em]">
+                <div className="mt-2 flex justify-between border-b border-stone-950 pb-2 text-[11px] font-black uppercase tracking-[0.1em]">
                   <span>Payment</span>
-                  <span>Cash</span>
+                  <span>{receiptSnapshot.paymentMethod === "cash" ? "Cash" : "Card"}</span>
                 </div>
               </section>
             ) : (
-              <section className="mt-5 border-y border-dashed border-stone-700 py-4 text-center">
-                <p className="font-black uppercase tracking-[0.12em]">Historical Sale</p>
-                <p className="mt-1 text-sm font-semibold">Receipt payment details were not recorded for this sale.</p>
+              <section className="mt-4 border-y border-dashed border-stone-950 py-3 text-center">
+                <p className="text-[12px] font-black uppercase tracking-[0.1em]">Historical Sale</p>
+                <p className="mt-1 text-[11px] font-bold leading-4">Receipt payment details were not recorded for this sale.</p>
               </section>
             )}
 
-            <footer className="mt-auto border-t-2 border-stone-950 pt-3 text-center text-sm leading-5">
+            <footer className="mt-3 border-t-2 border-stone-950 pt-2 text-center text-[11px] font-bold leading-4">
               <p>Receipt: <span className="font-mono font-bold">{ticket.order_id || "Unavailable"}</span></p>
-              <p className="font-semibold">{formatSaleDateTime(ticket.created_at)}</p>
-              <p className="mt-3 font-black">Thank you for supporting the<br />Cumberland Mountain Music Show!</p>
-              <p className="mt-1 font-bold">cumberlandmountainmusic.com</p>
+              <p>{formatSaleDateTime(ticket.created_at)}</p>
+              <p className="mt-2 font-black">Thank you for supporting<br />The Cumberland Mountain Music Show!</p>
+              <p className="mt-1 font-black">cumberlandmountainmusic.com</p>
             </footer>
           </article>
         </div>

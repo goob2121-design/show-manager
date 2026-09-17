@@ -1,5 +1,5 @@
 export type DoorSaleReceiptSnapshot = {
-  paymentMethod: "cash";
+  paymentMethod: "cash" | "card";
   unitPrice: number;
   total: number;
 };
@@ -19,9 +19,9 @@ export function getDoorSaleReceiptSnapshot(source: DoorSaleReceiptSource): DoorS
   const unitPrice = parseSnapshotAmount(source.door_unit_price);
   const total = parseSnapshotAmount(source.door_sale_total);
 
-  if (source.door_payment_method !== "cash" || unitPrice === null || total === null) {
+  if ((source.door_payment_method !== "cash" && source.door_payment_method !== "card") || unitPrice === null || total === null) {
     return null;
   }
 
-  return { paymentMethod: "cash", unitPrice, total };
+  return { paymentMethod: source.door_payment_method, unitPrice, total };
 }
