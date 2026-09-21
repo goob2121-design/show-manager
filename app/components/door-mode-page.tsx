@@ -90,8 +90,10 @@ type DoorScanState =
   | { kind: "found"; lookup: DoorScanFoundResult };
 
 const DOOR_SCAN_BEHAVIOR_STORAGE_KEY = "stageflow-door-scan-behavior";
+const DOOR_SCANNER_AUTOFOCUS_STORAGE_KEY = "stageflow-door-scanner-autofocus";
 const DOOR_SCAN_DUPLICATE_WINDOW_MS = 1500;
 const DOOR_SCAN_RESULT_TIMEOUT_MS = 12_000;
+const DOOR_SCANNER_EDITABLE_IDLE_MS = 5_000;
 
 type DoorModeShowSponsor = ShowSponsor & {
   sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null;
@@ -370,6 +372,18 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
       return "review";
     }
   });
+  const [scannerAutoFocus, setScannerAutoFocus] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem(DOOR_SCANNER_AUTOFOCUS_STORAGE_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
+  const [scannerFocusRequest, setScannerFocusRequest] = useState(0);
+  const scannerFocusRequestedRef = useRef(false);
+  const scannerEditableIdleTimerRef = useRef<number | null>(null);
+  const scannerEditableIdleElapsedRef = useRef(false);
   const [lastScannedGuestName, setLastScannedGuestName] = useState<string | null>(null);
   const [isScanLookupPending, setIsScanLookupPending] = useState(false);
   const [welcomeDisplayWarning, setWelcomeDisplayWarning] = useState<string | null>(null);
@@ -500,16 +514,75 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   }, [scanBehavior]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(DOOR_SCANNER_AUTOFOCUS_STORAGE_KEY, String(scannerAutoFocus));
+    } catch {
+      // Ignore storage write issues and continue using the in-memory preference.
+    }
+  }, [scannerAutoFocus]);
+
+  useEffect(() => {
     focusScanInput();
   }, []);
 
+  useEffect(() => {
+    if (!scannerAutoFocus) {
+      scannerFocusRequestedRef.current = false;
+      return;
+    }
+    if (!scannerFocusRequestedRef.current || isLoading || isScanLookupPending || activeActionId || pendingDoorSaleQuantity !== null || pendingPayAtDoorTicket || seatView || isPrintMenuOpen) return;
+    const activeElement = document.activeElement;
+    const isAnotherEditableControl = activeElement instanceof Element
+      && activeElement !== scanInputRef.current
+      && Boolean(activeElement.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
+    if ((isAnotherEditableControl && !scannerEditableIdleElapsedRef.current) || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+    scannerFocusRequestedRef.current = false;
+    scannerEditableIdleElapsedRef.current = false;
+    const frame = window.requestAnimationFrame(() => scanInputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeActionId, isLoading, isPrintMenuOpen, isScanLookupPending, pendingDoorSaleQuantity, pendingPayAtDoorTicket, scannerAutoFocus, scannerFocusRequest, seatView]);
+
+  useEffect(() => {
+    if (!scannerAutoFocus) return;
+
+    function resetEditableIdleTimer(event: Event) {
+      const target = event.target instanceof Element ? event.target : null;
+      const editableControl = target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+      if (!editableControl || editableControl === scanInputRef.current) return;
+
+      scannerEditableIdleElapsedRef.current = false;
+      if (scannerEditableIdleTimerRef.current !== null) window.clearTimeout(scannerEditableIdleTimerRef.current);
+      scannerEditableIdleTimerRef.current = window.setTimeout(() => {
+        scannerEditableIdleTimerRef.current = null;
+        scannerEditableIdleElapsedRef.current = true;
+        focusScanInput();
+      }, DOOR_SCANNER_EDITABLE_IDLE_MS);
+    }
+
+    document.addEventListener("focusin", resetEditableIdleTimer);
+    document.addEventListener("input", resetEditableIdleTimer);
+    document.addEventListener("change", resetEditableIdleTimer);
+    document.addEventListener("keydown", resetEditableIdleTimer);
+    document.addEventListener("pointerdown", resetEditableIdleTimer);
+    return () => {
+      document.removeEventListener("focusin", resetEditableIdleTimer);
+      document.removeEventListener("input", resetEditableIdleTimer);
+      document.removeEventListener("change", resetEditableIdleTimer);
+      document.removeEventListener("keydown", resetEditableIdleTimer);
+      document.removeEventListener("pointerdown", resetEditableIdleTimer);
+      if (scannerEditableIdleTimerRef.current !== null) {
+        window.clearTimeout(scannerEditableIdleTimerRef.current);
+        scannerEditableIdleTimerRef.current = null;
+      }
+    };
+  }, [scannerAutoFocus]);
   useEffect(() => {
     if (scanState.kind === "idle" || activeActionId) return;
 
     const timer = window.setTimeout(() => {
       setScanState({ kind: "idle" });
       setScanInput("");
-      window.requestAnimationFrame(() => scanInputRef.current?.focus());
+      focusScanInput();
     }, DOOR_SCAN_RESULT_TIMEOUT_MS);
 
     return () => window.clearTimeout(timer);
@@ -814,7 +887,8 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   }
 
   function focusScanInput() {
-    window.requestAnimationFrame(() => scanInputRef.current?.focus());
+    scannerFocusRequestedRef.current = true;
+    setScannerFocusRequest((current) => current + 1);
   }
 
   function resetScanState(nextState: DoorScanState = { kind: "idle" }) {
@@ -1201,6 +1275,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     keypadShortcutInFlightRef.current = false;
     setPendingDoorSaleQuantity(null);
     setCompletedCashDoorSale(null);
+    focusScanInput();
   }
 
   function openDoorSaleReceipt(ticketId: string) {
@@ -1496,7 +1571,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     }
   }
 
-  async function handleAdjustTicketCheckIn(item: ShowCompTicket, delta: number) {
+  async function handleAdjustTicketCheckIn(item: ShowCompTicket, delta: number, options?: { fromScanner?: boolean }) {
     if (item.pay_at_door && !item.pay_at_door_paid_at) {
       setStatusMessage(null);
       setErrorMessage(`Payment is due for ${item.guest_name}. Use Collect Cash or Card & Check In.`);
@@ -1562,7 +1637,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             admissionCategory: checkInAdmissionLabel(item.ticket_type, item.notes),
           });
         }
-        window.requestAnimationFrame(() => guestSearchRef.current?.focus());
+        focusScanInput();
       }
       pushRecentActivity({
         id: `ticket-${item.id}-${Date.now()}`,
@@ -1616,6 +1691,12 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     } finally {
       setActiveActionId(null);
     }
+  }
+
+  function closePayAtDoorConfirmation() {
+    if (activeActionId) return;
+    setPendingPayAtDoorTicket(null);
+    focusScanInput();
   }
 
   function openPayAtDoorConfirmation(ticket: ShowCompTicket) {
@@ -1687,6 +1768,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
       });
       if (pendingPayAtDoorTicket?.id === ticket.id) {
         setPendingPayAtDoorTicket(null);
+        focusScanInput();
       }
       setStatusMessage(method === "cash" ? "PAID CASH — CHECKED IN" : "PAID CARD — CHECKED IN · External card reader");
       if (method === "cash") {
@@ -1850,6 +1932,19 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
             <span className="min-w-0 truncate text-xs text-gray-400 md:max-w-40 lg:max-w-32 xl:max-w-48">
               Last: <span className="font-medium text-gray-200">{lastScannedGuestName ?? "None"}</span>
             </span>
+            <label className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold text-gray-300">
+              <input
+                type="checkbox"
+                checked={scannerAutoFocus}
+                onChange={(event) => {
+                  setScannerAutoFocus(event.target.checked);
+                  if (event.target.checked) focusScanInput();
+                }}
+                aria-label="Scanner Auto-Focus"
+                className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-amber-500 focus:ring-2 focus:ring-amber-500/40"
+              />
+              Scanner Auto-Focus <span className={scannerAutoFocus ? "text-emerald-300" : "text-gray-500"}>{scannerAutoFocus ? "ON" : "OFF"}</span>
+            </label>
             <label className="min-w-0 md:flex-1 lg:w-48 lg:flex-none">
               <span className="sr-only">Scan Behavior</span>
               <select
@@ -2047,7 +2142,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                 className="min-h-10 min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm text-gray-50 outline-none transition placeholder:text-gray-500 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30"
               />
               {hasActiveGuestSearch ? (
-                <button type="button" aria-label="Clear guest search" onClick={() => { setGuestSearch(""); guestSearchRef.current?.focus(); }} className="min-h-10 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 hover:bg-gray-700">Clear</button>
+                <button type="button" aria-label="Clear guest search" onClick={() => { setGuestSearch(""); focusScanInput(); }} className="min-h-10 rounded-lg border border-gray-700 bg-gray-800 px-3 text-sm font-semibold text-gray-100 hover:bg-gray-700">Clear</button>
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2 md:ml-auto md:justify-end">
@@ -2737,7 +2832,7 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
               </button>
               <button
                 type="button"
-                onClick={() => setPendingPayAtDoorTicket(null)}
+                onClick={closePayAtDoorConfirmation}
                 disabled={Boolean(activeActionId)}
                 className="min-h-11 rounded-xl border border-gray-600 bg-gray-700 px-4 text-sm font-semibold text-gray-100 transition hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
