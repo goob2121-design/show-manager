@@ -214,15 +214,18 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   }, [welcome]);
 
   const timedIdleWindow = resolveTimedIdleWindow(clockNow);
+  const isPostShowDisplay = timedIdleWindow === "post-show";
   const idleSlides = useMemo(
-    () => buildBalancedIdleSlides(timedIdleWindow, guestSlides, sponsorQueue),
-    [guestSlides, sponsorQueue, timedIdleWindow],
+    () => isPostShowDisplay
+      ? [{ kind: "message", headline: POST_SHOW_HEADLINE } satisfies IdleSlide]
+      : buildBalancedIdleSlides(timedIdleWindow, guestSlides, sponsorQueue),
+    [guestSlides, isPostShowDisplay, sponsorQueue, timedIdleWindow],
   );
 
   const lastScheduledSponsorLogoUrl = [...idleSlides].reverse().find(isSponsorIdleSlide)?.logoUrl ?? null;
 
   useEffect(() => {
-    if (welcome || seatView) return;
+    if (isPostShowDisplay || welcome || seatView) return;
     const rotation = window.setInterval(() => {
       const nextIndex = idleMessageIndexRef.current + 1;
       if (nextIndex >= idleSlides.length) {
@@ -237,7 +240,7 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
       setIdleMessageIndex(nextIndex);
     }, IDLE_ROTATION_INTERVAL_MS);
     return () => window.clearInterval(rotation);
-  }, [idleSlides.length, lastScheduledSponsorLogoUrl, seatView, welcome]);
+  }, [idleSlides.length, isPostShowDisplay, lastScheduledSponsorLogoUrl, seatView, welcome]);
 
 
   useEffect(() => {
@@ -266,8 +269,8 @@ export function DoorWelcomeDisplay({ showSlug }: { showSlug: string }) {
   const activeSponsorLogo = isSponsorSlide && activeIdleSlide.name && activeIdleSlide.logoUrl
     ? { name: activeIdleSlide.name, logoUrl: activeIdleSlide.logoUrl }
     : null;
-  const showSeatView = Boolean(seatView);
-  const showWelcome = Boolean(welcome) && !isWelcomeExiting && !showSeatView;
+  const showSeatView = !isPostShowDisplay && Boolean(seatView);
+  const showWelcome = !isPostShowDisplay && Boolean(welcome) && !isWelcomeExiting && !showSeatView;
   const hideIdlePresentation = showWelcome || showSeatView;
   const seatViewIds = useMemo(
     () => normalizeDoorReservedSeatIds(seatView?.assignedSeatLabels ?? [], DOOR_WELCOME_RESERVED_SEAT_IDS),

@@ -146,7 +146,7 @@ test("reserved seats are conditional, wrap safely, and receive one subtle entran
 test("idle rotation runs only while idle and exposes no totals or internal status", async () => {
   const source = await readFile(displayPath, "utf8");
   assert.match(source, /const IDLE_ROTATION_INTERVAL_MS = 15_000/);
-  assert.match(source, /if \(welcome \|\| seatView\) return;\s*const rotation = window\.setInterval/);
+  assert.match(source, /if \(isPostShowDisplay \|\| welcome \|\| seatView\) return;\s*const rotation = window\.setInterval/);
   assert.match(source, /const scheduledIdleIndex = idleMessageIndex % idleSlides.length/);
   assert.match(source, /buildBalancedIdleSlides/);
   assert.match(source, /isSponsorIdleSlide/);
@@ -154,6 +154,14 @@ test("idle rotation runs only while idle and exposes no totals or internal statu
   assert.doesNotMatch(source, /attendance|check-in statistics|Square status|running total/i);
 });
 
+test("post-show keeps the existing drive-safely slide static and suppresses other display states", async () => {
+  const source = await readFile(displayPath, "utf8");
+  assert.match(source, /const isPostShowDisplay = timedIdleWindow === "post-show"/);
+  assert.match(source, /isPostShowDisplay[\s\S]*\{ kind: "message", headline: POST_SHOW_HEADLINE \}/);
+  assert.match(source, /if \(isPostShowDisplay \|\| welcome \|\| seatView\) return;/);
+  assert.match(source, /const showSeatView = !isPostShowDisplay && Boolean\(seatView\)/);
+  assert.match(source, /const showWelcome = !isPostShowDisplay && Boolean\(welcome\)/);
+});
 test("idle slides crossfade at the render layer without changing the rotation scheduler", async () => {
   const source = await readFile(displayPath, "utf8");
   assert.match(source, /const IDLE_SLIDE_FADE_HALF_MS = 225/);
@@ -325,9 +333,9 @@ test("Special Guest rendering and welcome and seat-view priorities remain intact
   assert.ok(source.includes('activeIdleSlide.kind === "guest"'));
   assert.ok(source.includes(">Special Guest</p>"));
   assert.ok(source.includes(">Appearing Tonight</p>"));
-  assert.ok(source.includes("const showWelcome = Boolean(welcome) && !isWelcomeExiting && !showSeatView"));
+  assert.ok(source.includes("const showWelcome = !isPostShowDisplay && Boolean(welcome) && !isWelcomeExiting && !showSeatView"));
   assert.ok(source.includes("const hideIdlePresentation = showWelcome || showSeatView"));
-  assert.ok(source.includes("if (welcome || seatView) return"));
+  assert.ok(source.includes("if (isPostShowDisplay || welcome || seatView) return"));
 });
 
 test("active welcome tightens by viewport height without changing idle presentation", async () => {
