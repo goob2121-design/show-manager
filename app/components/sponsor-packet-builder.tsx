@@ -408,13 +408,13 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
           .packet-screen-only { display: none !important; }
           .packet-layout { display: block !important; max-width: none !important; }
           .packet-preview-shell { padding: 0 !important; border: 0 !important; box-shadow: none !important; background: white !important; }
-          .packet-page { width: auto !important; min-height: auto !important; padding: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; break-after: page; page-break-after: always; }
+          .packet-page { box-sizing: border-box !important; width: 7.2in !important; height: 9.7in !important; min-height: 9.7in !important; max-height: 9.7in !important; padding: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; break-inside: avoid !important; page-break-inside: avoid !important; break-after: page; page-break-after: always; }
           .packet-preview-shell > .packet-page:last-child { break-after: auto !important; page-break-after: auto !important; }
           .packet-keep { break-inside: avoid; }
           .packet-heading { break-after: avoid; }
           .packet-paragraph { orphans: 3; widows: 3; }
         .packet-section-heading { color: #0e7490; }
-          .packet-footer { min-height: 0 !important; break-inside: avoid; margin-top: 0.16in !important; padding-top: 0.08in !important; border-right: 0 !important; border-bottom: 0 !important; border-left: 0 !important; }
+          .packet-footer { min-height: 0 !important; break-inside: avoid; margin-top: auto !important; padding-top: 0.08in !important; border-right: 0 !important; border-bottom: 0 !important; border-left: 0 !important; }
           .packet-prepared-card { border: 0 !important; background: white !important; box-shadow: none !important; }
           .packet-page, .packet-page * { color: #050505 !important; }
           .packet-page { background: #fff !important; }

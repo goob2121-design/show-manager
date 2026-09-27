@@ -24,7 +24,7 @@ test("Prepared For card includes sponsor while contact person and dates stay abs
 test("every logical packet page receives Page X of Y footer data", async () => {
   const value = await source();
   assert.match(value, /Page \{page\} of \{total\}/);
-  for (const page of ["cover", "contents", "letter", "show", "tickets", "flyer", "business-card", "checklist"]) assert.match(value, new RegExp(`pageNumberFor\\("${page}"\\)`));
+  for (const page of ["cover", "contents", "letter", "show", "rsvp", "flyer", "business-card", "checklist", "admission-pass", "seat-location"]) assert.match(value, new RegExp(`pageNumberFor\\("${page}"\\)`));
   assert.match(value, /packet-footer \{ min-height:/);
 });
 
@@ -104,4 +104,15 @@ test("show date renders once on the cover and once in Show Information, not in P
   assert.equal((value.match(/formatSponsorPacketDate\(draft\.showDate\)/g) ?? []).length, 2);
   assert.match(value, /<strong>Date:<\/strong>/);
   assert.doesNotMatch(value, /Show Date<\/dt>/);
+});
+test("print pagination keeps each logical page and its footer in the fixed Letter content box across optional section combinations", async () => {
+  const value = await source();
+  assert.match(value, /@page \{ size: letter; margin: 0\.65in; \}/);
+  assert.match(value, /\.packet-page \{ box-sizing: border-box !important; width: 7\.2in !important; height: 9\.7in !important; min-height: 9\.7in !important; max-height: 9\.7in !important;[\s\S]*break-inside: avoid !important; page-break-inside: avoid !important; break-after: page; page-break-after: always;/);
+  assert.match(value, /\.packet-footer \{ min-height: 0 !important; break-inside: avoid; margin-top: auto !important; padding-top: 0\.08in !important;/);
+  assert.match(value, /presentationSections\.personalizedLetter \? "letter" : null/);
+  assert.match(value, /presentationSections\.sponsorRsvp && sponsorCode \? "rsvp" : null/);
+  assert.match(value, /hasSeatLocationPage \? "seat-location" : null/);
+  assert.match(value, /presentationSections\.sponsorRsvp && sponsorCode \? <article/);
+  assert.match(value, /hasSeatLocationPage \? <article/);
 });
