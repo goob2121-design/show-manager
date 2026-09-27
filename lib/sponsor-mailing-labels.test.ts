@@ -63,20 +63,35 @@ test("bulk labels exclude incomplete and archived sponsors and include each comp
   assert.deepEqual(selection.excludedArchived.map((item) => item.id), ["sponsor-3"]);
 });
 
-test("print HTML uses a three-column cut-apart sheet", () => {
+test("print HTML uses the Avery 18163 10-up 2 by 5 sheet", () => {
   const label = formatSponsorMailingLabel(sponsor());
   assert.ok(label);
   const html = buildSponsorMailingLabelPrintHtml([label]);
-  assert.match(html, /grid-template-columns: repeat\(3, 2\.5in\)/);
-  assert.match(html, /grid-template-rows: repeat\(5, 1\.9in\)/);
-  assert.match(html, /@page \{ size: letter portrait/);
-  assert.match(html, /margin: \.5in \.35in/);
-  assert.match(html, /width: 7\.8in/);
-  assert.match(html, /column-gap: \.15in/);
+  assert.match(html, /@page \{ size: 8\.5in 11in; margin: 0; \}/);
+  assert.match(html, /width: 8\.5in; height: 11in; padding: \.5in \.15625in;/);
+  assert.match(html, /grid-template-columns: repeat\(2, 4in\)/);
+  assert.match(html, /grid-template-rows: repeat\(5, 2in\)/);
+  assert.match(html, /column-gap: \.1875in; row-gap: 0/);
+  assert.match(html, /\.mailing-label \{ width: 4in; height: 2in;/);
+  assert.match(html, /@media print/);
+  assert.match(html, /\.mailing-label \{ border: 0 !important; \}/);
   assert.doesNotMatch(html, /transform:|scale\(|zoom:/);
   assert.match(html, /break-inside: avoid/);
 });
 
+test("Avery 18163 pages preserve left-to-right then top-to-bottom order across sheets", () => {
+  const labels = Array.from({ length: 11 }, (_, index) => ({
+    kind: "sponsor" as const,
+    sponsorId: `sponsor-${index + 1}`,
+    sponsorName: `Sponsor ${index + 1}`,
+    lines: [`Sponsor ${index + 1}`, "100 Main Street", "Cumberland Gap, TN 37724"],
+  }));
+  const html = buildSponsorMailingLabelPrintHtml(labels);
+  assert.equal((html.match(/class="label-sheet"/g) ?? []).length, 2);
+  assert.equal((html.match(/class="mailing-label sponsor-label"/g) ?? []).length, 11);
+  assert.match(html, /data-label-page="1"[\s\S]*data-label-position="1"[\s\S]*Sponsor 1[\s\S]*data-label-position="10"[\s\S]*Sponsor 10/);
+  assert.match(html, /data-label-page="2"[\s\S]*data-label-position="1"[\s\S]*Sponsor 11/);
+});
 test("print typography emphasizes sponsor names and preserves the Attn line", () => {
   const label = formatSponsorMailingLabel(sponsor({ contact_person: "Jamie Smith" }));
   assert.ok(label);
@@ -91,12 +106,24 @@ test("print typography emphasizes sponsor names and preserves the Attn line", ()
   assert.doesNotMatch(html, /\.sponsor-name \{[^}]*overflow: hidden|\.attention-line \{[^}]*overflow: hidden/);
 });
 
+test("long sponsor and address text wraps within the Avery 18163 label", () => {
+  const longName = "ExtremelyLongSponsorBusinessNameWithoutNaturalBreaksThatMustStayInsideTheLabel";
+  const longAddress = "1234567890ExtremelyLongStreetNameWithoutNaturalBreaks";
+  const label = formatSponsorMailingLabel(sponsor({ recognition_name: longName, address_line_1: longAddress }));
+  assert.ok(label);
+  const html = buildSponsorMailingLabelPrintHtml([label]);
+  assert.match(html, new RegExp(longName));
+  assert.match(html, new RegExp(longAddress));
+  assert.match(html, /\.sponsor-name \{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;[^}]*word-break: break-word/);
+  assert.match(html, /\.sponsor-label \.address-line \{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;[^}]*word-break: break-word/);
+  assert.match(html, /\.mailing-label \{[^}]*overflow: hidden;[^}]*break-inside: avoid/);
+});
 test("CMMS typography and logo layout stay print-safe and undecorated", () => {
   const labels = buildCmmsReturnAddressLabels(1);
   const html = buildSponsorMailingLabelPrintHtml(labels, { logoUrl: CMMS_MAILING_LABEL_LOGO_PATH });
   assert.match(html, /class="cmms-name">Cumberland Mountain Music/);
   assert.match(html, /\.cmms-name \{[^}]*font-size: 10\.5pt;[^}]*font-weight: 700/);
-  assert.match(html, /\.cmms-name \{[^}]*white-space: normal;[^}]*overflow-wrap: break-word/);
+  assert.match(html, /\.cmms-name \{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere/);
   assert.match(html, /\.mailing-label-content\.with-logo \{ flex-direction: row; align-items: center; gap: \.12in/);
   assert.match(html, /max-width: \.75in/);
   assert.match(html, /padding: \.14in \.18in/);
@@ -114,13 +141,23 @@ test("CMMS return labels use the exact fixed address in one-label and full-sheet
     "LaFollette, TN 37766",
   ]);
   const oneLabel = buildCmmsReturnAddressLabels(1);
-  const fullSheet = buildCmmsReturnAddressLabels(15);
+  const fullSheet = buildCmmsReturnAddressLabels(10);
   assert.equal(oneLabel.length, 1);
-  assert.equal(fullSheet.length, 15);
+  assert.equal(fullSheet.length, 10);
   assert.ok(fullSheet.every((label) => JSON.stringify(label.lines) === JSON.stringify(CMMS_RETURN_ADDRESS_LINES)));
   assert.doesNotMatch(JSON.stringify(fullSheet), /Library Sponsor|Public Sponsor|Attn:/);
 });
 
+test("CMMS return labels use the shared Avery 18163 positions and paginate in order", () => {
+  const labels = buildCmmsReturnAddressLabels(11);
+  const html = buildSponsorMailingLabelPrintHtml(labels, { logoUrl: CMMS_MAILING_LABEL_LOGO_PATH });
+  assert.equal((html.match(/class="label-sheet"/g) ?? []).length, 2);
+  assert.equal((html.match(/class="mailing-label cmms-label"/g) ?? []).length, 11);
+  assert.match(html, /@page \{ size: 8\.5in 11in; margin: 0; \}/);
+  assert.match(html, /padding: \.5in \.15625in;[\s\S]*grid-template-columns: repeat\(2, 4in\);[\s\S]*grid-template-rows: repeat\(5, 2in\);[\s\S]*column-gap: \.1875in; row-gap: 0/);
+  assert.match(html, /data-label-page="1"[\s\S]*data-label-position="1"[\s\S]*data-label-position="10"/);
+  assert.match(html, /data-label-page="2"[\s\S]*data-label-position="1"/);
+});
 test("CMMS return labels default to text-only and optional logo mode preserves aspect ratio", async () => {
   const labels = buildCmmsReturnAddressLabels(1);
   const textOnlyHtml = buildSponsorMailingLabelPrintHtml(labels, { title: "CMMS Return Address Label" });
@@ -135,7 +172,7 @@ test("CMMS return labels default to text-only and optional logo mode preserves a
   const actionsSource = await readFile(actionsPath, "utf8");
   assert.match(actionsSource, /const \[includeLogo, setIncludeLogo\] = useState\(false\)/);
   assert.match(actionsSource, /printReturnLabels\(1\)/);
-  assert.match(actionsSource, /printReturnLabels\(15\)/);
+  assert.match(actionsSource, /printReturnLabels\(10\)/);
 });
 test("admin actions preserve individual targeting and existing Sponsor Library saves", async () => {
   const actionsPath = new URL("../app/components/sponsor-mailing-label-actions.tsx", import.meta.url);

@@ -110,7 +110,7 @@ export function SponsorMailingLabelBulkAction({ sponsors }: { sponsors: SponsorL
 export function CmmsReturnMailingLabelActions() {
   const [includeLogo, setIncludeLogo] = useState(false);
 
-  function printReturnLabels(count: 1 | 15) {
+  function printReturnLabels(count: 1 | 10) {
     openMailingLabelPrintWindow(buildCmmsReturnAddressLabels(count), {
       title: count === 1 ? "CMMS Return Address Label" : "CMMS Return Address Labels",
       logoUrl: includeLogo ? `${window.location.origin}${CMMS_MAILING_LABEL_LOGO_PATH}` : undefined,
@@ -133,8 +133,8 @@ export function CmmsReturnMailingLabelActions() {
       <button type="button" onClick={() => printReturnLabels(1)} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">
         Print One CMMS Return Address Label
       </button>
-      <button type="button" onClick={() => printReturnLabels(15)} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">
-        Print Full Sheet of CMMS Return Address Labels
+      <button type="button" onClick={() => printReturnLabels(10)} className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">
+        Print Full Sheet of CMMS Return Address Labels (10)
       </button>
     </div>
   </div>;
