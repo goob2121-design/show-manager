@@ -398,6 +398,7 @@ export type ShowCompTicket = {
 export type RehearsalEntry = {
   id: string;
   show_id: string;
+  setlist_entry_id?: string | null;
   song_id: string | null;
   custom_title: string | null;
   key: string | null;

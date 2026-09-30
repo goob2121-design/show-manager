@@ -150,7 +150,7 @@ type RehearsalEntryWithSong = RehearsalEntry & {
   is_library_linked: boolean;
 };
 
-type RehearsalSectionLabel = "" | "set1" | "set2";
+type RehearsalSectionLabel = "" | "set1" | "set2" | "encore";
 
 type PrintMode = "stage" | "band" | "standard";
 type AdminTab =
@@ -2085,7 +2085,7 @@ function sortRehearsalEntries(items: RehearsalEntryWithSong[]) {
 }
 
 function normalizeRehearsalSectionLabel(value: string | null | undefined): RehearsalSectionLabel {
-  if (value === "set1" || value === "set2") {
+  if (value === "set1" || value === "set2" || value === "encore") {
     return value;
   }
 
@@ -2099,6 +2099,10 @@ function formatRehearsalSectionHeading(value: string | null | undefined) {
 
   if (value === "set2") {
     return "SET 2";
+  }
+
+  if (value === "encore") {
+    return "ENCORE";
   }
 
   return "";
@@ -7508,6 +7512,39 @@ export function ShowPage({
       }, {}),
     [rehearsalEntries],
   );
+  const rehearsalDisplayEntries = useMemo(() => {
+    const officialSetlistById = new Map(setlist.map((entry) => [entry.id, entry] as const));
+    const rehearsalBySetlistEntryId = new Map<string, RehearsalEntryWithSong>();
+
+    for (const entry of rehearsalEntries) {
+      if (entry.setlist_entry_id && officialSetlistById.has(entry.setlist_entry_id) && !rehearsalBySetlistEntryId.has(entry.setlist_entry_id)) {
+        rehearsalBySetlistEntryId.set(entry.setlist_entry_id, entry);
+      }
+    }
+
+    const officialEntries = setlist.flatMap((setlistEntry) => {
+      const rehearsalEntry = rehearsalBySetlistEntryId.get(setlistEntry.id);
+      if (!rehearsalEntry) return [];
+
+      return [{
+        ...rehearsalEntry,
+        title: setlistEntry.title,
+        song_key: setlistEntry.key,
+        sung_by: setlistEntry.sung_by ?? rehearsalEntry.sung_by,
+        tempo: setlistEntry.tempo,
+        song_type: setlistEntry.song_type,
+        artist: setlistEntry.performer_name ?? rehearsalEntry.artist,
+        is_library_linked: Boolean(setlistEntry.song_id),
+      }];
+    });
+
+    const practiceOnlyEntries = rehearsalEntries.filter(
+      (entry) => !entry.setlist_entry_id || !officialSetlistById.has(entry.setlist_entry_id),
+    );
+
+    return [...officialEntries, ...sortRehearsalEntries(practiceOnlyEntries)];
+  }, [rehearsalEntries, setlist]);
+
   const librarySongSetlistUsageCounts = useMemo(
     () =>
       setlist.reduce<Record<string, number>>((usageCounts, song) => {
@@ -9758,13 +9795,10 @@ export function ShowPage({
           logDataSectionError("guest song MP3 attachments", error);
         }
 
-        setSetlist(
-          sortSetlistSongs(
-            (setlistRows ?? []).map((song: SetlistEntryQueryRow) =>
-              normalizeSetlistSong(song),
-            ),
-          ),
+        const normalizedSetlist = sortSetlistSongs(
+          (setlistRows ?? []).map((song: SetlistEntryQueryRow) => normalizeSetlistSong(song)),
         );
+        setSetlist(normalizedSetlist);
         setPendingSongs(
           (pendingRows ?? []).map((submission: PendingSubmission) =>
             normalizePendingSubmission(
@@ -9776,11 +9810,109 @@ export function ShowPage({
         setSongLibrary(
           (libraryRows ?? []).map((song: SongLibrarySong) => normalizeSongLibrarySong(song)),
         );
-        const normalizedRehearsalEntries = sortRehearsalEntries(
+        let normalizedRehearsalEntries = sortRehearsalEntries(
           ((rehearsalEntryRows ?? []) as RehearsalEntryRow[]).map((entry) =>
             normalizeRehearsalEntry(entry),
           ),
         );
+        // Rehearsal integration: link legacy rows only when one exact library-song
+        // performance exists for this show. Title matching is deliberately never used.
+        const setlistEntriesBySongId = new Map<string, SetlistSong[]>();
+        for (const setlistEntry of normalizedSetlist) {
+          if (!setlistEntry.song_id) continue;
+          const current = setlistEntriesBySongId.get(setlistEntry.song_id) ?? [];
+          current.push(setlistEntry);
+          setlistEntriesBySongId.set(setlistEntry.song_id, current);
+        }
+
+        const unlinkedRehearsalCountBySongId = new Map<string, number>();
+        for (const entry of normalizedRehearsalEntries) {
+          if (!entry.setlist_entry_id && entry.song_id) {
+            unlinkedRehearsalCountBySongId.set(entry.song_id, (unlinkedRehearsalCountBySongId.get(entry.song_id) ?? 0) + 1);
+          }
+        }
+
+        const safeLegacyLinks = normalizedRehearsalEntries.flatMap((entry) => {
+          if (entry.setlist_entry_id || !entry.song_id) return [];
+          const candidates = setlistEntriesBySongId.get(entry.song_id) ?? [];
+          return candidates.length === 1 && unlinkedRehearsalCountBySongId.get(entry.song_id) === 1
+            ? [{ entry, setlistEntryId: candidates[0].id }]
+            : [];
+        });
+
+        if (safeLegacyLinks.length > 0) {
+          const linkResults = await Promise.all(
+            safeLegacyLinks.map(({ entry, setlistEntryId }) =>
+              supabase
+                .from("rehearsal_entries")
+                .update({ setlist_entry_id: setlistEntryId })
+                .eq("id", entry.id),
+            ),
+          );
+          const successfulLinks = new Map<string, string>();
+          linkResults.forEach((result, index) => {
+            if (!result.error) successfulLinks.set(safeLegacyLinks[index].entry.id, safeLegacyLinks[index].setlistEntryId);
+          });
+          normalizedRehearsalEntries = normalizedRehearsalEntries.map((entry) =>
+            successfulLinks.has(entry.id)
+              ? { ...entry, setlist_entry_id: successfulLinks.get(entry.id) ?? null }
+              : entry,
+          );
+        }
+
+        const linkedSetlistEntryIds = new Set(
+          normalizedRehearsalEntries
+            .map((entry) => entry.setlist_entry_id)
+            .filter((entryId): entryId is string => Boolean(entryId)),
+        );
+        const missingOfficialEntries = normalizedSetlist.filter((entry) => !linkedSetlistEntryIds.has(entry.id));
+
+        if (missingOfficialEntries.length > 0) {
+          const nextSortOrder = normalizedRehearsalEntries.reduce(
+            (highest, entry) => Math.max(highest, entry.sort_order),
+            0,
+          );
+          const { data: createdEntries, error: createEntriesError } = await supabase
+            .from("rehearsal_entries")
+            .insert(
+              missingOfficialEntries.map((entry, index) => ({
+                show_id: showRecord.id,
+                setlist_entry_id: entry.id,
+                song_id: entry.song_id,
+                custom_title: entry.source_type === "guest" ? entry.title : null,
+                key: entry.source_type === "guest" ? entry.key : null,
+                sung_by: entry.source_type === "guest" ? entry.sung_by : null,
+                notes: null,
+                section_label: null,
+                sort_order: nextSortOrder + index + 1,
+              })),
+            )
+            .select("*");
+
+          if (createEntriesError) {
+            logDataSectionError("official rehearsal entries", createEntriesError);
+          } else {
+            const entriesBySetlistId = new Map(
+              ((createdEntries ?? []) as RehearsalEntry[]).map((entry) => [entry.setlist_entry_id, entry] as const),
+            );
+            normalizedRehearsalEntries = sortRehearsalEntries([
+              ...normalizedRehearsalEntries,
+              ...missingOfficialEntries.flatMap((setlistEntry) => {
+                const entry = entriesBySetlistId.get(setlistEntry.id);
+                if (!entry) return [];
+                return [{
+                  ...entry,
+                  title: setlistEntry.title,
+                  artist: setlistEntry.performer_name,
+                  song_key: setlistEntry.key,
+                  tempo: setlistEntry.tempo,
+                  song_type: setlistEntry.song_type,
+                  is_library_linked: Boolean(setlistEntry.song_id),
+                } satisfies RehearsalEntryWithSong];
+              }),
+            ]);
+          }
+        }
         setRehearsalEntries(normalizedRehearsalEntries);
         setRehearsalTitleDrafts(
           normalizedRehearsalEntries.reduce<Record<string, string>>((lookup, entry) => {
@@ -15767,9 +15899,9 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         .from("rehearsal_entries")
         .update({
           notes,
-          custom_title: entry.is_library_linked ? null : nextTitle,
-          key: entry.is_library_linked ? null : nextKey,
-          sung_by: entry.is_library_linked ? null : nextSungBy,
+          custom_title: entry.setlist_entry_id || entry.is_library_linked ? entry.custom_title : nextTitle,
+          key: entry.setlist_entry_id || entry.is_library_linked ? entry.key : nextKey,
+          sung_by: entry.setlist_entry_id || entry.is_library_linked ? entry.sung_by : nextSungBy,
           section_label: nextSectionLabel || null,
         })
         .eq("id", entry.id)
@@ -16217,6 +16349,12 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       return;
     }
 
+    const practiceOnlyEntries = rehearsalEntries.filter((entry) => !entry.setlist_entry_id);
+    if (practiceOnlyEntries.length === 0) {
+      setRehearsalStatusMessage("The official show setlist is already the rehearsal list. There are no practice-only songs to add.");
+      return;
+    }
+
     setActiveRehearsalActionId("sync-setlist");
     setRehearsalErrorMessage(null);
     setRehearsalStatusMessage(null);
@@ -16227,7 +16365,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       let nextSongLibrary = [...songLibrary];
       let nextRehearsalEntries = [...rehearsalEntries];
       const rehearsalEntriesById = new Map(nextRehearsalEntries.map((entry) => [entry.id, entry] as const));
-      const orderedRehearsalEntries = [...rehearsalEntries].sort((entryA, entryB) => {
+      const orderedRehearsalEntries = [...practiceOnlyEntries].sort((entryA, entryB) => {
         const getSectionSortOrder = (sectionLabel: string | null | undefined) => {
           if (sectionLabel === "set1") {
             return 0;
@@ -16418,11 +16556,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         const existingSetlistSong = existingSetlistBySongId.get(target.songId);
 
         if (existingSetlistSong) {
-          syncedResolvedSongs.push({
-            ...existingSetlistSong,
-            section: target.section,
-            set_section: target.section,
-          });
+          // This practice entry already has an official performance. Link it without
+          // changing that performance's established set or order.
           continue;
         }
 
@@ -16519,6 +16654,27 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
         updatedCount += 1;
       }
 
+      const finalSetlistBySongId = new Map(
+        finalSetlist.filter((entry) => Boolean(entry.song_id)).map((entry) => [entry.song_id as string, entry.id] as const),
+      );
+      const rehearsalLinks = syncedTargets.flatMap((target) => {
+        const setlistEntryId = finalSetlistBySongId.get(target.songId);
+        return setlistEntryId ? [{ rehearsalEntryId: target.rehearsalEntryId, setlistEntryId }] : [];
+      });
+      const linkedRehearsalEntryIds = new Map<string, string>();
+      for (const link of rehearsalLinks) {
+        const { error: linkError } = await supabase
+          .from("rehearsal_entries")
+          .update({ setlist_entry_id: link.setlistEntryId })
+          .eq("id", link.rehearsalEntryId);
+        if (linkError) throw linkError;
+        linkedRehearsalEntryIds.set(link.rehearsalEntryId, link.setlistEntryId);
+      }
+      nextRehearsalEntries = nextRehearsalEntries.map((entry) =>
+        linkedRehearsalEntryIds.has(entry.id)
+          ? { ...entry, setlist_entry_id: linkedRehearsalEntryIds.get(entry.id) ?? null }
+          : entry,
+      );
       setSongLibrary(nextSongLibrary);
       setRehearsalEntries(nextRehearsalEntries);
       setRehearsalTitleDrafts((currentDrafts) =>
@@ -16568,7 +16724,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       showName: show.name,
       showDate: show.show_date,
       printMode,
-      entries: rehearsalEntries
+      entries: rehearsalDisplayEntries
         .filter((entry) => {
           const normalizedSection = normalizeRehearsalSectionLabel(entry.section_label);
           if (printMode === "set1") {
@@ -18223,7 +18379,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                 <div className="flex flex-col gap-1">
                   <h2 className="text-xl font-semibold">Rehearsal</h2>
                   <p className="text-sm text-stone-600">
-                    Build a small rehearsal list for this show and attach MP3 reference recordings for the band.
+The official show setlist is shown first in its live order. Practice-only rehearsal songs remain below it, with notes and recordings attached separately.
                   </p>
                 </div>
 
@@ -18499,13 +18655,13 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               </div>
             ) : null}
 
-            {rehearsalEntries.length === 0 ? (
+            {rehearsalDisplayEntries.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
-                No rehearsal songs yet. Add a song from the existing library to start a rehearsal list.
+                No official setlist songs or practice-only rehearsal songs are available yet.
               </div>
             ) : (
               <div className="grid gap-4">
-                {rehearsalEntries.map((entry, index) => {
+                {rehearsalDisplayEntries.map((entry, index) => {
                   const recordings = rehearsalRecordingsByEntryId[entry.id] ?? [];
                   const selectedRecordingFile = rehearsalRecordingFiles[entry.id] ?? null;
                   const isSavingNotes = activeRehearsalActionId === entry.id;
@@ -18535,11 +18691,18 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                   const shouldShowRehearsalEntryDetails = shouldShowReadOnlyRehearsalDetails
                     ? isRehearsalEntryOpen
                     : isRehearsalEntryOpen;
-                  const currentSectionHeading = formatRehearsalSectionHeading(entry.section_label);
-                  const previousSectionHeading =
-                    index > 0
-                      ? formatRehearsalSectionHeading(rehearsalEntries[index - 1]?.section_label)
-                      : "";
+                  const isOfficialSetlistRehearsalEntry = Boolean(
+                    entry.setlist_entry_id && setlist.some((setlistEntry) => setlistEntry.id === entry.setlist_entry_id),
+                  );
+                  const currentSectionHeading = isOfficialSetlistRehearsalEntry
+                    ? formatRehearsalSectionHeading(setlist.find((setlistEntry) => setlistEntry.id === entry.setlist_entry_id)?.section)
+                    : "PRACTICE ONLY";
+                  const previousEntry = index > 0 ? rehearsalDisplayEntries[index - 1] : null;
+                  const previousSectionHeading = previousEntry
+                    ? previousEntry.setlist_entry_id && setlist.some((setlistEntry) => setlistEntry.id === previousEntry.setlist_entry_id)
+                      ? formatRehearsalSectionHeading(setlist.find((setlistEntry) => setlistEntry.id === previousEntry.setlist_entry_id)?.section)
+                      : "PRACTICE ONLY"
+                    : "";
 
                   return (
                     <div key={entry.id} className="flex flex-col gap-3">
@@ -18558,7 +18721,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                             <p className="text-xs font-medium text-stone-600">
                               {[
                                 displayRehearsalSungBy ? `Lead Vocal: ${displayRehearsalSungBy}` : null,
-                                entry.is_library_linked ? "Library Song" : "Manual Song",
+                                entry.setlist_entry_id ? "Official Setlist" : entry.is_library_linked ? "Practice-only Library Song" : "Practice-only Song",
                                 entry.song_key ? `Key: ${entry.song_key}` : null,
                                 entry.tempo ? `Tempo: ${entry.tempo}` : null,
                                 entry.song_type ? `Type: ${entry.song_type}` : null,
@@ -18753,7 +18916,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   <button
                                     type="button"
                                     onClick={() => void handleMoveRehearsalEntry(entry, "up")}
-                                    disabled={index === 0 || Boolean(activeRehearsalActionId)}
+                                    disabled={Boolean(entry.setlist_entry_id) || index === 0 || Boolean(activeRehearsalActionId)}
                                     className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     Move Up
@@ -18761,7 +18924,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
                                   <button
                                     type="button"
                                     onClick={() => void handleMoveRehearsalEntry(entry, "down")}
-                                    disabled={index === rehearsalEntries.length - 1 || Boolean(activeRehearsalActionId)}
+                                    disabled={Boolean(entry.setlist_entry_id) || index === rehearsalDisplayEntries.length - 1 || Boolean(activeRehearsalActionId)}
                                     className="rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     Move Down
