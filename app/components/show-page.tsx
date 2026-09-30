@@ -61,6 +61,7 @@ import {
 } from "@/lib/show-reminders";
 import { buildMcPlacementSponsors, sortMcSponsorReads } from "@/lib/mc-sponsor-reads";
 import { createClient } from "@/lib/supabase/client";
+import { resolveLeadVocal, resolveSongKey } from "@/lib/song-resolvers";
 import { aggregateFinanceItems, normalizePersonnelPayout } from "@/lib/show-personnel";
 import type {
   CompTicketFormState,
@@ -1737,6 +1738,8 @@ type SetlistEntryQueryRow = {
   song_id: string | null;
   guest_song_id: string | null;
   custom_title: string | null;
+  key_override?: string | null;
+  sung_by_override?: string | null;
   performance_flow?: string | null;
   song_intro_notes?: string | null;
   created_at: string;
@@ -3853,12 +3856,12 @@ function normalizeSetlistSong(song: SetlistEntryQueryRow | SetlistSong): Setlist
     sanitizedGuestTitle ||
     sanitizedSongTitle ||
     "";
-  const resolvedKey = librarySong?.key ?? guestSong?.key ?? guestSong?.song_key ?? song.key ?? existingSongKey ?? null;
+  const resolvedKey = resolveSongKey(song);
   const resolvedTempo = librarySong?.tempo ?? guestSong?.tempo ?? song.tempo ?? null;
   const resolvedSongType = librarySong?.song_type ?? guestSong?.song_type ?? song.song_type ?? null;
   const resolvedNotes = librarySong?.notes ?? guestSong?.notes ?? song.notes ?? null;
   const resolvedLyrics = librarySong?.lyrics ?? guestSong?.lyrics ?? song.lyrics ?? null;
-  const resolvedLeadVocal = librarySong?.sung_by ?? guestSong?.sung_by ?? song.sung_by ?? null;
+  const resolvedLeadVocal = resolveLeadVocal(song);
   const resolvedMp3Path =
     extractMp3PathFromNotes(librarySong?.notes) ??
     extractMp3PathFromNotes(guestSong?.notes) ??
@@ -9544,6 +9547,8 @@ export function ShowPage({
                 song_id,
                 guest_song_id,
                 custom_title,
+                key_override,
+                sung_by_override,
                 performance_flow,
               song_intro_notes,
               created_at,
@@ -18833,7 +18838,7 @@ The official show setlist is shown first in its live order. Practice-only rehear
                                   Key
                                   <input
                                     type="text"
-                                    value={rehearsalKeyDrafts[entry.id] ?? entry.song_key ?? ""}
+                                    value={rehearsalKeyDrafts[entry.id] ?? entry.song_key ?? ""} disabled={Boolean(entry.setlist_entry_id)}
                                     onChange={(event) =>
                                       setRehearsalKeyDrafts((currentDrafts) => ({
                                         ...currentDrafts,
@@ -18849,7 +18854,7 @@ The official show setlist is shown first in its live order. Practice-only rehear
                                   Lead Vocal
                                   <input
                                     type="text"
-                                    value={rehearsalSungByDrafts[entry.id] ?? entry.sung_by ?? ""}
+                                    value={rehearsalSungByDrafts[entry.id] ?? entry.sung_by ?? ""} disabled={Boolean(entry.setlist_entry_id)}
                                     onChange={(event) =>
                                       setRehearsalSungByDrafts((currentDrafts) => ({
                                         ...currentDrafts,

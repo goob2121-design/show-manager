@@ -128,6 +128,8 @@ export type SetlistEntry = {
   song_id: string | null;
   guest_song_id: string | null;
   custom_title: string | null;
+  key_override?: string | null;
+  sung_by_override?: string | null;
   performance_flow: string | null;
   song_intro_notes: string | null;
   intro_auto_open_lyrics?: boolean | null;

@@ -2,8 +2,10 @@ export type SongResolverRecord = {
   custom_title?: string | null;
   title?: string | null;
   key?: string | null;
+  key_override?: string | null;
   song_key?: string | null;
   sung_by?: string | null;
+  sung_by_override?: string | null;
   tempo?: string | null;
   notes?: string | null;
   lyrics?: string | null;
@@ -50,13 +52,13 @@ export function resolveSongLyrics(entry: SongResolverRecord) {
 export function resolveSongKey(entry: SongResolverRecord) {
   const librarySong = resolveJoinedSong(entry.library_song);
   const guestSong = resolveJoinedSong(entry.guest_song);
-  return librarySong?.key ?? guestSong?.key ?? guestSong?.song_key ?? entry.key ?? entry.song_key ?? null;
+  return clean(entry.key_override) ?? clean(librarySong?.key) ?? clean(guestSong?.key) ?? clean(guestSong?.song_key) ?? clean(entry.key) ?? clean(entry.song_key) ?? null;
 }
 
 export function resolveLeadVocal(entry: SongResolverRecord) {
   const librarySong = resolveJoinedSong(entry.library_song);
   const guestSong = resolveJoinedSong(entry.guest_song);
-  return librarySong?.sung_by ?? guestSong?.sung_by ?? entry.sung_by ?? guestSong?.submitted_by_name ?? null;
+  return clean(entry.sung_by_override) ?? clean(librarySong?.sung_by) ?? clean(guestSong?.sung_by) ?? clean(entry.sung_by) ?? clean(guestSong?.submitted_by_name) ?? null;
 }
 
 export function resolveSongTempo(entry: SongResolverRecord) {

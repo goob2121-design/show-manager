@@ -18,12 +18,12 @@ const INTRO_DELAYS = [0, 10, 20, 30, 45, 60, 90];
 const SPEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const FONT_SIZES = [18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42];
 const PERFORMANCE_SETUP_SELECT = `
-  id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, performance_flow, song_intro_notes, intro_auto_open_lyrics, intro_auto_open_delay, lyrics_auto_start_scroll, lyrics_auto_scroll_speed, lyrics_auto_scroll_delay, lyrics_font_size, lyrics_reading_mode, created_at,
+  id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, key_override, sung_by_override, performance_flow, song_intro_notes, intro_auto_open_lyrics, intro_auto_open_delay, lyrics_auto_start_scroll, lyrics_auto_scroll_speed, lyrics_auto_scroll_delay, lyrics_font_size, lyrics_reading_mode, created_at,
   library_song:song_id (id, title, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics, default_intro_auto_open_lyrics, default_intro_auto_open_delay, default_lyrics_auto_start_scroll, default_lyrics_auto_scroll_speed, default_lyrics_auto_scroll_delay, default_lyrics_font_size, default_lyrics_reading_mode),
   guest_song:guest_song_id (id, title, key, sung_by, tempo, song_type, lyrics, submitted_by_name)
 `;
 const LEGACY_PERFORMANCE_SETUP_SELECT = `
-  id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, performance_flow, song_intro_notes, created_at,
+  id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, key_override, sung_by_override, performance_flow, song_intro_notes, created_at,
   library_song:song_id (id, title, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics),
   guest_song:guest_song_id (id, title, key, sung_by, tempo, song_type, lyrics, submitted_by_name)
 `;
@@ -36,12 +36,12 @@ type JoinedSong = {
 };
 type Row = {
   id: string; show_id: string; section: string | null; position: number; source_type: string | null; song_id: string | null; guest_song_id: string | null;
-  custom_title: string | null; performance_flow?: string | null; song_intro_notes?: string | null; intro_auto_open_lyrics?: boolean | null; intro_auto_open_delay?: number | null; lyrics_auto_start_scroll?: boolean | null; lyrics_auto_scroll_speed?: number | null; lyrics_auto_scroll_delay?: number | null; lyrics_font_size?: number | null; lyrics_reading_mode?: boolean | null; created_at: string;
+  custom_title: string | null; key_override?: string | null; sung_by_override?: string | null; performance_flow?: string | null; song_intro_notes?: string | null; intro_auto_open_lyrics?: boolean | null; intro_auto_open_delay?: number | null; lyrics_auto_start_scroll?: boolean | null; lyrics_auto_scroll_speed?: number | null; lyrics_auto_scroll_delay?: number | null; lyrics_font_size?: number | null; lyrics_reading_mode?: boolean | null; created_at: string;
   library_song?: JoinedSong | JoinedSong[] | null; guest_song?: JoinedSong | JoinedSong[] | null;
 };
 type SetupSong = {
   id: string; section: SectionKey; songNumber: number; sourceType: string | null; songId: string | null; guestSongId: string | null; title: string; key: string | null; lead: string | null; songType: SongType | null;
-  lyrics: string | null; performanceFlow: string; songIntroNotes: string; initialSettings: Partial<Settings>;
+  keyOverride: string | null; sungByOverride: string | null; inheritedKey: string | null; inheritedLead: string | null; lyrics: string | null; performanceFlow: string; songIntroNotes: string; initialSettings: Partial<Settings>;
 };
 type Settings = { autoStart: boolean; speed: number; delay: number; fontSize: number; reading: boolean; introAuto: boolean; introDelay: number };
 type SettingsKey = keyof Settings;
@@ -67,7 +67,7 @@ function loadSettings(id: string): Settings { return { autoStart: readBool(AUTOS
 function saveSettings(id: string, s: Settings) { write(id, AUTOSTART_KEY, s.autoStart); write(id, SPEED_KEY, s.speed); write(id, DELAY_KEY, s.delay); write(id, FONT_KEY, s.fontSize); write(id, MODE_KEY, s.reading); write(id, INTRO_ENABLED_KEY, s.introAuto); write(id, INTRO_DELAY_KEY, s.introDelay); }
 function mergeDefinedSettings(saved: Settings, initial: Partial<Settings>): Settings { return { autoStart: initial.autoStart ?? saved.autoStart, speed: initial.speed ?? saved.speed, delay: initial.delay ?? saved.delay, fontSize: initial.fontSize ?? saved.fontSize, reading: initial.reading ?? saved.reading, introAuto: initial.introAuto ?? saved.introAuto, introDelay: initial.introDelay ?? saved.introDelay }; }
 function databaseSettingsUpdate(changes: Partial<Settings>) { const payload: Record<string, boolean | number> = {}; for (const settingKey of Object.keys(changes) as SettingsKey[]) { const value = changes[settingKey]; if (value !== undefined) payload[SETTINGS_DATABASE_FIELDS[settingKey]] = value; } return payload; }
-function normalize(row: Row, songNumber: number): SetupSong { const lib = first(row.library_song); const guest = first(row.guest_song); const section = sec(row.section); return { id: row.id, section, songNumber, sourceType: row.source_type, songId: row.song_id, guestSongId: row.guest_song_id, title: resolveSongTitle(row), key: resolveSongKey(row), lead: resolveLeadVocal(row), songType: lib?.song_type ?? guest?.song_type ?? null, lyrics: resolveSongLyrics(row), performanceFlow: resolvePerformanceFlow(row)?.trim() || "", songIntroNotes: resolveSongIntroNotes(row)?.trim() || "", initialSettings: { autoStart: row.lyrics_auto_start_scroll ?? lib?.default_lyrics_auto_start_scroll ?? undefined, speed: row.lyrics_auto_scroll_speed ?? lib?.default_lyrics_auto_scroll_speed ?? undefined, delay: row.lyrics_auto_scroll_delay ?? lib?.default_lyrics_auto_scroll_delay ?? undefined, fontSize: row.lyrics_font_size ?? lib?.default_lyrics_font_size ?? undefined, reading: row.lyrics_reading_mode ?? lib?.default_lyrics_reading_mode ?? undefined, introAuto: row.intro_auto_open_lyrics ?? lib?.default_intro_auto_open_lyrics ?? undefined, introDelay: row.intro_auto_open_delay ?? lib?.default_intro_auto_open_delay ?? undefined } }; }
+function normalize(row: Row, songNumber: number): SetupSong { const lib = first(row.library_song); const guest = first(row.guest_song); const section = sec(row.section); return { id: row.id, section, songNumber, sourceType: row.source_type, songId: row.song_id, guestSongId: row.guest_song_id, title: resolveSongTitle(row), key: resolveSongKey(row), lead: resolveLeadVocal(row), keyOverride: row.key_override ?? null, sungByOverride: row.sung_by_override ?? null, inheritedKey: resolveSongKey({ ...row, key_override: null }), inheritedLead: resolveLeadVocal({ ...row, sung_by_override: null }), songType: lib?.song_type ?? guest?.song_type ?? null, lyrics: resolveSongLyrics(row), performanceFlow: resolvePerformanceFlow(row)?.trim() || "", songIntroNotes: resolveSongIntroNotes(row)?.trim() || "", initialSettings: { autoStart: row.lyrics_auto_start_scroll ?? lib?.default_lyrics_auto_start_scroll ?? undefined, speed: row.lyrics_auto_scroll_speed ?? lib?.default_lyrics_auto_scroll_speed ?? undefined, delay: row.lyrics_auto_scroll_delay ?? lib?.default_lyrics_auto_scroll_delay ?? undefined, fontSize: row.lyrics_font_size ?? lib?.default_lyrics_font_size ?? undefined, reading: row.lyrics_reading_mode ?? lib?.default_lyrics_reading_mode ?? undefined, introAuto: row.intro_auto_open_lyrics ?? lib?.default_intro_auto_open_lyrics ?? undefined, introDelay: row.intro_auto_open_delay ?? lib?.default_intro_auto_open_delay ?? undefined } }; }
 function status(song: SetupSong, s: Settings): Status { const hasLyrics = Boolean(song.lyrics?.trim()); const hasFlow = Boolean(song.performanceFlow.trim()); const hasIntro = Boolean(song.songIntroNotes.trim()); if (song.songType === "instrumental" && !hasLyrics && !s.introAuto) return "na"; if (!hasLyrics) return "missing"; if (s.introAuto && !hasIntro) return "missing"; if (!hasFlow || (s.introAuto && s.introDelay <= 0)) return "attention"; return "ready"; }
 function statusLabel(value: Status) { return value === "ready" ? "Ready" : value === "attention" ? "Needs Attention" : value === "missing" ? "Missing Content" : "Not Applicable"; }
 function statusClass(value: Status) { return value === "ready" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : value === "attention" ? "border-amber-300 bg-amber-50 text-amber-800" : value === "missing" ? "border-rose-300 bg-rose-50 text-rose-800" : "border-slate-300 bg-slate-100 text-slate-700"; }
@@ -80,6 +80,8 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
   const [settings, setSettings] = useState<Record<string, Settings>>({});
   const [flowDrafts, setFlowDrafts] = useState<Record<string, string>>({});
   const [introDrafts, setIntroDrafts] = useState<Record<string, string>>({});
+  const [keyOverrideDrafts, setKeyOverrideDrafts] = useState<Record<string, string>>({});
+  const [sungByOverrideDrafts, setSungByOverrideDrafts] = useState<Record<string, string>>({});
   const [lyricsDrafts, setLyricsDrafts] = useState<Record<string, string>>({});
   const [defaults, setDefaults] = useState<Settings>({ autoStart: false, speed: 4, delay: 3, fontSize: 28, reading: false, introAuto: false, introDelay: 0 });
   const [isLoading, setIsLoading] = useState(true);
@@ -118,6 +120,8 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
         setSettings(nextSongs.reduce<Record<string, Settings>>((out, song) => { out[song.id] = mergeDefinedSettings(loadSettings(song.id), song.initialSettings); return out; }, {}));
         setFlowDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.performanceFlow; return out; }, {}));
         setIntroDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.songIntroNotes; return out; }, {}));
+        setKeyOverrideDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.keyOverride ?? ""; return out; }, {}));
+        setSungByOverrideDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.sungByOverride ?? ""; return out; }, {}));
         setLyricsDrafts(nextSongs.reduce<Record<string, string>>((out, song) => { out[song.id] = song.lyrics ?? ""; return out; }, {}));
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load Performance Setup.");
@@ -154,6 +158,18 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
       setError(err instanceof Error ? err.message : "Could not complete " + label.toLowerCase() + ".");
     }
   }
+  async function saveIdentity(song: SetupSong) {
+    setSavingId(song.id); setMessage(null); setError(null);
+    try {
+      const key_override = keyOverrideDrafts[song.id]?.trim() || null;
+      const sung_by_override = sungByOverrideDrafts[song.id]?.trim() || null;
+      const { error: saveError } = await createClient().from("setlist_entries").update({ key_override, sung_by_override }).eq("id", song.id);
+      if (saveError) throw saveError;
+      setSongs((current) => current.map((item) => item.id === song.id ? { ...item, keyOverride: key_override, sungByOverride: sung_by_override, key: key_override ?? item.inheritedKey, lead: sung_by_override ?? item.inheritedLead } : item));
+      setMessage(`Saved performance identity for ${song.title}.`);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not save performance identity."); }
+    finally { setSavingId(null); }
+  }
   async function saveText(song: SetupSong) {
     setSavingId(song.id); setMessage(null); setError(null);
     try {
@@ -171,7 +187,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
         if (lyricsError) throw lyricsError;
       }
       setSongs((current) => current.map((item) => item.id === song.id ? { ...item, performanceFlow: performance_flow ?? "", songIntroNotes: song_intro_notes ?? "", lyrics } : item));
-      setMessage(`Saved setup notes and lyrics for ${song.title}.`);
+      setMessage(`Saved performance setup for ${song.title}.`);
     } catch (err) { setError(err instanceof Error ? err.message : "Could not save setup notes or lyrics."); }
     finally { setSavingId(null); }
   }
@@ -256,6 +272,15 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
 
                       <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1fr_1.15fr]">
                         <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-slate-950/60">
+                          <h4 className="text-sm font-black uppercase tracking-[0.16em] text-stone-600 dark:text-slate-300">Performance Identity</h4>
+                          <p className="mt-2 text-xs leading-5 text-stone-600 dark:text-slate-300">Resolved now: Key {song.key || "TBD"}; Lead {song.lead || "TBD"}. Clear either override to inherit the source value.</p>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                            <label className="text-sm font-bold">Key Override<input type="text" value={keyOverrideDrafts[song.id] ?? ""} onChange={(event) => setKeyOverrideDrafts((current) => ({ ...current, [song.id]: event.target.value }))} placeholder={`Inherited: ${song.inheritedKey || "TBD"}`} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-slate-950" /></label>
+                            <label className="text-sm font-bold">Lead Singer Override<input type="text" value={sungByOverrideDrafts[song.id] ?? ""} onChange={(event) => setSungByOverrideDrafts((current) => ({ ...current, [song.id]: event.target.value }))} placeholder={`Inherited: ${song.inheritedLead || "TBD"}`} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-slate-950" /></label>
+                          </div>
+                          <button type="button" onClick={() => saveIdentity(song)} disabled={savingId === song.id} className="mt-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400/25 dark:bg-emerald-500/15 dark:text-emerald-100">{savingId === song.id ? "Saving..." : "Save Identity Overrides"}</button>
+                        </section>
+                        <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-slate-950/60">
                           <div className="flex items-center justify-between gap-2">
                             <h4 className="text-sm font-black uppercase tracking-[0.16em] text-stone-600 dark:text-slate-300">Song Intro</h4>
                             <span className={`rounded-full px-2 py-1 text-xs font-bold ${hasIntro ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-700"}`}>{hasIntro ? "Has Notes" : "No Notes"}</span>
@@ -296,7 +321,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
                       </div>
 
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <button type="button" onClick={() => saveText(song)} disabled={savingId === song.id} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{savingId === song.id ? "Saving..." : "Save Intro and Flow"}</button>
+                        <button type="button" onClick={() => saveText(song)} disabled={savingId === song.id} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{savingId === song.id ? "Saving..." : "Save Performance Setup"}</button>
                         <button type="button" onClick={() => { setCopied(s); setMessage(`Copied Live Mode settings from ${song.title}.`); }} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Copy Settings</button>
                         <button type="button" onClick={() => copied ? updateSettings(song.id, () => copied) : setError("Copy settings from a song first.")} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Paste Settings</button>
                       </div>

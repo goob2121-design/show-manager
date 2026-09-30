@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { buildMcPlacementSponsors, sortMcSponsorReads } from "@/lib/mc-sponsor-reads";
 import { buildShowTimelineMessages } from "@/lib/show-reminders";
+import { resolveLeadVocal, resolveSongKey } from "@/lib/song-resolvers";
 import type {
   GuestProfile,
   McBlockNote,
@@ -208,13 +209,9 @@ function normalizeSetlistSong(song: SetlistEntryRow | SetlistSong): SetlistSong 
       ? song.guest_song[0]
       : song.guest_song
     : null;
-  const resolvedKey = librarySong?.key ?? guestSong?.key ?? song.key ?? null;
+  const resolvedKey = resolveSongKey(song);
   const resolvedNotes = stripMp3MarkerFromNotes(librarySong?.notes ?? song.notes ?? null);
-  const resolvedLeadVocal =
-    librarySong?.sung_by?.trim() ||
-    guestSong?.sung_by?.trim() ||
-    ("sung_by" in song ? song.sung_by?.trim() ?? null : null) ||
-    null;
+  const resolvedLeadVocal = resolveLeadVocal(song);
   const resolvedPerformer =
     resolvedLeadVocal?.trim() ||
     guestSong?.submitted_by_name?.trim() ||
