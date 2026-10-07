@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FootswitchTest } from "./footswitch-test";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveLeadVocal, resolvePerformanceFlow, resolveSongIntroNotes, resolveSongKey, resolveSongLyrics, resolveSongTitle } from "@/lib/song-resolvers";
@@ -75,6 +76,7 @@ function formatDate(value: string | null) { if (!value) return "Date TBD"; const
 function Toggle({ label, enabled, onClick }: { label: string; enabled: boolean; onClick: () => void }) { return <button type="button" onClick={onClick} className={`rounded-xl border px-3 py-2 text-sm font-semibold ${enabled ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-stone-300 bg-white text-stone-700"}`}>{label}: {enabled ? "On" : "Off"}</button>; }
 
 export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
+  const [footswitchTestOpen, setFootswitchTestOpen] = useState(false);
   const [show, setShow] = useState<ShowRecord | null>(null);
   const [songs, setSongs] = useState<SetupSong[]>([]);
   const [settings, setSettings] = useState<Record<string, Settings>>({});
@@ -192,6 +194,8 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
     finally { setSavingId(null); }
   }
 
+  if (footswitchTestOpen) return <FootswitchTest onClose={() => setFootswitchTestOpen(false)} />;
+
   return (
     <main className="min-h-screen bg-stone-100 text-stone-950 dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
@@ -203,6 +207,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
             <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600 dark:text-slate-300">Prepare Live Mode automation, lyrics, intros, and scrolling for the full show.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setFootswitchTestOpen(true)} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-500/15 dark:text-emerald-100">Footswitch Test</button>
             <Link href={`/admin/${encodeURIComponent(showSlug)}?tab=music-setlist`} className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100">Music &amp; Setlist</Link>
             <Link href={`/band/${encodeURIComponent(showSlug)}/live`} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-500/15 dark:text-emerald-100">Live Mode</Link>
           </div>
