@@ -7,6 +7,7 @@ const NAVIGATION_KEYS = new Set([
 const NAVIGATION_KEY_CODES = new Set([13, 32, 33, 34, 35, 36, 37, 38, 39, 40]);
 
 export type KeyboardInputRecord = {
+  kind: "KEYBOARD";
   type: string; key: string; code: string; keyCode: number; which: number;
   alt: boolean; ctrl: boolean; shift: boolean; meta: boolean;
   timestamp: string; eventTimestamp: number; repeat: boolean; location: number;
@@ -22,6 +23,7 @@ export function listenForKeyboardInput(target: Window, onInput: (input: Keyboard
     // Keep diagnostic input away from application shortcuts, including unknown keys.
     event.stopImmediatePropagation();
     onInput({
+      kind: "KEYBOARD",
       type: event.type, key: event.key, code: event.code, keyCode: event.keyCode, which: event.which,
       alt: event.altKey, ctrl: event.ctrlKey, shift: event.shiftKey, meta: event.metaKey,
       timestamp: new Date().toISOString(), eventTimestamp: event.timeStamp,
