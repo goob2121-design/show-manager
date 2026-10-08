@@ -127,6 +127,7 @@ export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onS
           <p className="mt-3 font-bold">Scroll Alignment: OFF — required. No scroll snapping or automatic corrections.</p>
           {canStart ? <a href="#smart-lyric-paging-display" onClick={onStart} className="mt-5 block rounded-xl bg-emerald-700 p-4 text-center text-lg font-black text-white hover:bg-emerald-800">{config.fullscreen ? "RESUME LYRICS IN FULLSCREEN" : "START FULL-SCREEN LYRIC TEST"}</a> : <button type="button" disabled className="mt-5 w-full rounded-xl bg-stone-400 p-4 text-lg font-black text-white">START FULL-SCREEN LYRIC TEST</button>}
           <p className="mt-3">Full-screen means a clean Safari page; no browser Fullscreen API is required. Setup is removed during testing. Start uses normal fragment navigation to the display beginning.</p>
+          <p className="mt-2 text-sm">During lyrics, tap the song title to toggle runtime diagnostics. Compare requested/applied calibration, calibrated height, rendered height, and CSS min-height at −300px and +300px.</p>
           {fullscreenControls}
         </header>
         <section className="rounded-3xl border border-stone-300 bg-white p-5 dark:border-white/20 dark:bg-slate-900" aria-label="Latest full-screen test measurements">

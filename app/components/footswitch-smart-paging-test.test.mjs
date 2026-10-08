@@ -28,10 +28,11 @@ test("setup/display are exclusive; configuration and latest measurements survive
   const react = { ...require("react"), useEffect: () => {}, useCallback: (fn) => fn, useMemo: (fn) => fn(),
     useState: (initial) => { const slot = index++; if (!(slot in state)) state[slot] = initial; return [state[slot], (value) => { state[slot] = typeof value === "function" ? value(state[slot]) : value; }]; } };
   const settingsModule = compile("footswitch-diagnostic-settings");
+  let diagnosticOrientation = "portrait";
   const fullscreenCalls = [];
   const fullscreenState = { label: "Normal", message: "Not attempted", active: false };
   const { SmartLyricPagingTest } = compile("footswitch-smart-paging-test", react, { modules: { "./footswitch-diagnostic-settings": {
-    ...settingsModule, useDiagnosticSettings: () => { const [settings, setSettings] = react.useState(settingsModule.defaultDiagnosticSettings()); return { settings, setSettings, orientation: "portrait", loaded: true, storageUnavailable: false }; },
+    ...settingsModule, useDiagnosticSettings: () => { const [settings, setSettings] = react.useState(settingsModule.defaultDiagnosticSettings()); return { settings, setSettings, orientation: diagnosticOrientation, loaded: true, storageUnavailable: false }; },
   }, "./footswitch-fullscreen": { useDiagnosticFullscreen: () => ({ status: fullscreenState, request: () => fullscreenCalls.push("request"), close: () => { assert.equal(state[1], false, "Lyrics must unmount before starting browser exit"); fullscreenCalls.push("close"); return Promise.resolve(); } }) } } });
   const songs = [{ id: "entry", title: "Actual song", lyrics: "VERSE 1\r\n[G] Original!\r\n\r\nCHORUS\r\nAgain" }, { id: "empty", title: "No text", lyrics: null }];
   const render = () => { index = 0; return SmartLyricPagingTest({ onReturn: () => {}, songs }); };
@@ -107,6 +108,33 @@ test("setup/display are exclusive; configuration and latest measurements survive
   mode.props.onStart();
   mode = render();
   assert.equal(mode.props.config.calibration, -125);
+  for (const calibration of [-300, 300]) {
+    mode.props.onCalibrate();
+    mode = render();
+    mode.props.onConfig({ ...mode.props.config, calibration });
+    mode = render();
+    mode.props.onStart();
+    mode = render();
+    assert.equal(mode.props.config.calibration, calibration, "Resume uses latest fullscreen portrait value");
+    assert.equal(mode.props.config.preferredSize, 56);
+  }
+  diagnosticOrientation = "landscape";
+  mode = render();
+  assert.equal(mode.props.config.calibration, 0);
+  mode.props.onCalibrate();
+  mode = render();
+  mode.props.onConfig({ ...mode.props.config, calibration: -200 });
+  mode = render();
+  mode.props.onStart();
+  mode = render();
+  assert.equal(mode.props.config.calibration, -200);
+  fullscreenState.active = false;
+  mode = render();
+  assert.equal(mode.props.config.calibration, 0, "Regular landscape is independent");
+  fullscreenState.active = true;
+  diagnosticOrientation = "portrait";
+  mode = render();
+  assert.equal(mode.props.config.calibration, 300);
   mode.props.onReturn();
   assert.equal(fullscreenCalls.at(-1), "close");
   mode = render();
@@ -119,7 +147,7 @@ test("setup/display are exclusive; configuration and latest measurements survive
   fullscreenState.active = true;
   mode = render();
   assert.equal(mode.type.name, "SmartLyricPagingSetup", "A late fullscreen event cannot reopen lyrics");
-  assert.equal(mode.props.config.calibration, -125);
+  assert.equal(mode.props.config.calibration, 300);
   mode.props.onStart();
   mode = render();
   fullscreenState.active = false;
@@ -150,7 +178,9 @@ test("fixed title header is centered, touch-friendly and closes without changing
   const view = SmartLyricPagingDisplay({ config, onReturn: () => { closed = true; }, onMeasurement: () => {} });
   const nodes = elements(view);
   const controls = nodes.filter((node) => ["a", "button", "input", "select"].includes(node.type));
-  assert.equal(controls.length, 1);
+  assert.equal(controls.length, 2);
+  controls.sort((a) => a.props["aria-label"].startsWith("Close") ? -1 : 1);
+  assert.equal(nodes.some((node) => node.type === "aside"), false, "Overlay is hidden by default");
   assert.equal(controls[0].props["aria-label"], "Close lyric test and return to setup");
   assert.equal(controls[0].type, "button");
   assert.equal(controls[0].props.type, "button");
@@ -167,7 +197,7 @@ test("fixed title header is centered, touch-friendly and closes without changing
   assert.match(controls[0].props.className, /pointer-events-auto/);
   assert.match(controls[0].props.className, /min-h-11/);
   const title = nodes.find((node) => node.type === "h1");
-  assert.equal(title.props.children, config.title);
+  assert.equal(elements(title).find((node) => node.type === "span").props.children, config.title);
   assert.equal(title.props.title, config.title);
   assert.match(title.props.className, /truncate text-center/);
   assert.equal(title.props.style.fontSize, "clamp(18px, 3.5vw, 26px)");
@@ -323,4 +353,50 @@ test("selector distinguishes loading, load failure, successful empty library, an
   assert.ok(render({ songs: [{ id: "library:1", title: "Available song", lyrics: null }] }, "unmatched").includes("No songs match your search."));
   const source = compile("footswitch-song-source");
   assert.equal(source.diagnosticSong({ source: "stageflow", songId: "old-entry" }, [{ id: "library:1", title: "Linked song", lyrics: "original", aliases: ["old-entry"] }]).id, "library:1");
+});
+
+
+test("runtime overlay reports measured rects and calibrated CSS at both fullscreen extremes", () => {
+  const heights = [];
+  for (const calibration of [-300, 300]) {
+    const effects = [], state = [];
+    let slot = 0, refSlot = 0;
+    const root = {};
+    const page = Object.assign(new EventTarget(), { innerHeight: 906, scrollY: 23,
+      visualViewport: Object.assign(new EventTarget(), { height: 906, offsetTop: 0 }),
+      matchMedia: () => ({ matches: false }), getComputedStyle: () => ({ fontSize: "56px", minHeight: state[0].pageHeight + "px" }) });
+    const controls = { getBoundingClientRect: () => ({ height: 44, bottom: 44 }) };
+    const rail = { getBoundingClientRect: () => ({ width: 900 }), querySelectorAll: () => [{ getBoundingClientRect: () => ({ top: 44, bottom: 44 + state[0].pageHeight, height: state[0].pageHeight }) }] };
+    const probe = { style: {}, textContent: "", getBoundingClientRect: () => ({ height: parseFloat(probe.style.fontSize) * 1.4 }) };
+    const refs = [controls, rail, probe, null].map((current) => ({ current }));
+    const react = { ...require("react"), useRef: () => refs[refSlot++], useEffect: (fn) => effects.push(fn),
+      useState: (initial) => { const i = slot++; if (!(i in state)) state[i] = initial; return [state[i], (value) => { state[i] = typeof value === "function" ? value(state[i]) : value; }]; } };
+    const { SmartLyricPagingDisplay } = compile("footswitch-smart-paging-display", react, { window: page, document: { documentElement: root, fullscreenElement: root, scrollingElement: { clientHeight: 906 } } });
+    const render = () => { slot = refSlot = 0; effects.length = 0; return SmartLyricPagingDisplay({ config: { sample: "realistic", preferredSize: 56, calibration, fullscreen: true }, lyricText: "VERSE 1\nOriginal lyrics", onReturn: () => {}, onMeasurement: () => {} }); };
+    render();
+    const cleanLayout = effects[0]();
+    let view = render();
+    const cleanPosition = effects[1]();
+    elements(view).find((node) => node.props["aria-label"] === "Toggle lyric calibration diagnostics").props.onClick();
+    view = render();
+    const overlay = elements(view).find((node) => node.type === "aside");
+    assert.match(overlay.props.className, /fixed/);
+    assert.match(overlay.props.className, /pointer-events-none/);
+    const html = renderToStaticMarkup(overlay);
+    assert.ok(html.includes("Fullscreen"));
+    assert.ok(html.includes("Portrait"));
+    assert.ok(html.includes("Maximum"));
+    assert.ok(html.includes("56px"));
+    assert.ok(html.includes(calibration + "px"));
+    assert.ok(html.includes(state[0].pageHeight.toFixed(1) + "px"));
+    assert.equal(state[3].renderedHeight, state[0].pageHeight, "Reads the supplied DOM rectangle");
+    assert.equal(state[3].appliedCalibration, calibration);
+    assert.equal(state[3].scrollY, 23);
+    const section = elements(view).find((node) => "data-smart-lyric-page" in node.props);
+    assert.equal(section.props.style.minHeight, 862 + calibration);
+    assert.equal(section.props.style.fontSize, 56);
+    heights.push(section.props.style.minHeight);
+    cleanPosition(); cleanLayout();
+  }
+  assert.equal(heights[1] - heights[0], 600, "Calibration changes rendered min-height by 600px; real Safari rects require device testing");
 });
