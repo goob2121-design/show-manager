@@ -219,3 +219,19 @@ test("orientation changes load independent calibration while settings hydrate be
   query.dispatchEvent(new Event("change"));
   assert.equal(render().orientation, "portrait");
 });
+
+test("selector distinguishes loading, load failure, successful empty library, and no search matches", () => {
+  const render = (props, query = "") => {
+    const react = { ...require("react"), useState: () => [query, () => {}] };
+    const { FootswitchSongSelection } = compile("footswitch-smart-paging-test", react);
+    return renderToStaticMarkup(FootswitchSongSelection({ source: "stageflow", songId: "", songs: [], onSource: () => {}, onSong: () => {}, ...props }));
+  };
+  assert.ok(render({ songStatus: "Loading StageFlow song library…" }).includes("Loading StageFlow song library"));
+  const failed = render({ songStatus: "Could not load StageFlow song library: denied", onRetry: () => {} });
+  assert.ok(failed.includes("Retry loading songs"));
+  assert.ok(!failed.includes("loaded successfully"));
+  assert.ok(render({}).includes("loaded successfully, but no songs are available to this session"));
+  assert.ok(render({ songs: [{ id: "library:1", title: "Available song", lyrics: null }] }, "unmatched").includes("No songs match your search."));
+  const source = compile("footswitch-song-source");
+  assert.equal(source.diagnosticSong({ source: "stageflow", songId: "old-entry" }, [{ id: "library:1", title: "Linked song", lyrics: "original", aliases: ["old-entry"] }]).id, "library:1");
+});

@@ -10,7 +10,7 @@ import { splitLyricSections } from "./footswitch-lyric-paging";
 
 const TEXT_SIZES = [{ label: "Large", pixels: 40 }, { label: "Extra Large", pixels: 48 }, { label: "Maximum", pixels: 56 }];
 
-export function SmartLyricPagingTest({ onReturn, songs = [], songStatus }: { onReturn: () => void; songs?: readonly FootswitchSong[]; songStatus?: string }) {
+export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry }: { onReturn: () => void; songs?: readonly FootswitchSong[]; songStatus?: string; onRetry?: () => void }) {
   const { settings, setSettings, orientation, loaded, storageUnavailable } = useDiagnosticSettings();
   const song = diagnosticSong(settings, songs);
   const lyricText = song?.lyrics ?? "";
@@ -46,7 +46,7 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus }: { onR
     : <SmartLyricPagingSetup config={config} onConfig={setConfig} history={history} onReturn={onReturn}
         canStart={loaded && Boolean(lyricText.trim()) && !(settings.source === "stageflow" && songStatus)}
         onStart={() => { if (loaded && lyricText.trim()) flushSync(() => setDisplayActive(true)); }}
-        sourceControls={<fieldset disabled={!loaded}><FootswitchSongSelection source={settings.source} songId={settings.songId} songs={songs} songStatus={songStatus}
+        sourceControls={<fieldset disabled={!loaded}><FootswitchSongSelection source={settings.source} songId={settings.songId} songs={songs} songStatus={songStatus} onRetry={onRetry}
           onSource={(source) => setSettings((current) => ({ ...current, source }))} onSong={(songId) => setSettings((current) => ({ ...current, songId }))} /></fieldset>}
         sectionCount={splitLyricSections(lyricText).length} missingLyrics={Boolean(song && !lyricText.trim())}
         notice={!loaded ? "Loading saved diagnostic settings…" : storageUnavailable ? "Settings storage is unavailable. Changes apply for this test only." : undefined}
@@ -54,21 +54,21 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus }: { onR
         onReset={() => setSettings((current) => updateOrientationCalibration(current, orientation, 0))} />;
 }
 
-export function FootswitchSongSelection({ source, songId, songs, songStatus, onSource, onSong }: {
+export function FootswitchSongSelection({ source, songId, songs, songStatus, onRetry, onSource, onSong }: {
   source: "sample" | "stageflow"; songId: string; songs: readonly FootswitchSong[]; songStatus?: string;
-  onSource: (source: "sample" | "stageflow") => void; onSong: (songId: string) => void;
+  onSource: (source: "sample" | "stageflow") => void; onSong: (songId: string) => void; onRetry?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const results = searchDiagnosticSongs(songs, query);
   return <div className="mt-4 space-y-3">
     <label className="block font-bold">Song source <select value={source} onChange={(event) => onSource(event.target.value as "sample" | "stageflow")} className="rounded-xl border p-2 dark:bg-slate-800"><option value="sample">Sample Songs</option><option value="stageflow">StageFlow Songs</option></select></label>
     {source === "stageflow" && <>
-      <p className="text-sm">Songs from this show&apos;s Performance Setup setlist, including library and guest songs. Read-only; saved lyrics are used, not unsaved editing drafts.</p>
-      {songStatus ? <p role="status">{songStatus}</p> : <>
+      <p className="text-sm">Search the complete accessible StageFlow song library, plus this show&apos;s guest and setlist-only songs. Read-only; original saved lyrics are used.</p>
+      {songStatus ? <div role="status"><p>{songStatus}</p>{onRetry && <button type="button" onClick={onRetry} className="mt-2 rounded-xl border p-3 font-bold">Retry loading songs</button>}</div> : <>
         <label className="block font-bold">Search songs <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} className="w-full rounded-xl border p-3 dark:bg-slate-800" /></label>
-        {songs.length === 0 ? <p>No songs available in this show&apos;s Performance Setup.</p> : <ul aria-label="StageFlow songs" className="space-y-2">{results.map((song) => <li key={song.id}><button type="button" aria-pressed={songId === song.id} onClick={() => onSong(song.id)} className={`w-full rounded-xl border p-3 text-left font-bold ${songId === song.id ? "ring-2 ring-emerald-500" : ""}`}>{song.title}{!song.lyrics?.trim() ? " · No lyrics" : ""}</button></li>)}</ul>}
+        {songs.length === 0 ? <p>The song library loaded successfully, but no songs are available to this session. No guest or setlist-only songs are available for this show either.</p> : <ul aria-label="StageFlow songs" className="space-y-2">{results.map((song) => <li key={song.id}><button type="button" aria-pressed={songId === song.id || song.aliases?.includes(songId)} onClick={() => onSong(song.id)} className={`w-full rounded-xl border p-3 text-left font-bold ${songId === song.id || song.aliases?.includes(songId) ? "ring-2 ring-emerald-500" : ""}`}>{song.title}{song.kind ? ` · ${song.kind}` : ""}{!song.lyrics?.trim() ? " · No lyrics" : ""}</button></li>)}</ul>}
         {songs.length > 0 && results.length === 0 && <p>No songs match your search.</p>}
-        {!songs.some((song) => song.id === songId) && <p>Select a song from this show to begin. A previously selected song may belong to another show.</p>}
+        {songs.length > 0 && !songs.some((song) => song.id === songId || song.aliases?.includes(songId)) && <p>Select a song to begin. The previously selected song may no longer be available to this session.</p>}
       </>}
     </>}
   </div>;

@@ -84,7 +84,7 @@ test("mode switch mounts mutually exclusive component types, leaving listeners i
   assert.ok(ts.isJsxSelfClosingElement(result.whenFalse.whenTrue));
   assert.equal(result.whenFalse.whenTrue.tagName.getText(ast), "CompactLyricScrollTest");
   assert.ok(ts.isConditionalExpression(result.whenFalse.whenFalse));
-  assert.equal(result.whenFalse.whenFalse.whenTrue.tagName.getText(ast), "SmartLyricPagingTest");
+  assert.equal(result.whenFalse.whenFalse.whenTrue.tagName.getText(ast), "FootswitchLibraryPagingTest");
   assert.equal(result.whenFalse.whenFalse.whenFalse.tagName.getText(ast), "FootswitchEventDiagnostic");
   assert.doesNotMatch(wrapper.getText(ast), /useEffect|listenForKeyboardInput|listenForPointerMouseInput/);
   const eventView = ast.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "FootswitchEventDiagnostic");

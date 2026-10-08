@@ -194,7 +194,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
     finally { setSavingId(null); }
   }
 
-  if (footswitchTestOpen) return <FootswitchTest songs={songs} songStatus={isLoading ? "Loading Performance Setup songs…" : error ?? undefined} onClose={() => setFootswitchTestOpen(false)} />;
+  if (footswitchTestOpen) return <FootswitchTest songs={songs} showId={show?.id} onClose={() => setFootswitchTestOpen(false)} />;
 
   return (
     <main className="min-h-screen bg-stone-100 text-stone-950 dark:bg-slate-950 dark:text-slate-100">
