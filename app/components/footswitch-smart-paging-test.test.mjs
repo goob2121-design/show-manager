@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
-const sources = Object.fromEntries(["footswitch-smart-paging-test", "footswitch-smart-paging-display", "footswitch-lyric-paging", "footswitch-document-snap", "footswitch-smart-paging-samples", "footswitch-smart-paging-observers", "footswitch-diagnostic-settings", "footswitch-song-source", "footswitch-fullscreen"].map((name) => [name, readFileSync(new URL("./" + name + (name.includes("display") || name === "footswitch-smart-paging-test" ? ".tsx" : ".ts"), import.meta.url), "utf8")]));
+const sources = Object.fromEntries(["footswitch-return-test-display", "footswitch-return-trigger", "footswitch-smart-paging-test", "footswitch-smart-paging-display", "footswitch-lyric-paging", "footswitch-document-snap", "footswitch-smart-paging-samples", "footswitch-smart-paging-observers", "footswitch-diagnostic-settings", "footswitch-song-source", "footswitch-fullscreen"].map((name) => [name, readFileSync(new URL("./" + name + (name.includes("display") || name === "footswitch-smart-paging-test" ? ".tsx" : ".ts"), import.meta.url), "utf8")]));
 function compile(name, react = require("react"), globals = {}) {
   const result = { exports: {} };
   const output = ts.transpileModule(sources[name], { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 } }).outputText;
@@ -21,6 +21,39 @@ function elements(element, list = []) {
 }
 const utility = compile("footswitch-lyric-paging");
 const samples = compile("footswitch-smart-paging-samples");
+
+test("return experiment defaults off, opt-in wraps only the standalone display and preserves saved fullscreen settings", () => {
+  const state = [];
+  let index = 0;
+  const react = { ...require("react"), useEffect: () => {}, useCallback: (fn) => fn, useMemo: (fn) => fn(),
+    useState: (initial) => { const i = index++; if (!(i in state)) state[i] = initial; return [state[i], (value) => { state[i] = typeof value === "function" ? value(state[i]) : value; }]; } };
+  const settingsApi = compile("footswitch-diagnostic-settings");
+  const saved = settingsApi.parseDiagnosticSettings(JSON.stringify({ preferredSize: 56, fullscreenPortraitCalibration: -175 }));
+  const { SmartLyricPagingTest } = compile("footswitch-smart-paging-test", react, { modules: {
+    "./footswitch-diagnostic-settings": { ...settingsApi, useDiagnosticSettings: () => {
+      const [settings, setSettings] = react.useState(saved);
+      return { settings, setSettings, orientation: "portrait", loaded: true, storageUnavailable: false };
+    } },
+    "./footswitch-fullscreen": { useDiagnosticFullscreen: () => ({ status: { active: true, label: "Fullscreen", message: "Confirmed" }, close: () => {}, request: () => {} }) },
+  } });
+  const render = () => { index = 0; return SmartLyricPagingTest({ onReturn: () => {} }); };
+  let view = render();
+  assert.equal(elements(view.props.experimentControls).find((node) => node.type === "input").props.checked, false);
+  view.props.onStart();
+  view = render();
+  assert.equal(view.type.name, "SmartLyricPagingDisplay");
+  view.props.onCalibrate();
+  view = render();
+  elements(view.props.experimentControls).find((node) => node.type === "input").props.onChange({ target: { checked: true } });
+  view = render();
+  view.props.onStart();
+  view = render();
+  assert.equal(view.type.name, "FootswitchReturnTestDisplay");
+  assert.equal(view.props.config.calibration, -175);
+  assert.equal(view.props.config.preferredSize, 56);
+  assert.equal(view.props.config.fullscreen, true);
+  assert.equal(state[0], saved, "Enabling experiment writes no saved settings");
+});
 
 test("setup/display are exclusive; configuration and latest measurements survive the return to Setup", () => {
   const state = [];

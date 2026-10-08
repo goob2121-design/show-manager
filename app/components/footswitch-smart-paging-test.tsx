@@ -8,6 +8,7 @@ import { calibrationProfileNeedsTesting, orientationCalibration, updateOrientati
 import { diagnosticSong, searchDiagnosticSongs, type FootswitchSong } from "./footswitch-song-source";
 import { splitLyricSections } from "./footswitch-lyric-paging";
 import { useDiagnosticFullscreen } from "./footswitch-fullscreen";
+import { FootswitchReturnTestDisplay } from "./footswitch-return-test-display";
 
 const TEXT_SIZES = [{ label: "Large", pixels: 40 }, { label: "Extra Large", pixels: 48 }, { label: "Maximum", pixels: 56 }];
 
@@ -25,6 +26,7 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry
   });
   const [displayActive, setDisplayActive] = useState(false);
   const [history, setHistory] = useState<PagingMeasurement[]>([]);
+  const [returnTestEnabled, setReturnTestEnabled] = useState(false);
   const record = useCallback((measurement: PagingMeasurement) => {
     setHistory((previous) => {
       const last = previous[0];
@@ -43,8 +45,9 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry
   useEffect(() => applyDocumentSnap(document, "off", 0), []);
   // Commit the destination before following the user's native fragment link.
   // No JS scroll call or pedal handler establishes the starting position.
+  const Display = returnTestEnabled ? FootswitchReturnTestDisplay : SmartLyricPagingDisplay;
   return displayActive
-    ? <SmartLyricPagingDisplay config={config} lyricText={lyricText} fullscreenLabel={fullscreen.status.label}
+    ? <Display config={config} lyricText={lyricText} fullscreenLabel={fullscreen.status.label}
         onReturn={() => {
           // Dismiss the only lyric view before Safari starts its asynchronous exit.
           // Fullscreen events only update status/profile; they never reopen lyrics.
@@ -52,6 +55,7 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry
           void fullscreen.close();
         }} onCalibrate={() => flushSync(() => setDisplayActive(false))} onMeasurement={record} />
     : <SmartLyricPagingSetup config={config} onConfig={setConfig} history={history} onReturn={() => { void fullscreen.close(); onReturn(); }}
+        experimentControls={<label className="mt-4 block rounded-xl border p-3 font-bold"><input type="checkbox" checked={returnTestEnabled} onChange={(event) => setReturnTestEnabled(event.target.checked)} className="mr-2 h-5 w-5 align-middle" />Test Footswitch Return to Setlist<span className="mt-1 block text-sm font-normal">Off by default. Adds an ending scroll zone without changing lyric pages. Detection requires a pause followed by further downward scrolling; it never closes the viewer.</span></label>}
         canStart={loaded && Boolean(lyricText.trim()) && !(settings.source === "stageflow" && songStatus)}
         onStart={() => { if (loaded && lyricText.trim()) flushSync(() => setDisplayActive(true)); }}
         fullscreenControls={<section className="mt-4 rounded-xl border border-stone-300 p-3 dark:border-white/20" aria-label="Experimental browser fullscreen">
@@ -92,11 +96,12 @@ export function FootswitchSongSelection({ source, songId, songs, songStatus, onR
   </div>;
 }
 
-export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onStart, sourceControls, fullscreenControls, sectionCount, missingLyrics, notice, needsCalibration, canStart = true, onReset, returnLabel = "Back to Footswitch Test", startLabel }: {
+export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onStart, sourceControls, fullscreenControls, sectionCount, missingLyrics, notice, needsCalibration, canStart = true, onReset, returnLabel = "Back to Footswitch Test", startLabel, experimentControls }: {
   config: SmartPagingConfig; onConfig: (config: SmartPagingConfig) => void; history: PagingMeasurement[]; onReturn: () => void; onStart: () => void;
   sourceControls?: ReactNode; sectionCount?: number; missingLyrics?: boolean; notice?: string; needsCalibration?: boolean; canStart?: boolean; onReset?: () => void;
   fullscreenControls?: ReactNode;
   returnLabel?: string; startLabel?: string;
+  experimentControls?: ReactNode;
 }) {
   const last = history[0];
   const buttonClass = "min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2 font-bold text-stone-800 dark:border-white/20 dark:bg-slate-800 dark:text-slate-100";
@@ -120,6 +125,7 @@ export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onS
             <button type="button" className={buttonClass} onClick={() => onReset ? onReset() : onConfig({ ...config, calibration: 0 })}>Reset to 0</button>
           </div>
           </fieldset>
+          {experimentControls}
           <p className="mt-3 font-bold">Current orientation: {config.orientation ?? "portrait"} · Browser fullscreen: {config.fullscreen ? "Active" : "Inactive"} · Font: {config.preferredSize}px · Calibration: {config.calibration}px</p>
           <p className="mt-2">Regular and fullscreen calibration are saved separately for each orientation. Portrait starts at −100px; landscape starts at 0px. These are starting points. Adjust manually on your device.</p>
           {needsCalibration && <p role="status" className="mt-2 text-amber-700 dark:text-amber-300">Verify calibration for this orientation; its default has not been adjusted on this browser.</p>}
