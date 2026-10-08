@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { nearestLyricPage, paginateLyricSections, splitLyricSections, type LyricPage } from "./footswitch-lyric-paging";
 import { observeLyricPagePosition, observePagingViewport } from "./footswitch-smart-paging-observers";
 import { SMART_PAGING_SAMPLES } from "./footswitch-smart-paging-samples";
+import { alignmentStatus, applyDocumentSnap, DOCUMENT_SNAP_MODES, type DocumentSnapMode } from "./footswitch-document-snap";
 
 const TEXT_SIZES = [{ label: "Large", pixels: 40 }, { label: "Extra Large", pixels: 48 }, { label: "Maximum", pixels: 56 }];
 
@@ -13,7 +14,8 @@ export function SmartLyricPagingTest({ onReturn }: { onReturn: () => void }) {
   const probe = useRef<HTMLDivElement>(null);
   const [sample, setSample] = useState<keyof typeof SMART_PAGING_SAMPLES>("realistic");
   const [preferredSize, setPreferredSize] = useState(48);
-  const [layout, setLayout] = useState<{ pageHeight: number; pages: LyricPage[] }>({ pageHeight: 0, pages: [] });
+  const [snapMode, setSnapMode] = useState<DocumentSnapMode>("off");
+  const [layout, setLayout] = useState<{ pageHeight: number; toolbarHeight: number; viewportHeight: number; documentHeight: number; pages: LyricPage[] }>({ pageHeight: 0, toolbarHeight: 0, viewportHeight: 0, documentHeight: 0, pages: [] });
   const [position, setPosition] = useState({ index: 0, offset: 0 });
 
   useEffect(() => {
@@ -32,9 +34,13 @@ export function SmartLyricPagingTest({ onReturn }: { onReturn: () => void }) {
           return measurement.getBoundingClientRect().height;
         },
       });
-      setLayout({ pageHeight, pages });
+      setLayout({ pageHeight, toolbarHeight: viewport.toolbarHeight, viewportHeight: viewport.height, documentHeight: document.scrollingElement?.clientHeight ?? window.innerHeight, pages });
     });
   }, [sample, preferredSize]);
+
+  // React restores the old lease before a mode/toolbar change, and again on unmount.
+  // Only CSS can change the scroll destination; there are no scroll writes here.
+  useEffect(() => applyDocumentSnap(document, snapMode, layout.toolbarHeight), [snapMode, layout.toolbarHeight]);
 
   useEffect(() => observeLyricPagePosition(window, () => {
     const tops = Array.from(rail.current?.querySelectorAll<HTMLElement>("[data-smart-lyric-page]") ?? []).map((page) => page.getBoundingClientRect().top);
@@ -54,13 +60,19 @@ export function SmartLyricPagingTest({ onReturn }: { onReturn: () => void }) {
           <label className="font-bold">Sample <select value={sample} onChange={(event) => setSample(event.target.value as keyof typeof SMART_PAGING_SAMPLES)} className="rounded-xl border border-stone-300 bg-white p-2 dark:border-white/20 dark:bg-slate-800"><option value="realistic">Realistic song</option><option value="overflow">Long lines / overflow</option></select></label>
           {TEXT_SIZES.map((size) => <button key={size.label} type="button" aria-pressed={preferredSize === size.pixels} className={`${buttonClass} ${preferredSize === size.pixels ? "ring-2 ring-emerald-500" : ""}`} onClick={() => setPreferredSize(size.pixels)}>{size.label}</button>)}
         </div>
-        <p className="mt-2 text-sm">Native document scrolling · Diagnostic listeners OFF · Snapping OFF. Press each pedal and compare page boundaries. Resize or Safari chrome changes can reflow pages.</p>
-        <p className="mt-1 font-mono text-sm font-bold">{layout.pages.length ? `Page ${position.index + 1} of ${layout.pages.length} · Boundary offset: ${Math.round(position.offset)} px (0 = aligned)` : "Measuring available space…"}</p>
+        <label className="mt-2 flex flex-wrap items-center gap-2 font-bold">Experimental Scroll Alignment
+          <select value={snapMode} onChange={(event) => setSnapMode(event.target.value as DocumentSnapMode)} className="rounded-xl border border-stone-300 bg-white p-2 dark:border-white/20 dark:bg-slate-800">
+            {DOCUMENT_SNAP_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+          </select>
+        </label>
+        <p className="mt-2 text-sm">Native document scrolling · Diagnostic listeners OFF · Snap: {snapMode.toUpperCase()}. CSS may reposition the page when enabled. Press each pedal to compare alignment; Safari may ignore or skip snap points.</p>
+        <p className="mt-1 font-mono text-sm font-bold">{layout.pages.length ? `Page ${position.index + 1} of ${layout.pages.length} · Boundary offset: ${Math.round(position.offset)} px · ${alignmentStatus(position.offset)}` : "Measuring available space…"}</p>
+        <p className="mt-1 font-mono text-xs">Visual viewport: {Math.round(layout.viewportHeight)}px · Document viewport: {Math.round(layout.documentHeight)}px · Toolbar: {Math.round(layout.toolbarHeight)}px · Page: {Math.round(layout.pageHeight)}px. Chrome changes can reflow pages.</p>
       </header>
 
       <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed left-0 top-0 whitespace-pre-wrap break-words font-semibold [overflow-wrap:anywhere]" style={{ lineHeight: 1.4 }} />
       <div ref={rail}>
-        {layout.pages.map((page, index) => <section key={`${page.section}-${page.part}`} data-smart-lyric-page className="flex flex-col border-2 border-dashed border-emerald-500/60 p-6 odd:bg-white dark:odd:bg-slate-900" style={{ minHeight: layout.pageHeight }} aria-label={`Lyric page ${index + 1}`}>
+        {layout.pages.map((page, index) => <section key={`${page.section}-${page.part}`} data-smart-lyric-page className="flex flex-col border-2 border-dashed border-emerald-500/60 p-6 odd:bg-white dark:odd:bg-slate-900" style={{ minHeight: layout.pageHeight, scrollSnapAlign: "start", scrollMarginTop: 0 }} aria-label={`Lyric page ${index + 1}`}>
           <p className="mb-3 text-sm font-bold text-emerald-800 dark:text-emerald-300" style={{ lineHeight: "20px" }}>Page {index + 1} · Section {page.section}{page.part > 1 ? ` · continued (${page.part})` : ""} · {page.fontSize}px{page.expanded ? " · Expanded to preserve text" : ""}</p>
           <div className="flex flex-1 flex-col justify-center text-left font-semibold" style={{ fontSize: page.fontSize, lineHeight: 1.4 }}>
             {page.lines.map((line, lineIndex) => <div key={lineIndex} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{line.text}</div>)}

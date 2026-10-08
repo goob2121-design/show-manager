@@ -16,6 +16,7 @@ function compile(text, moduleRequire = require) {
 }
 const utility = compile(readFileSync(new URL("./footswitch-lyric-paging.ts", import.meta.url), "utf8"));
 const samples = compile(readFileSync(new URL("./footswitch-smart-paging-samples.ts", import.meta.url), "utf8"));
+const snapping = compile(readFileSync(new URL("./footswitch-document-snap.ts", import.meta.url), "utf8"));
 function elements(element, list = []) {
   if (Array.isArray(element)) element.forEach((child) => elements(child, list));
   else if (element?.props) { list.push(element); elements(element.props.children, list); }
@@ -31,9 +32,10 @@ test("smart view renders document-flow pages, sizing/sample controls, and passiv
     if (name === "./footswitch-lyric-paging") return utility;
     if (name === "./footswitch-smart-paging-samples") return samples;
     if (name === "./footswitch-smart-paging-observers") return {};
+    if (name === "./footswitch-document-snap") return snapping;
     if (name === "react") return {
       ...require("react"), useRef: () => ({ current: null }), useEffect: () => {},
-      useState: (value) => [value?.pages ? { pages, pageHeight: 684 } : value, () => {}],
+      useState: (value) => [value?.pages ? { pages, pageHeight: 684, toolbarHeight: 160, viewportHeight: 844, documentHeight: 900 } : value, () => {}],
     };
     return require(name);
   });
@@ -43,6 +45,10 @@ test("smart view renders document-flow pages, sizing/sample controls, and passiv
   const pageNodes = nodes.filter((node) => "data-smart-lyric-page" in node.props);
   assert.equal(pageNodes.length, 7);
   assert.ok(pageNodes.every((node) => node.props.style.minHeight === 684));
+  assert.ok(pageNodes.every((node) => node.props.style.scrollSnapAlign === "start" && node.props.style.scrollMarginTop === 0));
+  const snapSelector = nodes.find((node) => node.type === "select" && node.props.value === "off");
+  assert.ok(snapSelector, "Snapping defaults to OFF");
+  assert.deepEqual(elements(snapSelector).filter((node) => node.type === "option").map((node) => node.props.value), ["off", "proximity", "mandatory"]);
   for (const node of nodes.filter((node) => !node.props["aria-hidden"])) {
     assert.doesNotMatch(node.props.className ?? "", /overflow(?:-[xy])?-(?:auto|hidden|scroll)|snap-|scroll-smooth|touch-none/);
     assert.equal(node.props.onKeyDown, undefined);
@@ -53,6 +59,7 @@ test("smart view renders document-flow pages, sizing/sample controls, and passiv
   const html = renderToStaticMarkup(view);
   assert.ok(html.includes("Page 1 of 7"));
   assert.ok(html.includes("Boundary offset: 0 px"));
+  assert.ok(html.includes("Aligned"));
   for (const label of ["Large", "Extra Large", "Maximum", "Realistic song", "Long lines / overflow"]) assert.ok(html.includes(label));
   for (const section of utility.splitLyricSections(samples.SMART_PAGING_SAMPLES.realistic)) {
     for (const line of section.split("\n")) assert.ok(html.includes(line));
@@ -73,4 +80,5 @@ test("smart experiment has no keyboard interception, scroll writes, body lock, a
     ts.forEachChild(node, visit);
   }
   visit(ast);
+  assert.match(source, /useEffect\(\(\) => applyDocumentSnap\(document, snapMode, layout\.toolbarHeight\), \[snapMode, layout\.toolbarHeight\]\)/, "React effect must return the style-restoration cleanup on mode change and unmount");
 });
