@@ -5,11 +5,11 @@ import { calibratedPageHeight, calibrationNeedsRetest, measuredLyricAlignment, p
 import { observeLyricPagePosition, observePagingViewport, type PagingViewport } from "./footswitch-smart-paging-observers";
 import { SMART_PAGING_SAMPLES } from "./footswitch-smart-paging-samples";
 
-export type SmartPagingConfig = { sample: keyof typeof SMART_PAGING_SAMPLES; preferredSize: number; calibration: number };
+export type SmartPagingConfig = { sample: keyof typeof SMART_PAGING_SAMPLES; preferredSize: number; calibration: number; source?: "sample" | "stageflow"; songId?: string; title?: string; orientation?: "portrait" | "landscape" };
 export type DisplayLayout = { pageHeight: number; calculatedHeight: number; controlsHeight: number; viewportHeight: number; documentHeight: number; viewportChanged: boolean; pages: LyricPage[] };
 export type PagingMeasurement = { timestamp: string; config: SmartPagingConfig; layout: Omit<DisplayLayout, "pages">; pageCount: number; visiblePage: number; alignment: ReturnType<typeof measuredLyricAlignment> };
 
-export function SmartLyricPagingDisplay({ config, onReturn, onMeasurement }: { config: SmartPagingConfig; onReturn: () => void; onMeasurement: (measurement: PagingMeasurement) => void }) {
+export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPLES[config.sample], onReturn, onMeasurement }: { config: SmartPagingConfig; lyricText?: string; onReturn: () => void; onMeasurement: (measurement: PagingMeasurement) => void }) {
   const controls = useRef<HTMLElement>(null);
   const rail = useRef<HTMLDivElement>(null);
   const probe = useRef<HTMLDivElement>(null);
@@ -26,7 +26,7 @@ export function SmartLyricPagingDisplay({ config, onReturn, onMeasurement }: { c
       const heights = calibratedPageHeight(viewport.height, viewport.toolbarHeight, config.calibration);
       // Border-box padding/borders consume 52px; there is no per-page diagnostic label.
       measurement.style.width = `${Math.max(1, viewport.width - 52)}px`;
-      const pages = paginateLyricSections(splitLyricSections(SMART_PAGING_SAMPLES[config.sample]), {
+      const pages = paginateLyricSections(splitLyricSections(lyricText), {
         preferredFontSize: config.preferredSize, minimumFontSize: 28, contentHeight: Math.max(1, heights.effective - 52),
         measureLine: (text, fontSize) => {
           measurement.style.fontSize = `${fontSize}px`;
@@ -38,7 +38,7 @@ export function SmartLyricPagingDisplay({ config, onReturn, onMeasurement }: { c
         viewportHeight: viewport.height, documentHeight: document.scrollingElement?.clientHeight ?? window.innerHeight,
         viewportChanged: calibrationNeedsRetest(viewportBaseline.current, viewport), pages });
     });
-  }, [config.sample, config.preferredSize, config.calibration]);
+  }, [lyricText, config.preferredSize, config.calibration]);
 
   useEffect(() => observeLyricPagePosition(window, () => {
     // Refs become null on unmount; never replace saved results with setup geometry.

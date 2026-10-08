@@ -6,6 +6,7 @@ import { listenForPointerMouseInput, type PointerMouseInputRecord } from "./foot
 import { NativeScrollTest } from "./footswitch-native-scroll-test";
 import { CompactLyricScrollTest } from "./footswitch-compact-scroll-test";
 import { SmartLyricPagingTest } from "./footswitch-smart-paging-test";
+import type { FootswitchSong } from "./footswitch-song-source";
 
 type InputRecord = KeyboardInputRecord | PointerMouseInputRecord;
 const EMPTY_COUNTS = { total: 0, keydown: 0, keyup: 0, keypress: 0, pointerMouse: 0 };
@@ -15,7 +16,7 @@ function modifiers(input: KeyboardInputRecord) {
   return `Alt: ${input.alt} · Ctrl: ${input.ctrl} · Shift: ${input.shift} · Meta: ${input.meta}`;
 }
 
-export function FootswitchTest({ onClose }: { onClose: () => void }) {
+export function FootswitchTest({ onClose, songs = [], songStatus }: { onClose: () => void; songs?: readonly FootswitchSong[]; songStatus?: string }) {
   const [mode, setMode] = useState<"diagnostic" | "native" | "compact" | "smart">("diagnostic");
 
   // Separate component types ensure every diagnostic effect cleans up on mode change.
@@ -25,7 +26,7 @@ export function FootswitchTest({ onClose }: { onClose: () => void }) {
     : mode === "compact"
       ? <CompactLyricScrollTest onReturn={() => setMode("diagnostic")} onNativeScroll={() => setMode("native")} />
       : mode === "smart"
-        ? <SmartLyricPagingTest onReturn={() => setMode("diagnostic")} />
+        ? <SmartLyricPagingTest songs={songs} songStatus={songStatus} onReturn={() => setMode("diagnostic")} />
         : <FootswitchEventDiagnostic onClose={onClose} onNativeScroll={() => setMode("native")} onCompact={() => setMode("compact")} onSmart={() => setMode("smart")} />;
 }
 
