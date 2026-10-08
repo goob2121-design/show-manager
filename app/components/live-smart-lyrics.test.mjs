@@ -25,7 +25,7 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
   let settings = settingsApi.parseDiagnosticSettings(JSON.stringify({ preferredSize: 56, portraitCalibration: -90,
     fullscreenPortraitCalibration: -175, fullscreenLandscapeCalibration: 25, source: "stageflow", songId: "diagnostic-selection" }));
   const saved = new Map();
-  let orientation = "portrait", loaded = true, closed = false, requests = 0, exits = 0;
+  let orientation = "portrait", loaded = true, closed = false, requests = 0, exits = 0, exitFullscreenOnClose = true;
   const status = { active: false, label: "Ready", message: "Tap to attempt fullscreen" };
   const states = [], memos = [];
   let index = 0, memoIndex = 0;
@@ -43,7 +43,7 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
     "./footswitch-lyric-paging": { splitLyricSections: (lyrics) => lyrics.split(/\n\n/) },
   });
   let song = { id: "live-entry", title: "Long title & special é", lyrics: "VERSE 1\r\n[G] Original!\r\n\r\nCHORUS\r\nAgain" };
-  const render = () => { index = memoIndex = 0; return LiveSmartLyrics({ song, onClose: () => { closed = true; } }); };
+  const render = () => { index = memoIndex = 0; return LiveSmartLyrics({ song, exitFullscreenOnClose, fullscreen: { status, request: () => { requests++; }, close: () => { assert.equal(closed, true); exits++; } }, onClose: () => { closed = true; } }); };
   let view = render();
   let display = nodes(view).find((node) => node.type.name === "Display");
   assert.equal(display.props.lyricText, song.lyrics);
@@ -96,6 +96,11 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
   nodes(view).find((node) => node.type === "button").props.onClick();
   assert.equal(closed, true);
   assert.equal(exits, 1);
+  loaded = true; song = { ...song, lyrics: "Original" }; status.active = true; closed = false; exitFullscreenOnClose = false;
+  nodes(render()).find((node) => node.type.name === "Display").props.onReturn();
+  assert.equal(closed, true);
+  assert.equal(exits, 1, "Close preserves fullscreen entered from main Live Mode");
+  assert.equal(status.active, true);
 });
 
 test("Live integration preserves the legacy modal, disables its timers and lock, and retains native scrolling", () => {
@@ -127,11 +132,77 @@ test("Open Lyrics stops legacy scrolling and commits the viewer without changing
   const code = ts.transpileModule("exports.open = " + action.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2017 } }).outputText;
   const exports = {};
   const selectedSong = Object.freeze({ id: "selected", title: "Chosen", lyrics: null });
-  runInNewContext(code, { exports, SMART_LYRIC_PAGING_ENABLED: true, currentSong: selectedSong, nativeLyricsOpenRef,
+  runInNewContext(code, { exports, SMART_LYRIC_PAGING_ENABLED: true, currentSong: selectedSong, nativeLyricsOpenRef, document: { fullscreenElement: null, documentElement: {} }, setExitLyricsFullscreenOnClose: () => {}, lyricFullscreen: { request: () => calls.push("fullscreen") },
     stopLyricsAutoScroll: () => calls.push("stop"), setPendingLyricsAutoStart: (value) => calls.push(["pending", value]),
     flushSync: (fn) => { fn(); calls.push("committed"); }, setSongIntroOpen: (value) => calls.push(["intro", value]), setLyricsOpen: (value) => calls.push(["lyrics", value]) });
-  exports.open();
-  assert.deepEqual(calls, ["stop", ["pending", false], ["intro", false], ["lyrics", true], "committed"]);
+  exports.open({ type: "click" });
+  assert.deepEqual(calls, ["fullscreen", "stop", ["pending", false], ["intro", false], ["lyrics", true], "committed"]);
   assert.equal(nativeLyricsOpenRef.current, true);
   assert.equal(selectedSong.id, "selected");
+  calls.length = 0;
+  exports.open();
+  assert.ok(!calls.includes("fullscreen"), "Existing timer-driven opening never requests fullscreen without a tap");
+});
+
+test("a rejected original-tap fullscreen request still opens lyrics normally", async () => {
+  const fullscreenApi = compile(readFileSync(new URL("./footswitch-fullscreen.ts", import.meta.url), "utf8"), {});
+  let requested = 0, opened = false;
+  const ownership = [];
+  const root = { requestFullscreen: () => { requested++; assert.equal(opened, false); return Promise.reject(new Error("Safari declined")); } };
+  const doc = Object.assign(new EventTarget(), { documentElement: root, fullscreenElement: null, fullscreenEnabled: true, exitFullscreen: () => Promise.resolve() });
+  let status;
+  const session = fullscreenApi.createDiagnosticFullscreen(doc, (next) => { status = next; });
+  const actionText = live.slice(live.indexOf("  const openLyricsModal ="), live.indexOf("  const clearIntroAutoOpenLyricsTimer ="));
+  const exports = {};
+  runInNewContext(ts.transpileModule(actionText.replace("const openLyricsModal =", "exports.open ="), { compilerOptions: { target: ts.ScriptTarget.ES2017 } }).outputText,
+    { exports, SMART_LYRIC_PAGING_ENABLED: true, currentSong: { id: "chosen", lyrics: "Original" }, document: doc, setExitLyricsFullscreenOnClose: (value) => ownership.push(value), lyricFullscreen: session,
+      stopLyricsAutoScroll: () => {}, setPendingLyricsAutoStart: () => {}, nativeLyricsOpenRef: { current: false },
+      flushSync: (fn) => fn(), setSongIntroOpen: () => {}, setLyricsOpen: (value) => { opened = value; } });
+  exports.open({ type: "click" });
+  assert.equal(requested, 1);
+  assert.equal(opened, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(status.active, false);
+  assert.equal(status.label, "Declined");
+  assert.equal(opened, true);
+  doc.fullscreenElement = root;
+  exports.open({ type: "click" });
+  assert.equal(requested, 1, "Already fullscreen does not request again");
+  assert.deepEqual(ownership, [true, false], "Normal entry exits on Close; pre-existing root fullscreen is preserved");
+  session.destroy();
+});
+
+test("main fullscreen controls request from a tap, reflect actual state and remain independent of Focus Mode", () => {
+  const ast = ts.createSourceFile("band-live-page.tsx", live, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let control;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "fullscreenControl") control = node.initializer;
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(control);
+  let requests = 0, exits = 0;
+  const status = { active: false };
+  const render = () => {
+    const exports = {};
+    runInNewContext(ts.transpileModule("exports.control = " + control.getText(ast), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS } }).outputText,
+      { exports, require, lyricFullscreen: { status, request: () => { requests++; }, close: () => { exits++; } } });
+    return exports.control;
+  };
+  let button = render();
+  assert.equal(button.props.children, "Fullscreen");
+  assert.match(button.props.className, /min-h-11/);
+  button.props.onClick();
+  assert.equal(requests, 1);
+  assert.equal(render().props.children, "Fullscreen", "A request does not imply success");
+  status.active = true;
+  button = render();
+  assert.equal(button.props.children, "Exit Fullscreen");
+  button.props.onClick();
+  assert.equal(exits, 1);
+  status.active = false;
+  assert.equal(render().props.children, "Fullscreen", "External exit updates the control");
+  assert.equal((live.match(/\{fullscreenControl\}/g) ?? []).length, 3, "Mobile, desktop and Focus Mode all render the control");
+  assert.match(live, /aria-label="Focus Mode fullscreen controls" className="fixed right-3 top-3/);
+  assert.doesNotMatch(control.getText(ast), /setFocusMode|scroll|setTimeout|useEffect/);
 });

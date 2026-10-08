@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { LiveSmartLyrics, SMART_LYRIC_PAGING_ENABLED } from "./live-smart-lyrics";
+import { useDiagnosticFullscreen } from "./footswitch-fullscreen";
 import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { createClient } from "@/lib/supabase/client";
 import { resolveLeadVocal, resolvePerformanceFlow, resolveSongIntroNotes, resolveSongKey, resolveSongLyrics, resolveSongTempo, resolveSongTitle } from "@/lib/song-resolvers";
@@ -566,6 +567,9 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  // Own the session before Open Lyrics is tapped; it survives viewer mounting/closing.
+  const lyricFullscreen = useDiagnosticFullscreen();
+  const [exitLyricsFullscreenOnClose, setExitLyricsFullscreenOnClose] = useState(true);
   const [songIntroOpen, setSongIntroOpen] = useState(false);
   const [lyricsFontSize, setLyricsFontSize] = useState(LIVE_LYRICS_FONT_SIZE_DEFAULT);
   const [songIntroFontSize, setSongIntroFontSize] = useState(LIVE_SONG_INTRO_FONT_SIZE_DEFAULT);
@@ -1250,9 +1254,15 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     lyricsAutoScrollStatusRef.current = "running";
   };
 
-  const openLyricsModal = () => {
+  const openLyricsModal = (event?: MouseEvent<HTMLElement>) => {
     if (SMART_LYRIC_PAGING_ENABLED) {
       if (!currentSong) return;
+      // Fullscreen belongs to Live Mode if it was already active before this viewer.
+      const alreadyFullscreen = document.fullscreenElement === document.documentElement;
+      // Request in the original tap stack, before any state updates or rendering.
+      // The helper feature-detects, skips active fullscreen and catches rejection.
+      if (event && !alreadyFullscreen) lyricFullscreen.request();
+      setExitLyricsFullscreenOnClose(!alreadyFullscreen);
       stopLyricsAutoScroll();
       setPendingLyricsAutoStart(false);
       nativeLyricsOpenRef.current = true;
@@ -1276,7 +1286,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     setIntroAutoOpenLyricsCountdown(null);
   };
 
-  const openLyricsFromSongIntro = () => {
+  const openLyricsFromSongIntro = (event?: MouseEvent<HTMLElement>) => {
     clearIntroAutoOpenLyricsTimer();
 
     if (!currentSong?.lyrics?.trim()) {
@@ -1286,7 +1296,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     console.log("Song Intro requested Lyrics auto-open");
     setPendingLyricsAutoStart(true);
     setSongIntroOpen(false);
-    openLyricsModal();
+    openLyricsModal(event);
   };
 
   const markProgrammaticLyricsScroll = () => {
@@ -1828,8 +1838,15 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   // Keep this parent mounted so realtime, selection, setlist and performance state survive.
   // The legacy modal below is preserved behind the integration switch.
   if (SMART_LYRIC_PAGING_ENABLED && lyricsOpen && currentSong) {
-    return <LiveSmartLyrics song={currentSong} onClose={() => { nativeLyricsOpenRef.current = false; setLyricsOpen(false); }} />;
+    return <LiveSmartLyrics song={currentSong} fullscreen={lyricFullscreen} exitFullscreenOnClose={exitLyricsFullscreenOnClose} onClose={() => { nativeLyricsOpenRef.current = false; setLyricsOpen(false); }} />;
   }
+
+  const fullscreenControl = <button type="button" onClick={() => {
+    if (lyricFullscreen.status.active) void lyricFullscreen.close();
+    else lyricFullscreen.request();
+  }} className="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full border border-sky-400/30 bg-sky-500/15 px-3 text-sm font-semibold text-white hover:bg-sky-500/25">
+    {lyricFullscreen.status.active ? "Exit Fullscreen" : "Fullscreen"}
+  </button>;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,_#020617_0%,_#0f172a_38%,_#020617_100%)] text-slate-100">
@@ -1964,6 +1981,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       <>
       {focusMode ? (
         <>
+          <div aria-label="Focus Mode fullscreen controls" className="fixed right-3 top-3 z-30 sm:right-4 sm:top-4">{fullscreenControl}</div>
           <button
             type="button"
             onClick={() => setFocusMode(false)}
@@ -1976,6 +1994,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       <div className={`mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-3 px-3 py-2 transition-all duration-300 sm:px-4 sm:py-3 lg:gap-4 lg:px-6 ${focusMode ? "pt-14 sm:pt-16" : ""}`}>
         <header className={`sticky top-0 z-20 -mx-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-slate-950/90 px-3 py-2 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur transition-all duration-300 lg:hidden ${focusMode ? "pointer-events-none -translate-y-4 opacity-0 max-h-0 overflow-hidden border-transparent px-0 py-0" : "translate-y-0 opacity-100"}`}>
           <div className="inline-flex min-w-full items-center gap-2 whitespace-nowrap">
+            {fullscreenControl}
             <label className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
               <UsersIcon />
               <input
@@ -2049,6 +2068,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
             </div>
 
             <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto">
+              {fullscreenControl}
               <span
                 className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
               >

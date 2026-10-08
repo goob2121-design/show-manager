@@ -14,7 +14,7 @@ function sourceBetween(start: string, end: string) {
 
 test("legacy rollback lyrics opening with Auto Start on waits for the container, counts down, and starts scrolling", () => {
   const openLyrics = sourceBetween(
-    "  const openLyricsModal = () => {",
+    "  const openLyricsModal = (event?: MouseEvent<HTMLElement>) => {",
     "  const clearIntroAutoOpenLyricsTimer = () => {",
   );
   const legacyOpen = openLyrics.slice(openLyrics.indexOf("    if (!currentSong?.lyrics?.trim())"));
@@ -34,7 +34,7 @@ test("legacy rollback lyrics opening with Auto Start on waits for the container,
 
   const startScroll = sourceBetween(
     "  const startLyricsAutoScroll = (useDelay = true) => {",
-    "  const openLyricsModal = () => {",
+    "  const openLyricsModal = (event?: MouseEvent<HTMLElement>) => {",
   );
   assert.match(startScroll, /setLyricsAutoScrollStatus\("countdown"\)/);
   assert.match(startScroll, /setLyricsAutoScrollCountdown\(remainingSeconds\)/);
@@ -61,12 +61,12 @@ test("manual lyrics opening with Auto Start off remains stopped and keeps the ma
 
 test("intro-driven auto-open still enters the shared pending autostart workflow", () => {
   const introOpen = sourceBetween(
-    "  const openLyricsFromSongIntro = () => {",
+    "  const openLyricsFromSongIntro = (event?: MouseEvent<HTMLElement>) => {",
     "  const markProgrammaticLyricsScroll = () => {",
   );
   assert.match(introOpen, /setPendingLyricsAutoStart\(true\)/);
   assert.match(introOpen, /setSongIntroOpen\(false\)/);
-  assert.match(introOpen, /openLyricsModal\(\)/);
+  assert.match(introOpen, /openLyricsModal\(event\)/);
 
   const introTimer = sourceBetween(
     "  useEffect(() => {\n    clearIntroAutoOpenLyricsTimer();",
