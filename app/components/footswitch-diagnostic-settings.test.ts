@@ -67,3 +67,17 @@ test("storage writes only the diagnostic key and unavailable storage is safe", (
   assert.deepEqual(settings.readDiagnosticSettings(blocked), settings.defaultDiagnosticSettings());
   assert.equal(settings.writeDiagnosticSettings(blocked, preferences), false);
 });
+
+test("footswitch return defaults off, migrates safely and persists without changing calibrated profiles", () => {
+  assert.equal(settings.defaultDiagnosticSettings().footswitchReturnToSetlist, false);
+  const original = settings.parseDiagnosticSettings(JSON.stringify({ preferredSize: 56, fullscreenPortraitCalibration: -175,
+    fullscreenLandscapeCalibration: -25, portraitCalibration: -100, landscapeCalibration: 10, songId: "saved" }));
+  assert.equal(original.footswitchReturnToSetlist, false);
+  for (const invalid of ["true", 1, null]) assert.equal(settings.parseDiagnosticSettings(JSON.stringify({ footswitchReturnToSetlist: invalid })).footswitchReturnToSetlist, false);
+  let raw = "";
+  const storage = { getItem: () => raw, setItem: (key: string, value: string) => { assert.equal(key, settings.FOOTSWITCH_SETTINGS_KEY); raw = value; } };
+  settings.writeDiagnosticSettings(storage, { ...original, footswitchReturnToSetlist: true });
+  assert.deepEqual(settings.readDiagnosticSettings(storage), { ...original, footswitchReturnToSetlist: true });
+  settings.writeDiagnosticSettings(storage, { ...settings.readDiagnosticSettings(storage), footswitchReturnToSetlist: false });
+  assert.deepEqual(settings.readDiagnosticSettings(storage), original);
+});

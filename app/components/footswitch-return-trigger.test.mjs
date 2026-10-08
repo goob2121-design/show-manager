@@ -109,5 +109,29 @@ test("standalone wrapper appends end message and document trigger zone after unc
   const standalone = readFileSync(new URL("./footswitch-smart-paging-test.tsx", import.meta.url), "utf8");
   assert.match(standalone, /\[returnTestEnabled, setReturnTestEnabled\] = useState\(false\)/);
   assert.match(standalone, /returnTestEnabled \? FootswitchReturnTestDisplay : SmartLyricPagingDisplay/);
-  assert.doesNotMatch(readFileSync(new URL("./live-smart-lyrics.tsx", import.meta.url), "utf8"), /FootswitchReturnTestDisplay|returnTestEnabled|observeReturnTrigger/);
+  assert.match(readFileSync(new URL("./live-smart-lyrics.tsx", import.meta.url), "utf8"), /settings\.footswitchReturnToSetlist\s*\?/);
+});
+
+test("Live callback closes once only after observer trigger, callback updates do not restart observation, and diagnostic never closes", () => {
+  const source = readFileSync(new URL("./footswitch-return-test-display.tsx", import.meta.url), "utf8");
+  for (const liveMode of [false, true]) {
+    const refs = [], effects = [];
+    let index = 0, reports, observed = 0, removed = 0, closed = 0;
+    const react = { ...require("react"), useState: () => [null, () => {}], useEffect: (effect) => effects.push(effect),
+      useRef: (initial) => { const i = index++; if (!refs[i]) refs[i] = { current: i === 0 ? {} : initial }; return refs[i]; } };
+    const { FootswitchReturnTestDisplay } = compile(source, { window: {}, document: {} }, { react,
+      "./footswitch-smart-paging-display": { SmartLyricPagingDisplay: () => null },
+      "./footswitch-return-trigger": { observeReturnTrigger: (_page, _doc, _zone, report) => { observed++; reports = report; return () => { removed++; }; } } });
+    const render = (callback) => { index = 0; effects.length = 0; FootswitchReturnTestDisplay({ config: { preferredSize: 56, calibration: -175 }, onTrigger: callback }); };
+    render(liveMode ? () => { closed++; } : undefined);
+    effects[0](); const cleanup = effects[1]();
+    for (const snapshot of [{ finalReached: false, triggered: false }, { finalReached: true, triggered: false }]) reports(snapshot);
+    assert.equal(closed, 0, "Neither initialization nor final verse visibility closes lyrics");
+    render(liveMode ? () => { closed++; } : undefined);
+    effects[0]();
+    assert.equal(observed, 1, "Latest Close callback is updated without restarting observer");
+    reports({ triggered: true }); reports({ triggered: true });
+    assert.equal(closed, liveMode ? 1 : 0);
+    cleanup(); assert.equal(removed, 1);
+  }
 });

@@ -8,6 +8,7 @@ import { orientationCalibration, updateOrientationCalibration, useDiagnosticSett
 import type { useDiagnosticFullscreen } from "./footswitch-fullscreen";
 import { applyDocumentSnap } from "./footswitch-document-snap";
 import { splitLyricSections } from "./footswitch-lyric-paging";
+import { FootswitchReturnTestDisplay } from "./footswitch-return-test-display";
 
 // Rollback: set false to restore the preserved Live Mode modal and Auto Scroll UI.
 export const SMART_LYRIC_PAGING_ENABLED: boolean = true;
@@ -49,10 +50,14 @@ export function LiveSmartLyrics({ song, fullscreen, onClose, exitFullscreenOnClo
     onReset={() => setSettings((current) => updateOrientationCalibration(current, orientation, 0, fullscreen.status.active))}
     onStart={() => flushSync(() => setCalibrating(false))} sectionCount={splitLyricSections(song.lyrics).length}
     fullscreenControls={controls} returnLabel="Back to Live Mode" startLabel={fullscreen.status.active ? "RESUME LYRICS IN FULLSCREEN" : "RESUME LYRICS"}
+    experimentControls={<label className="mt-4 block rounded-xl border p-3 font-bold"><input type="checkbox" checked={settings.footswitchReturnToSetlist} onChange={(event) => setSettings((current) => ({ ...current, footswitchReturnToSetlist: event.target.checked }))} className="mr-2 h-5 w-5 align-middle" />Footswitch Return to Setlist<span className="mt-1 block text-sm font-normal">After the final lyrics, another downward scroll returns to the current Live Mode song. Off by default.</span></label>}
     notice={storageUnavailable ? "Settings storage is unavailable. Changes apply for this session only." : undefined} />;
   return <>
-    <SmartLyricPagingDisplay key={song.id} config={config} lyricText={song.lyrics} fullscreenLabel={fullscreen.status.label}
-      onReturn={close} onCalibrate={() => flushSync(() => setCalibrating(true))} onMeasurement={record} />
+    {settings.footswitchReturnToSetlist
+      ? <FootswitchReturnTestDisplay key={song.id} config={config} lyricText={song.lyrics} fullscreenLabel={fullscreen.status.label}
+          onTrigger={close} onReturn={close} onCalibrate={() => flushSync(() => setCalibrating(true))} onMeasurement={record} />
+      : <SmartLyricPagingDisplay key={song.id} config={config} lyricText={song.lyrics} fullscreenLabel={fullscreen.status.label}
+          onReturn={close} onCalibrate={() => flushSync(() => setCalibrating(true))} onMeasurement={record} />}
     {!fullscreen.status.active && <div className="pointer-events-none fixed bottom-3 right-3 z-20 max-w-xs rounded-xl bg-black/90 p-2 text-xs text-white">
       <button type="button" className="pointer-events-auto min-h-11 rounded-lg border border-white/30 px-3 font-bold" onClick={() => fullscreen.request()}>Enter Browser Fullscreen</button>
       <p role="status" className="mt-1">{fullscreenMessage}</p>

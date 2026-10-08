@@ -8,11 +8,12 @@ export type DiagnosticSettings = {
   fullscreenPortraitCalibration: number; fullscreenLandscapeCalibration: number;
   fullscreenPortraitCalibrated: boolean; fullscreenLandscapeCalibrated: boolean;
   source: "sample" | "stageflow"; sample: "realistic" | "overflow"; songId: string;
+  footswitchReturnToSetlist: boolean;
 };
 export function defaultDiagnosticSettings(): DiagnosticSettings {
   return { preferredSize: 56, portraitCalibration: -100, landscapeCalibration: 0,
     portraitCalibrated: false, landscapeCalibrated: false, fullscreenPortraitCalibration: -100, fullscreenLandscapeCalibration: 0,
-    fullscreenPortraitCalibrated: false, fullscreenLandscapeCalibrated: false, source: "sample", sample: "realistic", songId: "" };
+    fullscreenPortraitCalibrated: false, fullscreenLandscapeCalibrated: false, source: "sample", sample: "realistic", songId: "", footswitchReturnToSetlist: false };
 }
 export function parseDiagnosticSettings(raw: string | null): DiagnosticSettings {
   const defaults = defaultDiagnosticSettings();
@@ -30,7 +31,8 @@ export function parseDiagnosticSettings(raw: string | null): DiagnosticSettings 
       fullscreenPortraitCalibrated: value.fullscreenPortraitCalibrated === true && calibration(value.fullscreenPortraitCalibration, NaN) === value.fullscreenPortraitCalibration,
       fullscreenLandscapeCalibrated: value.fullscreenLandscapeCalibrated === true && calibration(value.fullscreenLandscapeCalibration, NaN) === value.fullscreenLandscapeCalibration,
       source: value.source === "stageflow" ? "stageflow" : "sample", sample: value.sample === "overflow" ? "overflow" : "realistic",
-      songId: typeof value.songId === "string" && value.songId.length <= 200 ? value.songId : "" };
+      songId: typeof value.songId === "string" && value.songId.length <= 200 ? value.songId : "",
+      footswitchReturnToSetlist: value.footswitchReturnToSetlist === true };
   } catch { return defaults; }
 }
 export function readDiagnosticSettings(storage: Pick<Storage, "getItem">): DiagnosticSettings {

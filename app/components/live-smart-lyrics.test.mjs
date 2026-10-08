@@ -38,6 +38,7 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
       setSettings: (fn) => { settings = fn(settings); settingsApi.writeDiagnosticSettings({ setItem: (key, value) => saved.set(key, value) }, settings); } }) },
     "./footswitch-fullscreen": { useDiagnosticFullscreen: () => ({ status, request: () => { requests++; }, close: () => { assert.equal(closed, true); exits++; } }) },
     "./footswitch-smart-paging-display": { SmartLyricPagingDisplay: function Display() {} },
+    "./footswitch-return-test-display": { FootswitchReturnTestDisplay: function ReturnDisplay() {} },
     "./footswitch-smart-paging-test": { SmartLyricPagingSetup: function Setup() {} },
     "./footswitch-document-snap": { applyDocumentSnap: () => {} },
     "./footswitch-lyric-paging": { splitLyricSections: (lyrics) => lyrics.split(/\n\n/) },
@@ -101,6 +102,27 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
   assert.equal(closed, true);
   assert.equal(exits, 1, "Close preserves fullscreen entered from main Live Mode");
   assert.equal(status.active, true);
+  // The persisted opt-in selects the same proven wrapper and the same Close path.
+  nodes(render()).find((node) => node.type.name === "Display").props.onCalibrate();
+  setup = render();
+  const toggle = nodes(setup.props.experimentControls).find((node) => node.type === "input");
+  assert.equal(toggle.props.checked, false);
+  toggle.props.onChange({ target: { checked: true } });
+  assert.equal(settingsApi.readDiagnosticSettings({ getItem: (key) => saved.get(key) }).footswitchReturnToSetlist, true);
+  setup = render();
+  setup.props.onStart();
+  for (const shouldExit of [false, true]) {
+    exitFullscreenOnClose = shouldExit; closed = false;
+    const returning = nodes(render()).find((node) => node.type.name === "ReturnDisplay");
+    assert.equal(returning.props.lyricText, song.lyrics);
+    assert.equal(returning.props.config.songId, song.id);
+    assert.equal(returning.props.onTrigger, returning.props.onReturn, "Automatic and manual Close share one workflow");
+    const before = exits;
+    returning.props.onTrigger();
+    assert.equal(closed, true);
+    assert.equal(exits, before + Number(shouldExit));
+    assert.equal(song.id, "next");
+  }
 });
 
 test("Live integration preserves the legacy modal, disables its timers and lock, and retains native scrolling", () => {
