@@ -35,7 +35,7 @@ test("smart view renders document-flow pages, sizing/sample controls, and passiv
     if (name === "./footswitch-document-snap") return snapping;
     if (name === "react") return {
       ...require("react"), useRef: () => ({ current: null }), useEffect: () => {},
-      useState: (value) => [value?.pages ? { pages, pageHeight: 684, toolbarHeight: 160, viewportHeight: 844, documentHeight: 900 } : value, () => {}],
+      useState: (value) => [value?.pages ? { pages, pageHeight: 684, calculatedHeight: 684, toolbarHeight: 160, viewportHeight: 844, documentHeight: 900 } : value, () => {}],
     };
     return require(name);
   });
@@ -45,10 +45,19 @@ test("smart view renders document-flow pages, sizing/sample controls, and passiv
   const pageNodes = nodes.filter((node) => "data-smart-lyric-page" in node.props);
   assert.equal(pageNodes.length, 7);
   assert.ok(pageNodes.every((node) => node.props.style.minHeight === 684));
-  assert.ok(pageNodes.every((node) => node.props.style.scrollSnapAlign === "start" && node.props.style.scrollMarginTop === 0));
+  assert.ok(pageNodes.every((node) => node.props.style.scrollSnapAlign === "none" && node.props.style.scrollMarginTop === 0));
+  assert.ok(pageNodes.every((node) => /box-border/.test(node.props.className) && /m-0/.test(node.props.className)));
   const snapSelector = nodes.find((node) => node.type === "select" && node.props.value === "off");
-  assert.ok(snapSelector, "Snapping defaults to OFF");
+  assert.ok(snapSelector?.props.disabled, "Snapping is locked OFF throughout calibration");
   assert.deepEqual(elements(snapSelector).filter((node) => node.type === "option").map((node) => node.props.value), ["off", "proximity", "mandatory"]);
+  assert.ok(elements(snapSelector).filter((node) => node.type === "option" && node.props.value !== "off").every((node) => node.props.disabled));
+  const slider = nodes.find((node) => node.type === "input" && node.props.type === "range");
+  assert.ok(slider);
+  assert.equal(slider.props.min, -100);
+  assert.equal(slider.props.max, 100);
+  assert.equal(slider.props.step, 10);
+  assert.equal(slider.props.value, 0);
+  assert.ok(nodes.find((node) => node.type === "button" && node.props.children === "Reset to 0"));
   for (const node of nodes.filter((node) => !node.props["aria-hidden"])) {
     assert.doesNotMatch(node.props.className ?? "", /overflow(?:-[xy])?-(?:auto|hidden|scroll)|snap-|scroll-smooth|touch-none/);
     assert.equal(node.props.onKeyDown, undefined);
@@ -60,6 +69,7 @@ test("smart view renders document-flow pages, sizing/sample controls, and passiv
   assert.ok(html.includes("Page 1 of 7"));
   assert.ok(html.includes("Boundary offset: 0 px"));
   assert.ok(html.includes("Aligned"));
+  for (const label of ["Footswitch Page Height Calibration", "How to Calibrate", "Calculated Height:", "Effective Height:", "Current Scroll Position:", "Expected Page Boundary:", "Alignment Error:"]) assert.ok(html.includes(label));
   for (const label of ["Large", "Extra Large", "Maximum", "Realistic song", "Long lines / overflow"]) assert.ok(html.includes(label));
   for (const section of utility.splitLyricSections(samples.SMART_PAGING_SAMPLES.realistic)) {
     for (const line of section.split("\n")) assert.ok(html.includes(line));
@@ -80,5 +90,6 @@ test("smart experiment has no keyboard interception, scroll writes, body lock, a
     ts.forEachChild(node, visit);
   }
   visit(ast);
-  assert.match(source, /useEffect\(\(\) => applyDocumentSnap\(document, snapMode, layout\.toolbarHeight\), \[snapMode, layout\.toolbarHeight\]\)/, "React effect must return the style-restoration cleanup on mode change and unmount");
+  assert.match(source, /useEffect\(\(\) => applyDocumentSnap\(document, "off", 0\), \[\]\)/, "React effect forces snapping off and returns document style cleanup on unmount");
+  assert.match(source, /\[sample, preferredSize, calibration\]/, "Height changes must recalculate fitting and pagination");
 });

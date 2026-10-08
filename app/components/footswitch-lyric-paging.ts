@@ -82,3 +82,18 @@ export function nearestLyricPage(tops: number[], anchor: number) {
   }
   return { index, offset: tops.length ? tops[index] - anchor : 0 };
 }
+
+export function calibratedPageHeight(viewportHeight: number, toolbarHeight: number, adjustment: number) {
+  const calculated = Math.max(1, viewportHeight - toolbarHeight);
+  const calibration = Math.max(-100, Math.min(100, Math.round(adjustment / 10) * 10));
+  return { calculated, calibration, effective: Math.max(1, calculated + calibration) };
+}
+
+export function measuredLyricAlignment(tops: number[], toolbarBottom: number, scrollPosition: number) {
+  const nearest = nearestLyricPage(tops, toolbarBottom);
+  return { ...nearest, scrollPosition, boundary: scrollPosition + nearest.offset, error: -nearest.offset };
+}
+
+export function calibrationNeedsRetest(before: { height: number; toolbarHeight: number; width: number }, after: { height: number; toolbarHeight: number; width: number }) {
+  return Math.abs(before.height - after.height) >= 40 || Math.abs(before.width - after.width) >= 40 || Math.abs(before.toolbarHeight - after.toolbarHeight) >= 40;
+}
