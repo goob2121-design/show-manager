@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { flushSync } from "react-dom";
 import { alignmentStatus, applyDocumentSnap } from "./footswitch-document-snap";
 import { SmartLyricPagingDisplay, type PagingMeasurement, type SmartPagingConfig } from "./footswitch-smart-paging-display";
-import { orientationCalibration, updateOrientationCalibration, useDiagnosticSettings } from "./footswitch-diagnostic-settings";
+import { calibrationProfileNeedsTesting, orientationCalibration, updateOrientationCalibration, useDiagnosticSettings } from "./footswitch-diagnostic-settings";
 import { diagnosticSong, searchDiagnosticSongs, type FootswitchSong } from "./footswitch-song-source";
 import { splitLyricSections } from "./footswitch-lyric-paging";
 import { useDiagnosticFullscreen } from "./footswitch-fullscreen";
@@ -17,11 +17,11 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry
   const song = diagnosticSong(settings, songs);
   const lyricText = song?.lyrics ?? "";
   const config = useMemo<SmartPagingConfig>(() => ({ sample: settings.sample, preferredSize: settings.preferredSize,
-    calibration: orientationCalibration(settings, orientation), source: settings.source, songId: settings.songId,
-    title: diagnosticSong(settings, songs)?.title, orientation }), [settings, orientation, songs]);
+    calibration: orientationCalibration(settings, orientation, fullscreen.status.active), source: settings.source, songId: settings.songId,
+    title: diagnosticSong(settings, songs)?.title, orientation, fullscreen: fullscreen.status.active }), [settings, orientation, songs, fullscreen.status.active]);
   const setConfig = (next: SmartPagingConfig) => setSettings((current) => {
     const changed = { ...current, sample: next.sample, preferredSize: next.preferredSize };
-    return next.calibration === orientationCalibration(current, orientation) ? changed : updateOrientationCalibration(changed, orientation, next.calibration);
+    return next.calibration === orientationCalibration(current, orientation, fullscreen.status.active) ? changed : updateOrientationCalibration(changed, orientation, next.calibration, fullscreen.status.active);
   });
   const [displayActive, setDisplayActive] = useState(false);
   const [history, setHistory] = useState<PagingMeasurement[]>([]);
@@ -31,7 +31,7 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry
       if (last && last.visiblePage === measurement.visiblePage && last.pageCount === measurement.pageCount &&
           last.config.sample === measurement.config.sample && last.config.preferredSize === measurement.config.preferredSize &&
           last.config.calibration === measurement.config.calibration &&
-          last.config.source === measurement.config.source && last.config.songId === measurement.config.songId && last.config.orientation === measurement.config.orientation &&
+          last.config.source === measurement.config.source && last.config.songId === measurement.config.songId && last.config.orientation === measurement.config.orientation && last.config.fullscreen === measurement.config.fullscreen &&
           last.layout.viewportHeight === measurement.layout.viewportHeight && last.layout.controlsHeight === measurement.layout.controlsHeight &&
           last.layout.documentHeight === measurement.layout.documentHeight &&
           last.layout.pageHeight === measurement.layout.pageHeight && last.layout.viewportChanged === measurement.layout.viewportChanged &&
@@ -44,13 +44,20 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry
   // Commit the destination before following the user's native fragment link.
   // No JS scroll call or pedal handler establishes the starting position.
   return displayActive
-    ? <SmartLyricPagingDisplay config={config} lyricText={lyricText} fullscreenLabel={fullscreen.status.label} onReturn={() => { fullscreen.close(); flushSync(() => setDisplayActive(false)); }} onMeasurement={record} />
-    : <SmartLyricPagingSetup config={config} onConfig={setConfig} history={history} onReturn={onReturn}
+    ? <SmartLyricPagingDisplay config={config} lyricText={lyricText} fullscreenLabel={fullscreen.status.label}
+        onReturn={() => {
+          // Dismiss the only lyric view before Safari starts its asynchronous exit.
+          // Fullscreen events only update status/profile; they never reopen lyrics.
+          flushSync(() => setDisplayActive(false));
+          void fullscreen.close();
+        }} onCalibrate={() => flushSync(() => setDisplayActive(false))} onMeasurement={record} />
+    : <SmartLyricPagingSetup config={config} onConfig={setConfig} history={history} onReturn={() => { void fullscreen.close(); onReturn(); }}
         canStart={loaded && Boolean(lyricText.trim()) && !(settings.source === "stageflow" && songStatus)}
         onStart={() => { if (loaded && lyricText.trim()) flushSync(() => setDisplayActive(true)); }}
         fullscreenControls={<section className="mt-4 rounded-xl border border-stone-300 p-3 dark:border-white/20" aria-label="Experimental browser fullscreen">
           <h2 className="font-bold">Experimental Browser Fullscreen</h2>
           <p role="status" className="mt-2 text-sm">{fullscreen.status.message}</p>
+          {fullscreen.status.active && <button type="button" className="mt-2 rounded-lg border p-3 font-bold" onClick={() => { void fullscreen.close(); }}>Exit Browser Fullscreen</button>}
           <p className="mt-2 text-sm">Targets the document root, not a lyric container. Browser chrome and native Page Down distance may change; retest pedal behavior and calibration. The normal test above stays available.</p>
           {loaded && lyricText.trim() && !(settings.source === "stageflow" && songStatus) ? <a href="#smart-lyric-paging-display" className="mt-3 block rounded-lg border border-emerald-500 p-3 text-center font-bold" onClick={() => {
             fullscreen.request();
@@ -61,8 +68,8 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry
           onSource={(source) => setSettings((current) => ({ ...current, source }))} onSong={(songId) => setSettings((current) => ({ ...current, songId }))} /></fieldset>}
         sectionCount={splitLyricSections(lyricText).length} missingLyrics={Boolean(song && !lyricText.trim())}
         notice={!loaded ? "Loading saved diagnostic settings…" : storageUnavailable ? "Settings storage is unavailable. Changes apply for this test only." : undefined}
-        needsCalibration={orientation === "portrait" ? !settings.portraitCalibrated : !settings.landscapeCalibrated}
-        onReset={() => setSettings((current) => updateOrientationCalibration(current, orientation, 0))} />;
+        needsCalibration={calibrationProfileNeedsTesting(settings, orientation, fullscreen.status.active)}
+        onReset={() => setSettings((current) => updateOrientationCalibration(current, orientation, 0, fullscreen.status.active))} />;
 }
 
 export function FootswitchSongSelection({ source, songId, songs, songStatus, onRetry, onSource, onSong }: {
@@ -105,27 +112,27 @@ export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onS
             {config.source !== "stageflow" && <label className="font-bold">Sample <select value={config.sample} onChange={(event) => onConfig({ ...config, sample: event.target.value as SmartPagingConfig["sample"] })} className="rounded-xl border border-stone-300 bg-white p-2 dark:border-white/20 dark:bg-slate-800"><option value="realistic">Realistic song</option><option value="overflow">Long lines / overflow</option></select></label>}
             {TEXT_SIZES.map((size) => <button key={size.label} type="button" className={buttonClass + (config.preferredSize === size.pixels ? " ring-2 ring-emerald-500" : "")} aria-pressed={config.preferredSize === size.pixels} onClick={() => onConfig({ ...config, preferredSize: size.pixels })}>{size.label}</button>)}
           </div>
-          <label htmlFor="footswitch-page-height-calibration" className="mt-4 block font-bold">Footswitch Page Height Calibration</label>
+          <label htmlFor="footswitch-page-height-calibration" className="mt-4 block font-bold">Footswitch Page Height Calibration · {config.fullscreen ? "Fullscreen" : "Regular Safari"} — {config.orientation === "landscape" ? "Landscape" : "Portrait"}</label>
           <div className="flex flex-wrap items-center gap-3">
-            <span>-100px</span><input id="footswitch-page-height-calibration" type="range" min={-100} max={100} step={10} value={config.calibration} onChange={(event) => onConfig({ ...config, calibration: Number(event.target.value) })} className="min-h-10 min-w-40 flex-1 accent-emerald-600" /><span>+100px</span>
+            <span>-300px</span><input id="footswitch-page-height-calibration" type="range" min={-300} max={300} step={5} value={config.calibration} onChange={(event) => onConfig({ ...config, calibration: Number(event.target.value) })} className="min-h-10 min-w-40 flex-1 accent-emerald-600" /><span>+300px</span>
             <output htmlFor="footswitch-page-height-calibration" className="font-mono font-bold">Current Adjustment: {config.calibration > 0 ? "+" : ""}{config.calibration}px</output>
             <button type="button" className={buttonClass} onClick={() => onReset ? onReset() : onConfig({ ...config, calibration: 0 })}>Reset to 0</button>
           </div>
           </fieldset>
-          <p className="mt-3 font-bold">Current orientation: {config.orientation ?? "portrait"} · Font: {config.preferredSize}px · Calibration: {config.calibration}px</p>
-          <p className="mt-2">Portrait starts at −100px with Maximum text for the tested iPad. Landscape starts at 0px. Adjust and verify each orientation on your device.</p>
+          <p className="mt-3 font-bold">Current orientation: {config.orientation ?? "portrait"} · Browser fullscreen: {config.fullscreen ? "Active" : "Inactive"} · Font: {config.preferredSize}px · Calibration: {config.calibration}px</p>
+          <p className="mt-2">Regular and fullscreen calibration are saved separately for each orientation. Portrait starts at −100px; landscape starts at 0px. These are starting points. Adjust manually on your device.</p>
           {needsCalibration && <p role="status" className="mt-2 text-amber-700 dark:text-amber-300">Verify calibration for this orientation; its default has not been adjusted on this browser.</p>}
-          <p className="mt-3">Song: {config.title ?? "None selected"} · Detected lyric sections: {sectionCount ?? 0} · Generated pages: {last && last.config.songId === config.songId && last.config.sample === config.sample && last.config.source === config.source && last.config.preferredSize === config.preferredSize && last.config.calibration === config.calibration && last.config.orientation === config.orientation ? last.pageCount : "Start test to measure"}</p>
+          <p className="mt-3">Song: {config.title ?? "None selected"} · Detected lyric sections: {sectionCount ?? 0} · Generated pages: {last && last.config.songId === config.songId && last.config.sample === config.sample && last.config.source === config.source && last.config.preferredSize === config.preferredSize && last.config.calibration === config.calibration && last.config.orientation === config.orientation && last.config.fullscreen === config.fullscreen ? last.pageCount : "Start test to measure"}</p>
           {missingLyrics && <p role="status" className="mt-3 font-bold">No lyrics available for this song.</p>}
           <p className="mt-3 font-bold">Scroll Alignment: OFF — required. No scroll snapping or automatic corrections.</p>
-          {canStart ? <a href="#smart-lyric-paging-display" onClick={onStart} className="mt-5 block rounded-xl bg-emerald-700 p-4 text-center text-lg font-black text-white hover:bg-emerald-800">START FULL-SCREEN LYRIC TEST</a> : <button type="button" disabled className="mt-5 w-full rounded-xl bg-stone-400 p-4 text-lg font-black text-white">START FULL-SCREEN LYRIC TEST</button>}
+          {canStart ? <a href="#smart-lyric-paging-display" onClick={onStart} className="mt-5 block rounded-xl bg-emerald-700 p-4 text-center text-lg font-black text-white hover:bg-emerald-800">{config.fullscreen ? "RESUME LYRICS IN FULLSCREEN" : "START FULL-SCREEN LYRIC TEST"}</a> : <button type="button" disabled className="mt-5 w-full rounded-xl bg-stone-400 p-4 text-lg font-black text-white">START FULL-SCREEN LYRIC TEST</button>}
           <p className="mt-3">Full-screen means a clean Safari page; no browser Fullscreen API is required. Setup is removed during testing. Start uses normal fragment navigation to the display beginning.</p>
           {fullscreenControls}
         </header>
         <section className="rounded-3xl border border-stone-300 bg-white p-5 dark:border-white/20 dark:bg-slate-900" aria-label="Latest full-screen test measurements">
           <h2 className="text-xl font-black">Latest Full-Screen Test Measurements</h2>
           {!last ? <p className="mt-3">Start the lyric test to measure its actual visible area. Setup height is never used for lyric sizing.</p> : <div className="mt-3 space-y-2 font-mono text-sm">
-            <p>Recorded: {last.timestamp} · {last.config.title ?? last.config.sample} · {last.config.orientation ?? "portrait"} · {last.config.preferredSize}px preferred text</p>
+            <p>Recorded: {last.timestamp} · {last.config.title ?? last.config.sample} · {last.config.fullscreen ? "Fullscreen" : "Regular Safari"} — {last.config.orientation ?? "portrait"} · {last.config.preferredSize}px preferred text</p>
             <p>Page {last.visiblePage} of {last.pageCount} · Nearest boundary: Page {last.alignment.index + 1}</p>
             <p>Visual viewport: {Math.round(last.layout.viewportHeight)}px · Document viewport: {Math.round(last.layout.documentHeight)}px</p>
             <p>Full-screen controls: {Math.round(last.layout.controlsHeight)}px · Calculated Height: {Math.round(last.layout.calculatedHeight)}px</p>

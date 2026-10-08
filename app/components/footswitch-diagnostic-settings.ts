@@ -5,23 +5,30 @@ export type DiagnosticOrientation = "portrait" | "landscape";
 export type DiagnosticSettings = {
   preferredSize: number; portraitCalibration: number; landscapeCalibration: number;
   portraitCalibrated: boolean; landscapeCalibrated: boolean;
+  fullscreenPortraitCalibration: number; fullscreenLandscapeCalibration: number;
+  fullscreenPortraitCalibrated: boolean; fullscreenLandscapeCalibrated: boolean;
   source: "sample" | "stageflow"; sample: "realistic" | "overflow"; songId: string;
 };
 export function defaultDiagnosticSettings(): DiagnosticSettings {
   return { preferredSize: 56, portraitCalibration: -100, landscapeCalibration: 0,
-    portraitCalibrated: false, landscapeCalibrated: false, source: "sample", sample: "realistic", songId: "" };
+    portraitCalibrated: false, landscapeCalibrated: false, fullscreenPortraitCalibration: -100, fullscreenLandscapeCalibration: 0,
+    fullscreenPortraitCalibrated: false, fullscreenLandscapeCalibrated: false, source: "sample", sample: "realistic", songId: "" };
 }
 export function parseDiagnosticSettings(raw: string | null): DiagnosticSettings {
   const defaults = defaultDiagnosticSettings();
   try {
     const value = JSON.parse(raw ?? "null");
     if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
-    const calibration = (number: unknown, fallback: number) => typeof number === "number" && Number.isInteger(number) && number >= -100 && number <= 100 && number % 10 === 0 ? number : fallback;
+    const calibration = (number: unknown, fallback: number) => typeof number === "number" && Number.isInteger(number) && number >= -300 && number <= 300 && number % 5 === 0 ? number : fallback;
     return { preferredSize: [40, 48, 56].includes(value.preferredSize) ? value.preferredSize : defaults.preferredSize,
       portraitCalibration: calibration(value.portraitCalibration, defaults.portraitCalibration),
       landscapeCalibration: calibration(value.landscapeCalibration, defaults.landscapeCalibration),
       portraitCalibrated: value.portraitCalibrated === true && calibration(value.portraitCalibration, NaN) === value.portraitCalibration,
       landscapeCalibrated: value.landscapeCalibrated === true && calibration(value.landscapeCalibration, NaN) === value.landscapeCalibration,
+      fullscreenPortraitCalibration: calibration(value.fullscreenPortraitCalibration, defaults.fullscreenPortraitCalibration),
+      fullscreenLandscapeCalibration: calibration(value.fullscreenLandscapeCalibration, defaults.fullscreenLandscapeCalibration),
+      fullscreenPortraitCalibrated: value.fullscreenPortraitCalibrated === true && calibration(value.fullscreenPortraitCalibration, NaN) === value.fullscreenPortraitCalibration,
+      fullscreenLandscapeCalibrated: value.fullscreenLandscapeCalibrated === true && calibration(value.fullscreenLandscapeCalibration, NaN) === value.fullscreenLandscapeCalibration,
       source: value.source === "stageflow" ? "stageflow" : "sample", sample: value.sample === "overflow" ? "overflow" : "realistic",
       songId: typeof value.songId === "string" && value.songId.length <= 200 ? value.songId : "" };
   } catch { return defaults; }
@@ -32,12 +39,19 @@ export function readDiagnosticSettings(storage: Pick<Storage, "getItem">): Diagn
 export function writeDiagnosticSettings(storage: Pick<Storage, "setItem">, settings: DiagnosticSettings): boolean {
   try { storage.setItem(FOOTSWITCH_SETTINGS_KEY, JSON.stringify(settings)); return true; } catch { return false; }
 }
-export function orientationCalibration(settings: DiagnosticSettings, orientation: DiagnosticOrientation) {
+export function orientationCalibration(settings: DiagnosticSettings, orientation: DiagnosticOrientation, fullscreen = false) {
+  if (fullscreen) return orientation === "portrait" ? settings.fullscreenPortraitCalibration : settings.fullscreenLandscapeCalibration;
   return orientation === "portrait" ? settings.portraitCalibration : settings.landscapeCalibration;
 }
-export function updateOrientationCalibration(settings: DiagnosticSettings, orientation: DiagnosticOrientation, value: number): DiagnosticSettings {
+export function updateOrientationCalibration(settings: DiagnosticSettings, orientation: DiagnosticOrientation, value: number, fullscreen = false): DiagnosticSettings {
+  if (fullscreen) return orientation === "portrait" ? { ...settings, fullscreenPortraitCalibration: value, fullscreenPortraitCalibrated: true }
+    : { ...settings, fullscreenLandscapeCalibration: value, fullscreenLandscapeCalibrated: true };
   return orientation === "portrait" ? { ...settings, portraitCalibration: value, portraitCalibrated: true }
     : { ...settings, landscapeCalibration: value, landscapeCalibrated: true };
+}
+export function calibrationProfileNeedsTesting(settings: DiagnosticSettings, orientation: DiagnosticOrientation, fullscreen = false) {
+  return !(fullscreen ? orientation === "portrait" ? settings.fullscreenPortraitCalibrated : settings.fullscreenLandscapeCalibrated
+    : orientation === "portrait" ? settings.portraitCalibrated : settings.landscapeCalibrated);
 }
 export function observeDiagnosticOrientation(page: Window, onOrientation: (orientation: DiagnosticOrientation) => void) {
   const query = typeof page.matchMedia === "function" ? page.matchMedia("(orientation: landscape)") : null;

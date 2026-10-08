@@ -85,7 +85,7 @@ export function nearestLyricPage(tops: number[], anchor: number) {
 
 export function calibratedPageHeight(viewportHeight: number, toolbarHeight: number, adjustment: number) {
   const calculated = Math.max(1, viewportHeight - toolbarHeight);
-  const calibration = Math.max(-100, Math.min(100, Math.round(adjustment / 10) * 10));
+  const calibration = Math.max(-300, Math.min(300, Math.round(adjustment / 5) * 5));
   return { calculated, calibration, effective: Math.max(1, calculated + calibration) };
 }
 

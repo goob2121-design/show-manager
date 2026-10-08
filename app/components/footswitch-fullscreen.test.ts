@@ -4,7 +4,7 @@ const { createDiagnosticFullscreen, supportsDiagnosticFullscreen } = await impor
 function browser(enabled = true) {
   const doc = Object.assign(new EventTarget(), { fullscreenEnabled: enabled, fullscreenElement: null as unknown,
     documentElement: { requestFullscreen: () => Promise.resolve() }, exitFullscreen: () => Promise.resolve() });
-  const statuses: { label: string; message: string }[] = [];
+  const statuses: { label: string; message: string; active: boolean }[] = [];
   return { doc, statuses, document: doc as unknown as Document };
 }
 const settle = () => Promise.resolve().then(() => Promise.resolve());
@@ -15,6 +15,7 @@ test("feature detection requires enabled root and exit APIs; unsupported request
   const session = createDiagnosticFullscreen(b.document, (value) => b.statuses.push(value));
   session.request();
   assert.equal(b.statuses.at(-1)?.label, "Unavailable");
+  assert.equal(b.statuses.at(-1)?.active, false);
   assert.match(b.statuses.at(-1)?.message ?? "", /Normal lyrics/);
   session.destroy();
   const missing = browser();
@@ -32,9 +33,11 @@ test("requests run synchronously on document root; only actual entry confirms su
   assert.equal(requests, 1, "Request executes before the gesture handler returns");
   await settle();
   assert.equal(b.statuses.at(-1)?.label, "Fullscreen");
+  assert.equal(b.statuses.at(-1)?.active, true);
   session.close();
   assert.equal(exits, 1);
   assert.equal(b.statuses.at(-1)?.label, "Normal");
+  assert.equal(b.statuses.at(-1)?.active, false);
   session.destroy();
   const count = b.statuses.length;
   b.doc.dispatchEvent(new Event("fullscreenchange"));
@@ -51,6 +54,7 @@ test("rejected and unconfirmed requests never claim fullscreen and do not automa
   await settle();
   assert.equal(requests, 1);
   assert.equal(b.statuses.at(-1)?.label, "Declined");
+  assert.equal(b.statuses.at(-1)?.active, false);
   b.doc.documentElement.requestFullscreen = () => Promise.resolve();
   session.request();
   await settle();
@@ -76,6 +80,28 @@ test("external fullscreen changes preserve normal display; failed exits provide 
   session.close();
   await settle();
   assert.equal(b.statuses.at(-1)?.label, "Exit failed");
+  assert.equal(b.statuses.at(-1)?.active, true, "Rejected exits retain the actual fullscreen calibration profile");
+  session.destroy();
+});
+
+test("duplicate Close shares asynchronous exit; actual state changes only when the browser exits", async () => {
+  const b = browser();
+  b.doc.fullscreenElement = b.doc.documentElement;
+  let finish!: () => void;
+  let exits = 0;
+  b.doc.exitFullscreen = () => { exits++; return new Promise<void>((resolve) => { finish = resolve; }); };
+  const session = createDiagnosticFullscreen(b.document, (value) => b.statuses.push(value));
+  const first = session.close();
+  const duplicate = session.close();
+  assert.equal(first, duplicate);
+  assert.equal(exits, 1);
+  assert.equal(b.statuses.at(-1)?.active, true);
+  b.doc.fullscreenElement = null;
+  b.doc.dispatchEvent(new Event("fullscreenchange"));
+  finish();
+  await first;
+  assert.equal(b.statuses.at(-1)?.active, false);
+  assert.equal(b.statuses.at(-1)?.label, "Normal");
   session.destroy();
 });
 

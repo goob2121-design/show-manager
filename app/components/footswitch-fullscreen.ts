@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 
-export type FullscreenStatus = { label: string; message: string };
-export const INITIAL_FULLSCREEN_STATUS: FullscreenStatus = { label: "Normal", message: "Fullscreen has not been attempted." };
+export type FullscreenStatus = { label: string; message: string; active: boolean };
+export const INITIAL_FULLSCREEN_STATUS: FullscreenStatus = { label: "Normal", message: "Fullscreen has not been attempted.", active: false };
 export function supportsDiagnosticFullscreen(doc: Document) {
   return doc.fullscreenEnabled === true && typeof doc.documentElement.requestFullscreen === "function" && typeof doc.exitFullscreen === "function";
 }
 export function createDiagnosticFullscreen(doc: Document, onStatus: (status: FullscreenStatus) => void) {
   let disposed = false, closing = false, pending = false;
-  const report = (label: string, message: string) => { if (!disposed) onStatus({ label, message }); };
+  let exitPending: Promise<void> | null = null;
+  const report = (label: string, message: string) => { if (!disposed) onStatus({ label, message, active: doc.fullscreenElement === doc.documentElement }); };
   const exit = () => {
-    if (doc.fullscreenElement !== doc.documentElement) return;
+    if (exitPending) return exitPending;
+    if (doc.fullscreenElement !== doc.documentElement) return Promise.resolve();
     try {
-      Promise.resolve(doc.exitFullscreen()).catch(() => report("Exit failed", "Fullscreen could not exit. Use your browser's exit fullscreen control; your settings are preserved."));
-    } catch { report("Exit failed", "Use your browser's exit fullscreen control; your settings are preserved."); }
+      exitPending = Promise.resolve(doc.exitFullscreen()).then(() => {
+        if (doc.fullscreenElement === doc.documentElement) report("Exit failed", "The browser stayed fullscreen. Use Exit Browser Fullscreen below or your browser's exit control.");
+        else report("Normal", "Fullscreen exited. Your song and settings are preserved.");
+      }, () => report("Exit failed", "Fullscreen could not exit. Use Exit Browser Fullscreen below or your browser's exit control; your settings are preserved."))
+        .finally(() => { exitPending = null; });
+      return exitPending;
+    } catch { report("Exit failed", "Use Exit Browser Fullscreen below or your browser's exit control; your settings are preserved."); return Promise.resolve(); }
   };
   const change = () => {
     if (doc.fullscreenElement === doc.documentElement) {
@@ -29,7 +36,7 @@ export function createDiagnosticFullscreen(doc: Document, onStatus: (status: Ful
     : "Browser fullscreen is unavailable here. Use the normal lyric test.");
   return {
     request() {
-      if (pending) return;
+      if (disposed || pending || exitPending) return;
       closing = false;
       if (!supportsDiagnosticFullscreen(doc)) { report("Unavailable", "Browser fullscreen is unavailable here. Normal lyrics still work."); return; }
       if (doc.fullscreenElement) { change(); return; }
@@ -46,7 +53,7 @@ export function createDiagnosticFullscreen(doc: Document, onStatus: (status: Ful
         }, () => { pending = false; if (!closing) error(); });
       } catch { pending = false; error(); }
     },
-    close() { closing = true; exit(); },
+    close() { closing = true; return exit(); },
     destroy() {
       disposed = true; closing = true;
       doc.removeEventListener("fullscreenchange", change);

@@ -10,13 +10,14 @@ test("page indicator chooses actual visible lyrics across unequal pages, not jus
   assert.equal(visibleLyricPage([{ top: 44, bottom: 866 }], 44, 906), 0);
 });
 
-test("positive and negative calibration adjust complete page spacing in 10px steps", () => {
-  for (const adjustment of [-100, -20, 0, 20, 40, 100]) {
+test("expanded calibration keeps the same additive formula across -300 through +300 in 5px steps", () => {
+  for (let adjustment = -300; adjustment <= 300; adjustment += 5) {
     assert.deepEqual(calibratedPageHeight(900, 120, adjustment), { calculated: 780, calibration: adjustment, effective: 780 + adjustment });
   }
-  assert.equal(calibratedPageHeight(900, 120, 500).calibration, 100);
-  assert.equal(calibratedPageHeight(900, 120, -500).calibration, -100);
-  assert.equal(calibratedPageHeight(900, 120, 26).calibration, 30);
+  assert.equal(calibratedPageHeight(900, 120, 500).calibration, 300);
+  assert.equal(calibratedPageHeight(900, 120, -500).calibration, -300);
+  assert.equal(calibratedPageHeight(900, 120, 26).calibration, 25);
+  assert.equal(calibratedPageHeight(900, 120, -125).effective, 655);
   assert.equal(calibratedPageHeight(50, 100, -100).effective, 1, "Very small viewports never yield negative page dimensions");
 });
 
@@ -38,7 +39,7 @@ test("signed error uses actual unequal page boundaries and toolbar offset", () =
 test("calibration recomputes fitting and preserves all sample characters at both slider extremes", () => {
   for (const sample of Object.values(SMART_PAGING_SAMPLES)) {
     const sections = splitLyricSections(sample);
-    for (const adjustment of [-100, 0, 100]) {
+    for (const adjustment of [-300, -125, -100, 0, 300]) {
       const height = calibratedPageHeight(700, 250, adjustment).effective;
       const measureLine = (text: string, font: number) => Math.max(1, Math.ceil(Array.from(text).length / 28)) * font * 1.4;
       const pages = paginateLyricSections(sections, { preferredFontSize: 48, minimumFontSize: 28, contentHeight: height - 84, measureLine });

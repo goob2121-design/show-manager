@@ -25,12 +25,34 @@ test("stored fields are validated individually and corrupted storage falls back 
   assert.equal(stored.landscapeCalibration, 20);
   assert.equal(stored.songId, "entry");
   assert.equal(stored.sample, "overflow");
-  for (const value of [-110, 110, 12, "-100", null]) assert.equal(settings.parseDiagnosticSettings(JSON.stringify({ portraitCalibration: value, portraitCalibrated: true })).portraitCalibrated, false);
-  const invalid = settings.parseDiagnosticSettings('{"preferredSize":100,"landscapeCalibration":25,"source":"other","songId":42}');
+  for (const value of [-305, 305, 12, "-100", null]) assert.equal(settings.parseDiagnosticSettings(JSON.stringify({ portraitCalibration: value, portraitCalibrated: true })).portraitCalibrated, false);
+  const invalid = settings.parseDiagnosticSettings('{"preferredSize":100,"landscapeCalibration":27,"source":"other","songId":42}');
   assert.equal(invalid.preferredSize, 56);
   assert.equal(invalid.landscapeCalibration, 0);
   assert.equal(invalid.source, "sample");
   assert.equal(invalid.songId, "");
+});
+
+test("four independent profiles survive persistence and existing v1 preferences migrate without resetting regular values", () => {
+  let preferences = settings.parseDiagnosticSettings('{"portraitCalibration":-80,"landscapeCalibration":20,"preferredSize":56,"source":"stageflow","songId":"existing"}');
+  assert.equal(preferences.fullscreenPortraitCalibration, -100);
+  assert.equal(preferences.fullscreenLandscapeCalibration, 0);
+  preferences = settings.updateOrientationCalibration(preferences, "portrait", -125, true);
+  preferences = settings.updateOrientationCalibration(preferences, "landscape", -175, true);
+  preferences = settings.updateOrientationCalibration(preferences, "portrait", -110);
+  preferences = settings.parseDiagnosticSettings(JSON.stringify(preferences));
+  assert.equal(settings.orientationCalibration(preferences, "portrait"), -110);
+  assert.equal(settings.orientationCalibration(preferences, "landscape"), 20);
+  assert.equal(settings.orientationCalibration(preferences, "portrait", true), -125);
+  assert.equal(settings.orientationCalibration(preferences, "landscape", true), -175);
+  assert.equal(preferences.songId, "existing");
+  assert.equal(preferences.source, "stageflow");
+  assert.equal(settings.calibrationProfileNeedsTesting(preferences, "portrait", true), false);
+  assert.equal(settings.calibrationProfileNeedsTesting(preferences, "landscape"), true);
+  for (const value of [-300, -200, -175, -150, -125, -110, -100, 5, 300]) {
+    assert.equal(settings.parseDiagnosticSettings(JSON.stringify({ fullscreenPortraitCalibration: value })).fullscreenPortraitCalibration, value);
+  }
+  assert.equal(settings.parseDiagnosticSettings('{"fullscreenPortraitCalibration":-999,"fullscreenPortraitCalibrated":true}').fullscreenPortraitCalibrated, false);
 });
 
 test("storage writes only the diagnostic key and unavailable storage is safe", () => {
