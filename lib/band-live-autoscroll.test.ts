@@ -12,12 +12,13 @@ function sourceBetween(start: string, end: string) {
   return source.slice(startIndex, endIndex);
 }
 
-test("manual lyrics opening with Auto Start on waits for the container, counts down, and starts scrolling", () => {
+test("legacy rollback lyrics opening with Auto Start on waits for the container, counts down, and starts scrolling", () => {
   const openLyrics = sourceBetween(
     "  const openLyricsModal = () => {",
     "  const clearIntroAutoOpenLyricsTimer = () => {",
   );
-  assert.ok(openLyrics.indexOf("setPendingLyricsAutoStart(true)") < openLyrics.indexOf("setLyricsOpen(true)"));
+  const legacyOpen = openLyrics.slice(openLyrics.indexOf("    if (!currentSong?.lyrics?.trim())"));
+  assert.ok(legacyOpen.indexOf("setPendingLyricsAutoStart(true)") < legacyOpen.indexOf("setLyricsOpen(true)"));
 
   const pendingEffect = sourceBetween(
     "  useEffect(() => {\n    if (!pendingLyricsAutoStart)",

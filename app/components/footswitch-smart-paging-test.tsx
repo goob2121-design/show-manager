@@ -92,10 +92,11 @@ export function FootswitchSongSelection({ source, songId, songs, songStatus, onR
   </div>;
 }
 
-export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onStart, sourceControls, fullscreenControls, sectionCount, missingLyrics, notice, needsCalibration, canStart = true, onReset }: {
+export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onStart, sourceControls, fullscreenControls, sectionCount, missingLyrics, notice, needsCalibration, canStart = true, onReset, returnLabel = "Back to Footswitch Test", startLabel }: {
   config: SmartPagingConfig; onConfig: (config: SmartPagingConfig) => void; history: PagingMeasurement[]; onReturn: () => void; onStart: () => void;
   sourceControls?: ReactNode; sectionCount?: number; missingLyrics?: boolean; notice?: string; needsCalibration?: boolean; canStart?: boolean; onReset?: () => void;
   fullscreenControls?: ReactNode;
+  returnLabel?: string; startLabel?: string;
 }) {
   const last = history[0];
   const buttonClass = "min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2 font-bold text-stone-800 dark:border-white/20 dark:bg-slate-800 dark:text-slate-100";
@@ -104,7 +105,7 @@ export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onS
       <div className="mx-auto max-w-4xl space-y-5">
         <header className="rounded-3xl border border-stone-300 bg-white p-5 dark:border-white/20 dark:bg-slate-900">
           <h1 className="text-3xl font-black">Smart Lyric Paging Test · Setup</h1>
-          <button type="button" className={buttonClass + " mt-3"} onClick={onReturn}>Back to Footswitch Test</button>
+          <button type="button" className={buttonClass + " mt-3"} onClick={onReturn}>{returnLabel}</button>
           {sourceControls}
           {notice && <p role="status" className="mt-3">{notice}</p>}
           <fieldset disabled={notice === "Loading saved diagnostic settings…"}>
@@ -125,7 +126,7 @@ export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onS
           <p className="mt-3">Song: {config.title ?? "None selected"} · Detected lyric sections: {sectionCount ?? 0} · Generated pages: {last && last.config.songId === config.songId && last.config.sample === config.sample && last.config.source === config.source && last.config.preferredSize === config.preferredSize && last.config.calibration === config.calibration && last.config.orientation === config.orientation && last.config.fullscreen === config.fullscreen ? last.pageCount : "Start test to measure"}</p>
           {missingLyrics && <p role="status" className="mt-3 font-bold">No lyrics available for this song.</p>}
           <p className="mt-3 font-bold">Scroll Alignment: OFF — required. No scroll snapping or automatic corrections.</p>
-          {canStart ? <a href="#smart-lyric-paging-display" onClick={onStart} className="mt-5 block rounded-xl bg-emerald-700 p-4 text-center text-lg font-black text-white hover:bg-emerald-800">{config.fullscreen ? "RESUME LYRICS IN FULLSCREEN" : "START FULL-SCREEN LYRIC TEST"}</a> : <button type="button" disabled className="mt-5 w-full rounded-xl bg-stone-400 p-4 text-lg font-black text-white">START FULL-SCREEN LYRIC TEST</button>}
+          {canStart ? <a href="#smart-lyric-paging-display" onClick={onStart} className="mt-5 block rounded-xl bg-emerald-700 p-4 text-center text-lg font-black text-white hover:bg-emerald-800">{startLabel ?? (config.fullscreen ? "RESUME LYRICS IN FULLSCREEN" : "START FULL-SCREEN LYRIC TEST")}</a> : <button type="button" disabled className="mt-5 w-full rounded-xl bg-stone-400 p-4 text-lg font-black text-white">START FULL-SCREEN LYRIC TEST</button>}
           <p className="mt-3">Full-screen means a clean Safari page; no browser Fullscreen API is required. Setup is removed during testing. Start uses normal fragment navigation to the display beginning.</p>
           <p className="mt-2 text-sm">During lyrics, tap the song title to toggle runtime diagnostics. Compare requested/applied calibration, calibrated height, rendered height, and CSS min-height at −300px and +300px.</p>
           {fullscreenControls}

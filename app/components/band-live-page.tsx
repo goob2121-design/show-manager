@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { flushSync } from "react-dom";
+import { LiveSmartLyrics, SMART_LYRIC_PAGING_ENABLED } from "./live-smart-lyrics";
 import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { createClient } from "@/lib/supabase/client";
 import { resolveLeadVocal, resolvePerformanceFlow, resolveSongIntroNotes, resolveSongKey, resolveSongLyrics, resolveSongTempo, resolveSongTitle } from "@/lib/song-resolvers";
@@ -590,6 +592,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const followBandLeaderRef = useRef(followBandLeader);
   const songsLengthRef = useRef(songs.length);
   const modalScrollLockRef = useRef(0);
+  const nativeLyricsOpenRef = useRef(false);
   const lyricsOverlayRef = useRef<HTMLDivElement | null>(null);
   const songIntroOverlayRef = useRef<HTMLDivElement | null>(null);
   const lyricsScrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1248,6 +1251,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   };
 
   const openLyricsModal = () => {
+    if (SMART_LYRIC_PAGING_ENABLED) {
+      if (!currentSong) return;
+      stopLyricsAutoScroll();
+      setPendingLyricsAutoStart(false);
+      nativeLyricsOpenRef.current = true;
+      flushSync(() => { setSongIntroOpen(false); setLyricsOpen(true); });
+      return;
+    }
     if (!currentSong?.lyrics?.trim()) {
       return;
     }
@@ -1421,6 +1432,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       return;
     }
 
+    if (SMART_LYRIC_PAGING_ENABLED) return;
+
     const scrollContainer = lyricsScrollContainerRef.current;
 
     if (!scrollContainer) {
@@ -1469,6 +1482,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       lyricsAutoStartScrollHandledRef.current = null;
       return;
     }
+
+    if (SMART_LYRIC_PAGING_ENABLED) return;
 
     if (!currentSong?.id || !currentSong.lyrics?.trim() || pendingLyricsAutoStart) {
       return;
@@ -1526,6 +1541,8 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     if (!pendingLyricsAutoStart) {
       return;
     }
+
+    if (SMART_LYRIC_PAGING_ENABLED) return;
 
     if (!lyricsOpen || !currentSong?.id || !currentSong.lyrics?.trim()) {
       return;
@@ -1651,7 +1668,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       lyricsScrollContainer.scrollTop = 0;
     }
 
-    if (lyricsOpen && currentSong && !currentSong.lyrics?.trim()) {
+    if (!SMART_LYRIC_PAGING_ENABLED && lyricsOpen && currentSong && !currentSong.lyrics?.trim()) {
       setLyricsOpen(false);
     }
   }, [currentSong?.id, lyricsOpen]);
@@ -1681,7 +1698,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       return;
     }
 
-    const shouldLockScroll = lyricsOpen || songIntroOpen;
+    const shouldLockScroll = (!SMART_LYRIC_PAGING_ENABLED && lyricsOpen) || songIntroOpen;
     if (!shouldLockScroll) {
       return;
     }
@@ -1715,7 +1732,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       document.documentElement.style.overflow = previousHtmlOverflow;
       document.documentElement.style.overscrollBehavior = previousHtmlOverscrollBehavior;
       document.documentElement.style.position = previousHtmlPosition;
-      window.scrollTo(0, modalScrollLockRef.current);
+      if (!nativeLyricsOpenRef.current) window.scrollTo(0, modalScrollLockRef.current);
     };
   }, [lyricsOpen, songIntroOpen]);
 
@@ -1776,6 +1793,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
     [currentTime],
   );
 
+  const LyricsAction = SMART_LYRIC_PAGING_ENABLED ? "a" : "button";
   const followStatusLabel = followBandLeader ? "FOLLOWING" : "MANUAL";
   const showLeaderControls = isLeaderUnlocked && !followBandLeader;
   const liveShowHasStarted = useMemo(() => hasLeaderStartedLiveMode(sharedState), [sharedState]);
@@ -1806,6 +1824,12 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       liveModeStartTimeoutRef.current = null;
     }, 220);
   }, [isStartingLiveMode, liveShowHasStarted, showFollowerWaitingScreen]);
+
+  // Keep this parent mounted so realtime, selection, setlist and performance state survive.
+  // The legacy modal below is preserved behind the integration switch.
+  if (SMART_LYRIC_PAGING_ENABLED && lyricsOpen && currentSong) {
+    return <LiveSmartLyrics song={currentSong} onClose={() => { nativeLyricsOpenRef.current = false; setLyricsOpen(false); }} />;
+  }
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,_#020617_0%,_#0f172a_38%,_#020617_100%)] text-slate-100">
@@ -2148,15 +2172,16 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                     {formattedCurrentTime}
                   </p>
                 </div>
-                {currentSong.lyrics?.trim() ? (
-                  <button
-                    type="button"
+                {SMART_LYRIC_PAGING_ENABLED || currentSong.lyrics?.trim() ? (
+                  <LyricsAction
+                    type={SMART_LYRIC_PAGING_ENABLED ? undefined : "button"}
+                    href={SMART_LYRIC_PAGING_ENABLED ? "#smart-lyric-paging-display" : undefined}
                     onClick={openLyricsModal}
                     className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[1.35rem] border border-sky-400/25 bg-sky-500/12 px-4 py-4 text-left transition hover:bg-sky-500/18 sm:min-h-[6.75rem] sm:px-5 sm:py-4.5 lg:min-h-[7rem] lg:px-5 lg:py-5"
                   >
                     <span className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-200">Lyrics</span>
                     <span className="mt-2 text-[1.2rem] font-bold text-white sm:text-[1.35rem] lg:text-[1.45rem]">OPEN LYRICS</span>
-                  </button>
+                  </LyricsAction>
                 ) : null}
                 {currentSong.chartUrl ? (
                   <button
@@ -2744,8 +2769,9 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                 </button>
                 {currentSong.lyrics?.trim() ? (
                   <>
-                    <button
-                      type="button"
+                    <LyricsAction
+                      type={SMART_LYRIC_PAGING_ENABLED ? undefined : "button"}
+                      href={SMART_LYRIC_PAGING_ENABLED ? "#smart-lyric-paging-display" : undefined}
                       onClick={openLyricsFromSongIntro}
                       className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                         songIntroReadingMode
@@ -2754,7 +2780,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
                       }`}
                     >
                       Open Lyrics Now
-                    </button>
+                    </LyricsAction>
                     <button
                       type="button"
                       onClick={() => {
