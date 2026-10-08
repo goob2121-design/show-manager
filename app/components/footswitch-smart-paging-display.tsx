@@ -10,7 +10,7 @@ export type DisplayLayout = { pageHeight: number; calculatedHeight: number; cont
 export type PagingMeasurement = { timestamp: string; config: SmartPagingConfig; layout: Omit<DisplayLayout, "pages">; pageCount: number; visiblePage: number; alignment: ReturnType<typeof measuredLyricAlignment> };
 
 export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPLES[config.sample], onReturn, onMeasurement }: { config: SmartPagingConfig; lyricText?: string; onReturn: () => void; onMeasurement: (measurement: PagingMeasurement) => void }) {
-  const controls = useRef<HTMLElement>(null);
+  const controls = useRef<HTMLDivElement>(null);
   const rail = useRef<HTMLDivElement>(null);
   const probe = useRef<HTMLDivElement>(null);
   const viewportBaseline = useRef<PagingViewport | null>(null);
@@ -56,10 +56,20 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
 
   return (
     <main id="smart-lyric-paging-display" aria-label="Full-screen lyric test" className="relative min-h-screen bg-stone-100 text-stone-950 dark:bg-slate-950 dark:text-slate-100">
-      <nav ref={controls} aria-label="Lyric test controls" className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-300 bg-white px-3 py-1 dark:border-white/20 dark:bg-slate-900">
-        <a href="#smart-lyric-paging-setup" onClick={onReturn} className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-bold dark:border-white/20">Back to Setup</a>
+      {/* Keep the original bar's exact flow footprint and sticky measurement.
+          The fixed header replaces its appearance, not its paging geometry. */}
+      <div ref={controls} aria-hidden="true" className="pointer-events-none invisible sticky top-0 flex items-center justify-between gap-3 border-b border-stone-300 px-3 py-1">
+        <span className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-bold">Back to Setup</span>
         <span className="text-sm font-bold">Page {layout ? visiblePage + 1 : 0} of {layout?.pages.length ?? 0}</span>
-      </nav>
+      </div>
+      {/* The existing Safari viewport excludes vertical unsafe areas (no viewport-fit: cover).
+          Equal side gutters also protect landscape insets without offsetting the title. */}
+      <header aria-label="Lyric test controls" className="pointer-events-none fixed inset-x-0 top-0 z-20 grid grid-cols-[6rem_minmax(0,1fr)_6rem] items-center border-b border-white/15 bg-[#080808] text-white"
+        style={{ height: layout?.controlsHeight ?? 47, paddingInline: "max(12px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))" }}>
+        <span className="truncate text-xs text-white/70">Page {layout ? visiblePage + 1 : 0} of {layout?.pages.length ?? 0}</span>
+        <h1 title={config.title || "Lyric Test"} className="min-w-0 truncate text-center text-sm font-bold uppercase tracking-wide">{config.title || "Lyric Test"}</h1>
+        <a href="#smart-lyric-paging-setup" onClick={onReturn} aria-label="Close lyric test and return to setup" className="pointer-events-auto flex min-h-11 items-center justify-end gap-1 rounded-lg px-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">×</span> Close</a>
+      </header>
       <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed left-0 top-0 whitespace-pre-wrap break-words font-semibold [overflow-wrap:anywhere]" style={{ lineHeight: 1.4 }} />
       <div ref={rail}>
         {layout?.pages.map((page, index) => <section key={`${page.section}-${page.part}`} data-smart-lyric-page aria-label={`Lyric page ${index + 1}`} className="m-0 box-border flex flex-col justify-center border-2 border-emerald-500/20 p-6 text-left font-semibold" style={{ minHeight: layout.pageHeight, fontSize: page.fontSize, lineHeight: 1.4, scrollSnapAlign: "none" }}>

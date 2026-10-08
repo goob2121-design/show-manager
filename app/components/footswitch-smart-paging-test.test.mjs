@@ -78,29 +78,54 @@ test("setup/display are exclusive; configuration and latest measurements survive
   mode = render();
   assert.equal(mode.props.lyricText, songs[0].lyrics, "Original lyric string reaches the existing display unchanged");
   assert.equal(mode.props.config.title, "Actual song");
+  mode.props.onReturn();
+  mode = render();
+  assert.equal(mode.props.config.songId, "entry");
+  assert.equal(mode.props.config.source, "stageflow");
+  assert.equal(mode.props.config.preferredSize, 56);
+  assert.equal(mode.props.config.calibration, 30);
 });
 
-test("clean display has only Back and page controls, no setup footprint, and unclipped document-flow pages", () => {
-  const config = { sample: "realistic", preferredSize: 48, calibration: 0 };
+test("fixed title header is centered, touch-friendly and closes without changing lyric pages or the existing bar footprint", () => {
+  const config = { sample: "realistic", preferredSize: 48, calibration: 0, title: "BLUE RIDGE CABIN HOME — a very long song title" };
   const pages = utility.paginateLyricSections(utility.splitLyricSections(samples.SMART_PAGING_SAMPLES.realistic),
     { preferredFontSize: 48, minimumFontSize: 28, contentHeight: 810, measureLine: (_text, font) => font * 1.4 });
   const layout = { pages, pageHeight: 862, calculatedHeight: 862, controlsHeight: 44, viewportHeight: 906, documentHeight: 906, viewportChanged: false };
   const react = { ...require("react"), useRef: () => ({ current: null }), useEffect: () => {},
     useState: (value) => [value === null ? layout : value, () => {}] };
   const { SmartLyricPagingDisplay } = compile("footswitch-smart-paging-display", react);
-  const view = SmartLyricPagingDisplay({ config, onReturn: () => {}, onMeasurement: () => {} });
+  let closed = false;
+  const view = SmartLyricPagingDisplay({ config, onReturn: () => { closed = true; }, onMeasurement: () => {} });
   const nodes = elements(view);
   const controls = nodes.filter((node) => ["a", "button", "input", "select"].includes(node.type));
   assert.equal(controls.length, 1);
-  assert.equal(controls[0].props.children, "Back to Setup");
+  assert.equal(controls[0].props["aria-label"], "Close lyric test and return to setup");
   assert.equal(controls[0].props.href, "#smart-lyric-paging-setup");
+  controls[0].props.onClick();
+  assert.equal(closed, true);
+  const header = nodes.find((node) => node.type === "header");
+  assert.match(header.props.className, /fixed inset-x-0 top-0/);
+  assert.match(header.props.className, /grid-cols-\[6rem_minmax\(0,1fr\)_6rem\]/, "Equal outer columns center the title across the screen");
+  assert.match(header.props.className, /pointer-events-none/);
+  assert.match(header.props.className, /bg-\[#080808\] text-white/);
+  assert.equal(header.props.style.height, 44, "The fixed header occupies only the already measured bar height");
+  assert.match(header.props.style.paddingInline, /safe-area-inset-left.*safe-area-inset-right/);
+  assert.match(controls[0].props.className, /pointer-events-auto/);
+  assert.match(controls[0].props.className, /min-h-11/);
+  const title = nodes.find((node) => node.type === "h1");
+  assert.equal(title.props.children, config.title);
+  assert.equal(title.props.title, config.title);
+  assert.match(title.props.className, /truncate text-center/);
+  const footprint = nodes.find((node) => node.props.ref && node.props["aria-hidden"] && /sticky/.test(node.props.className));
+  assert.match(footprint.props.className, /sticky top-0.*border-b.*px-3 py-1/);
+  assert.ok(!elements(footprint).some((node) => node.type === "a"), "The footprint has no invisible interactive controls");
   const pageNodes = nodes.filter((node) => "data-smart-lyric-page" in node.props);
   assert.equal(pageNodes.length, 7);
   assert.ok(pageNodes.every((node) => node.props.style.minHeight === 862 && node.props.style.scrollSnapAlign === "none"));
   assert.ok(pageNodes.every((node) => /box-border/.test(node.props.className) && /m-0/.test(node.props.className)));
   for (const node of nodes.filter((node) => !node.props["aria-hidden"])) {
     assert.doesNotMatch(node.props.className ?? "", /overflow(?:-[xy])?-(auto|hidden|scroll)|snap-|scroll-smooth|touch-none/);
-    assert.equal(node.props.style?.height, undefined);
+    if (node.type !== "header") assert.equal(node.props.style?.height, undefined);
     assert.equal(node.props.onKeyDown, undefined);
   }
   const html = renderToStaticMarkup(view);
