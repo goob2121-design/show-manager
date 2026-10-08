@@ -21,7 +21,7 @@ const MOCK_LINES = [
   "Until the ending fades away",
 ];
 
-export function NativeScrollTest({ onReturn }: { onReturn: () => void }) {
+export function NativeScrollTest({ onReturn, onCompact }: { onReturn: () => void; onCompact?: () => void }) {
   const buttonClass = "min-h-12 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 font-bold text-emerald-900 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-500/15 dark:text-emerald-100";
   return (
     <main className="min-h-screen bg-stone-100 px-4 py-5 text-stone-950 dark:bg-slate-950 dark:text-slate-100">
@@ -30,6 +30,7 @@ export function NativeScrollTest({ onReturn }: { onReturn: () => void }) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="text-2xl font-black sm:text-3xl">Native Scroll Test</h1>
             <button type="button" className={buttonClass} onClick={onReturn}>Back to Footswitch Test</button>
+            {onCompact && <button type="button" className={buttonClass} onClick={onCompact}>Compact Lyric Scroll Test</button>}
           </div>
           <p className="mt-2 font-bold text-emerald-700 dark:text-emerald-300">Native document scrolling · Keyboard/pointer diagnostic OFF</p>
         </header>
