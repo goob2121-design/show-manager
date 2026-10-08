@@ -7,11 +7,13 @@ import { SmartLyricPagingDisplay, type PagingMeasurement, type SmartPagingConfig
 import { orientationCalibration, updateOrientationCalibration, useDiagnosticSettings } from "./footswitch-diagnostic-settings";
 import { diagnosticSong, searchDiagnosticSongs, type FootswitchSong } from "./footswitch-song-source";
 import { splitLyricSections } from "./footswitch-lyric-paging";
+import { useDiagnosticFullscreen } from "./footswitch-fullscreen";
 
 const TEXT_SIZES = [{ label: "Large", pixels: 40 }, { label: "Extra Large", pixels: 48 }, { label: "Maximum", pixels: 56 }];
 
 export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry }: { onReturn: () => void; songs?: readonly FootswitchSong[]; songStatus?: string; onRetry?: () => void }) {
   const { settings, setSettings, orientation, loaded, storageUnavailable } = useDiagnosticSettings();
+  const fullscreen = useDiagnosticFullscreen();
   const song = diagnosticSong(settings, songs);
   const lyricText = song?.lyrics ?? "";
   const config = useMemo<SmartPagingConfig>(() => ({ sample: settings.sample, preferredSize: settings.preferredSize,
@@ -42,10 +44,19 @@ export function SmartLyricPagingTest({ onReturn, songs = [], songStatus, onRetry
   // Commit the destination before following the user's native fragment link.
   // No JS scroll call or pedal handler establishes the starting position.
   return displayActive
-    ? <SmartLyricPagingDisplay config={config} lyricText={lyricText} onReturn={() => flushSync(() => setDisplayActive(false))} onMeasurement={record} />
+    ? <SmartLyricPagingDisplay config={config} lyricText={lyricText} fullscreenLabel={fullscreen.status.label} onReturn={() => { fullscreen.close(); flushSync(() => setDisplayActive(false)); }} onMeasurement={record} />
     : <SmartLyricPagingSetup config={config} onConfig={setConfig} history={history} onReturn={onReturn}
         canStart={loaded && Boolean(lyricText.trim()) && !(settings.source === "stageflow" && songStatus)}
         onStart={() => { if (loaded && lyricText.trim()) flushSync(() => setDisplayActive(true)); }}
+        fullscreenControls={<section className="mt-4 rounded-xl border border-stone-300 p-3 dark:border-white/20" aria-label="Experimental browser fullscreen">
+          <h2 className="font-bold">Experimental Browser Fullscreen</h2>
+          <p role="status" className="mt-2 text-sm">{fullscreen.status.message}</p>
+          <p className="mt-2 text-sm">Targets the document root, not a lyric container. Browser chrome and native Page Down distance may change; retest pedal behavior and calibration. The normal test above stays available.</p>
+          {loaded && lyricText.trim() && !(settings.source === "stageflow" && songStatus) ? <a href="#smart-lyric-paging-display" className="mt-3 block rounded-lg border border-emerald-500 p-3 text-center font-bold" onClick={() => {
+            fullscreen.request();
+            flushSync(() => setDisplayActive(true));
+          }}>TRY EXPERIMENTAL BROWSER FULLSCREEN</a> : <button type="button" disabled className="mt-3 rounded-lg border p-3 font-bold opacity-50">TRY EXPERIMENTAL BROWSER FULLSCREEN</button>}
+        </section>}
         sourceControls={<fieldset disabled={!loaded}><FootswitchSongSelection source={settings.source} songId={settings.songId} songs={songs} songStatus={songStatus} onRetry={onRetry}
           onSource={(source) => setSettings((current) => ({ ...current, source }))} onSong={(songId) => setSettings((current) => ({ ...current, songId }))} /></fieldset>}
         sectionCount={splitLyricSections(lyricText).length} missingLyrics={Boolean(song && !lyricText.trim())}
@@ -74,9 +85,10 @@ export function FootswitchSongSelection({ source, songId, songs, songStatus, onR
   </div>;
 }
 
-export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onStart, sourceControls, sectionCount, missingLyrics, notice, needsCalibration, canStart = true, onReset }: {
+export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onStart, sourceControls, fullscreenControls, sectionCount, missingLyrics, notice, needsCalibration, canStart = true, onReset }: {
   config: SmartPagingConfig; onConfig: (config: SmartPagingConfig) => void; history: PagingMeasurement[]; onReturn: () => void; onStart: () => void;
   sourceControls?: ReactNode; sectionCount?: number; missingLyrics?: boolean; notice?: string; needsCalibration?: boolean; canStart?: boolean; onReset?: () => void;
+  fullscreenControls?: ReactNode;
 }) {
   const last = history[0];
   const buttonClass = "min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2 font-bold text-stone-800 dark:border-white/20 dark:bg-slate-800 dark:text-slate-100";
@@ -108,6 +120,7 @@ export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onS
           <p className="mt-3 font-bold">Scroll Alignment: OFF — required. No scroll snapping or automatic corrections.</p>
           {canStart ? <a href="#smart-lyric-paging-display" onClick={onStart} className="mt-5 block rounded-xl bg-emerald-700 p-4 text-center text-lg font-black text-white hover:bg-emerald-800">START FULL-SCREEN LYRIC TEST</a> : <button type="button" disabled className="mt-5 w-full rounded-xl bg-stone-400 p-4 text-lg font-black text-white">START FULL-SCREEN LYRIC TEST</button>}
           <p className="mt-3">Full-screen means a clean Safari page; no browser Fullscreen API is required. Setup is removed during testing. Start uses normal fragment navigation to the display beginning.</p>
+          {fullscreenControls}
         </header>
         <section className="rounded-3xl border border-stone-300 bg-white p-5 dark:border-white/20 dark:bg-slate-900" aria-label="Latest full-screen test measurements">
           <h2 className="text-xl font-black">Latest Full-Screen Test Measurements</h2>

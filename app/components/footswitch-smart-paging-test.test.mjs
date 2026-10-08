@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
-const sources = Object.fromEntries(["footswitch-smart-paging-test", "footswitch-smart-paging-display", "footswitch-lyric-paging", "footswitch-document-snap", "footswitch-smart-paging-samples", "footswitch-smart-paging-observers", "footswitch-diagnostic-settings", "footswitch-song-source"].map((name) => [name, readFileSync(new URL("./" + name + (name.includes("display") || name === "footswitch-smart-paging-test" ? ".tsx" : ".ts"), import.meta.url), "utf8")]));
+const sources = Object.fromEntries(["footswitch-smart-paging-test", "footswitch-smart-paging-display", "footswitch-lyric-paging", "footswitch-document-snap", "footswitch-smart-paging-samples", "footswitch-smart-paging-observers", "footswitch-diagnostic-settings", "footswitch-song-source", "footswitch-fullscreen"].map((name) => [name, readFileSync(new URL("./" + name + (name.includes("display") || name === "footswitch-smart-paging-test" ? ".tsx" : ".ts"), import.meta.url), "utf8")]));
 function compile(name, react = require("react"), globals = {}) {
   const result = { exports: {} };
   const output = ts.transpileModule(sources[name], { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 } }).outputText;
@@ -28,9 +28,10 @@ test("setup/display are exclusive; configuration and latest measurements survive
   const react = { ...require("react"), useEffect: () => {}, useCallback: (fn) => fn, useMemo: (fn) => fn(),
     useState: (initial) => { const slot = index++; if (!(slot in state)) state[slot] = initial; return [state[slot], (value) => { state[slot] = typeof value === "function" ? value(state[slot]) : value; }]; } };
   const settingsModule = compile("footswitch-diagnostic-settings");
+  const fullscreenCalls = [];
   const { SmartLyricPagingTest } = compile("footswitch-smart-paging-test", react, { modules: { "./footswitch-diagnostic-settings": {
     ...settingsModule, useDiagnosticSettings: () => { const [settings, setSettings] = react.useState(settingsModule.defaultDiagnosticSettings()); return { settings, setSettings, orientation: "portrait", loaded: true, storageUnavailable: false }; },
-  } } });
+  }, "./footswitch-fullscreen": { useDiagnosticFullscreen: () => ({ status: { label: "Normal", message: "Not attempted" }, request: () => fullscreenCalls.push("request"), close: () => fullscreenCalls.push("close") }) } } });
   const songs = [{ id: "entry", title: "Actual song", lyrics: "VERSE 1\r\n[G] Original!\r\n\r\nCHORUS\r\nAgain" }, { id: "empty", title: "No text", lyrics: null }];
   const render = () => { index = 0; return SmartLyricPagingTest({ onReturn: () => {}, songs }); };
   let mode = render();
@@ -84,6 +85,16 @@ test("setup/display are exclusive; configuration and latest measurements survive
   assert.equal(mode.props.config.source, "stageflow");
   assert.equal(mode.props.config.preferredSize, 56);
   assert.equal(mode.props.config.calibration, 30);
+  const before = fullscreenCalls.filter((call) => call === "request").length;
+  elements(mode.props.fullscreenControls).find((node) => node.type === "a").props.onClick();
+  assert.equal(fullscreenCalls.filter((call) => call === "request").length, before + 1, "The tap invokes the request immediately");
+  mode = render();
+  assert.equal(mode.type.name, "SmartLyricPagingDisplay");
+  assert.equal(mode.props.fullscreenLabel, "Normal");
+  mode.props.onReturn();
+  assert.equal(fullscreenCalls.at(-1), "close");
+  mode = render();
+  assert.equal(mode.props.config.songId, "entry");
 });
 
 test("fixed title header is centered, touch-friendly and closes without changing lyric pages or the existing bar footprint", () => {
@@ -116,6 +127,8 @@ test("fixed title header is centered, touch-friendly and closes without changing
   assert.equal(title.props.children, config.title);
   assert.equal(title.props.title, config.title);
   assert.match(title.props.className, /truncate text-center/);
+  assert.equal(title.props.style.fontSize, "clamp(18px, 3.5vw, 26px)");
+  assert.equal(title.props.style.lineHeight, "32px");
   const footprint = nodes.find((node) => node.props.ref && node.props["aria-hidden"] && /sticky/.test(node.props.className));
   assert.match(footprint.props.className, /sticky top-0.*border-b.*px-3 py-1/);
   assert.ok(!elements(footprint).some((node) => node.type === "a"), "The footprint has no invisible interactive controls");

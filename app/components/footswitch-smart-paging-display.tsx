@@ -9,7 +9,7 @@ export type SmartPagingConfig = { sample: keyof typeof SMART_PAGING_SAMPLES; pre
 export type DisplayLayout = { pageHeight: number; calculatedHeight: number; controlsHeight: number; viewportHeight: number; documentHeight: number; viewportChanged: boolean; pages: LyricPage[] };
 export type PagingMeasurement = { timestamp: string; config: SmartPagingConfig; layout: Omit<DisplayLayout, "pages">; pageCount: number; visiblePage: number; alignment: ReturnType<typeof measuredLyricAlignment> };
 
-export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPLES[config.sample], onReturn, onMeasurement }: { config: SmartPagingConfig; lyricText?: string; onReturn: () => void; onMeasurement: (measurement: PagingMeasurement) => void }) {
+export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPLES[config.sample], fullscreenLabel, onReturn, onMeasurement }: { config: SmartPagingConfig; lyricText?: string; fullscreenLabel?: string; onReturn: () => void; onMeasurement: (measurement: PagingMeasurement) => void }) {
   const controls = useRef<HTMLDivElement>(null);
   const rail = useRef<HTMLDivElement>(null);
   const probe = useRef<HTMLDivElement>(null);
@@ -66,8 +66,8 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
           Equal side gutters also protect landscape insets without offsetting the title. */}
       <header aria-label="Lyric test controls" className="pointer-events-none fixed inset-x-0 top-0 z-20 grid grid-cols-[6rem_minmax(0,1fr)_6rem] items-center border-b border-white/15 bg-[#080808] text-white"
         style={{ height: layout?.controlsHeight ?? 47, paddingInline: "max(12px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))" }}>
-        <span className="truncate text-xs text-white/70">Page {layout ? visiblePage + 1 : 0} of {layout?.pages.length ?? 0}</span>
-        <h1 title={config.title || "Lyric Test"} className="min-w-0 truncate text-center text-sm font-bold uppercase tracking-wide">{config.title || "Lyric Test"}</h1>
+        <div className="min-w-0 text-xs text-white/70"><span className="block truncate">Page {layout ? visiblePage + 1 : 0} of {layout?.pages.length ?? 0}</span>{fullscreenLabel && <span role="status" title={fullscreenLabel} className="block truncate text-[10px]">{fullscreenLabel}</span>}</div>
+        <h1 title={config.title || "Lyric Test"} className="min-w-0 truncate text-center font-bold uppercase tracking-wide" style={{ fontSize: "clamp(18px, 3.5vw, 26px)", lineHeight: "32px" }}>{config.title || "Lyric Test"}</h1>
         <a href="#smart-lyric-paging-setup" onClick={onReturn} aria-label="Close lyric test and return to setup" className="pointer-events-auto flex min-h-11 items-center justify-end gap-1 rounded-lg px-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">×</span> Close</a>
       </header>
       <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed left-0 top-0 whitespace-pre-wrap break-words font-semibold [overflow-wrap:anywhere]" style={{ lineHeight: 1.4 }} />
