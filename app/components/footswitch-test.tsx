@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listenForKeyboardInput, type KeyboardInputRecord } from "./footswitch-keyboard-events";
 import { listenForPointerMouseInput, type PointerMouseInputRecord } from "./footswitch-pointer-events";
+import { NativeScrollTest } from "./footswitch-native-scroll-test";
 
 type InputRecord = KeyboardInputRecord | PointerMouseInputRecord;
 const EMPTY_COUNTS = { total: 0, keydown: 0, keyup: 0, keypress: 0, pointerMouse: 0 };
@@ -13,6 +14,16 @@ function modifiers(input: KeyboardInputRecord) {
 }
 
 export function FootswitchTest({ onClose }: { onClose: () => void }) {
+  const [nativeScrollOpen, setNativeScrollOpen] = useState(false);
+
+  // Separate component types ensure every diagnostic effect cleans up on mode change.
+  // Keeping the diagnostic mounted but hidden would still intercept native input.
+  return nativeScrollOpen
+    ? <NativeScrollTest onReturn={() => setNativeScrollOpen(false)} />
+    : <FootswitchEventDiagnostic onClose={onClose} onNativeScroll={() => setNativeScrollOpen(true)} />;
+}
+
+function FootswitchEventDiagnostic({ onClose, onNativeScroll }: { onClose: () => void; onNativeScroll: () => void }) {
   const surface = useRef<HTMLElement>(null);
   const inputArea = useRef<HTMLElement>(null);
   const [history, setHistory] = useState<(InputRecord & { id: number })[]>([]);
@@ -69,6 +80,7 @@ export function FootswitchTest({ onClose }: { onClose: () => void }) {
               setHistory([]); setCounts(EMPTY_COUNTS); setHit(null); sequence.current = 0;
               surface.current?.focus({ preventScroll: true });
             }}>Clear History</button>
+            <button type="button" className={buttonClass} onClick={onNativeScroll}>Native Scroll Test</button>
             <button type="button" className={buttonClass} onClick={onClose}>Back to Performance Setup</button>
           </div>
         </header>
