@@ -102,6 +102,10 @@ test("setup/display are exclusive; configuration and latest measurements survive
   mode = render();
   assert.equal(mode.type.name, "SmartLyricPagingSetup");
   assert.equal(mode.props.config.fullscreen, true, "Calibrate keeps the document fullscreen");
+  assert.notEqual(fullscreenCalls.at(-1), "close", "Calibrate never requests browser exit");
+  assert.equal(mode.props.config.songId, "entry");
+  assert.equal(mode.props.config.preferredSize, 56);
+  assert.ok(renderToStaticMarkup(mode.type(mode.props)).includes("RESUME LYRICS IN FULLSCREEN"));
   assert.ok(renderToStaticMarkup(mode.type(mode.props)).includes("Fullscreen — Portrait"));
   mode.props.onConfig({ ...mode.props.config, calibration: -125 });
   mode = render();
@@ -189,7 +193,7 @@ test("fixed title header is centered, touch-friendly and closes without changing
   assert.equal(closed, true);
   const header = nodes.find((node) => node.type === "header");
   assert.match(header.props.className, /fixed inset-x-0 top-0/);
-  assert.match(header.props.className, /grid-cols-\[6rem_minmax\(0,1fr\)_6rem\]/, "Equal outer columns center the title across the screen");
+  assert.match(header.props.className, /grid-cols-\[9rem_minmax\(0,1fr\)_9rem\]/, "Equal outer columns center the title across the screen");
   assert.match(header.props.className, /pointer-events-none/);
   assert.match(header.props.className, /bg-\[#080808\] text-white/);
   assert.equal(header.props.style.height, 44, "The fixed header occupies only the already measured bar height");
@@ -222,6 +226,14 @@ test("fixed title header is centered, touch-friendly and closes without changing
   const fullscreenView = SmartLyricPagingDisplay({ config: { ...config, fullscreen: true }, onReturn: () => {}, onMeasurement: () => {}, onCalibrate: () => { calibrated = true; } });
   const calibration = elements(fullscreenView).find((node) => node.props["aria-label"] === "Open calibration setup while staying fullscreen");
   assert.ok(calibration);
+  assert.ok(elements(calibration).some((node) => node.type === "span" && node.props.children === "Calibrate"));
+  assert.match(calibration.props.className, /min-h-11 min-w-11/);
+  assert.match(calibration.props.className, /pointer-events-auto/);
+  assert.match(calibration.props.className, /border-white.*text-white/);
+  const gutter = elements(fullscreenView).find((node) => node.type === "div" && node.props.children === calibration);
+  assert.match(gutter.props.className, /pl-16/, "64px clearance from Safari fullscreen corner");
+  const normalView = SmartLyricPagingDisplay({ config, onReturn: () => {}, onMeasurement: () => {}, onCalibrate: () => {} });
+  assert.ok(elements(normalView).find((node) => node.props["aria-label"] === "Open calibration setup"), "Calibration stays accessible after browser exits fullscreen");
   calibration.props.onClick();
   assert.equal(calibrated, true);
   assert.equal(elements(fullscreenView).find((node) => node.type === "header").props.style.height, header.props.style.height);
