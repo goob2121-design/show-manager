@@ -5,6 +5,7 @@ import { listenForKeyboardInput, type KeyboardInputRecord } from "./footswitch-k
 import { listenForPointerMouseInput, type PointerMouseInputRecord } from "./footswitch-pointer-events";
 import { NativeScrollTest } from "./footswitch-native-scroll-test";
 import { CompactLyricScrollTest } from "./footswitch-compact-scroll-test";
+import { SmartLyricPagingTest } from "./footswitch-smart-paging-test";
 
 type InputRecord = KeyboardInputRecord | PointerMouseInputRecord;
 const EMPTY_COUNTS = { total: 0, keydown: 0, keyup: 0, keypress: 0, pointerMouse: 0 };
@@ -15,7 +16,7 @@ function modifiers(input: KeyboardInputRecord) {
 }
 
 export function FootswitchTest({ onClose }: { onClose: () => void }) {
-  const [mode, setMode] = useState<"diagnostic" | "native" | "compact">("diagnostic");
+  const [mode, setMode] = useState<"diagnostic" | "native" | "compact" | "smart">("diagnostic");
 
   // Separate component types ensure every diagnostic effect cleans up on mode change.
   // Keeping the diagnostic mounted but hidden would still intercept native input.
@@ -23,10 +24,12 @@ export function FootswitchTest({ onClose }: { onClose: () => void }) {
     ? <NativeScrollTest onReturn={() => setMode("diagnostic")} onCompact={() => setMode("compact")} />
     : mode === "compact"
       ? <CompactLyricScrollTest onReturn={() => setMode("diagnostic")} onNativeScroll={() => setMode("native")} />
-      : <FootswitchEventDiagnostic onClose={onClose} onNativeScroll={() => setMode("native")} onCompact={() => setMode("compact")} />;
+      : mode === "smart"
+        ? <SmartLyricPagingTest onReturn={() => setMode("diagnostic")} />
+        : <FootswitchEventDiagnostic onClose={onClose} onNativeScroll={() => setMode("native")} onCompact={() => setMode("compact")} onSmart={() => setMode("smart")} />;
 }
 
-function FootswitchEventDiagnostic({ onClose, onNativeScroll, onCompact }: { onClose: () => void; onNativeScroll: () => void; onCompact: () => void }) {
+function FootswitchEventDiagnostic({ onClose, onNativeScroll, onCompact, onSmart }: { onClose: () => void; onNativeScroll: () => void; onCompact: () => void; onSmart: () => void }) {
   const surface = useRef<HTMLElement>(null);
   const inputArea = useRef<HTMLElement>(null);
   const [history, setHistory] = useState<(InputRecord & { id: number })[]>([]);
@@ -85,6 +88,7 @@ function FootswitchEventDiagnostic({ onClose, onNativeScroll, onCompact }: { onC
             }}>Clear History</button>
             <button type="button" className={buttonClass} onClick={onNativeScroll}>Native Scroll Test</button>
             <button type="button" className={buttonClass} onClick={onCompact}>Compact Lyric Scroll Test</button>
+            <button type="button" className={buttonClass} onClick={onSmart}>Smart Lyric Paging Test</button>
             <button type="button" className={buttonClass} onClick={onClose}>Back to Performance Setup</button>
           </div>
         </header>
