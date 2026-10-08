@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 const { calibratedPageHeight, measuredLyricAlignment, calibrationNeedsRetest, paginateLyricSections, splitLyricSections } = await import(new URL("./footswitch-lyric-paging.ts", import.meta.url).href) as typeof import("./footswitch-lyric-paging");
 const { SMART_PAGING_SAMPLES } = await import(new URL("./footswitch-smart-paging-samples.ts", import.meta.url).href) as typeof import("./footswitch-smart-paging-samples");
+const { visibleLyricPage } = await import(new URL("./footswitch-lyric-paging.ts", import.meta.url).href) as typeof import("./footswitch-lyric-paging");
+
+test("page indicator chooses actual visible lyrics across unequal pages, not just the nearest boundary", () => {
+  assert.equal(visibleLyricPage([{ top: -200, bottom: 600 }, { top: 600, bottom: 1400 }], 44, 906), 0);
+  assert.equal(visibleLyricPage([{ top: -700, bottom: 100 }, { top: 100, bottom: 900 }], 44, 906), 1);
+  assert.equal(visibleLyricPage([{ top: 44, bottom: 866 }], 44, 906), 0);
+});
 
 test("positive and negative calibration adjust complete page spacing in 10px steps", () => {
   for (const adjustment of [-100, -20, 0, 20, 40, 100]) {

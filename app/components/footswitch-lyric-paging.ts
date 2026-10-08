@@ -97,3 +97,12 @@ export function measuredLyricAlignment(tops: number[], toolbarBottom: number, sc
 export function calibrationNeedsRetest(before: { height: number; toolbarHeight: number; width: number }, after: { height: number; toolbarHeight: number; width: number }) {
   return Math.abs(before.height - after.height) >= 40 || Math.abs(before.width - after.width) >= 40 || Math.abs(before.toolbarHeight - after.toolbarHeight) >= 40;
 }
+
+export function visibleLyricPage(rects: { top: number; bottom: number }[], areaTop: number, areaBottom: number) {
+  let index = 0, largestVisible = -1;
+  rects.forEach((rect, candidate) => {
+    const visible = Math.max(0, Math.min(rect.bottom, areaBottom) - Math.max(rect.top, areaTop));
+    if (visible > largestVisible) { largestVisible = visible; index = candidate; }
+  });
+  return index;
+}
