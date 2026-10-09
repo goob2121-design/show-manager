@@ -16,7 +16,7 @@ function compile(source, globals = {}, modules = {}) {
 }
 function fixture() {
   const tasks = new Map(), records = [], registrations = [];
-  let taskId = 0, finalBottom = 2800, zoneStart = 2920, resize;
+  let taskId = 0, finalBottom = 2800, zoneStart = 2920, headerHeight = 44, resize;
   const page = Object.assign(new EventTarget(), { scrollY: 0, innerHeight: 1000, innerWidth: 800,
     visualViewport: Object.assign(new EventTarget(), { height: 1000, offsetTop: 0 }),
     ResizeObserver: class { constructor(fn) { resize = fn; } observe() {} disconnect() { resize = null; } } });
@@ -26,14 +26,26 @@ function fixture() {
   const final = { getBoundingClientRect: () => ({ top: finalBottom - 800 - page.scrollY, bottom: finalBottom - page.scrollY }) };
   const zone = { getBoundingClientRect: () => ({ top: zoneStart - page.scrollY, bottom: zoneStart + 1000 - page.scrollY }) };
   const doc = Object.assign(new EventTarget(), { fullscreenElement: null, documentElement: root,
-    querySelector: (selector) => selector.includes("data-smart-lyric-page") ? final : selector.includes("header") ? { getBoundingClientRect: () => ({ bottom: 44 }) } : root });
+    querySelector: (selector) => selector.includes("data-smart-lyric-page") ? final : selector.includes("header") ? { getBoundingClientRect: () => ({ bottom: headerHeight }) } : root });
   const { observeReturnTrigger } = compile(helperSource, { setTimeout: (fn) => { tasks.set(++taskId, fn); return taskId; }, clearTimeout: (id) => tasks.delete(id) });
   const cleanup = observeReturnTrigger(page, doc, zone, (snapshot) => records.push(snapshot));
   return { page, doc, root, records, tasks, registrations, cleanup, last: () => records.at(-1),
     scroll: (y) => { page.scrollY = y; page.dispatchEvent(new Event("scroll")); },
     settle: () => { const pending = [...tasks.values()]; tasks.clear(); pending.forEach((fn) => fn()); },
-    reflow: () => { finalBottom += 200; zoneStart += 200; resize(); } };
+    reflow: () => { finalBottom += 200; zoneStart += 200; resize(); },
+    resizeHeader: (height) => { headerHeight = height; resize(); } };
 }
+
+test("wrapping header growth disarms a reached final page and cannot prematurely return", () => {
+  const f = fixture();
+  f.scroll(1900); f.settle();
+  f.resizeHeader(140);
+  assert.equal(f.last().finalReached, false);
+  assert.equal(f.last().triggered, false);
+  f.scroll(2600);
+  assert.equal(f.last().triggered, false, "Header reflow requires reaching and pausing on the final page again");
+  f.cleanup();
+});
 
 test("initialization and first appearance of final verse never trigger; later movement without a pause also cannot trigger", () => {
   const f = fixture();

@@ -5,7 +5,7 @@ import { calibratedPageHeight, calibrationNeedsRetest, measuredLyricAlignment, p
 import { observeLyricPagePosition, observePagingViewport, type PagingViewport } from "./footswitch-smart-paging-observers";
 import { SMART_PAGING_SAMPLES } from "./footswitch-smart-paging-samples";
 
-export type SmartPagingConfig = { sample: keyof typeof SMART_PAGING_SAMPLES; preferredSize: number; calibration: number; source?: "sample" | "stageflow"; songId?: string; title?: string; orientation?: "portrait" | "landscape"; fullscreen?: boolean };
+export type SmartPagingConfig = { sample: keyof typeof SMART_PAGING_SAMPLES; preferredSize: number; calibration: number; source?: "sample" | "stageflow"; songId?: string; title?: string; songKey?: string | null; performanceFlow?: string | null; orientation?: "portrait" | "landscape"; fullscreen?: boolean };
 export type DisplayLayout = { pageHeight: number; calculatedHeight: number; appliedCalibration: number; controlsHeight: number; viewportHeight: number; documentHeight: number; viewportChanged: boolean; pages: LyricPage[] };
 export type PagingMeasurement = { timestamp: string; config: SmartPagingConfig; layout: Omit<DisplayLayout, "pages">; pageCount: number; visiblePage: number; alignment: ReturnType<typeof measuredLyricAlignment> };
 
@@ -14,14 +14,17 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
   const rail = useRef<HTMLDivElement>(null);
   const probe = useRef<HTMLDivElement>(null);
   const viewportBaseline = useRef<PagingViewport | null>(null);
+  const header = useRef<HTMLElement>(null);
+  const hasMetadata = Boolean(config.songKey?.trim() || config.performanceFlow?.trim());
   const [layout, setLayout] = useState<DisplayLayout | null>(null);
   const [visiblePage, setVisiblePage] = useState(0);
   const [debugOpen, setDebugOpen] = useState(false);
   const [debug, setDebug] = useState<{ fullscreen: boolean; orientation: string; requestedSize: number; renderedSize: string | null; calibration: number; appliedCalibration: number; viewportHeight: number; calculatedHeight: number; targetHeight: number; renderedHeight: number; cssMinHeight: string | null; scrollY: number; page: number } | null>(null);
 
   useEffect(() => {
-    if (!controls.current || !rail.current || !probe.current) return;
-    return observePagingViewport(window, controls.current, rail.current, (viewport) => {
+    const toolbar = hasMetadata ? header.current : controls.current;
+    if (!toolbar || !rail.current || !probe.current) return;
+    return observePagingViewport(window, toolbar, rail.current, (viewport) => {
       const measurement = probe.current;
       if (!measurement) return;
       if (!viewportBaseline.current) viewportBaseline.current = viewport;
@@ -40,15 +43,16 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
         viewportHeight: viewport.height, documentHeight: document.scrollingElement?.clientHeight ?? window.innerHeight,
         viewportChanged: calibrationNeedsRetest(viewportBaseline.current, viewport), pages });
     });
-  }, [lyricText, config.preferredSize, config.calibration]);
+  }, [lyricText, config.preferredSize, config.calibration, hasMetadata, config.songKey, config.performanceFlow]);
 
   useEffect(() => observeLyricPagePosition(window, () => {
     // Refs become null on unmount; never replace saved results with setup geometry.
-    if (!layout || !rail.current || !controls.current) return;
+    const toolbar = hasMetadata ? header.current : controls.current;
+    if (!layout || !rail.current || !toolbar) return;
     const elements = Array.from(rail.current.querySelectorAll<HTMLElement>("[data-smart-lyric-page]"));
     const rects = elements.map((page) => page.getBoundingClientRect());
     if (!rects.length) return;
-    const top = Math.max(controls.current.getBoundingClientRect().bottom, window.visualViewport?.offsetTop ?? 0);
+    const top = Math.max(toolbar.getBoundingClientRect().bottom, window.visualViewport?.offsetTop ?? 0);
     const bottom = (window.visualViewport?.offsetTop ?? 0) + (window.visualViewport?.height ?? window.innerHeight);
     const index = visibleLyricPage(rects, top, bottom);
     setVisiblePage(index);
@@ -62,20 +66,20 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
     const { pages, ...dimensions } = layout;
     onMeasurement({ timestamp: new Date().toISOString(), config: { ...config }, layout: dimensions, pageCount: pages.length,
       visiblePage: index + 1, alignment: measuredLyricAlignment(rects.map((rect) => rect.top), top, window.scrollY) });
-  }), [layout, config, onMeasurement]);
+  }), [layout, config, onMeasurement, hasMetadata]);
 
   return (
     <main id="smart-lyric-paging-display" aria-label="Full-screen lyric test" className="relative min-h-screen bg-stone-100 text-stone-950 dark:bg-slate-950 dark:text-slate-100">
-      {/* Keep the original bar's exact flow footprint and sticky measurement.
-          The fixed header replaces its appearance, not its paging geometry. */}
-      <div ref={controls} aria-hidden="true" className="pointer-events-none invisible sticky top-0 flex items-center justify-between gap-3 border-b border-stone-300 px-3 py-1">
-        <span className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-bold">Back to Setup</span>
-        <span className="text-sm font-bold">Page {layout ? visiblePage + 1 : 0} of {layout?.pages.length ?? 0}</span>
+      {/* Expanded headers use their actual measured height as the flow spacer.
+          Without metadata, retain the tested compact bar and its exact footprint. */}
+      <div ref={controls} aria-hidden="true" className={hasMetadata ? "pointer-events-none" : "pointer-events-none invisible sticky top-0 flex items-center justify-between gap-3 border-b border-stone-300 px-3 py-1"} style={hasMetadata ? { height: layout?.controlsHeight ?? 0 } : undefined}>
+        {!hasMetadata && <><span className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-bold">Back to Setup</span>
+        <span className="text-sm font-bold">Page {layout ? visiblePage + 1 : 0} of {layout?.pages.length ?? 0}</span></>}
       </div>
       {/* The existing Safari viewport excludes vertical unsafe areas (no viewport-fit: cover).
           Equal side gutters also protect landscape insets without offsetting the title. */}
-      <header aria-label="Lyric test controls" className="pointer-events-none fixed inset-x-0 top-0 z-20 grid grid-cols-[9rem_minmax(0,1fr)_9rem] items-center border-b border-white/15 bg-[#080808] text-white"
-        style={{ height: layout?.controlsHeight ?? 47, paddingInline: "max(12px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))" }}>
+      <header ref={header} aria-label="Lyric test controls" className={`pointer-events-none fixed inset-x-0 top-0 z-20 grid ${hasMetadata ? "grid-cols-[8rem_minmax(0,1fr)_8rem]" : "grid-cols-[9rem_minmax(0,1fr)_9rem]"} items-center border-b border-white/15 bg-[#080808] text-white`}
+        style={{ height: hasMetadata ? undefined : layout?.controlsHeight ?? 47, paddingInline: "max(12px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))" }}>
         {onCalibrate ? <div className={config.fullscreen ? "min-w-0 pl-16" : "min-w-0"}>
           {/* Safari owns the upper-left fullscreen exit control. Reserve 64px
               inside the existing header without changing its height or flow. */}
@@ -84,6 +88,10 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
           : <div className="min-w-0 text-xs text-white/70"><span className="block truncate">Page {layout ? visiblePage + 1 : 0} of {layout?.pages.length ?? 0}</span>{fullscreenLabel && <span role="status" title={fullscreenLabel} className="block truncate text-[10px]">{fullscreenLabel}</span>}</div>}
         <h1 title={config.title || "Lyric Test"} className="min-w-0 truncate text-center font-bold uppercase tracking-wide" style={{ fontSize: "clamp(18px, 3.5vw, 26px)", lineHeight: "32px" }}><button type="button" aria-label="Toggle lyric calibration diagnostics" aria-expanded={debugOpen} aria-controls="footswitch-runtime-diagnostics" onClick={() => setDebugOpen((value) => !value)} className="pointer-events-auto flex min-h-11 w-full min-w-0 items-center justify-center"><span className="truncate">{config.title || "Lyric Test"}</span></button></h1>
         <button type="button" onClick={onReturn} aria-label="Close lyric test and return to setup" className="pointer-events-auto flex min-h-11 items-center justify-end gap-1 rounded-lg px-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-white"><span aria-hidden="true">×</span> Close</button>
+        {hasMetadata && <div className="col-span-3 min-w-0 space-y-1 pb-2 text-center">
+          {config.songKey?.trim() && <p className="whitespace-pre-wrap break-words text-sm font-bold leading-5 [overflow-wrap:anywhere]">KEY: {config.songKey}</p>}
+          {config.performanceFlow?.trim() && <p aria-label="Performance Flow / Break Order" className="whitespace-pre-wrap break-words text-base leading-6 [overflow-wrap:anywhere]">{config.performanceFlow}</p>}
+        </div>}
       </header>
       {debugOpen && <aside id="footswitch-runtime-diagnostics" aria-label="Runtime lyric calibration diagnostics" className="pointer-events-none fixed inset-x-3 bottom-3 z-30 mx-auto max-w-xl rounded-lg border border-white/25 bg-black/90 p-3 text-xs text-white" style={{ bottom: "max(12px, env(safe-area-inset-bottom, 0px))" }}>
         <div className="flex items-center justify-between"><strong>Runtime calibration · tap title to hide</strong><button type="button" className="pointer-events-auto min-h-11 px-2 font-bold" aria-label="Hide calibration diagnostics" onClick={() => setDebugOpen(false)}>Hide</button></div>
@@ -92,6 +100,7 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
           <div><dt>Requested / rendered font</dt><dd>{debug.requestedSize === 56 ? "Maximum" : debug.requestedSize === 48 ? "Extra Large" : "Large"} ({debug.requestedSize}px) / {debug.renderedSize ?? "Unavailable"}</dd></div>
           <div><dt>Requested / applied calibration</dt><dd>{debug.calibration}px / {debug.appliedCalibration}px</dd></div>
           <div><dt>Measured viewport height</dt><dd>{debug.viewportHeight.toFixed(1)}px</dd></div>
+          <div><dt>Measured header height</dt><dd>{layout?.controlsHeight.toFixed(1)}px</dd></div>
           <div><dt>Base / calibrated page height</dt><dd>{debug.calculatedHeight.toFixed(1)}px / {debug.targetHeight.toFixed(1)}px</dd></div>
           <div><dt>Rendered page {debug.page} / CSS min-height</dt><dd>{debug.renderedHeight.toFixed(1)}px / {debug.cssMinHeight ?? "Unavailable"}</dd></div>
           <div><dt>Document scrollY</dt><dd>{debug.scrollY.toFixed(1)}px</dd></div>

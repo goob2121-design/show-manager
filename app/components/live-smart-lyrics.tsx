@@ -13,7 +13,7 @@ import { FootswitchReturnTestDisplay } from "./footswitch-return-test-display";
 // Rollback: set false to restore the preserved Live Mode modal and Auto Scroll UI.
 export const SMART_LYRIC_PAGING_ENABLED: boolean = true;
 
-export function LiveSmartLyrics({ song, fullscreen, onClose, exitFullscreenOnClose = true }: { song: { id: string; title: string; lyrics: string | null }; fullscreen: ReturnType<typeof useDiagnosticFullscreen>; onClose: () => void; exitFullscreenOnClose?: boolean }) {
+export function LiveSmartLyrics({ song, fullscreen, onClose, exitFullscreenOnClose = true }: { song: { id: string; title: string; lyrics: string | null; key?: string | null; performanceFlow?: string | null }; fullscreen: ReturnType<typeof useDiagnosticFullscreen>; onClose: () => void; exitFullscreenOnClose?: boolean }) {
   const { settings, setSettings, orientation, loaded, storageUnavailable } = useDiagnosticSettings();
   const fullscreenMessage = ["Unavailable", "Declined", "Not entered"].includes(fullscreen.status.label)
     ? "Lyrics remain available normally. Fullscreen is optional." : fullscreen.status.message;
@@ -23,7 +23,7 @@ export function LiveSmartLyrics({ song, fullscreen, onClose, exitFullscreenOnClo
   useEffect(() => applyDocumentSnap(document, "off", 0), []);
   const config = useMemo<SmartPagingConfig>(() => ({ sample: settings.sample, preferredSize: settings.preferredSize,
     calibration: orientationCalibration(settings, orientation, fullscreen.status.active), orientation, fullscreen: fullscreen.status.active,
-    source: "stageflow", songId: song.id, title: song.title }), [settings, orientation, fullscreen.status.active, song.id, song.title]);
+    source: "stageflow", songId: song.id, title: song.title, songKey: song.key, performanceFlow: song.performanceFlow }), [settings, orientation, fullscreen.status.active, song.id, song.title, song.key, song.performanceFlow]);
   const close = () => {
     // Keep a pre-existing Live Mode fullscreen session; exit only lyric-owned entry.
     flushSync(onClose);
@@ -51,6 +51,7 @@ export function LiveSmartLyrics({ song, fullscreen, onClose, exitFullscreenOnClo
     onStart={() => flushSync(() => setCalibrating(false))} sectionCount={splitLyricSections(song.lyrics).length}
     fullscreenControls={controls} returnLabel="Back to Live Mode" startLabel={fullscreen.status.active ? "RESUME LYRICS IN FULLSCREEN" : "RESUME LYRICS"}
     experimentControls={<label className="mt-4 block rounded-xl border p-3 font-bold"><input type="checkbox" checked={settings.footswitchReturnToSetlist} onChange={(event) => setSettings((current) => ({ ...current, footswitchReturnToSetlist: event.target.checked }))} className="mr-2 h-5 w-5 align-middle" />Footswitch Return to Setlist<span className="mt-1 block text-sm font-normal">After the final lyrics, another downward scroll returns to the current Live Mode song. Off by default.</span></label>}
+    sourceControls={Boolean(song.key?.trim() || song.performanceFlow?.trim()) ? <p className="mt-3 text-sm">The key/arrangement header is measured automatically. Its height can change page alignment; verify calibration on your iPad. Existing saved values are preserved.</p> : undefined}
     notice={storageUnavailable ? "Settings storage is unavailable. Changes apply for this session only." : undefined} />;
   return <>
     {settings.footswitchReturnToSetlist

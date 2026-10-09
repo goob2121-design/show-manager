@@ -43,12 +43,14 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
     "./footswitch-document-snap": { applyDocumentSnap: () => {} },
     "./footswitch-lyric-paging": { splitLyricSections: (lyrics) => lyrics.split(/\n\n/) },
   });
-  let song = { id: "live-entry", title: "Long title & special é", lyrics: "VERSE 1\r\n[G] Original!\r\n\r\nCHORUS\r\nAgain" };
+  let song = { id: "live-entry", title: "Long title & special é", key: "G", performanceFlow: "Banjo Kick, Mando, Guitar/Fiddle, Banjo Outro", lyrics: "VERSE 1\r\n[G] Original!\r\n\r\nCHORUS\r\nAgain" };
   const render = () => { index = memoIndex = 0; return LiveSmartLyrics({ song, exitFullscreenOnClose, fullscreen: { status, request: () => { requests++; }, close: () => { assert.equal(closed, true); exits++; } }, onClose: () => { closed = true; } }); };
   let view = render();
   let display = nodes(view).find((node) => node.type.name === "Display");
   assert.equal(display.props.lyricText, song.lyrics);
   assert.equal(display.props.config.title, song.title);
+  assert.equal(display.props.config.songKey, song.key);
+  assert.equal(display.props.config.performanceFlow, song.performanceFlow);
   assert.equal(display.props.config.calibration, -90);
   nodes(view).find((node) => node.type === "button").props.onClick();
   assert.equal(requests, 1, "Fullscreen is requested synchronously from the tap");

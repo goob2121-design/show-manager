@@ -22,6 +22,74 @@ function elements(element, list = []) {
 const utility = compile("footswitch-lyric-paging");
 const samples = compile("footswitch-smart-paging-samples");
 
+test("fixed key/arrangement header hides missing fields, preserves punctuation and wraps without clipping", () => {
+  const arrangement = "  Banjo Kick, Mando, Guitar/Fiddle, Banjo, Banjo Outro\n" + "Long arrangement, Fiddle/Guitar, ".repeat(15) + "Ending  ";
+  for (const metadata of [{ songKey: "G", performanceFlow: arrangement }, { songKey: "G" }, { performanceFlow: arrangement }, {}, { songKey: " \n", performanceFlow: " \n" }]) {
+    const present = Boolean(metadata.songKey?.trim() || metadata.performanceFlow?.trim());
+    const layout = { controlsHeight: present ? 116 : 47, pageHeight: 615, calculatedHeight: 790, appliedCalibration: -175,
+      pages: [{ section: 1, part: 1, fontSize: 56, lines: [{ text: "Original [G] lyrics", originalLine: 0 }] }] };
+    const react = { ...require("react"), useRef: () => ({ current: null }), useEffect: () => {}, useState: (value) => [value === null ? layout : value, () => {}] };
+    const { SmartLyricPagingDisplay } = compile("footswitch-smart-paging-display", react);
+    const view = SmartLyricPagingDisplay({ config: { sample: "realistic", title: "LITTLE CABIN HOME ON THE HILL", preferredSize: 56, calibration: -175, ...metadata }, onReturn: () => {}, onMeasurement: () => {} });
+    const nodes = elements(view);
+    const header = nodes.find((node) => node.type === "header");
+    assert.match(header.props.className, /fixed inset-x-0 top-0/);
+    assert.equal(header.props.style.height, present ? undefined : 47, "Expanded height is natural, never guessed");
+    assert.equal(nodes.find((node) => node.type === "h1").props.style.fontSize, "clamp(18px, 3.5vw, 26px)");
+    const flow = nodes.find((node) => node.props["aria-label"] === "Performance Flow / Break Order");
+    assert.equal(Boolean(flow), Boolean(metadata.performanceFlow?.trim()));
+    if (flow) {
+      assert.equal(flow.props.children, arrangement, "All supplied whitespace and punctuation reaches the DOM unchanged");
+      assert.match(flow.props.className, /whitespace-pre-wrap break-words text-base leading-6/);
+      assert.doesNotMatch(flow.props.className, /truncate|line-clamp|overflow(?:-[xy])?-(hidden|scroll|auto)/);
+    }
+    const key = nodes.find((node) => node.type === "p" && Array.isArray(node.props.children) && node.props.children[0] === "KEY: ");
+    assert.equal(Boolean(key), Boolean(metadata.songKey?.trim()));
+    if (key) assert.equal(key.props.children[1], "G");
+    const spacer = nodes.find((node) => node.props.ref && node.props["aria-hidden"] && node.type === "div" && !/fixed/.test(node.props.className));
+    assert.equal(spacer.props.style?.height, present ? 116 : undefined);
+    const lyricPage = nodes.find((node) => "data-smart-lyric-page" in node.props);
+    assert.equal(lyricPage.props.style.fontSize, 56);
+    assert.equal(lyricPage.props.style.minHeight, 615);
+    assert.ok(renderToStaticMarkup(view).includes("Original [G] lyrics"));
+  }
+});
+
+test("actual header height drives paging and reflows on wrapping/viewport changes without changing calibration", () => {
+  let headerHeight = 116;
+  const effects = [], updates = [], observed = [];
+  let resize, disconnected = false, refIndex = 0;
+  const page = Object.assign(new EventTarget(), { innerHeight: 906, scrollY: 0,
+    visualViewport: Object.assign(new EventTarget(), { height: 906, offsetTop: 0 }),
+    ResizeObserver: class { constructor(fn) { resize = fn; } observe(element) { observed.push(element); } disconnect() { disconnected = true; } } });
+  const header = { getBoundingClientRect: () => ({ height: headerHeight, bottom: headerHeight }) };
+  const controls = { getBoundingClientRect: () => ({ height: 47, bottom: 47 }) };
+  const rail = { getBoundingClientRect: () => ({ width: 768 }), querySelectorAll: () => [] };
+  const probe = { style: {}, textContent: "", getBoundingClientRect: () => ({ height: parseFloat(probe.style.fontSize) * 1.4 }) };
+  const refs = [controls, rail, probe, null, header];
+  const react = { ...require("react"), useRef: () => ({ current: refs[refIndex++] }), useEffect: (fn) => effects.push(fn), useState: (initial) => [initial, (value) => updates.push(value)] };
+  const { SmartLyricPagingDisplay } = compile("footswitch-smart-paging-display", react, { window: page, document: { scrollingElement: { clientHeight: 906 } } });
+  SmartLyricPagingDisplay({ config: { sample: "realistic", songKey: "G", performanceFlow: "Banjo, Mando/Guitar", preferredSize: 56, calibration: -175 }, lyricText: "VERSE\nOriginal", onReturn: () => {}, onMeasurement: () => {} });
+  const cleanup = effects[0]();
+  assert.equal(observed[0], header, "Observe the rendered header, not its spacer");
+  assert.equal(updates.at(-1).controlsHeight, 116);
+  assert.equal(updates.at(-1).calculatedHeight, 790);
+  assert.equal(updates.at(-1).pageHeight, 615);
+  assert.equal(updates.at(-1).appliedCalibration, -175);
+  assert.equal(updates.at(-1).pages[0].fontSize, 56);
+  headerHeight = 196; resize();
+  assert.equal(updates.at(-1).controlsHeight, 196);
+  assert.equal(updates.at(-1).pageHeight, 535);
+  page.visualViewport.height = 1000;
+  page.visualViewport.dispatchEvent(new Event("resize"));
+  assert.equal(updates.at(-1).pageHeight, 629);
+  assert.equal(updates.at(-1).appliedCalibration, -175);
+  cleanup(); const count = updates.length;
+  page.dispatchEvent(new Event("resize"));
+  assert.equal(updates.length, count);
+  assert.equal(disconnected, true);
+});
+
 test("return experiment defaults off, opt-in wraps only the standalone display and preserves saved fullscreen settings", () => {
   const state = [];
   let index = 0;
