@@ -61,7 +61,7 @@ import {
 } from "@/lib/show-reminders";
 import { buildMcPlacementSponsors, sortMcSponsorReads } from "@/lib/mc-sponsor-reads";
 import { createClient } from "@/lib/supabase/client";
-import { resolveLeadVocal, resolveSongKey } from "@/lib/song-resolvers";
+import { performanceFlowOverrideForSave, resolveLeadVocal, resolvePerformanceFlow, resolveSongKey } from "@/lib/song-resolvers";
 import { aggregateFinanceItems, normalizePersonnelPayout } from "@/lib/show-personnel";
 import type {
   CompTicketFormState,
@@ -1724,7 +1724,7 @@ function buildSongEditFormState(song: {
 function buildSetlistSongEditFormState(song: SetlistSong): SetlistSongEditFormState {
   return {
     customTitle: song.custom_title ?? "",
-    performanceFlow: song.performance_flow ?? "",
+    performanceFlow: resolvePerformanceFlow(song) ?? "",
     songIntroNotes: song.song_intro_notes ?? "",
   };
 }
@@ -6559,7 +6559,7 @@ function buildSetlistInsertDefaults(song: SongLibrarySong) {
 }
 function buildAdminSongLiveSetupDraft(entry: SetlistSong): AdminSongLiveSetupDraft {
   return {
-    performanceFlow: entry.performance_flow ?? "",
+    performanceFlow: resolvePerformanceFlow(entry) ?? "",
     songIntroNotes: entry.song_intro_notes ?? "",
     autoOpenLyrics: entry.intro_auto_open_lyrics ?? readAdminSongLiveBool(ADMIN_SONG_INTRO_AUTO_OPEN_KEY, entry.id, false),
     introDelay: entry.intro_auto_open_delay ?? readAdminSongLiveNumber(ADMIN_SONG_INTRO_DELAY_KEY, entry.id, 0),
@@ -9554,7 +9554,7 @@ export function ShowPage({
               created_at,
                 library_song:song_id (
                   id,
-                  title,
+                  title, default_performance_flow,
                   key,
                   sung_by,
                   tempo,
@@ -9614,7 +9614,7 @@ export function ShowPage({
                 *,
                 library_song:song_id (
                   id,
-                  title,
+                  title, default_performance_flow,
                   key,
                   sung_by,
                   tempo,
@@ -15109,7 +15109,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           created_at,
           library_song:song_id (
             id,
-            title,
+            title, default_performance_flow,
             key,
             sung_by,
             tempo,
@@ -15634,7 +15634,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           *,
           library_song:song_id (
             id,
-            title,
+            title, default_performance_flow,
             key,
             sung_by,
             tempo,
@@ -15723,7 +15723,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           *,
           library_song:song_id (
             id,
-            title,
+            title, default_performance_flow,
             key,
             sung_by,
             tempo,
@@ -15830,7 +15830,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           *,
           library_song:song_id (
             id,
-            title,
+            title, default_performance_flow,
             key,
             sung_by,
             tempo,
@@ -15914,7 +15914,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           *,
           library_song:song_id (
             id,
-            title,
+            title, default_performance_flow,
             key,
             sung_by,
             tempo,
@@ -16035,7 +16035,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
           *,
           library_song:song_id (
             id,
-            title,
+            title, default_performance_flow,
             key,
             sung_by,
             tempo,
@@ -16464,7 +16464,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
               *,
               library_song:song_id (
                 id,
-                title,
+                title, default_performance_flow,
                 key,
                 sung_by,
                 tempo,
@@ -17241,6 +17241,21 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     await handleSaveAdminSongPerformanceDefaultsFromDraft(songId, defaultsDraft);
   }
 
+  async function handleUseLibraryPerformanceFlow(entryId: string) {
+    const entry = setlist.find((item) => item.id === entryId);
+    if (!entry || entry.source_type !== "library" || !canEditSetlistSong()) return;
+    setActionError(null);
+    setActiveSetlistActionId(entryId);
+    try {
+      const { error } = await createClient().from("setlist_entries").update({ performance_flow: null }).eq("id", entryId);
+      if (error) throw error;
+      const updated = { ...entry, performance_flow: null };
+      setSetlist((current) => current.map((item) => item.id === entryId ? updated : item));
+      setAdminSongLiveSetupDrafts((current) => ({ ...current, [entryId]: { ...(current[entryId] ?? buildAdminSongLiveSetupDraft(updated)), performanceFlow: resolvePerformanceFlow(updated) ?? "" } }));
+    } catch (error) { setActionError(getErrorMessage(error)); }
+    finally { setActiveSetlistActionId(null); }
+  }
+
   async function handleSaveAdminSongPerformanceDefaultsFromDraft(songId: string, draft: AdminSongPerformanceDefaultsDraft) {
     const song = songLibrary.find((item) => item.id === songId);
     if (!song || !canEditLibrarySong(song)) return;
@@ -17295,7 +17310,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
       return;
     }
 
-    const performanceFlow = normalizeOptionalField(draft.performanceFlow);
+    const performanceFlow = performanceFlowOverrideForSave(draft.performanceFlow, resolvePerformanceFlow(songToUpdate) ?? "", songToUpdate.performance_flow);
     const songIntroNotes = normalizeOptionalField(draft.songIntroNotes);
 
     setActionError(null);
@@ -17369,7 +17384,7 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
 
     const customTitle = normalizeOptionalField(setlistSongEditFormState.customTitle);
-    const performanceFlow = normalizeOptionalField(setlistSongEditFormState.performanceFlow);
+    const performanceFlow = performanceFlowOverrideForSave(setlistSongEditFormState.performanceFlow, resolvePerformanceFlow(songToUpdate) ?? "", songToUpdate.performance_flow);
     const songIntroNotes = normalizeOptionalField(setlistSongEditFormState.songIntroNotes);
 
     setActionError(null);
@@ -28089,7 +28104,7 @@ The official show setlist is shown first in its live order. Practice-only rehear
                               </button>
                               {expandedAdminSongPerformanceDefaults[song.id] ? (
                                 <div className="border-t border-violet-200 px-4 py-4">
-                                  <p className="text-xs font-semibold text-violet-900/70">These defaults are copied into a show when this song is added to a setlist.</p>
+                                  <p className="text-xs font-semibold text-violet-900/70">Songs inherit the library arrangement unless a show-specific override is saved. Other performance settings retain their existing behavior.</p>
                                   <div className="mt-3 grid gap-3 lg:grid-cols-2">
                                     <label className="text-sm font-semibold text-stone-700">Default Performance Flow / Break Order
                                       <textarea value={defaultsDraft.performanceFlow} onChange={(event) => updateAdminSongPerformanceDefaultsDraft(song.id, (current) => ({ ...current, performanceFlow: event.target.value }))} rows={5} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" />
@@ -28153,6 +28168,7 @@ The official show setlist is shown first in its live order. Practice-only rehear
                                         <div className="mt-3 grid gap-3 lg:grid-cols-2">
                                           <label className="text-sm font-semibold text-stone-700">Performance Flow / Break Order
                                             <textarea value={draft.performanceFlow} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, performanceFlow: event.target.value }))} rows={5} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" placeholder="Break order, solos, tags, repeats, endings..." />
+                                            <span className="mt-1 block text-xs">{draft.performanceFlow !== (resolvePerformanceFlow(entry) ?? "") ? "Unsaved show arrangement change" : entry.performance_flow?.trim() ? "Show-specific override" : song.default_performance_flow?.trim() ? "Inherited from Song Library" : "No arrangement"}</span>
                                           </label>
                                           <label className="text-sm font-semibold text-stone-700">Song Intro Notes
                                             <textarea value={draft.songIntroNotes} onChange={(event) => updateAdminSongLiveSetupDraft(entry.id, (current) => ({ ...current, songIntroNotes: event.target.value }))} rows={5} className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900" placeholder="MC read, sponsor intro, or song setup..." />
@@ -28182,6 +28198,7 @@ The official show setlist is shown first in its live order. Practice-only rehear
                                           </label>
                                         </div>
                                         <div className="mt-4 flex flex-wrap gap-2">
+                                          <button type="button" onClick={() => handleUseLibraryPerformanceFlow(entry.id)} disabled={activeSetlistActionId === entry.id} className="rounded-xl border border-sky-300 bg-white px-4 py-2.5 text-sm font-bold text-sky-800 disabled:opacity-60">Use Library Default</button>
                                           <button type="button" onClick={() => handleUpdateSetlistEntryFromLibraryDefaults(entry.id, song.id)} disabled={activeSetlistActionId === entry.id} className="rounded-xl border border-sky-300 bg-white px-4 py-2.5 text-sm font-bold text-sky-800 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60">Update From Library Defaults</button>
                                           <button type="button" onClick={() => handleSaveSetlistEntryAsLibraryDefaults(entry.id, song.id)} disabled={activeSetlistActionId === entry.id} className="rounded-xl border border-violet-300 bg-white px-4 py-2.5 text-sm font-bold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60">Save This Show Setup as Library Defaults</button>
                                         </div>

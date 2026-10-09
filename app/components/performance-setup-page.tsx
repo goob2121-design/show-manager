@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FootswitchTest } from "./footswitch-test";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { resolveLeadVocal, resolvePerformanceFlow, resolveSongIntroNotes, resolveSongKey, resolveSongLyrics, resolveSongTitle } from "@/lib/song-resolvers";
+import { nonEmptyPerformanceFlow, performanceFlowOverrideForSave, resolveLeadVocal, resolvePerformanceFlow, resolveSongIntroNotes, resolveSongKey, resolveSongLyrics, resolveSongTitle } from "@/lib/song-resolvers";
 import type { ShowRecord, SongTempo, SongType } from "@/lib/types";
 
 const FONT_KEY = "stageflow_live_lyrics_font_size";
@@ -20,12 +20,12 @@ const SPEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const FONT_SIZES = [18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42];
 const PERFORMANCE_SETUP_SELECT = `
   id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, key_override, sung_by_override, performance_flow, song_intro_notes, intro_auto_open_lyrics, intro_auto_open_delay, lyrics_auto_start_scroll, lyrics_auto_scroll_speed, lyrics_auto_scroll_delay, lyrics_font_size, lyrics_reading_mode, created_at,
-  library_song:song_id (id, title, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics, default_intro_auto_open_lyrics, default_intro_auto_open_delay, default_lyrics_auto_start_scroll, default_lyrics_auto_scroll_speed, default_lyrics_auto_scroll_delay, default_lyrics_font_size, default_lyrics_reading_mode),
+  library_song:song_id (id, title, default_performance_flow, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics, default_intro_auto_open_lyrics, default_intro_auto_open_delay, default_lyrics_auto_start_scroll, default_lyrics_auto_scroll_speed, default_lyrics_auto_scroll_delay, default_lyrics_font_size, default_lyrics_reading_mode),
   guest_song:guest_song_id (id, title, key, sung_by, tempo, song_type, lyrics, submitted_by_name)
 `;
 const LEGACY_PERFORMANCE_SETUP_SELECT = `
   id, show_id, section, position, source_type, song_id, guest_song_id, custom_title, key_override, sung_by_override, performance_flow, song_intro_notes, created_at,
-  library_song:song_id (id, title, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics),
+  library_song:song_id (id, title, default_performance_flow, key, sung_by, tempo, song_type, performance_flow, song_intro_notes, lyrics),
   guest_song:guest_song_id (id, title, key, sung_by, tempo, song_type, lyrics, submitted_by_name)
 `;
 
@@ -42,7 +42,7 @@ type Row = {
 };
 type SetupSong = {
   id: string; section: SectionKey; songNumber: number; sourceType: string | null; songId: string | null; guestSongId: string | null; title: string; key: string | null; lead: string | null; songType: SongType | null;
-  keyOverride: string | null; sungByOverride: string | null; inheritedKey: string | null; inheritedLead: string | null; lyrics: string | null; performanceFlow: string; songIntroNotes: string; initialSettings: Partial<Settings>;
+  keyOverride: string | null; sungByOverride: string | null; inheritedKey: string | null; inheritedLead: string | null; lyrics: string | null; performanceFlow: string; performanceFlowOverride: string | null; libraryPerformanceFlow: string | null; songIntroNotes: string; initialSettings: Partial<Settings>;
 };
 type Settings = { autoStart: boolean; speed: number; delay: number; fontSize: number; reading: boolean; introAuto: boolean; introDelay: number };
 type SettingsKey = keyof Settings;
@@ -68,7 +68,7 @@ function loadSettings(id: string): Settings { return { autoStart: readBool(AUTOS
 function saveSettings(id: string, s: Settings) { write(id, AUTOSTART_KEY, s.autoStart); write(id, SPEED_KEY, s.speed); write(id, DELAY_KEY, s.delay); write(id, FONT_KEY, s.fontSize); write(id, MODE_KEY, s.reading); write(id, INTRO_ENABLED_KEY, s.introAuto); write(id, INTRO_DELAY_KEY, s.introDelay); }
 function mergeDefinedSettings(saved: Settings, initial: Partial<Settings>): Settings { return { autoStart: initial.autoStart ?? saved.autoStart, speed: initial.speed ?? saved.speed, delay: initial.delay ?? saved.delay, fontSize: initial.fontSize ?? saved.fontSize, reading: initial.reading ?? saved.reading, introAuto: initial.introAuto ?? saved.introAuto, introDelay: initial.introDelay ?? saved.introDelay }; }
 function databaseSettingsUpdate(changes: Partial<Settings>) { const payload: Record<string, boolean | number> = {}; for (const settingKey of Object.keys(changes) as SettingsKey[]) { const value = changes[settingKey]; if (value !== undefined) payload[SETTINGS_DATABASE_FIELDS[settingKey]] = value; } return payload; }
-function normalize(row: Row, songNumber: number): SetupSong { const lib = first(row.library_song); const guest = first(row.guest_song); const section = sec(row.section); return { id: row.id, section, songNumber, sourceType: row.source_type, songId: row.song_id, guestSongId: row.guest_song_id, title: resolveSongTitle(row), key: resolveSongKey(row), lead: resolveLeadVocal(row), keyOverride: row.key_override ?? null, sungByOverride: row.sung_by_override ?? null, inheritedKey: resolveSongKey({ ...row, key_override: null }), inheritedLead: resolveLeadVocal({ ...row, sung_by_override: null }), songType: lib?.song_type ?? guest?.song_type ?? null, lyrics: resolveSongLyrics(row), performanceFlow: resolvePerformanceFlow(row)?.trim() || "", songIntroNotes: resolveSongIntroNotes(row)?.trim() || "", initialSettings: { autoStart: row.lyrics_auto_start_scroll ?? lib?.default_lyrics_auto_start_scroll ?? undefined, speed: row.lyrics_auto_scroll_speed ?? lib?.default_lyrics_auto_scroll_speed ?? undefined, delay: row.lyrics_auto_scroll_delay ?? lib?.default_lyrics_auto_scroll_delay ?? undefined, fontSize: row.lyrics_font_size ?? lib?.default_lyrics_font_size ?? undefined, reading: row.lyrics_reading_mode ?? lib?.default_lyrics_reading_mode ?? undefined, introAuto: row.intro_auto_open_lyrics ?? lib?.default_intro_auto_open_lyrics ?? undefined, introDelay: row.intro_auto_open_delay ?? lib?.default_intro_auto_open_delay ?? undefined } }; }
+function normalize(row: Row, songNumber: number): SetupSong { const lib = first(row.library_song); const guest = first(row.guest_song); const section = sec(row.section); return { id: row.id, section, songNumber, sourceType: row.source_type, songId: row.song_id, guestSongId: row.guest_song_id, title: resolveSongTitle(row), key: resolveSongKey(row), lead: resolveLeadVocal(row), keyOverride: row.key_override ?? null, sungByOverride: row.sung_by_override ?? null, inheritedKey: resolveSongKey({ ...row, key_override: null }), inheritedLead: resolveLeadVocal({ ...row, sung_by_override: null }), songType: lib?.song_type ?? guest?.song_type ?? null, lyrics: resolveSongLyrics(row), performanceFlow: resolvePerformanceFlow(row) ?? "", performanceFlowOverride: nonEmptyPerformanceFlow(row.performance_flow), libraryPerformanceFlow: nonEmptyPerformanceFlow(lib?.default_performance_flow), songIntroNotes: resolveSongIntroNotes(row)?.trim() || "", initialSettings: { autoStart: row.lyrics_auto_start_scroll ?? lib?.default_lyrics_auto_start_scroll ?? undefined, speed: row.lyrics_auto_scroll_speed ?? lib?.default_lyrics_auto_scroll_speed ?? undefined, delay: row.lyrics_auto_scroll_delay ?? lib?.default_lyrics_auto_scroll_delay ?? undefined, fontSize: row.lyrics_font_size ?? lib?.default_lyrics_font_size ?? undefined, reading: row.lyrics_reading_mode ?? lib?.default_lyrics_reading_mode ?? undefined, introAuto: row.intro_auto_open_lyrics ?? lib?.default_intro_auto_open_lyrics ?? undefined, introDelay: row.intro_auto_open_delay ?? lib?.default_intro_auto_open_delay ?? undefined } }; }
 function status(song: SetupSong, s: Settings): Status { const hasLyrics = Boolean(song.lyrics?.trim()); const hasFlow = Boolean(song.performanceFlow.trim()); const hasIntro = Boolean(song.songIntroNotes.trim()); if (song.songType === "instrumental" && !hasLyrics && !s.introAuto) return "na"; if (!hasLyrics) return "missing"; if (s.introAuto && !hasIntro) return "missing"; if (!hasFlow || (s.introAuto && s.introDelay <= 0)) return "attention"; return "ready"; }
 function statusLabel(value: Status) { return value === "ready" ? "Ready" : value === "attention" ? "Needs Attention" : value === "missing" ? "Missing Content" : "Not Applicable"; }
 function statusClass(value: Status) { return value === "ready" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : value === "attention" ? "border-amber-300 bg-amber-50 text-amber-800" : value === "missing" ? "border-rose-300 bg-rose-50 text-rose-800" : "border-slate-300 bg-slate-100 text-slate-700"; }
@@ -176,7 +176,7 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
     setSavingId(song.id); setMessage(null); setError(null);
     try {
       const supabase = createClient();
-      const performance_flow = flowDrafts[song.id]?.trim() || null;
+      const performance_flow = performanceFlowOverrideForSave(flowDrafts[song.id] ?? song.performanceFlow, song.performanceFlow, song.performanceFlowOverride);
       const song_intro_notes = introDrafts[song.id]?.trim() || null;
       const lyrics = lyricsDrafts[song.id]?.trim() || null;
       const { error: saveError } = await supabase.from("setlist_entries").update({ performance_flow, song_intro_notes }).eq("id", song.id);
@@ -188,9 +188,24 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
         const { error: lyricsError } = await supabase.from("show_guest_songs").update({ lyrics }).eq("id", song.guestSongId);
         if (lyricsError) throw lyricsError;
       }
-      setSongs((current) => current.map((item) => item.id === song.id ? { ...item, performanceFlow: performance_flow ?? "", songIntroNotes: song_intro_notes ?? "", lyrics } : item));
+      const effectiveFlow = performance_flow ?? song.libraryPerformanceFlow ?? "";
+      setSongs((current) => current.map((item) => item.id === song.id ? { ...item, performanceFlow: effectiveFlow, performanceFlowOverride: performance_flow, songIntroNotes: song_intro_notes ?? "", lyrics } : item));
+      setFlowDrafts((current) => ({ ...current, [song.id]: effectiveFlow }));
       setMessage(`Saved performance setup for ${song.title}.`);
     } catch (err) { setError(err instanceof Error ? err.message : "Could not save setup notes or lyrics."); }
+    finally { setSavingId(null); }
+  }
+
+  async function clearPerformanceFlowOverride(song: SetupSong) {
+    setSavingId(song.id); setMessage(null); setError(null);
+    try {
+      const { error: saveError } = await createClient().from("setlist_entries").update({ performance_flow: null }).eq("id", song.id);
+      if (saveError) throw saveError;
+      const effectiveFlow = song.libraryPerformanceFlow ?? "";
+      setSongs((current) => current.map((item) => item.id === song.id ? { ...item, performanceFlow: effectiveFlow, performanceFlowOverride: null } : item));
+      setFlowDrafts((current) => ({ ...current, [song.id]: effectiveFlow }));
+      setMessage(`Using the Song Library arrangement for ${song.title}.`);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not clear the show arrangement."); }
     finally { setSavingId(null); }
   }
 
@@ -322,6 +337,8 @@ export function PerformanceSetupPage({ showSlug }: { showSlug: string }) {
                             <span className={`rounded-full px-2 py-1 text-xs font-bold ${hasFlow ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{hasFlow ? "Ready" : "Needs Flow"}</span>
                           </div>
                           <textarea value={flowDrafts[song.id] ?? ""} onChange={(e) => setFlowDrafts((current) => ({ ...current, [song.id]: e.target.value }))} rows={10} placeholder="Break order, solos, tags, repeats, endings..." className="mt-3 w-full rounded-2xl border border-stone-300 bg-white p-3 text-sm leading-6 text-stone-900 outline-none focus:border-emerald-500 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100" />
+                          <p className="mt-2 text-sm">{(flowDrafts[song.id] ?? song.performanceFlow) !== song.performanceFlow ? "Unsaved show arrangement change" : song.performanceFlowOverride ? "Show-specific override" : song.libraryPerformanceFlow ? "Inherited from Song Library" : "No arrangement"}</p>
+                          {song.sourceType === "library" && <button type="button" onClick={() => clearPerformanceFlowOverride(song)} disabled={savingId === song.id} className="mt-2 rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold disabled:opacity-60">Use Library Default</button>}
                         </section>
                       </div>
 

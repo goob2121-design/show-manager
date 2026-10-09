@@ -486,7 +486,7 @@ function normalizeLiveSong(
   const key = resolveSongKey(row);
   const leadVocal = resolveLeadVocal(row);
   const performerName = guestSong?.submitted_by_name?.trim() || leadVocal?.trim() || null;
-  const performanceFlow = resolvePerformanceFlow(row)?.trim() || null;
+  const performanceFlow = resolvePerformanceFlow(row);
   const songIntroNotes = resolveSongIntroNotes(row)?.trim() || null;
   const performanceNotes = stripMp3MarkerFromNotes(librarySong?.notes ?? guestSong?.notes ?? null);
   const rehearsalEntry =
@@ -988,7 +988,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               created_at,
               library_song:song_id (
                 id,
-                title,
+                title, default_performance_flow,
                 key,
                 sung_by,
                 tempo,
@@ -1018,7 +1018,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               *,
               library_song:song_id (
                 id,
-                title,
+                title, default_performance_flow,
                 key,
                 sung_by
               )

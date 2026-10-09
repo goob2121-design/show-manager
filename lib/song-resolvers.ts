@@ -69,7 +69,17 @@ export function resolveSongTempo(entry: SongResolverRecord) {
 
 export function resolvePerformanceFlow(entry: SongResolverRecord) {
   const librarySong = resolveJoinedSong(entry.library_song);
-  return entry.performance_flow ?? librarySong?.default_performance_flow ?? null;
+  return nonEmptyPerformanceFlow(entry.performance_flow) ?? nonEmptyPerformanceFlow(librarySong?.default_performance_flow);
+}
+
+// Test for missing content without rewriting the user's arrangement notation.
+export function nonEmptyPerformanceFlow(value: string | null | undefined): string | null {
+  return value?.trim() ? value : null;
+}
+
+// An untouched effective value must not become a new show override on Save.
+export function performanceFlowOverrideForSave(draft: string, effective: string, override: string | null | undefined) {
+  return draft === effective ? nonEmptyPerformanceFlow(override) : nonEmptyPerformanceFlow(draft);
 }
 
 export function resolveSongIntroNotes(entry: SongResolverRecord) {

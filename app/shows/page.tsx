@@ -2056,6 +2056,7 @@ export default function ShowsDashboardPage() {
                 ? guestSongIdMap.get(song.guest_song_id) ?? null
                 : null,
             custom_title: song.custom_title,
+            performance_flow: song.performance_flow,
           })),
         );
 
