@@ -990,7 +990,7 @@ function getShowCardTone(isArchived: boolean) {
   };
 }
 
-const stageflowDashboardVersion = "StageFlow 5.0";
+const stageflowDashboardVersion = "StageFlow 6.0";
 
 export default function ShowsDashboardPage() {
   const router = useRouter();
@@ -2511,7 +2511,7 @@ export default function ShowsDashboardPage() {
                       Control Center
                     </p>
                     <p className="text-sm leading-6 text-stone-300 sm:text-base">
-                      Shows, songs, setlists, guests, rehearsal tools, and promo materials in one place.
+                      Your complete command center for show management, live performances, ticketing, and more.
                     </p>
                   </div>
                 </div>
