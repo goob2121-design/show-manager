@@ -61,7 +61,8 @@ import {
 } from "@/lib/show-reminders";
 import { buildMcPlacementSponsors, sortMcSponsorReads } from "@/lib/mc-sponsor-reads";
 import { createClient } from "@/lib/supabase/client";
-import { performanceFlowOverrideForSave, resolveLeadVocal, resolvePerformanceFlow, resolveSongKey } from "@/lib/song-resolvers";
+import { performanceFlowOverrideForSave, resolveJoinedSong, resolveLeadVocal, resolvePerformanceFlow, resolveSongKey } from "@/lib/song-resolvers";
+import { EXISTING_LIBRARY_DEFAULT_MESSAGE, savedPerformanceFlowSource, savePerformanceFlowDefault } from "@/lib/save-performance-flow-default";
 import { aggregateFinanceItems, normalizePersonnelPayout } from "@/lib/show-personnel";
 import type {
   CompTicketFormState,
@@ -128,6 +129,7 @@ type SongLibrarySong = SongRecord & {
 };
 
 type SetlistSong = SetlistEntry & {
+  library_song?: SongLibrarySong | SongLibrarySong[] | null;
   set_section: SetSection;
   artist: string | null;
   sung_by?: string | null;
@@ -6732,6 +6734,8 @@ export function ShowPage({
   const [expandedMcBlockNoteIds, setExpandedMcBlockNoteIds] = useState<string[]>([]);
   const [editingPoolSongId, setEditingPoolSongId] = useState<string | null>(null);
   const [editingSetlistSongId, setEditingSetlistSongId] = useState<string | null>(null);
+  const [libraryDefaultPromotion, setLibraryDefaultPromotion] = useState<{ entryId: string; busy: boolean; message: string } | null>(null);
+  const libraryDefaultPromotionPending = useRef(false);
   const [editingLibrarySongId, setEditingLibrarySongId] = useState<string | null>(null);
   const [librarySongMp3File, setLibrarySongMp3File] = useState<File | null>(null);
   const [librarySongMp3InputKey, setLibrarySongMp3InputKey] = useState(0);
@@ -17373,7 +17377,29 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     }
 
     setEditingSetlistSongId(songId);
+    setLibraryDefaultPromotion(null);
     setSetlistSongEditFormState(buildSetlistSongEditFormState(songToEdit));
+  }
+
+  async function handlePromoteSetlistPerformanceFlow(entryId: string) {
+    const entry = setlist.find((item) => item.id === entryId);
+    const librarySong = songLibrary.find((item) => item.id === entry?.song_id);
+    const arrangement = setlistSongEditFormState.performanceFlow;
+    if (!entry || entry.source_type !== "library" || !librarySong || !canEditLibrarySong(librarySong) || !arrangement?.trim() || libraryDefaultPromotionPending.current) return;
+    if (!window.confirm("Save this Performance Flow as the permanent Song Library default?\n\nFuture shows will automatically inherit this arrangement unless they have their own override.")) return;
+    libraryDefaultPromotionPending.current = true;
+    setLibraryDefaultPromotion({ entryId, busy: true, message: "Saving Library Default..." });
+    try {
+      const result = await savePerformanceFlowDefault(createClient(), librarySong.id, arrangement);
+      const value = result.song.default_performance_flow;
+      setSongLibrary((current) => current.map((song) => song.id === librarySong.id ? { ...song, default_performance_flow: value } : song));
+      setSetlist((current) => current.map((song) => song.song_id === librarySong.id ? { ...song, library_song: { ...(resolveJoinedSong(song.library_song) ?? librarySong), default_performance_flow: value } } : song));
+      // Refresh the default editor too, without changing any other draft fields.
+      setAdminSongPerformanceDefaultsDrafts((current) => ({ ...current, [librarySong.id]: { ...(current[librarySong.id] ?? buildAdminSongPerformanceDefaultsDraft(librarySong)), performanceFlow: value ?? "" } }));
+      setLibraryDefaultPromotion({ entryId, busy: false, message: result.saved ? "Performance Flow saved as Library Default. The current show arrangement has not been changed." : EXISTING_LIBRARY_DEFAULT_MESSAGE });
+    } catch (error) {
+      setLibraryDefaultPromotion({ entryId, busy: false, message: `Could not save Library Default: ${getErrorMessage(error)}` });
+    } finally { libraryDefaultPromotionPending.current = false; }
   }
 
   async function handleSaveSetlistSong(songId: string) {
@@ -25930,6 +25956,11 @@ The official show setlist is shown first in its live order. Practice-only rehear
                                   showLyrics={false}
                                   customTitleField
                                   performanceFlowField
+                                  performanceFlowActions={<div className="flex flex-col items-start gap-2">
+                                    <span className="rounded-full bg-stone-100 px-2 py-1 text-xs font-semibold text-stone-700">{savedPerformanceFlowSource(song.performance_flow, songLibrary.find((item) => item.id === song.song_id)?.default_performance_flow ?? resolveJoinedSong(song.library_song)?.default_performance_flow)}</span>
+                                    {song.source_type === "library" && song.song_id && songLibrary.some((item) => item.id === song.song_id && canEditLibrarySong(item)) && <button type="button" onClick={() => handlePromoteSetlistPerformanceFlow(song.id)} disabled={!setlistSongEditFormState.performanceFlow.trim() || libraryDefaultPromotion?.busy === true} className="rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60">Save as Library Default</button>}
+                                    {libraryDefaultPromotion?.entryId === song.id && <p role="status" className="text-sm text-stone-700">{libraryDefaultPromotion.message}</p>}
+                                  </div>}
                                   songIntroNotesField
                                   footer={
                                     <div className="mt-4 flex flex-col gap-3 sm:flex-row">

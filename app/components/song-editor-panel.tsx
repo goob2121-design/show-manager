@@ -49,6 +49,7 @@ type SharedSongEditorProps = {
   customTitlePlaceholder?: string;
   performanceFlowField?: boolean;
   performanceFlowPlaceholder?: string;
+  performanceFlowActions?: ReactNode;
   songIntroNotesField?: boolean;
   songIntroNotesPlaceholder?: string;
 };
@@ -81,6 +82,7 @@ export function SongEditorPanel({
   customTitlePlaceholder = "Leave blank to use the source song title",
   performanceFlowField = false,
   performanceFlowPlaceholder = "Intro - Fiddle\nVerse 1 - Lead vocal\nBanjo break\nVerse 2\nMandolin break\nTag ending",
+  performanceFlowActions,
   songIntroNotesField = false,
   songIntroNotesPlaceholder = "This next song was written by...\nHere's one we've always loved...\nFeature song for Kelly Caldwell...",
 }: SharedSongEditorProps) {
@@ -213,6 +215,7 @@ export function SongEditorPanel({
                 customTitlePlaceholder={customTitlePlaceholder}
                 performanceFlowField={performanceFlowField}
                 performanceFlowPlaceholder={performanceFlowPlaceholder}
+                performanceFlowActions={performanceFlowActions}
                 songIntroNotesField={songIntroNotesField}
                 songIntroNotesPlaceholder={songIntroNotesPlaceholder}
               />
@@ -232,6 +235,7 @@ export function SongEditorPanel({
               customTitlePlaceholder={customTitlePlaceholder}
               performanceFlowField={performanceFlowField}
               performanceFlowPlaceholder={performanceFlowPlaceholder}
+              performanceFlowActions={performanceFlowActions}
               songIntroNotesField={songIntroNotesField}
               songIntroNotesPlaceholder={songIntroNotesPlaceholder}
             />
@@ -277,6 +281,7 @@ type SongEditorDetailFieldsProps = {
   customTitlePlaceholder: string;
   performanceFlowField: boolean;
   performanceFlowPlaceholder: string;
+  performanceFlowActions?: ReactNode;
   songIntroNotesField: boolean;
   songIntroNotesPlaceholder: string;
 };
@@ -292,6 +297,7 @@ function SongEditorDetailFields({
   customTitlePlaceholder,
   performanceFlowField,
   performanceFlowPlaceholder,
+  performanceFlowActions,
   songIntroNotesField,
   songIntroNotesPlaceholder,
 }: SongEditorDetailFieldsProps) {
@@ -344,17 +350,20 @@ const lyricsFieldId = useId();
       ) : null}
 
       {performanceFlowField ? (
-        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-          Performance Flow / Break Order
-          <textarea
-            name="performanceFlow"
-            value={formState.performanceFlow ?? ""}
-            onChange={onChange}
-            rows={7}
-            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
-            placeholder={performanceFlowPlaceholder}
-          />
-        </label>
+        <div className="grid gap-2">
+          <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+            Performance Flow / Break Order
+            <textarea
+              name="performanceFlow"
+              value={formState.performanceFlow ?? ""}
+              onChange={onChange}
+              rows={7}
+              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-600"
+              placeholder={performanceFlowPlaceholder}
+            />
+          </label>
+          {performanceFlowActions}
+        </div>
       ) : null}
 
       {songIntroNotesField ? (
