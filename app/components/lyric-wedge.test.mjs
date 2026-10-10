@@ -89,31 +89,6 @@ test("failed reads preserve the last song; later reconciliation recovers", async
   h.controller.destroy();
 });
 
-function nodes(value, result = []) {
-  if (Array.isArray(value)) value.forEach((item) => nodes(item, result));
-  else if (value?.props) { result.push(value); nodes(value.props.children, result); }
-  return result;
-}
-test("render preserves exact lyric text, shows title/key, clears missing lyrics, and resets only on entry identity change", () => {
-  const effects = [], scrolls = [];
-  const { WedgeLyrics } = compile(componentSource, {
-    react: { useEffect: (fn, deps) => effects.push({ fn, deps }) },
-    "@/lib/supabase/client": {}, "@/lib/song-resolvers": {},
-    "@/lib/lyric-wedge": helpers, "./footswitch-fullscreen": {},
-  }, { window: { scrollTo: (options) => scrolls.push(options) } });
-  const lyrics = "VERSE\r\n  [G] Original, / words\r\n\r\nCHORUS\nAgain";
-  let view = nodes(WedgeLyrics({ song: { id: "entry-a", title: "Song", key: "G", lyrics } }));
-  assert.equal(view.find((node) => node.props["aria-label"] === "Song lyrics").props.children, lyrics);
-  assert.equal(view.find((node) => node.type === "h1").props.children, "Song");
-  effects[0].fn();
-  assert.equal(scrolls[0].top, 0);
-  assert.equal(scrolls[0].behavior, "instant");
-  view = nodes(WedgeLyrics({ song: { id: "entry-b", title: "No lyric song", key: null, lyrics: "  " } }));
-  assert.ok(view.some((node) => node.props.children === "No lyrics available for this song."));
-  assert.equal(view.some((node) => node.props["aria-label"] === "Song lyrics"), false);
-  assert.equal(effects[1].deps[0], "entry-b");
-});
-
 test("wedge uses read-only queries and disabled future mode, with no leader/pedal/calibration integration", () => {
   assert.doesNotMatch(componentSource, /\.(upsert|insert|update|delete|send)\s*\(/);
   assert.doesNotMatch(componentSource, /BandLivePage|ensureLiveShowStateRow|broadcast|keydown|preventDefault|observeReturnTrigger|DiagnosticSettings/);
@@ -148,8 +123,10 @@ test("route controller reads the show's joined songs, subscribes once, follows u
       useState: (initial) => { const index = values.length; values.push(initial); return [initial, (value) => { values[index] = value; }]; } },
     "@/lib/supabase/client": { createClient: () => client }, "@/lib/song-resolvers": resolvers,
     "@/lib/lyric-wedge": helpers, "./footswitch-fullscreen": { useDiagnosticFullscreen: () => ({ status: { active: false, label: "Unavailable", message: "Normal" } }) },
+    "./lyric-wedge-paging": { LyricWedgePaging: function Paging() {} },
   }, { window: page, document: doc, navigator: { onLine: true } });
-  LyricWedge({ showSlug: "test-show" });
+  const initialView = LyricWedge({ showSlug: "test-show" });
+  assert.equal(initialView.type.name, "Paging");
   const cleanup = effects.find((effect) => effect.deps[0] === "test-show").fn();
   await tick();
   assert.equal(values[0][0].id, "entry-1");

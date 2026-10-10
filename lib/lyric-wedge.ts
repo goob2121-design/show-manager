@@ -17,6 +17,19 @@ export function resetWedgePosition(page: Pick<Window, "scrollTo">) {
   page.scrollTo({ top: 0, left: 0, behavior: "instant" });
 }
 
+export function createWedgePageReset(expectedEntry?: string) {
+  let readyEntry: string | null = null;
+  return {
+    ready(entryId: string, scroll: () => void) {
+      if (expectedEntry !== undefined && entryId !== expectedEntry) return;
+      if (readyEntry === entryId) return;
+      // Mark before scrolling: synchronous scroll observation cannot reset twice.
+      readyEntry = entryId;
+      scroll();
+    },
+  };
+}
+
 // Subscription first, then snapshot. A snapshot started before a realtime
 // event or a newer reconciliation must never replace that newer information.
 export function followWedgeState(api: {
