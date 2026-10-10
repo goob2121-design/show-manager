@@ -513,3 +513,50 @@ test("runtime overlay reports measured rects and calibrated CSS at both fullscre
   }
   assert.equal(heights[1] - heights[0], 600, "Calibration changes rendered min-height by 600px; real Safari rects require device testing");
 });
+
+
+test("optional wedge typography remeasures on each change and uses identical probe/render line heights", () => {
+  let slot = 0, ref = 0, measurements = 0;
+  const states = [], dependencies = [], pending = [], cleanups = [];
+  const page = Object.assign(new EventTarget(), { innerHeight: 1000, innerWidth: 768, scrollY: 0,
+    ResizeObserver: class { observe() {} disconnect() {} } });
+  const controls = { getBoundingClientRect: () => ({ height: 47, bottom: 47 }) };
+  const rail = { getBoundingClientRect: () => ({ width: 768 }), querySelectorAll: () => [] };
+  const probe = { style: {}, textContent: "", getBoundingClientRect: () => {
+    measurements++;
+    return { height: Math.max(1, probe.textContent.split("\n").length) * Number(probe.style.fontSize.replace("px", "")) * Number(probe.style.lineHeight) };
+  } };
+  const refs = [controls, rail, probe, null, null].map(current => ({ current }));
+  const react = { ...require("react"), useRef: () => refs[ref++],
+    useState(initial) { const i = slot++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value; }]; },
+    useEffect(fn, deps) { const i = slot++; if (!dependencies[i] || deps.some((v,j) => v !== dependencies[i][j])) {
+      dependencies[i] = deps; pending.push(() => { cleanups[i]?.(); cleanups[i] = fn(); });
+    } },
+  };
+  const { SmartLyricPagingDisplay } = compile("footswitch-smart-paging-display", react, { window: page, document: { scrollingElement: { clientHeight: 1000 } } });
+  let config = { sample: "realistic", preferredSize: 56, calibration: -175 };
+  const props = { lyricText: Array.from({ length: 15 }, (_, i) => "Original line " + i).join("\n"), onReturn() {}, onMeasurement() {} };
+  const render = () => { slot = 0; ref = 0; const view = SmartLyricPagingDisplay({ ...props, config }); pending.splice(0).forEach(fn => fn()); return view; };
+  for (const [size, spacing] of [[56, undefined], [96, 1.8], [96, 1.2], [32, 1.4], [56, undefined]]) {
+    config = { ...config, preferredSize: size, lineSpacing: spacing };
+    const before = measurements;
+    render(); const view = render();
+    assert.ok(measurements > before, "Typography dependency changes run fresh pagination measurements");
+    const all = elements(view), pages = all.filter(n => "data-smart-lyric-page" in n.props);
+    const renderedProbe = all.find(n => n.props.ref === refs[2]);
+    assert.equal(renderedProbe.props.style.lineHeight, spacing ?? 1.4);
+    assert.equal(Number(probe.style.lineHeight), spacing ?? 1.4);
+    assert.ok(pages.length > 0);
+    const lyrics = [];
+    for (const p of pages) {
+      assert.equal(p.props.style.lineHeight, spacing ?? 1.4);
+      assert.equal(p.props.style.minHeight, 778, "Calibration formula is unchanged");
+      assert.ok(p.props.style.fontSize <= size);
+      const lines = elements(p.props.children).filter(n => n.type === "div");
+      assert.ok(lines.length * p.props.style.fontSize * (spacing ?? 1.4) <= 726, "Measured lines fit the content area");
+      lyrics.push(...lines.map(n => n.props.children));
+    }
+    assert.equal(lyrics.join("\n"), props.lyricText);
+  }
+  cleanups.forEach(fn => fn?.());
+});

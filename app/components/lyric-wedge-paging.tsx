@@ -9,7 +9,7 @@ import { SmartLyricPagingSetup } from "./footswitch-smart-paging-test";
 import { calibrationProfileNeedsTesting, orientationCalibration, updateOrientationCalibration } from "./footswitch-diagnostic-settings";
 import { splitLyricSections } from "./footswitch-lyric-paging";
 import { applyDocumentSnap } from "./footswitch-document-snap";
-import { useWedgeSettings } from "./lyric-wedge-settings";
+import { adjustWedgeFont, adjustWedgeSpacing, useWedgeSettings } from "./lyric-wedge-settings";
 
 export function LyricWedgePaging({ song, setupControls, fullscreen, connection, status }: {
   song: WedgeSong | null; setupControls: ReactNode; fullscreen: boolean; connection: string; status?: string;
@@ -21,7 +21,7 @@ export function LyricWedgePaging({ song, setupControls, fullscreen, connection, 
   const songId = song?.id;
   const reset = useMemo(() => createWedgePageReset(songId), [songId]);
   const config = useMemo<SmartPagingConfig>(() => ({ sample: "realistic", source: "stageflow",
-    songId: song?.id, title: song?.title, songKey: song?.key, preferredSize: settings.preferredSize,
+    songId: song?.id, title: song?.title, songKey: song?.key, preferredSize: settings.preferredSize, lineSpacing: settings.lineSpacing,
     calibration: orientationCalibration(settings, orientation, fullscreen), orientation, fullscreen,
   }), [song?.id, song?.title, song?.key, settings, orientation, fullscreen]);
   useEffect(() => applyDocumentSnap(document, "off", 0), []);
@@ -46,15 +46,30 @@ export function LyricWedgePaging({ song, setupControls, fullscreen, connection, 
   </main>;
   if (!displayActive) return <SmartLyricPagingSetup config={config} history={history}
     onReturn={start} returnLabel="Return to Wedge Lyrics" onStart={start} startLabel="OPEN WEDGE LYRICS"
+    typographyControls={<div className="mt-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-3" role="group" aria-label="Font Size">
+        <span className="font-bold">Font Size</span>
+        <button type="button" aria-label="Decrease font size" disabled={settings.preferredSize <= 32} className="min-h-11 min-w-11 rounded-xl border px-3 font-bold disabled:opacity-40" onClick={() => setSettings((current) => ({ ...current, preferredSize: adjustWedgeFont(current.preferredSize, -1) }))}>−</button>
+        <output aria-live="polite">{settings.preferredSize}px preferred</output>
+        <button type="button" aria-label="Increase font size" disabled={settings.preferredSize >= 96} className="min-h-11 min-w-11 rounded-xl border px-3 font-bold disabled:opacity-40" onClick={() => setSettings((current) => ({ ...current, preferredSize: adjustWedgeFont(current.preferredSize, 1) }))}>+</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-3" role="group" aria-label="Line Spacing">
+        <span className="font-bold">Line Spacing</span>
+        <button type="button" aria-label="Decrease line spacing" disabled={settings.lineSpacing <= 1.2} className="min-h-11 min-w-11 rounded-xl border px-3 font-bold disabled:opacity-40" onClick={() => setSettings((current) => ({ ...current, lineSpacing: adjustWedgeSpacing(current.lineSpacing, -1) }))}>−</button>
+        <output aria-live="polite">{settings.lineSpacing.toFixed(1)}×</output>
+        <button type="button" aria-label="Increase line spacing" disabled={settings.lineSpacing >= 1.8} className="min-h-11 min-w-11 rounded-xl border px-3 font-bold disabled:opacity-40" onClick={() => setSettings((current) => ({ ...current, lineSpacing: adjustWedgeSpacing(current.lineSpacing, 1) }))}>+</button>
+      </div>
+      <p className="text-sm">Preferred size: 32–96px in 4px steps. Sections may use smaller text to fit. Line spacing: 1.2–1.8. Changes are saved only on this wedge; verify page alignment after adjusting typography.</p>
+    </div>}
     sourceControls={setupControls} sectionCount={splitLyricSections(song.lyrics ?? "").length}
     missingLyrics={!song.lyrics?.trim()} needsCalibration={calibrationProfileNeedsTesting(settings, orientation, fullscreen)}
     notice={storageUnavailable ? "Wedge settings storage is unavailable. Changes apply for this session only." : "Calibration is saved independently on this Lyric Wedge device."}
     onConfig={(next) => setSettings((current) => {
       const changed = { ...current, preferredSize: next.preferredSize };
       return next.calibration === orientationCalibration(current, orientation, fullscreen)
-        ? changed : updateOrientationCalibration(changed, orientation, next.calibration, fullscreen);
+        ? changed : { ...changed, ...updateOrientationCalibration(changed, orientation, next.calibration, fullscreen) };
     })}
-    onReset={() => setSettings((current) => updateOrientationCalibration(current, orientation, 0, fullscreen))} />;
+    onReset={() => setSettings((current) => ({ ...current, ...updateOrientationCalibration(current, orientation, 0, fullscreen) }))} />;
   if (!song.lyrics?.trim()) return <main className="min-h-screen bg-[#050505] p-6 text-white" aria-label="Lyric Wedge">
     <button type="button" onClick={setup} className="min-h-11 rounded-lg border px-4">Wedge Setup</button>
     <h1 className="mt-6 text-3xl font-bold">{song.title}</h1>

@@ -49,7 +49,7 @@ function harness() {
   prefs.setSettings = (fn) => { prefs.settings = fn(prefs.settings); };
   const { LyricWedgePaging } = compile(read("./lyric-wedge-paging.tsx"), {
     react: runtime.react, "react-dom": { flushSync: (fn) => fn() }, "@/lib/lyric-wedge": wedgeHelpers,
-    "./lyric-wedge-settings": { useWedgeSettings: () => prefs }, "./footswitch-diagnostic-settings": profiles,
+    "./lyric-wedge-settings": { ...storageApi, useWedgeSettings: () => prefs }, "./footswitch-diagnostic-settings": profiles,
     "./footswitch-lyric-paging": paging, "./footswitch-document-snap": { applyDocumentSnap: (_doc, mode) => { assert.equal(mode, "off"); return () => {}; } },
     "./footswitch-smart-paging-display": { SmartLyricPagingDisplay: function Display() {} },
     "./footswitch-smart-paging-test": { SmartLyricPagingSetup: function Setup() {} },
@@ -185,4 +185,61 @@ test("wedge adds no pedal handlers, scroll navigation, return trigger, body lock
   assert.match(source, /applyDocumentSnap\(document, "off", 0\)/);
   assert.match(source, /key=\{song.id\}/);
   assert.doesNotMatch(source, /fullscreen\.(close|request)|\.from\(/);
+});
+
+
+test("wedge typography accepts every 4px size, preserves old profiles, and round-trips independently", () => {
+  for (let size = 32; size <= 96; size += 4) {
+    const original = { preferredSize: size, portraitCalibration: -50, landscapeCalibration: 15,
+      fullscreenPortraitCalibration: -175, fullscreenLandscapeCalibration: 75,
+      portraitCalibrated: true, fullscreenPortraitCalibrated: true, lineSpacing: 1.8 };
+    const parsed = storageApi.parseWedgeSettings(JSON.stringify(original));
+    for (const [key, value] of Object.entries(original)) assert.equal(parsed[key], value);
+    let stored;
+    storageApi.writeWedgeSettings({ setItem: (_key, value) => { stored = value; } }, parsed);
+    assert.equal(storageApi.parseWedgeSettings(stored).preferredSize, size);
+    assert.equal(storageApi.parseWedgeSettings(stored).lineSpacing, 1.8);
+  }
+  for (const size of [40, 48, 56]) {
+    const parsed = storageApi.parseWedgeSettings(JSON.stringify({ preferredSize: size, fullscreenPortraitCalibration: -175 }));
+    assert.equal(parsed.preferredSize, size); assert.equal(parsed.lineSpacing, 1.4);
+    assert.equal(parsed.fullscreenPortraitCalibration, -175);
+  }
+  for (const value of [null, [], "bad", { preferredSize: 100, lineSpacing: 2 }, { preferredSize: 33, lineSpacing: 1.45 },
+    { preferredSize: "64", lineSpacing: "1.5" }, { preferredSize: 28, lineSpacing: 1.1 }]) {
+    const parsed = storageApi.parseWedgeSettings(JSON.stringify(value));
+    assert.equal(parsed.preferredSize, 56); assert.equal(parsed.lineSpacing, 1.4);
+  }
+  assert.equal(storageApi.parseWedgeSettings("not JSON").lineSpacing, 1.4);
+  for (let size = 32; size < 96; size += 4) assert.equal(storageApi.adjustWedgeFont(size, 1), size + 4);
+  assert.equal(storageApi.adjustWedgeFont(32, -1), 32); assert.equal(storageApi.adjustWedgeFont(96, 1), 96);
+  for (let step = 12; step <= 18; step++) assert.equal(storageApi.parseWedgeSettings(JSON.stringify({ lineSpacing: step / 10 })).lineSpacing, step / 10);
+  assert.equal(storageApi.adjustWedgeSpacing(1.2, -1), 1.2); assert.equal(storageApi.adjustWedgeSpacing(1.8, 1), 1.8);
+  assert.equal(storageApi.adjustWedgeSpacing(1.4, 1), 1.5);
+  assert.equal(profiles.parseDiagnosticSettings(JSON.stringify({ preferredSize: 96 })).preferredSize, 56, "Leader validation remains unchanged");
+});
+
+test("wedge setup controls update typography only, preserve calibration and do not reset the current song", () => {
+  const h = harness();
+  h.prefs.settings = storageApi.parseWedgeSettings(JSON.stringify({ fullscreenPortraitCalibration: -175 }));
+  let view = h.render(); h.display(view).props.onMeasurement(h.measurement(view));
+  h.display(view).props.onCalibrate();
+  const click = (label) => nodes(h.render().props.typographyControls).find(node => node.props["aria-label"] === label).props.onClick();
+  click("Increase font size"); click("Increase line spacing");
+  view = h.render();
+  assert.equal(view.props.config.preferredSize, 60); assert.equal(view.props.config.lineSpacing, 1.5);
+  assert.equal(h.prefs.settings.fullscreenPortraitCalibration, -175);
+  view.props.onReset(); assert.equal(h.prefs.settings.lineSpacing, 1.5);
+  view.props.onStart(); view = h.render();
+  assert.equal(h.display(view).props.config.lineSpacing, 1.5);
+  assert.equal(h.display(view).props.lyricText, h.props.song.lyrics);
+  const count = h.scrolls.length;
+  h.display(view).props.onMeasurement(h.measurement(view)); assert.equal(h.scrolls.length, count);
+  h.display(view).props.onCalibrate();
+  h.prefs.settings = { ...h.prefs.settings, preferredSize: 96, lineSpacing: 1.8 };
+  view = h.render();
+  for (const label of ["Increase font size", "Increase line spacing"]) assert.equal(nodes(view.props.typographyControls).find(n => n.props["aria-label"] === label).props.disabled, true);
+  h.prefs.settings = { ...h.prefs.settings, preferredSize: 32, lineSpacing: 1.2 };
+  view = h.render();
+  for (const label of ["Decrease font size", "Decrease line spacing"]) assert.equal(nodes(view.props.typographyControls).find(n => n.props["aria-label"] === label).props.disabled, true);
 });

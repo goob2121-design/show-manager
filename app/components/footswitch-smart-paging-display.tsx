@@ -5,11 +5,12 @@ import { calibratedPageHeight, calibrationNeedsRetest, measuredLyricAlignment, p
 import { observeLyricPagePosition, observePagingViewport, type PagingViewport } from "./footswitch-smart-paging-observers";
 import { SMART_PAGING_SAMPLES } from "./footswitch-smart-paging-samples";
 
-export type SmartPagingConfig = { sample: keyof typeof SMART_PAGING_SAMPLES; preferredSize: number; calibration: number; source?: "sample" | "stageflow"; songId?: string; title?: string; songKey?: string | null; performanceFlow?: string | null; orientation?: "portrait" | "landscape"; fullscreen?: boolean };
+export type SmartPagingConfig = { sample: keyof typeof SMART_PAGING_SAMPLES; preferredSize: number; lineSpacing?: number; calibration: number; source?: "sample" | "stageflow"; songId?: string; title?: string; songKey?: string | null; performanceFlow?: string | null; orientation?: "portrait" | "landscape"; fullscreen?: boolean };
 export type DisplayLayout = { pageHeight: number; calculatedHeight: number; appliedCalibration: number; controlsHeight: number; viewportHeight: number; documentHeight: number; viewportChanged: boolean; pages: LyricPage[] };
 export type PagingMeasurement = { timestamp: string; config: SmartPagingConfig; layout: Omit<DisplayLayout, "pages">; pageCount: number; visiblePage: number; alignment: ReturnType<typeof measuredLyricAlignment> };
 
 export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPLES[config.sample], fullscreenLabel, onCalibrate, onReturn, onMeasurement }: { config: SmartPagingConfig; lyricText?: string; fullscreenLabel?: string; onCalibrate?: () => void; onReturn: () => void; onMeasurement: (measurement: PagingMeasurement) => void }) {
+  const lineSpacing = config.lineSpacing ?? 1.4;
   const controls = useRef<HTMLDivElement>(null);
   const rail = useRef<HTMLDivElement>(null);
   const probe = useRef<HTMLDivElement>(null);
@@ -30,6 +31,7 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
       if (!viewportBaseline.current) viewportBaseline.current = viewport;
       const heights = calibratedPageHeight(viewport.height, viewport.toolbarHeight, config.calibration);
       // Border-box padding/borders consume 52px; there is no per-page diagnostic label.
+      measurement.style.lineHeight = String(lineSpacing);
       measurement.style.width = `${Math.max(1, viewport.width - 52)}px`;
       const pages = paginateLyricSections(splitLyricSections(lyricText), {
         preferredFontSize: config.preferredSize, minimumFontSize: 28, contentHeight: Math.max(1, heights.effective - 52),
@@ -43,7 +45,7 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
         viewportHeight: viewport.height, documentHeight: document.scrollingElement?.clientHeight ?? window.innerHeight,
         viewportChanged: calibrationNeedsRetest(viewportBaseline.current, viewport), pages });
     });
-  }, [lyricText, config.preferredSize, config.calibration, hasMetadata, config.songKey, config.performanceFlow]);
+  }, [lyricText, config.preferredSize, lineSpacing, config.calibration, hasMetadata, config.songKey, config.performanceFlow]);
 
   useEffect(() => observeLyricPagePosition(window, () => {
     // Refs become null on unmount; never replace saved results with setup geometry.
@@ -97,7 +99,7 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
         <div className="flex items-center justify-between"><strong>Runtime calibration · tap title to hide</strong><button type="button" className="pointer-events-auto min-h-11 px-2 font-bold" aria-label="Hide calibration diagnostics" onClick={() => setDebugOpen(false)}>Hide</button></div>
         {!debug ? <p>Waiting for rendered page measurements…</p> : <dl className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono">
           <div><dt>Actual mode / orientation</dt><dd>{debug.fullscreen ? "Fullscreen" : "Regular Safari"} / {debug.orientation}</dd></div>
-          <div><dt>Requested / rendered font</dt><dd>{debug.requestedSize === 56 ? "Maximum" : debug.requestedSize === 48 ? "Extra Large" : "Large"} ({debug.requestedSize}px) / {debug.renderedSize ?? "Unavailable"}</dd></div>
+          <div><dt>Requested / rendered font</dt><dd>{debug.requestedSize === 56 ? "Maximum" : debug.requestedSize === 48 ? "Extra Large" : debug.requestedSize === 40 ? "Large" : "Preferred"} ({debug.requestedSize}px) / {debug.renderedSize ?? "Unavailable"}</dd></div>
           <div><dt>Requested / applied calibration</dt><dd>{debug.calibration}px / {debug.appliedCalibration}px</dd></div>
           <div><dt>Measured viewport height</dt><dd>{debug.viewportHeight.toFixed(1)}px</dd></div>
           <div><dt>Measured header height</dt><dd>{layout?.controlsHeight.toFixed(1)}px</dd></div>
@@ -107,9 +109,9 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
         </dl>}
         <p className="mt-2 text-white/70">This overlay may cover lyrics while open. Hide it for pedal testing. Page min-height allows content to expand; the formula retains its 1px safety floor.</p>
       </aside>}
-      <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed left-0 top-0 whitespace-pre-wrap break-words font-semibold [overflow-wrap:anywhere]" style={{ lineHeight: 1.4 }} />
+      <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed left-0 top-0 whitespace-pre-wrap break-words font-semibold [overflow-wrap:anywhere]" style={{ lineHeight: lineSpacing }} />
       <div ref={rail}>
-        {layout?.pages.map((page, index) => <section key={`${page.section}-${page.part}`} data-smart-lyric-page aria-label={`Lyric page ${index + 1}`} className="m-0 box-border flex flex-col justify-center border-2 border-emerald-500/20 p-6 text-left font-semibold" style={{ minHeight: layout.pageHeight, fontSize: page.fontSize, lineHeight: 1.4, scrollSnapAlign: "none" }}>
+        {layout?.pages.map((page, index) => <section key={`${page.section}-${page.part}`} data-smart-lyric-page aria-label={`Lyric page ${index + 1}`} className="m-0 box-border flex flex-col justify-center border-2 border-emerald-500/20 p-6 text-left font-semibold" style={{ minHeight: layout.pageHeight, fontSize: page.fontSize, lineHeight: lineSpacing, scrollSnapAlign: "none" }}>
           {page.lines.map((line, lineIndex) => <div key={lineIndex} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{line.text}</div>)}
         </section>)}
       </div>

@@ -96,12 +96,13 @@ export function FootswitchSongSelection({ source, songId, songs, songStatus, onR
   </div>;
 }
 
-export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onStart, sourceControls, fullscreenControls, sectionCount, missingLyrics, notice, needsCalibration, canStart = true, onReset, returnLabel = "Back to Footswitch Test", startLabel, experimentControls }: {
+export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onStart, sourceControls, fullscreenControls, sectionCount, missingLyrics, notice, needsCalibration, canStart = true, onReset, returnLabel = "Back to Footswitch Test", startLabel, experimentControls, typographyControls }: {
   config: SmartPagingConfig; onConfig: (config: SmartPagingConfig) => void; history: PagingMeasurement[]; onReturn: () => void; onStart: () => void;
   sourceControls?: ReactNode; sectionCount?: number; missingLyrics?: boolean; notice?: string; needsCalibration?: boolean; canStart?: boolean; onReset?: () => void;
   fullscreenControls?: ReactNode;
   returnLabel?: string; startLabel?: string;
   experimentControls?: ReactNode;
+  typographyControls?: ReactNode;
 }) {
   const last = history[0];
   const buttonClass = "min-h-11 rounded-xl border border-stone-300 bg-white px-3 py-2 font-bold text-stone-800 dark:border-white/20 dark:bg-slate-800 dark:text-slate-100";
@@ -116,8 +117,9 @@ export function SmartLyricPagingSetup({ config, onConfig, history, onReturn, onS
           <fieldset disabled={notice === "Loading saved diagnostic settings…"}>
           <div className="mt-4 flex flex-wrap gap-3">
             {config.source !== "stageflow" && <label className="font-bold">Sample <select value={config.sample} onChange={(event) => onConfig({ ...config, sample: event.target.value as SmartPagingConfig["sample"] })} className="rounded-xl border border-stone-300 bg-white p-2 dark:border-white/20 dark:bg-slate-800"><option value="realistic">Realistic song</option><option value="overflow">Long lines / overflow</option></select></label>}
-            {TEXT_SIZES.map((size) => <button key={size.label} type="button" className={buttonClass + (config.preferredSize === size.pixels ? " ring-2 ring-emerald-500" : "")} aria-pressed={config.preferredSize === size.pixels} onClick={() => onConfig({ ...config, preferredSize: size.pixels })}>{size.label}</button>)}
+            {!typographyControls && TEXT_SIZES.map((size) => <button key={size.label} type="button" className={buttonClass + (config.preferredSize === size.pixels ? " ring-2 ring-emerald-500" : "")} aria-pressed={config.preferredSize === size.pixels} onClick={() => onConfig({ ...config, preferredSize: size.pixels })}>{size.label}</button>)}
           </div>
+          {typographyControls}
           <label htmlFor="footswitch-page-height-calibration" className="mt-4 block font-bold">Footswitch Page Height Calibration · {config.fullscreen ? "Fullscreen" : "Regular Safari"} — {config.orientation === "landscape" ? "Landscape" : "Portrait"}</label>
           <div className="flex flex-wrap items-center gap-3">
             <span>-300px</span><input id="footswitch-page-height-calibration" type="range" min={-300} max={300} step={5} value={config.calibration} onChange={(event) => onConfig({ ...config, calibration: Number(event.target.value) })} className="min-h-10 min-w-40 flex-1 accent-emerald-600" /><span>+300px</span>
