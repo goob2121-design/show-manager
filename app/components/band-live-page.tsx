@@ -1994,8 +1994,15 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         </>
       ) : null}
       <div className={`mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-3 px-3 py-2 transition-all duration-300 sm:px-4 sm:py-3 lg:gap-4 lg:px-6 ${focusMode ? "pt-14 sm:pt-16" : ""}`}>
-        <header className={`sticky top-0 z-20 -mx-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-slate-950/90 px-3 py-2 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur transition-all duration-300 lg:hidden ${focusMode ? "pointer-events-none -translate-y-4 opacity-0 max-h-0 overflow-hidden border-transparent px-0 py-0" : "translate-y-0 opacity-100"}`}>
-          <div className="inline-flex min-w-full items-center gap-2 whitespace-nowrap">
+        <header className={`sticky top-0 z-20 -mx-1 rounded-[1.35rem] border border-white/10 bg-slate-950/90 px-3 py-2 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur transition-all duration-300 lg:hidden ${focusMode ? "pointer-events-none -translate-y-4 opacity-0 max-h-0 overflow-hidden border-transparent px-0 py-0" : "translate-y-0 opacity-100"}`}>
+          <div className="mb-3 min-w-0 break-words">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-300/80">StageFlow Live Performance Mode</p>
+            <h1 className="text-lg font-black leading-tight tracking-tight text-white sm:text-xl">
+              {show?.name?.trim() || "Band Live Mode"}
+              <span className="text-xs font-normal tracking-normal text-slate-300 sm:text-sm">{" — "}{show ? formatShowDate(show.show_date) : "Loading show..."}</span>
+            </h1>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {fullscreenControl}
             {isLeaderUnlocked && <LyricSyncControls sync={lyricSync} />}
             <label className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
@@ -2059,18 +2066,16 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         </header>
 
         <header className={`hidden rounded-[1.75rem] border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_24px_72px_-48px_rgba(15,23,42,0.95)] backdrop-blur transition-all duration-300 lg:block ${focusMode ? "pointer-events-none -translate-y-4 opacity-0 max-h-0 overflow-hidden border-transparent px-0 py-0" : "translate-y-0 opacity-100"}`}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex-1 text-center lg:text-left">
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="min-w-0 break-words text-left">
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-300/80">StageFlow Live Performance Mode</p>
-              <h1 className="mx-auto max-w-[22ch] text-lg font-black leading-tight tracking-tight text-white sm:text-xl lg:mx-0 lg:max-w-none lg:text-2xl text-balance">
+              <h1 className="text-lg font-black leading-tight tracking-tight text-white sm:text-xl lg:text-2xl">
                 {show?.name?.trim() || "Band Live Mode"}
+                <span className="text-xs font-normal tracking-normal text-slate-300 sm:text-sm">{" — "}{show ? formatShowDate(show.show_date) : "Loading show..."}</span>
               </h1>
-              <p className="text-xs text-slate-300 sm:text-sm">
-                {show ? formatShowDate(show.show_date) : "Loading show..."}
-              </p>
             </div>
 
-            <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               {fullscreenControl}
               {isLeaderUnlocked && <LyricSyncControls sync={lyricSync} />}
               <span
