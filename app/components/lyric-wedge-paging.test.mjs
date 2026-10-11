@@ -50,6 +50,7 @@ function harness() {
   const { LyricWedgePaging } = compile(read("./lyric-wedge-paging.tsx"), {
     react: runtime.react, "react-dom": { flushSync: (fn) => fn() }, "@/lib/lyric-wedge": wedgeHelpers,
     "./lyric-wedge-settings": { ...storageApi, useWedgeSettings: () => prefs }, "./footswitch-diagnostic-settings": profiles,
+    "./lyric-sync-integration": { useWedgeLyricSync: () => ({ status: "", following: false }) },
     "./footswitch-lyric-paging": paging, "./footswitch-document-snap": { applyDocumentSnap: (_doc, mode) => { assert.equal(mode, "off"); return () => {}; } },
     "./footswitch-smart-paging-display": { SmartLyricPagingDisplay: function Display() {} },
     "./footswitch-smart-paging-test": { SmartLyricPagingSetup: function Setup() {} },

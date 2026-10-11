@@ -14,6 +14,7 @@ export function LyricWedge({ showSlug }: { showSlug: string }) {
   const [songs, setSongs] = useState<WedgeSong[]>([]);
   const [state, setState] = useState<WedgeLiveState | null>(null);
   const [showName, setShowName] = useState("");
+  const [syncShowId, setSyncShowId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<WedgeConnection>("connecting");
@@ -46,6 +47,7 @@ export function LyricWedge({ showSlug }: { showSlug: string }) {
         if (entriesError) throw entriesError;
         if (cancelled) return;
         setShowName(show.name);
+        setSyncShowId(show.id);
         setSongs(sortWedgeEntries((entries ?? []) as Entry[]).map((entry) => ({
           id: entry.id, title: resolveSongTitle(entry), key: resolveSongKey(entry), lyrics: resolveSongLyrics(entry),
         })));
@@ -93,7 +95,7 @@ export function LyricWedge({ showSlug }: { showSlug: string }) {
         <p>{showName}</p>
         <fieldset className="flex flex-wrap gap-4"><legend className="mb-2 font-bold">Operating mode</legend>
           <label><input type="radio" name="wedge-mode" checked readOnly className="mr-2" />Wedge Flow</label>
-          <label className="text-slate-500"><input type="radio" name="wedge-mode" disabled className="mr-2" />Follow the Leader — Coming Soon</label>
+          <p className="text-slate-400">Authorized Lyric Sync follows automatically while the leader has Smart Lyrics open.</p>
         </fieldset>
         <p className="text-slate-300">Automatically follows the current song. Your pedal scrolls this device natively, independently of the leader.</p>
         <div className="flex flex-wrap items-center gap-3">
@@ -103,6 +105,6 @@ export function LyricWedge({ showSlug }: { showSlug: string }) {
         <p role="status" className="text-xs text-slate-400">{fullscreen.status.message} · {wakeMessage}</p>
       </div>
     </section>;
-  return <LyricWedgePaging song={song} setupControls={setupControls} fullscreen={fullscreen.status.active} connection={connection}
+  return <LyricWedgePaging showId={syncShowId} song={song} setupControls={setupControls} fullscreen={fullscreen.status.active} connection={connection}
     status={loading ? "Loading Lyric Wedge…" : error ?? (!songs.length ? "No setlist songs for this show." : undefined)} />;
 }

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { LiveSmartLyrics, SMART_LYRIC_PAGING_ENABLED } from "./live-smart-lyrics";
+import { LyricSyncControls, useLyricSyncLeader } from "./lyric-sync-integration";
 import { useDiagnosticFullscreen } from "./footswitch-fullscreen";
 import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-gate";
 import { createClient } from "@/lib/supabase/client";
@@ -615,6 +616,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
   const sharedIndex = clampIndex(sharedState?.current_song_index ?? 0, songs.length);
   const currentIndex = clampIndex(followBandLeader ? sharedIndex : manualIndex, songs.length);
   const currentSong = songs[currentIndex] ?? null;
+  const lyricSync = useLyricSyncLeader(show?.id, isLeaderUnlocked, currentSong, SMART_LYRIC_PAGING_ENABLED && lyricsOpen);
   const nextSong = songs[currentIndex + 1] ?? null;
   const showLyricsPerformanceFlowPanel = Boolean(isLeaderUnlocked && currentSong?.performanceFlow?.trim());
   const currentLyricsSettingsId = currentSong?.id ?? null;
@@ -1981,7 +1983,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
       <>
       {focusMode ? (
         <>
-          <div aria-label="Focus Mode fullscreen controls" className="fixed right-3 top-3 z-30 sm:right-4 sm:top-4">{fullscreenControl}</div>
+          <div aria-label="Focus Mode fullscreen controls" className="fixed right-3 top-3 z-30 sm:right-4 sm:top-4">{fullscreenControl}{isLeaderUnlocked && <LyricSyncControls sync={lyricSync} />}</div>
           <button
             type="button"
             onClick={() => setFocusMode(false)}
@@ -1995,6 +1997,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
         <header className={`sticky top-0 z-20 -mx-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-slate-950/90 px-3 py-2 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.95)] backdrop-blur transition-all duration-300 lg:hidden ${focusMode ? "pointer-events-none -translate-y-4 opacity-0 max-h-0 overflow-hidden border-transparent px-0 py-0" : "translate-y-0 opacity-100"}`}>
           <div className="inline-flex min-w-full items-center gap-2 whitespace-nowrap">
             {fullscreenControl}
+            {isLeaderUnlocked && <LyricSyncControls sync={lyricSync} />}
             <label className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10">
               <UsersIcon />
               <input
@@ -2069,6 +2072,7 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
 
             <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto">
               {fullscreenControl}
+              {isLeaderUnlocked && <LyricSyncControls sync={lyricSync} />}
               <span
                 className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-[11px] font-semibold tracking-[0.22em] ${connectionLabel.className}`}
               >

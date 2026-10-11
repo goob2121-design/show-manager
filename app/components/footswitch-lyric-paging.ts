@@ -13,6 +13,15 @@ export function splitLyricSections(lyrics: string): string[] {
 
 export type LyricPageLine = { text: string; originalLine: number; continued: boolean };
 export type LyricPage = { section: number; part: number; fontSize: number; lines: LyricPageLine[]; expanded: boolean };
+// Metadata only: does not alter text, page dimensions, or splitting.
+export function lyricLineAnchors(pages: Pick<LyricPage, "section" | "lines">[]) {
+  const offsets = new Map<string, number>();
+  return pages.map(page => page.lines.map(line => {
+    const key = `${page.section}:${line.originalLine}`, offset = offsets.get(key) ?? 0;
+    offsets.set(key, offset + Array.from(line.text).length);
+    return { section: page.section, originalLine: line.originalLine, characterOffset: offset };
+  }));
+}
 export type PagingOptions = {
   preferredFontSize: number; minimumFontSize: number; contentHeight: number;
   measureLine: (text: string, fontSize: number) => number;

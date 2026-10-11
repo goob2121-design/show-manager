@@ -10,13 +10,15 @@ import { calibrationProfileNeedsTesting, orientationCalibration, updateOrientati
 import { splitLyricSections } from "./footswitch-lyric-paging";
 import { applyDocumentSnap } from "./footswitch-document-snap";
 import { adjustWedgeFont, adjustWedgeSpacing, useWedgeSettings } from "./lyric-wedge-settings";
+import { useWedgeLyricSync } from "./lyric-sync-integration";
 
-export function LyricWedgePaging({ song, setupControls, fullscreen, connection, status }: {
-  song: WedgeSong | null; setupControls: ReactNode; fullscreen: boolean; connection: string; status?: string;
+export function LyricWedgePaging({ song, setupControls, fullscreen, connection, status, showId }: {
+  song: WedgeSong | null; setupControls: ReactNode; fullscreen: boolean; connection: string; status?: string; showId?: string;
 }) {
   const { settings, setSettings, orientation, loaded, storageUnavailable } = useWedgeSettings();
   // Auto-open on initial following; Close/Calibrate explicitly select setup.
   const [displayActive, setDisplayActive] = useState(true);
+  const sync = useWedgeLyricSync(showId, song, () => setDisplayActive(true));
   const [history, setHistory] = useState<PagingMeasurement[]>([]);
   const songId = song?.id;
   const reset = useMemo(() => createWedgePageReset(songId), [songId]);
@@ -77,6 +79,7 @@ export function LyricWedgePaging({ song, setupControls, fullscreen, connection, 
     <p role="status" className="mt-8 text-2xl">No lyrics available for this song.</p>
   </main>;
   return <>
+    {sync.status && <p role="status" className="pointer-events-none fixed bottom-2 left-2 z-20 rounded bg-black/90 px-2 py-1 text-xs text-white">{sync.following ? "Follow the Leader" : "Wedge Flow"} · Lyric Sync: {sync.status}</p>}
     <SmartLyricPagingDisplay key={song.id} config={config} lyricText={song.lyrics}
       onReturn={setup} onCalibrate={setup} onMeasurement={record} />
     {connection !== "connected" && <p role="status" className="pointer-events-none fixed bottom-2 right-2 z-20 rounded bg-black/90 px-2 py-1 text-xs text-white">{connection === "disconnected" ? "Disconnected — keeping last song" : "Connecting…"}</p>}

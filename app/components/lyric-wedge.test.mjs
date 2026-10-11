@@ -89,10 +89,11 @@ test("failed reads preserve the last song; later reconciliation recovers", async
   h.controller.destroy();
 });
 
-test("wedge uses read-only queries and disabled future mode, with no leader/pedal/calibration integration", () => {
+test("wedge preserves read-only song following and delegates authorized lyric following", () => {
   assert.doesNotMatch(componentSource, /\.(upsert|insert|update|delete|send)\s*\(/);
   assert.doesNotMatch(componentSource, /BandLivePage|ensureLiveShowStateRow|broadcast|keydown|preventDefault|observeReturnTrigger|DiagnosticSettings/);
-  assert.match(componentSource, /disabled[^>]*className="mr-2".*Follow the Leader — Coming Soon/);
+  assert.match(componentSource, /Authorized Lyric Sync follows automatically/);
+  assert.match(componentSource, /showId=\{syncShowId\}/);
   assert.match(componentSource, /event: "\*".*table: "live_show_state".*show_id=eq/);
   assert.match(componentSource, /removeChannel/);
 });

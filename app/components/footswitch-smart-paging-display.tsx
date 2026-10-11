@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { calibratedPageHeight, calibrationNeedsRetest, measuredLyricAlignment, paginateLyricSections, splitLyricSections, visibleLyricPage, type LyricPage } from "./footswitch-lyric-paging";
+import { calibratedPageHeight, calibrationNeedsRetest, measuredLyricAlignment, paginateLyricSections, splitLyricSections, visibleLyricPage, lyricLineAnchors, type LyricPage } from "./footswitch-lyric-paging";
 import { observeLyricPagePosition, observePagingViewport, type PagingViewport } from "./footswitch-smart-paging-observers";
 import { SMART_PAGING_SAMPLES } from "./footswitch-smart-paging-samples";
 
@@ -70,6 +70,7 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
       visiblePage: index + 1, alignment: measuredLyricAlignment(rects.map((rect) => rect.top), top, window.scrollY) });
   }), [layout, config, onMeasurement, hasMetadata]);
 
+  const anchors = lyricLineAnchors(layout?.pages ?? []);
   return (
     <main id="smart-lyric-paging-display" aria-label="Full-screen lyric test" className="relative min-h-screen bg-stone-100 text-stone-950 dark:bg-slate-950 dark:text-slate-100">
       {/* Expanded headers use their actual measured height as the flow spacer.
@@ -112,7 +113,7 @@ export function SmartLyricPagingDisplay({ config, lyricText = SMART_PAGING_SAMPL
       <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed left-0 top-0 whitespace-pre-wrap break-words font-semibold [overflow-wrap:anywhere]" style={{ lineHeight: lineSpacing }} />
       <div ref={rail}>
         {layout?.pages.map((page, index) => <section key={`${page.section}-${page.part}`} data-smart-lyric-page aria-label={`Lyric page ${index + 1}`} className="m-0 box-border flex flex-col justify-center border-2 border-emerald-500/20 p-6 text-left font-semibold" style={{ minHeight: layout.pageHeight, fontSize: page.fontSize, lineHeight: lineSpacing, scrollSnapAlign: "none" }}>
-          {page.lines.map((line, lineIndex) => <div key={lineIndex} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{line.text}</div>)}
+          {page.lines.map((line, lineIndex) => <div key={lineIndex} data-lyric-section={anchors[index][lineIndex].section} data-lyric-line={line.originalLine} data-lyric-offset={anchors[index][lineIndex].characterOffset} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{line.text}</div>)}
         </section>)}
       </div>
     </main>
