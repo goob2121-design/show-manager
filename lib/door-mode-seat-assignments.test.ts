@@ -17,7 +17,7 @@ test("fresh direct Square ticket resolves through reserved link source_ticket_id
     [{ seating_link_id: "direct-link", seat_id: "R-J10" }],
     canonicalSeatIds,
   );
-  assert.deepEqual(result, [{ projectedTicketId: "square-ticket", seatIds: ["R-J10"], isSponsorReservedProjection: false }]);
+  assert.deepEqual(result, [{ projectedTicketId: "square-ticket", seatIds: ["R-J10"], isSponsorReservedProjection: false, childSeatCount: 0, childCheckedInCount: 0 }]);
 });
 
 test("Pamela-style projected ticket resolves through the projection ledger", () => {
@@ -30,7 +30,7 @@ test("Pamela-style projected ticket resolves through the projection ledger", () 
     ],
     canonicalSeatIds,
   );
-  assert.deepEqual(result, [{ projectedTicketId: "projected-ticket", seatIds: ["R-A1", "R-A2"], isSponsorReservedProjection: false }]);
+  assert.deepEqual(result, [{ projectedTicketId: "projected-ticket", seatIds: ["R-A1", "R-A2"], isSponsorReservedProjection: false, childSeatCount: 0, childCheckedInCount: 0 }]);
 });
 
 test("both ownership paths deduplicate seats and invalid IDs are excluded", () => {
@@ -44,8 +44,8 @@ test("both ownership paths deduplicate seats and invalid IDs are excluded", () =
     ],
     canonicalSeatIds,
   );
-  assert.deepEqual(result, [{ projectedTicketId: "same-ticket", seatIds: ["L-C4"], isSponsorReservedProjection: false }]);
-  assert.deepEqual(Object.keys(result[0]).sort(), ["isSponsorReservedProjection", "projectedTicketId", "seatIds"]);
+  assert.deepEqual(result, [{ projectedTicketId: "same-ticket", seatIds: ["L-C4"], isSponsorReservedProjection: false, childSeatCount: 0, childCheckedInCount: 0 }]);
+  assert.deepEqual(Object.keys(result[0]).sort(), ["childCheckedInCount", "childSeatCount", "isSponsorReservedProjection", "projectedTicketId", "seatIds"]);
 });
 
 test("general admission without reserved ownership returns no seats", () => {
@@ -115,16 +115,34 @@ test("seat lookup and route are authenticated, private, and SELECT-only", async 
   assert.match(lookupSource, /from\("show_admission_projection_sources"\)/);
   assert.match(lookupSource, /select\("source_id, projected_ticket_id"\)/);
   assert.match(lookupSource, /from\("show_reserved_seating_links"\)/);
-  assert.match(lookupSource, /select\("id, source_ticket_id, source_show_sponsor_id, customer_name, is_complimentary, source_note"\)/);
+  assert.match(lookupSource, /select\("id, source_ticket_id, source_show_sponsor_id, customer_name, is_complimentary, source_note, child_checked_in_count"\)/);
   assert.match(lookupSource, /from\("show_sponsors"\)/);
   assert.match(lookupSource, /from\("show_reserved_seat_assignments"\)/);
-  assert.match(lookupSource, /select\("seating_link_id, seat_id"\)/);
+  assert.match(lookupSource, /select\("seating_link_id, seat_id, occupant_type"\)/);
   assert.doesNotMatch(lookupSource, /\.insert\(|\.update\(|\.upsert\(|\.delete\(|\.rpc\(/);
   assert.match(routeSource, /resolveDoorAccess/);
   assert.match(routeSource, /getDoorStaffSessionCookieName/);
   assert.match(routeSource, /export async function GET/);
   assert.doesNotMatch(routeSource, /export async function (POST|PUT|PATCH|DELETE)/);
   assert.doesNotMatch(routeSource, /guest_name|customer_name|email|payment|order_id|seat_selection_token/i);
+});
+test("free child seats are counted separately without changing ticket ownership", () => {
+  const result = buildDoorModeSeatAssignments(
+    [],
+    [{ id: "family-link", source_ticket_id: "paid-ticket", child_checked_in_count: 1 }],
+    [
+      { seating_link_id: "family-link", seat_id: "R-A1", occupant_type: "ticketed" },
+      { seating_link_id: "family-link", seat_id: "R-A2", occupant_type: "child_free" },
+    ],
+    canonicalSeatIds,
+  );
+  assert.deepEqual(result, [{
+    projectedTicketId: "paid-ticket",
+    seatIds: ["R-A1", "R-A2"],
+    isSponsorReservedProjection: false,
+    childSeatCount: 1,
+    childCheckedInCount: 1,
+  }]);
 });
 test("stable show sponsor ownership classifies a sponsor projection without name matching", () => {
   const result = buildDoorModeSeatAssignments(

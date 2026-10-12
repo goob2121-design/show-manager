@@ -16,7 +16,7 @@ test("public seat maps default to occupant-name privacy and expose status labels
 });
 
 test("customer seat selection neither queries nor passes other occupants' names", () => {
-  assert.match(customerRouteSource, /\.select\("seat_id, seating_link_id, assignment_type"\)/);
+  assert.match(customerRouteSource, /\.select\("seat_id, seating_link_id, assignment_type, occupant_type"\)/);
   assert.doesNotMatch(customerRouteSource, /show_reserved_seat_assignments"\)[\s\S]*?\.select\("\*"\)/);
   assert.doesNotMatch(customerPageSource, /customerName:\s*assignment\?\.customer_name/);
   assert.match(customerPageSource, /showCustomerSeatDetails=\{false\}/);

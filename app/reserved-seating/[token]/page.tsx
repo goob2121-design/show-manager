@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
 import { ReservedSeatSelectionPage } from "@/app/components/reserved-seat-selection-page";
 import { loadReservedSeatPayAtDoorTicket } from "@/lib/reserved-seat-pay-at-door-ticket";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isReservedChildSeatsEnabled } from "@/lib/reserved-child-seats";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
-type PublicSeatAssignment = Pick<ShowReservedSeatAssignment, "seat_id" | "seating_link_id" | "assignment_type">;
+type PublicSeatAssignment = Pick<ShowReservedSeatAssignment, "seat_id" | "seating_link_id" | "assignment_type" | "occupant_type">;
 
 export const runtime = "nodejs";
 
@@ -13,16 +13,9 @@ type ReservedSeatingPageProps = {
   params: Promise<{ token: string }>;
 };
 
-function createReadOnlyServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE;
-  if (!supabaseUrl || !serviceRoleKey) throw new Error("Reserved-seat ticket details are not configured.");
-  return createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-}
-
 export default async function ReservedSeatingPage({ params }: ReservedSeatingPageProps) {
   const { token } = await params;
-  const supabase = await createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
 
   const { data: seatingLink, error: seatingLinkError } = await supabase
     .from("show_reserved_seating_links")
@@ -42,7 +35,7 @@ export default async function ReservedSeatingPage({ params }: ReservedSeatingPag
       .maybeSingle(),
     supabase
       .from("show_reserved_seat_assignments")
-      .select("seat_id, seating_link_id, assignment_type")
+      .select("seat_id, seating_link_id, assignment_type, occupant_type")
       .eq("show_id", seatingLink.show_id)
       .order("created_at", { ascending: true }),
   ]);
@@ -55,7 +48,7 @@ export default async function ReservedSeatingPage({ params }: ReservedSeatingPag
     notFound();
   }
 
-  const payAtDoorTicket = await loadReservedSeatPayAtDoorTicket(createReadOnlyServiceClient(), typedSeatingLink);
+  const payAtDoorTicket = await loadReservedSeatPayAtDoorTicket(supabase, typedSeatingLink);
 
   return (
     <ReservedSeatSelectionPage
@@ -63,6 +56,7 @@ export default async function ReservedSeatingPage({ params }: ReservedSeatingPag
       seatingLink={typedSeatingLink}
       assignments={typedAssignments}
       payAtDoorTicket={payAtDoorTicket}
+      childSeatsEnabled={isReservedChildSeatsEnabled()}
     />
   );
 }

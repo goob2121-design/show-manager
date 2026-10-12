@@ -12,15 +12,17 @@ import {
   sortReservedSeatIds,
 } from "@/lib/reserved-seating";
 import { formatReservedSeatPayAtDoorDue, type ReservedSeatPayAtDoorTicket } from "@/lib/reserved-seat-pay-at-door-ticket";
+import { isChildEligibleReservation, summarizeReservedFamilySeats } from "@/lib/reserved-child-seats";
 import type { ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
-type PublicSeatAssignment = Pick<ShowReservedSeatAssignment, "seat_id" | "seating_link_id" | "assignment_type">;
+type PublicSeatAssignment = Pick<ShowReservedSeatAssignment, "seat_id" | "seating_link_id" | "assignment_type" | "occupant_type">;
 
 type ReservedSeatSelectionPageProps = {
   show: Pick<ShowRecord, "name" | "show_date" | "show_start_time" | "venue" | "show_logo_url" | "ticket_code_format">;
   seatingLink: ShowReservedSeatingLink;
   assignments: PublicSeatAssignment[];
   payAtDoorTicket: ReservedSeatPayAtDoorTicket | null;
+  childSeatsEnabled: boolean;
 };
 
 function formatShowDate(showDate: string | null) {
@@ -53,7 +55,7 @@ function parseSeatDetails(seatId: string) {
   };
 }
 
-export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payAtDoorTicket }: ReservedSeatSelectionPageProps) {
+export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payAtDoorTicket, childSeatsEnabled }: ReservedSeatSelectionPageProps) {
   const [venuePhotoSrc, setVenuePhotoSrc] = useState<string>(RESERVED_SEATING_VENUE.venuePhotoPath);
   const linkAssignments = useMemo(
     () => assignments.filter((assignment) => assignment.seating_link_id === seatingLink.id),
@@ -63,6 +65,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
     () => sortReservedSeatIds(linkAssignments.map((assignment) => assignment.seat_id)),
     [linkAssignments],
   );
+  const submittedFamilySeats = useMemo(() => summarizeReservedFamilySeats(linkAssignments), [linkAssignments]);
   const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>(submittedSeatIds);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -80,7 +83,17 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
   const [hasSelectedMobileSection, setHasSelectedMobileSection] = useState(false);
   const [mailingListOptIn, setMailingListOptIn] = useState(false);
   const [mailingListSubscribed, setMailingListSubscribed] = useState(false);
+  const [isEditingFamilySeats, setIsEditingFamilySeats] = useState(false);
+  const [familySeatType, setFamilySeatType] = useState<"paid" | "child">("child");
+  const [familyPaidSeatIds, setFamilyPaidSeatIds] = useState<string[]>(sortReservedSeatIds(submittedFamilySeats.paidSeatIds));
+  const [familyChildSeatIds, setFamilyChildSeatIds] = useState<string[]>(sortReservedSeatIds(submittedFamilySeats.childSeatIds));
+  const [confirmedPaidSeatIds, setConfirmedPaidSeatIds] = useState<string[]>(sortReservedSeatIds(submittedFamilySeats.paidSeatIds));
+  const [confirmedChildSeatIds, setConfirmedChildSeatIds] = useState<string[]>(sortReservedSeatIds(submittedFamilySeats.childSeatIds));
   const isAlreadySubmitted = hasSubmitted;
+  const canManageChildSeats = childSeatsEnabled && isAlreadySubmitted && isChildEligibleReservation(seatingLink);
+  const displayedPaidSeatIds = isEditingFamilySeats ? familyPaidSeatIds : confirmedPaidSeatIds;
+  const displayedChildSeatIds = isEditingFamilySeats ? familyChildSeatIds : confirmedChildSeatIds;
+  const displayedFamilySeatIds = sortReservedSeatIds([...displayedPaidSeatIds, ...displayedChildSeatIds]);
 
   useEffect(() => {
     const syncPhoneMode = () => {
@@ -155,7 +168,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
   }
   const seatStates = useMemo<Record<string, ReservedSeatMapSeatState>>(() => {
     const assignmentBySeatId = new Map(assignments.map((assignment) => [assignment.seat_id, assignment]));
-    const selectedSeatIdSet = new Set(selectedSeatIds);
+    const selectedSeatIdSet = new Set(isEditingFamilySeats ? displayedFamilySeatIds : selectedSeatIds);
 
     return Object.fromEntries(
       RESERVED_SEAT_DEFINITIONS.map((seat) => {
@@ -163,10 +176,12 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
         const isOwnedByCurrentLink = assignment?.seating_link_id === seatingLink.id;
         const isBlocked = assignment?.assignment_type === "blocked";
         const isSelected = selectedSeatIdSet.has(seat.seatId);
-        const disabled =
-          isAlreadySubmitted ||
-          (Boolean(assignment) && !isOwnedByCurrentLink) ||
-          (!isSelected && selectedSeatIds.length >= seatingLink.ticket_count);
+        const activeTypeCount = familySeatType === "paid" ? familyPaidSeatIds.length : familyChildSeatIds.length;
+        const activeTypeLimit = familySeatType === "paid" ? confirmedPaidSeatIds.length : seatingLink.child_seat_limit;
+        const disabled = (isAlreadySubmitted && !isEditingFamilySeats)
+          || (Boolean(assignment) && !isOwnedByCurrentLink)
+          || (isEditingFamilySeats && !isSelected && activeTypeCount >= activeTypeLimit)
+          || (!isAlreadySubmitted && !isSelected && selectedSeatIds.length >= seatingLink.ticket_count);
         const status: ReservedSeatMapSeatState["status"] = isSelected
           ? "selected"
           : isBlocked
@@ -186,7 +201,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
         ];
       }),
     ) as Record<string, ReservedSeatMapSeatState>;
-  }, [assignments, isAlreadySubmitted, seatingLink.id, seatingLink.ticket_count, selectedSeatIds]);
+  }, [assignments, confirmedPaidSeatIds.length, displayedFamilySeatIds, familyChildSeatIds.length, familyPaidSeatIds.length, familySeatType, isAlreadySubmitted, isEditingFamilySeats, seatingLink.child_seat_limit, seatingLink.id, seatingLink.ticket_count, selectedSeatIds]);
 
   async function submitReservedSeats() {
     if (isAlreadySubmitted) {
@@ -282,7 +297,73 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
     setShowSubmitConfirmation(true);
   }
 
+  function beginFamilySeatChanges() {
+    setFamilyPaidSeatIds(sortReservedSeatIds(confirmedPaidSeatIds));
+    setFamilyChildSeatIds(sortReservedSeatIds(confirmedChildSeatIds));
+    setFamilySeatType("child");
+    setErrorMessage(null);
+    setIsEditingFamilySeats(true);
+  }
+
+  function cancelFamilySeatChanges() {
+    setFamilyPaidSeatIds(sortReservedSeatIds(confirmedPaidSeatIds));
+    setFamilyChildSeatIds(sortReservedSeatIds(confirmedChildSeatIds));
+    setErrorMessage(null);
+    setIsEditingFamilySeats(false);
+  }
+
+  async function saveFamilySeatChanges() {
+    if (familyPaidSeatIds.length !== confirmedPaidSeatIds.length) {
+      setErrorMessage(`Keep exactly ${confirmedPaidSeatIds.length} paid seat${confirmedPaidSeatIds.length === 1 ? "" : "s"} selected.`);
+      return;
+    }
+    if (familyChildSeatIds.length < confirmedChildSeatIds.length || familyChildSeatIds.length > seatingLink.child_seat_limit) {
+      setErrorMessage(`Select between ${confirmedChildSeatIds.length} and ${seatingLink.child_seat_limit} free children's seats.`);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch("/api/reserved-seating/family-seats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: seatingLink.selection_token,
+          paidSeatIds: familyPaidSeatIds,
+          childSeatIds: familyChildSeatIds,
+        }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to update family seats.");
+      setConfirmedSeatIds(sortReservedSeatIds([...familyPaidSeatIds, ...familyChildSeatIds]));
+      setConfirmedPaidSeatIds(sortReservedSeatIds(familyPaidSeatIds));
+      setConfirmedChildSeatIds(sortReservedSeatIds(familyChildSeatIds));
+      setIsEditingFamilySeats(false);
+      setTicketEmailMessageTone("success");
+      setTicketEmailMessage("Your family seating has been updated. Your existing ticket code remains valid.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update family seats.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function handleSeatClick(seatId: string) {
+    if (isEditingFamilySeats) {
+      setErrorMessage(null);
+      const setActiveSeats = familySeatType === "paid" ? setFamilyPaidSeatIds : setFamilyChildSeatIds;
+      const otherSeatIds = new Set(familySeatType === "paid" ? familyChildSeatIds : familyPaidSeatIds);
+      if (otherSeatIds.has(seatId)) return;
+
+      setActiveSeats((currentSeatIds) => {
+        if (currentSeatIds.includes(seatId)) return currentSeatIds.filter((currentSeatId) => currentSeatId !== seatId);
+        const limit = familySeatType === "paid" ? confirmedPaidSeatIds.length : seatingLink.child_seat_limit;
+        return currentSeatIds.length >= limit ? currentSeatIds : sortReservedSeatIds([...currentSeatIds, seatId]);
+      });
+      return;
+    }
+
     if (isAlreadySubmitted) {
       return;
     }
@@ -302,7 +383,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
     });
   }
 
-  const seatsToShow = isAlreadySubmitted ? confirmedSeatIds : selectedSeatIds;
+  const seatsToShow = isAlreadySubmitted ? (isEditingFamilySeats ? displayedFamilySeatIds : confirmedSeatIds) : selectedSeatIds;
   const showVenueName = show.venue?.trim() || RESERVED_SEATING_VENUE.venueName;
   const formattedShowDate = formatShowDate(show.show_date);
   const ticketCoverageMessage = seatingLink.ticket_count === 1
@@ -553,8 +634,10 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
             <aside className="order-2 rounded-[1.75rem] border border-white/10 bg-slate-950/45 p-4 sm:order-1 sm:p-5 xl:order-2 xl:sticky xl:top-6">
               <h2 className="text-lg font-semibold text-white">Selection Summary</h2>
               <p className="mt-1 text-sm text-slate-300">
-                {isAlreadySubmitted
-                  ? "Your reserved seats are locked in."
+                {isEditingFamilySeats
+                  ? "Choose free children's seats or move every paid seat as one group."
+                  : isAlreadySubmitted
+                  ? "Your reserved seats are confirmed."
                   : `You can select up to ${seatingLink.ticket_count} seat${seatingLink.ticket_count === 1 ? "" : "s"}.`}
               </p>
 
@@ -571,20 +654,26 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                 </div>
               ) : null}
 
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Your Selected Seats</p>
-                {seatsToShow.length > 0 ? (
-                  <ul className="mt-3 grid gap-2">
-                    {seatsToShow.map((seatId) => (
-                      <li key={seatId} className="rounded-xl border border-amber-300/25 bg-amber-400/15 px-3 py-2 text-sm font-semibold text-amber-100">
-                        {formatReservedSeatLabel(seatId)}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-slate-400">No seats selected yet.</p>
-                )}
-              </div>
+              {isAlreadySubmitted ? (
+                <div className="mt-4 grid gap-3">
+                  <div className="rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Paid Seats · {displayedPaidSeatIds.length}</p>
+                    <p className="mt-2 text-sm font-semibold text-white">{displayedPaidSeatIds.map(formatReservedSeatLabel).join(", ") || "None"}</p>
+                  </div>
+                  <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Free Children 10 And Under · {displayedChildSeatIds.length}</p>
+                    <p className="mt-2 text-sm font-semibold text-white">{displayedChildSeatIds.map(formatReservedSeatLabel).join(", ") || "None selected"}</p>
+                  </div>
+                  <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-100">Total Occupied Seats · {displayedFamilySeatIds.length}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Your Selected Seats</p>
+                  {seatsToShow.length > 0 ? <p className="mt-3 text-sm font-semibold text-amber-100">{seatsToShow.map(formatReservedSeatLabel).join(", ")}</p> : <p className="mt-3 text-sm text-slate-400">No seats selected yet.</p>}
+                </div>
+              )}
 
 
               {errorMessage ? (
@@ -604,6 +693,16 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                 </button>
               ) : (
                 <div className="mt-4 space-y-3">
+                  {canManageChildSeats ? (
+                    isEditingFamilySeats ? (
+                      <div className="grid gap-2">
+                        <button type="button" onClick={() => void saveFamilySeatChanges()} disabled={isSubmitting} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-500 disabled:opacity-50">{isSubmitting ? "Saving Family Seats..." : "Save Family Seats"}</button>
+                        <button type="button" onClick={cancelFamilySeatChanges} disabled={isSubmitting} className="rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10">Cancel Changes</button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={beginFamilySeatChanges} className="w-full rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-100 hover:bg-emerald-400/20">Add Free Children Or Move Our Group</button>
+                    )
+                  ) : null}
                   <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
                     <p className="font-bold">Your tickets are ready.</p>
                     <p className="mt-2 leading-6">Most guests simply use their phone at the door. Open the Phone-Friendly Ticket below and present the code when you arrive.</p>
@@ -644,6 +743,17 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
             </aside>
 
             <div className="order-1 w-full max-w-full overflow-hidden sm:order-2 xl:order-1">
+              {isEditingFamilySeats ? (
+                <section className="mb-4 rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4">
+                  <h2 className="text-lg font-bold text-white">Manage Your Family's Seats</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-200">Children ages 10 and under are free. Select up to {seatingLink.child_seat_limit} children's seats. For more than 3 children, contact CMMS so we can help seat your family together.</p>
+                  <p className="mt-2 text-sm text-slate-300">To relocate, select the Paid Seats mode and move all {confirmedPaidSeatIds.length} paid seats. Your original seats remain reserved unless the complete update succeeds.</p>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setFamilySeatType("paid")} className={`rounded-xl px-3 py-2 text-sm font-bold ${familySeatType === "paid" ? "bg-sky-500 text-white" : "border border-white/15 bg-white/5 text-slate-200"}`}>Paid Seats ({familyPaidSeatIds.length}/{confirmedPaidSeatIds.length})</button>
+                    <button type="button" onClick={() => setFamilySeatType("child")} className={`rounded-xl px-3 py-2 text-sm font-bold ${familySeatType === "child" ? "bg-emerald-500 text-white" : "border border-white/15 bg-white/5 text-slate-200"}`}>Free Children ({familyChildSeatIds.length}/{seatingLink.child_seat_limit})</button>
+                  </div>
+                </section>
+              ) : null}
               {!isAlreadySubmitted && linkAssignments.length === 0 ? (
                 <section className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-3 text-center sm:p-4">
                   <button
@@ -691,7 +801,9 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                 showCustomerSeatDetails={false}
                 title="Select Your Seats"
                 helperText={
-                  isAlreadySubmitted
+                  isEditingFamilySeats
+                    ? `Select ${familySeatType === "paid" ? "paid" : "free children's"} seats. Taken and blocked seats cannot be selected.`
+                    : isAlreadySubmitted
                     ? "Your seats are confirmed and highlighted in gold below the stage."
                     : "Available seats are green. Taken seats are red. Blocked seats are gray. Your current choices are highlighted in gold."
                 }

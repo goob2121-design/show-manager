@@ -6,7 +6,6 @@ import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import {
   formatReservedSeatLabel,
-  getReservedSeatDefinition,
   RESERVED_SEAT_DEFINITIONS,
   sortReservedSeatIds,
 } from "@/lib/reserved-seating";
@@ -23,11 +22,9 @@ import {
   buildReservedSeatingMessageBody,
   buildReservedSeatingMessageSubject,
 } from "@/lib/reserved-seat-generated-message";
-import { tryGenerateReservationScanToken } from "@/lib/reservation-scan-tokens";
 import { formatReservedSeatPayAtDoorAmount, normalizeReservedSeatPayAtDoorQuantity } from "@/lib/reserved-seat-pay-at-door";
 import { getOfficialTicketReadiness } from "@/lib/official-ticket-readiness";
 import { getReservedSeatReminderEligibility } from "@/lib/reserved-seat-reminder-eligibility";
-import { createClient } from "@/lib/supabase/client";
 import type { ReservedSeatCategory, ShowReservedSeatAssignment, ShowReservedSeatingLink } from "@/lib/types";
 
 type ReservedSeatingSponsorOption = {
@@ -74,6 +71,7 @@ type PayAtDoorDisplay = { amount: number | null; paidAt: string | null; method: 
 
 type LinkWithSeats = ShowReservedSeatingLink & {
   seatIds: string[];
+  childSeatIds: string[];
 };
 
 type CopyFeedbackTarget = "subject" | "body" | "link" | null;
@@ -162,18 +160,6 @@ function getLinkStatus(link: LinkWithSeats) {
   }
 
   return { label: "Not Sent", classes: "bg-amber-500/15 text-amber-200 border-amber-400/25" };
-}
-
-function getResetSelectionMode(link: ShowReservedSeatingLink) {
-  if (link.is_complimentary) {
-    return "comp";
-  }
-
-  if (link.source_ticket_id) {
-    return "imported";
-  }
-
-  return "customer";
 }
 
 const reservedSeatCategoryOptions: Array<{ value: ReservedSeatCategory; label: string }> = [
@@ -273,7 +259,23 @@ export function ReservedSeatingPanel({
   const [postAssignmentPromptLinkId, setPostAssignmentPromptLinkId] = useState<string | null>(null);
   const [showBulkReminderConfirmation, setShowBulkReminderConfirmation] = useState(false);
   const payAtDoorFormAmount = formatReservedSeatPayAtDoorAmount(formState.ticketCount);
-  const supabase = useMemo(() => createClient(), []);
+  async function reservedSeatingAdminRequest(body?: Record<string, unknown>) {
+    const endpoint = `/api/admin/shows/${encodeURIComponent(showId)}/reserved-seating`;
+    const response = await fetch(body ? endpoint : `${endpoint}?slug=${encodeURIComponent(showSlug)}`, body ? {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ slug: showSlug, ...body }),
+    } : { credentials: "same-origin" });
+    const payload = await response.json().catch(() => null) as {
+      success?: boolean;
+      error?: string;
+      links?: ShowReservedSeatingLink[];
+      assignments?: ShowReservedSeatAssignment[];
+    } | null;
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || "Unable to update reserved seating.");
+    return payload;
+  }
 
   async function loadReservedSeatEmailStatuses(nextLinks: ShowReservedSeatingLink[]) {
     if (nextLinks.length === 0) {
@@ -418,27 +420,15 @@ export function ReservedSeatingPanel({
     setErrorMessage(null);
 
     try {
-      const [{ data: linkRows, error: linksError }, { data: assignmentRows, error: assignmentsError }] = await Promise.all([
-        supabase.from("show_reserved_seating_links").select("*").eq("show_id", showId).order("created_at", { ascending: false }),
-        supabase.from("show_reserved_seat_assignments").select("*").eq("show_id", showId).order("created_at", { ascending: true }),
-      ]);
-
-      if (linksError) {
-        throw linksError;
-      }
-
-      if (assignmentsError) {
-        throw assignmentsError;
-      }
-
-      const nextLinks = (linkRows ?? []) as ShowReservedSeatingLink[];
+      const reservedSeating = await reservedSeatingAdminRequest();
+      const nextLinks = reservedSeating.links ?? [];
       const statusResponse = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/pay-at-door-status?slug=${encodeURIComponent(showSlug)}`, { credentials: "same-origin" });
       const statusPayload = await statusResponse.json().catch(() => null) as { success?: boolean; statuses?: Array<{ linkId: string; amount: number | null; paidAt: string | null; method: "cash" | "external_card" | null }> } | null;
       setPayAtDoorByLinkId(statusResponse.ok && statusPayload?.success && statusPayload.statuses
         ? Object.fromEntries(statusPayload.statuses.map((status) => [status.linkId, { amount: status.amount, paidAt: status.paidAt, method: status.method }]))
         : {});
       setLinks(nextLinks);
-      setAssignments((assignmentRows ?? []) as ShowReservedSeatAssignment[]);
+      setAssignments(reservedSeating.assignments ?? []);
       await loadReservedSeatEmailStatuses(nextLinks);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to load reserved seating."));
@@ -484,6 +474,11 @@ export function ReservedSeatingPanel({
               .filter((assignment) => assignment.seating_link_id === link.id && assignment.assignment_type === "customer")
               .map((assignment) => assignment.seat_id),
           ),
+          childSeatIds: sortReservedSeatIds(
+            assignments
+              .filter((assignment) => assignment.seating_link_id === link.id && assignment.assignment_type === "customer" && assignment.occupant_type === "child_free")
+              .map((assignment) => assignment.seat_id),
+          ),
         }))
         .sort((left, right) => Number(right.seat_preference === "auto_assign") - Number(left.seat_preference === "auto_assign")),
     [assignments, links],
@@ -511,6 +506,8 @@ export function ReservedSeatingPanel({
     autoAssignRequested: linksWithSeats.filter((link) => link.seat_preference === "auto_assign" && link.seatIds.length === 0).length,
     customerSelecting: linksWithSeats.filter((link) => link.seat_preference !== "auto_assign" && link.seatIds.length === 0).length,
     seatsAssigned: linksWithSeats.reduce((count, link) => count + link.seatIds.length, 0),
+    freeChildSeats: linksWithSeats.reduce((count, link) => count + link.childSeatIds.length, 0),
+    paidSeats: linksWithSeats.reduce((count, link) => count + link.seatIds.length - link.childSeatIds.length, 0),
   }), [linksWithSeats]);
   const readinessSummary = useMemo(() => {
     const autoAssignWaiting = linksWithSeats.filter((link) => link.seat_preference === "auto_assign" && link.seatIds.length === 0);
@@ -589,22 +586,16 @@ export function ReservedSeatingPanel({
 
     try {
       const ticketCount = normalizeReservedSeatPayAtDoorQuantity(formState.ticketCount);
-      const { error } = await supabase.from("show_reserved_seating_links").insert({
-        show_id: showId,
-        customer_name: formState.customerName.trim(),
-        email: formState.email.trim() || null,
-        ticket_count: ticketCount,
-        scan_token: tryGenerateReservationScanToken(),
-        selection_mode: formState.isComplimentary ? "comp" : "customer",
-        is_complimentary: formState.isComplimentary,
-        source_note: formState.sourceNote.trim() || null,
-        seat_category: formState.seatCategory,
-        pay_at_door_intent: !formState.isComplimentary && formState.seatCategory === "paid_reserved" && formState.payAtDoor,
+      await reservedSeatingAdminRequest({
+        action: "create-link",
+        customerName: formState.customerName,
+        email: formState.email,
+        ticketCount,
+        sourceNote: formState.sourceNote,
+        isComplimentary: formState.isComplimentary,
+        seatCategory: formState.seatCategory,
+        payAtDoor: formState.payAtDoor,
       });
-
-      if (error) {
-        throw error;
-      }
 
       const createdLabel = formState.isComplimentary ? "Comp guest" : "Seat selection link";
       setFormState(initialLinkFormState);
@@ -624,11 +615,7 @@ export function ReservedSeatingPanel({
       return;
     }
 
-    const sentAt = new Date().toISOString();
-    const { error } = await supabase.from("show_reserved_seating_links").update({ sent_at: sentAt }).eq("id", linkId);
-    if (error) {
-      throw error;
-    }
+    await reservedSeatingAdminRequest({ action: "mark-sent", linkId });
   }
 
   async function handleSendSeatEmail(link: LinkWithSeats) {
@@ -731,34 +718,7 @@ export function ReservedSeatingPanel({
           throw new Error(`${manualAssignLink.customer_name} already has all ${manualAssignLink.ticket_count} seat${manualAssignLink.ticket_count === 1 ? "" : "s"} assigned.`);
         }
 
-        const definition = getReservedSeatDefinition(seatId);
-        const now = new Date().toISOString();
-        const { error: insertError } = await supabase.from("show_reserved_seat_assignments").insert({
-          show_id: showId,
-          seating_link_id: manualAssignLink.id,
-          customer_name: manualAssignLink.customer_name,
-          email: manualAssignLink.email,
-          seat_id: seatId,
-          section: definition?.section ?? seatId.slice(0, 1),
-          row_label: definition?.rowLabel ?? seatId.slice(2, 3),
-          seat_number: definition?.seatNumber ?? 0,
-          assignment_type: "customer",
-          seat_category: normalizeReservedSeatCategory(manualAssignLink.seat_category, manualAssignLink.is_complimentary),
-        });
-
-        if (insertError) {
-          throw insertError;
-        }
-
-        const nextMode = manualAssignLink.is_complimentary ? "comp" : "manual";
-        const { error: updateError } = await supabase
-          .from("show_reserved_seating_links")
-          .update({ selection_mode: nextMode, submitted_at: now, sent_at: manualAssignLink.sent_at ?? now })
-          .eq("id", manualAssignLink.id);
-
-        if (updateError) {
-          throw updateError;
-        }
+        await reservedSeatingAdminRequest({ action: "assign-seat", linkId: manualAssignLink.id, seatId });
 
         const assignedLabel = getReservedSeatCategoryLabel(normalizeReservedSeatCategory(manualAssignLink.seat_category, manualAssignLink.is_complimentary));
         const completedReservation = manualAssignLink.seatIds.length + 1 >= manualAssignLink.ticket_count;
@@ -772,27 +732,11 @@ export function ReservedSeatingPanel({
       }
 
       if (!assignment) {
-        const definition = getReservedSeatDefinition(seatId);
-        const { error } = await supabase.from("show_reserved_seat_assignments").insert({
-          show_id: showId,
-          seat_id: seatId,
-          section: definition?.section ?? seatId.slice(0, 1),
-          row_label: definition?.rowLabel ?? seatId.slice(2, 3),
-          seat_number: definition?.seatNumber ?? 0,
-          assignment_type: "blocked",
-        });
-
-        if (error) {
-          throw error;
-        }
+        await reservedSeatingAdminRequest({ action: "block-seat", seatId });
 
         setStatusMessage(`${formatReservedSeatLabel(seatId)} marked unavailable.`);
       } else if (assignment.assignment_type === "blocked") {
-        const { error } = await supabase.from("show_reserved_seat_assignments").delete().eq("id", assignment.id);
-
-        if (error) {
-          throw error;
-        }
+        await reservedSeatingAdminRequest({ action: "clear-assignment", assignmentId: assignment.id });
 
         setStatusMessage(`${formatReservedSeatLabel(seatId)} is available again.`);
       } else {
@@ -801,10 +745,7 @@ export function ReservedSeatingPanel({
           return;
         }
 
-        const { error } = await supabase.from("show_reserved_seat_assignments").delete().eq("id", assignment.id);
-        if (error) {
-          throw error;
-        }
+        await reservedSeatingAdminRequest({ action: "clear-assignment", assignmentId: assignment.id });
 
         setStatusMessage(`${formatReservedSeatLabel(seatId)} cleared.`);
       }
@@ -874,19 +815,14 @@ export function ReservedSeatingPanel({
     setErrorMessage(null);
 
     try {
-      const { error: deleteError } = await supabase.from("show_reserved_seat_assignments").delete().eq("seating_link_id", linkId);
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      const link = links.find((item) => item.id === linkId);
-      const { error: updateError } = await supabase
-        .from("show_reserved_seating_links")
-        .update({ submitted_at: null, selection_mode: getResetSelectionMode(link as ShowReservedSeatingLink) })
-        .eq("id", linkId);
-      if (updateError) {
-        throw updateError;
-      }
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/reserved-child-seats`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: showSlug, reservationId: linkId, action: "reset" }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to clear this assignment.");
 
       if (manualAssignLinkId === linkId) {
         setManualAssignLinkId(null);
@@ -908,31 +844,43 @@ export function ReservedSeatingPanel({
     setErrorMessage(null);
 
     try {
-      const { error: updateLinkError } = await supabase
-        .from("show_reserved_seating_links")
-        .update({ seat_category: nextCategory })
-        .eq("id", link.id);
-
-      if (updateLinkError) {
-        throw updateLinkError;
-      }
-
-      const { error: updateAssignmentsError } = await supabase
-        .from("show_reserved_seat_assignments")
-        .update({ seat_category: nextCategory })
-        .eq("show_id", showId)
-        .eq("seating_link_id", link.id)
-        .eq("assignment_type", "customer");
-
-      if (updateAssignmentsError) {
-        throw updateAssignmentsError;
-      }
+      await reservedSeatingAdminRequest({ action: "update-category", linkId: link.id, seatCategory: nextCategory });
 
       setStatusMessage(`${link.customer_name} category updated to ${getReservedSeatCategoryLabel(nextCategory)}.`);
       await loadReservedSeating();
       onAssignmentsChange?.();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to update the seat category."));
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
+  async function handleApproveChildSeats(link: ShowReservedSeatingLink) {
+    const requested = window.prompt("Maximum free children's seats approved for this paid reservation:", String(link.child_seat_limit || 3));
+    if (requested === null) return;
+    const childSeatLimit = Number.parseInt(requested.trim(), 10);
+    if (!Number.isInteger(childSeatLimit) || childSeatLimit < 0 || childSeatLimit > 50) {
+      setErrorMessage("Enter a whole number from 0 through 50.");
+      return;
+    }
+
+    setActiveActionId(`child-limit-${link.id}`);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/reserved-child-seats`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: showSlug, reservationId: link.id, childSeatLimit }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to approve free children's seats.");
+      setStatusMessage(`${link.customer_name} approved for up to ${childSeatLimit} free children's seats. Open their link to assign or move the family.`);
+      await loadReservedSeating();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Unable to approve free children's seats."));
     } finally {
       setActiveActionId(null);
     }
@@ -949,11 +897,14 @@ export function ReservedSeatingPanel({
     setErrorMessage(null);
 
     try {
-      await supabase.from("show_reserved_seat_assignments").delete().eq("seating_link_id", linkId);
-      const { error } = await supabase.from("show_reserved_seating_links").delete().eq("id", linkId);
-      if (error) {
-        throw error;
-      }
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(showId)}/reserved-child-seats`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: showSlug, reservationId: linkId, action: "delete" }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to delete this seat selection link.");
 
       if (manualAssignLinkId === linkId) {
         setManualAssignLinkId(null);
@@ -1076,7 +1027,7 @@ export function ReservedSeatingPanel({
         <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 marker:hidden">
           <span className="font-semibold text-white">Reserved Seating Status</span>
           <span className="text-xs font-semibold text-slate-300">
-            {seatPreferenceCounts.autoAssignRequested} Auto Assign · {seatPreferenceCounts.customerSelecting} Selecting · {seatPreferenceCounts.seatsAssigned} Assigned · {readinessSummary.ready.reservations} Ready
+            {seatPreferenceCounts.autoAssignRequested} Auto Assign · {seatPreferenceCounts.customerSelecting} Selecting · {seatPreferenceCounts.paidSeats} Paid · {seatPreferenceCounts.freeChildSeats} Children · {seatPreferenceCounts.seatsAssigned} Occupied · {readinessSummary.ready.reservations} Ready
           </span>
           <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${seatingAttentionCount > 0 ? "border-amber-300/40 bg-amber-400/15 text-amber-100" : "border-emerald-300/30 bg-emerald-500/10 text-emerald-100"}`}>
             {seatingAttentionCount > 0 ? `${seatingAttentionCount} item${seatingAttentionCount === 1 ? "" : "s"} need attention` : "No items need attention"}
@@ -1097,6 +1048,7 @@ export function ReservedSeatingPanel({
         <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100">Seats Already Assigned</p>
           <p className="mt-1 text-3xl font-black text-white">{seatPreferenceCounts.seatsAssigned}</p>
+          <p className="mt-1 text-xs text-emerald-100">{seatPreferenceCounts.paidSeats} paid · {seatPreferenceCounts.freeChildSeats} free children</p>
         </div>
       </div>
 
@@ -1821,6 +1773,16 @@ export function ReservedSeatingPanel({
                       >
                         {isManualAssigning ? "Stop Manual Assign" : "Manual Assign Seats"}
                       </button>
+                      {!link.is_complimentary && link.seat_category === "paid_reserved" ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleApproveChildSeats(link)}
+                          disabled={activeActionId === `child-limit-${link.id}`}
+                          className="rounded-xl border border-emerald-300/30 bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:opacity-60"
+                        >
+                          {activeActionId === `child-limit-${link.id}` ? "Saving..." : `Approve Children (${link.child_seat_limit ?? 0})`}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => void handleResetLink(link.id)}

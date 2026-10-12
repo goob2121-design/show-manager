@@ -4,7 +4,7 @@ import { AdminGate } from "@/app/components/admin-gate";
 import { PrintButton } from "@/app/components/print-button";
 import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
 import { buildSponsorAdmissionPasses, sponsorAdmissionSeatSummary } from "@/lib/sponsor-admission-pass";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import type { ShowCompTicket, ShowRecord, ShowReservedSeatAssignment, ShowReservedSeatingLink, ShowSponsor, SponsorLibraryEntry } from "@/lib/types";
 
 type SponsorRow = ShowSponsor & { sponsor?: SponsorLibraryEntry | SponsorLibraryEntry[] | null };
@@ -17,7 +17,7 @@ function formatDate(value: string | null) {
 
 export default async function SponsorAdmissionPassPage({ params, searchParams }: Props) {
   const [{ slug }, query] = await Promise.all([params, searchParams]);
-  const supabase = await createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
   const { data: showData } = await supabase.from("shows").select("*").eq("slug", slug).maybeSingle();
   const show = showData as ShowRecord | null;
   if (!show) notFound();

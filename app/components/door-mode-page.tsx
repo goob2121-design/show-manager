@@ -358,6 +358,8 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const [seatView, setSeatView] = useState<DoorSeatView | null>(null);
   const [seatIdsByTicketId, setSeatIdsByTicketId] = useState<Record<string, string[]>>({});
   const [sponsorReservedProjectionTicketIds, setSponsorReservedProjectionTicketIds] = useState<Set<string>>(() => new Set());
+  const [freeChildrenExpected, setFreeChildrenExpected] = useState(0);
+  const [freeChildrenCheckedIn, setFreeChildrenCheckedIn] = useState(0);
   const [scanInput, setScanInput] = useState("");
   const [scanState, setScanState] = useState<DoorScanState>({ kind: "idle" });
   const [scanBehavior, setScanBehavior] = useState<DoorScanBehavior>(() => {
@@ -447,6 +449,8 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
           .filter((assignment) => assignment.isSponsorReservedProjection)
           .map((assignment) => assignment.projectedTicketId),
       ));
+      setFreeChildrenExpected(seatAssignments.reduce((sum, assignment) => sum + assignment.childSeatCount, 0));
+      setFreeChildrenCheckedIn(seatAssignments.reduce((sum, assignment) => sum + assignment.childCheckedInCount, 0));
 
       const { data: showSponsorData, error: showSponsorError } = await supabase
         .from("show_sponsors")
@@ -686,9 +690,9 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
   const estimatedCompValue = compCheckedInTickets * COMP_TICKET_VALUE;
   const totalPaidAttendance = doorPaidTickets + prepaidOnlineTickets + reservedPayAtDoorAttendance;
   const totalAttendance =
-    totalPaidAttendance + compCheckedInTickets + sponsorCompTicketsCheckedIn + manualCheckedInTickets;
+    totalPaidAttendance + compCheckedInTickets + sponsorCompTicketsCheckedIn + manualCheckedInTickets + freeChildrenCheckedIn;
   const totalRevenue = doorPaidRevenue + prepaidOnlineRevenue + reservedPayAtDoorRevenue;
-  const expectedAttendance = expectedDoorAttendance(compTickets, sponsorCompTicketsAllowed, sponsorReservedProjectionTicketIds);
+  const expectedAttendance = expectedDoorAttendance(compTickets, sponsorCompTicketsAllowed, sponsorReservedProjectionTicketIds) + freeChildrenExpected;
   const attendanceProgress = attendanceProgressPercent(totalAttendance, expectedAttendance);
   void attendanceProgress;
   const formattedCurrentTime = currentTime.toLocaleTimeString([], {
@@ -1092,10 +1096,16 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
         autoQuantities.remainingTickets > 0
         && !(autoTicket.pay_at_door && !autoTicket.pay_at_door_paid_at)
       ) {
-        await handleAdjustTicketCheckIn(
-          autoTicket,
-          autoQuantities.remainingTickets,
-        );
+        if (foundResult.reservation.childSeatCount > 0) {
+          await applyReservedFamilyCheckIn(
+            foundResult.reservation.id,
+            autoTicket,
+            autoQuantities.remainingTickets,
+            foundResult.reservation.childSeatCount - foundResult.reservation.childCheckedInCount,
+          );
+        } else {
+          await handleAdjustTicketCheckIn(autoTicket, autoQuantities.remainingTickets);
+        }
       }
     } catch (error) {
       if (scanRequestGeneration !== scanRequestGenerationRef.current) {
@@ -1675,6 +1685,58 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
     }
   }
 
+  async function applyReservedFamilyCheckIn(
+    reservationId: string,
+    ticket: ShowCompTicket,
+    adultDelta: number,
+    childDelta: number,
+    recordUndo = true,
+  ) {
+    if (!show || (adultDelta === 0 && childDelta === 0)) return;
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setActiveActionId(`family-${reservationId}`);
+    try {
+      const response = await fetch(`/api/admin/shows/${encodeURIComponent(show.id)}/reserved-family-check-in`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: show.slug, reservationId, adultDelta, childDelta }),
+      });
+      const payload = await response.json() as { success?: boolean; error?: string; result?: { adultCheckedIn: number; adultTotal: number; childCheckedIn: number; childTotal: number } };
+      if (!response.ok || !payload.success || !payload.result) throw new Error(payload.error || "Unable to update family check-in.");
+      const result = payload.result;
+      setCompTickets((current) => current.map((item) => item.id === ticket.id ? {
+        ...item,
+        checked_in_count: result.adultCheckedIn,
+        checked_in: result.adultCheckedIn >= result.adultTotal,
+      } : item));
+      setScanState((current) => current.kind === "found" && current.lookup.reservation.id === reservationId ? {
+        ...current,
+        lookup: {
+          ...current.lookup,
+          reservation: { ...current.lookup.reservation, childCheckedInCount: result.childCheckedIn },
+          ticket: current.lookup.ticket ? { ...current.lookup.ticket, checked_in_count: result.adultCheckedIn, checked_in: result.adultCheckedIn >= result.adultTotal } : null,
+        },
+      } : current);
+      setFreeChildrenCheckedIn((current) => Math.max(0, Math.min(freeChildrenExpected, current + childDelta)));
+      setStatusMessage(`Family check-in updated: ${result.adultCheckedIn}/${result.adultTotal} paid, ${result.childCheckedIn}/${result.childTotal} free children.`);
+      if (recordUndo) {
+        pushRecentActivity({
+          id: `family-${reservationId}-${Date.now()}`,
+          label: `${ticket.guest_name} family check-in`,
+          createdAt: Date.now(),
+          undo: () => applyReservedFamilyCheckIn(reservationId, ticket, -adultDelta, -childDelta, false),
+        });
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update family check-in.");
+      if (!recordUndo) throw error;
+    } finally {
+      setActiveActionId(null);
+    }
+  }
+
   async function handleUndoActivity(activity: DoorModeActivity, actionId: string) {
     if (!activity.undo) return;
 
@@ -2094,9 +2156,15 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                         </span>
                         {scannedTicket && scannedReservationQuantities ? (
                           <span className="rounded-full border border-emerald-800/70 bg-emerald-500/10 px-2.5 py-1 font-semibold uppercase tracking-[0.12em] text-emerald-200">
-                            {scannedReservationQuantities.checkedInCount} / {scannedReservationQuantities.totalEligibleTickets} checked in
+                            Paid: {scannedReservationQuantities.checkedInCount} / {scannedReservationQuantities.totalEligibleTickets}
                           </span>
                         ) : null}
+                        <span className="rounded-full border border-emerald-800/70 bg-emerald-500/10 px-2.5 py-1 font-semibold uppercase tracking-[0.12em] text-emerald-200">
+                          Free Children: {scanState.lookup.reservation.childCheckedInCount} / {scanState.lookup.reservation.childSeatCount}
+                        </span>
+                        <span className="rounded-full border border-gray-700 bg-gray-900 px-2.5 py-1 font-semibold uppercase tracking-[0.12em] text-gray-200">
+                          Total Party: {scanState.lookup.reservation.ticketCount + scanState.lookup.reservation.childSeatCount}
+                        </span>
                         {scanState.lookup.reservation.seatLabels.length > 0 ? (
                           <span className="font-medium text-gray-200"><span className="font-semibold text-gray-50">Seats:</span> {scanState.lookup.reservation.seatLabels.join(", ")}</span>
                         ) : null}
@@ -2114,11 +2182,25 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                       <button type="button" onClick={handleSearchScannedGuest} className="min-h-10 rounded-lg border border-sky-800/80 bg-sky-500/[0.07] px-3 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/10">Search Manually</button>
                       {scannedTicket && !(scannedTicket.pay_at_door && !scannedTicket.pay_at_door_paid_at) ? (
                         <>
+                          {scanState.lookup.reservation.childSeatCount > 0 ? (
+                            <button type="button" onClick={() => void applyReservedFamilyCheckIn(
+                              scanState.lookup.reservation.id,
+                              scannedTicket,
+                              scannedReservationQuantities?.remainingTickets ?? 0,
+                              scanState.lookup.reservation.childSeatCount - scanState.lookup.reservation.childCheckedInCount,
+                            )} disabled={Boolean(activeActionId) || ((scannedReservationQuantities?.remainingTickets ?? 0) === 0 && scanState.lookup.reservation.childCheckedInCount >= scanState.lookup.reservation.childSeatCount)} className="min-h-10 rounded-lg bg-emerald-700 px-4 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-40">Check In Complete Family</button>
+                          ) : null}
                           {scannedReservationQuantities?.isMultiTicket ? (
                             <button type="button" onClick={() => void handleAdjustTicketCheckIn(scannedTicket, scannedReservationQuantities.remainingTickets)} disabled={Boolean(activeActionId) || scannedReservationQuantities.isFullyCheckedIn} className="min-h-10 rounded-lg border border-emerald-700 bg-emerald-500/10 px-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-600/20 disabled:cursor-not-allowed disabled:opacity-40">Check In All</button>
                           ) : null}
                           <button type="button" onClick={() => void handleAdjustTicketCheckIn(scannedTicket, 1)} disabled={Boolean(activeActionId) || scannedReservationQuantities?.isFullyCheckedIn} className="min-h-10 rounded-lg bg-emerald-700 px-4 text-sm font-bold text-gray-50 transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:opacity-40">{scannedReservationQuantities?.isMultiTicket ? "+1 Check In" : "Check In"}</button>
                           <button type="button" onClick={() => void handleAdjustTicketCheckIn(scannedTicket, -1)} disabled={Boolean(activeActionId) || (scannedReservationQuantities?.checkedInCount ?? 0) <= 0} className="min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40">-1 Undo</button>
+                          {scanState.lookup.reservation.childSeatCount > 0 ? (
+                            <>
+                              <button type="button" onClick={() => void applyReservedFamilyCheckIn(scanState.lookup.reservation.id, scannedTicket, 0, 1)} disabled={Boolean(activeActionId) || scanState.lookup.reservation.childCheckedInCount >= scanState.lookup.reservation.childSeatCount} className="min-h-10 rounded-lg border border-emerald-700 bg-emerald-500/10 px-3 text-sm font-semibold text-emerald-100 disabled:opacity-40">+1 Child</button>
+                              <button type="button" onClick={() => void applyReservedFamilyCheckIn(scanState.lookup.reservation.id, scannedTicket, 0, -1)} disabled={Boolean(activeActionId) || scanState.lookup.reservation.childCheckedInCount <= 0} className="min-h-10 rounded-lg border border-gray-700 bg-gray-900 px-3 text-sm font-semibold text-gray-100 disabled:opacity-40">-1 Child Undo</button>
+                            </>
+                          ) : null}
                         </>
                       ) : null}
                     </div>
@@ -2407,7 +2489,8 @@ export function DoorModePage({ showSlug, accessRole = "admin" }: DoorModePagePro
                     { label: "Sponsor Comps Allowed", value: sponsorCompTicketsAllowed, secondary: `Remaining ${sponsorCompTicketsRemaining}`, tone: "text-amber-300" },
                     { label: "Sponsor Comps Checked In", value: sponsorCompTicketsCheckedIn, secondary: "Separate from paid tickets", tone: "text-amber-200" },
                     { label: "Total Paid Attendance", value: totalPaidAttendance, secondary: "Door + Prepaid", tone: "text-gray-50" },
-                    { label: "Total Attendance", value: totalAttendance, secondary: "Including comps", tone: "text-gray-50" },
+                    { label: "Free Children", value: freeChildrenCheckedIn, secondary: `${freeChildrenExpected} reserved seats`, tone: "text-emerald-200" },
+                    { label: "Total Attendance", value: totalAttendance, secondary: "Paid + children + comps", tone: "text-gray-50" },
                     { label: "Total Revenue", value: formatCurrency(totalRevenue), secondary: "Paid tickets only", tone: "text-emerald-300" },
                   ].map((card) => (
                     <article key={card.label} className="rounded-[24px] border border-gray-700 bg-gray-900/60 p-5">

@@ -4,6 +4,8 @@ export type DoorModeSeatAssignment = {
   projectedTicketId: string;
   seatIds: string[];
   isSponsorReservedProjection: boolean;
+  childSeatCount: number;
+  childCheckedInCount: number;
 };
 
 type ProjectionSourceRow = {
@@ -18,6 +20,7 @@ type DirectReservedLinkRow = {
   customer_name?: string | null;
   is_complimentary?: boolean;
   source_note?: string | null;
+  child_checked_in_count?: number | null;
 };
 
 type SponsorNameRow = {
@@ -29,6 +32,7 @@ type SponsorNameRow = {
 type SeatAssignmentRow = {
   seating_link_id: string | null;
   seat_id: string;
+  occupant_type?: string | null;
 };
 
 export function buildDoorModeSeatAssignments(
@@ -41,6 +45,7 @@ export function buildDoorModeSeatAssignments(
   const ticketIdsByLinkId = new Map<string, Set<string>>();
   const seatIdsByTicketId = new Map<string, Set<string>>();
   const sponsorProjectionTicketIds = new Set<string>();
+  const childCountsByTicketId = new Map<string, { total: number; checkedIn: number }>();
   const canonicalPosition = new Map(canonicalSeatIds.map((seatId, index) => [seatId, index]));
   const projectedTicketIdByLinkId = new Map(
     projections.map((projection) => [projection.source_id, projection.projected_ticket_id]),
@@ -81,6 +86,19 @@ export function buildDoorModeSeatAssignments(
     if (!assignment.seating_link_id || !canonicalPosition.has(assignment.seat_id)) continue;
     for (const ticketId of ticketIdsByLinkId.get(assignment.seating_link_id) ?? []) {
       seatIdsByTicketId.get(ticketId)?.add(assignment.seat_id);
+      if (assignment.occupant_type === "child_free") {
+        const current = childCountsByTicketId.get(ticketId) ?? { total: 0, checkedIn: 0 };
+        current.total += 1;
+        childCountsByTicketId.set(ticketId, current);
+      }
+    }
+  }
+
+  for (const link of directLinks) {
+    for (const ticketId of ticketIdsByLinkId.get(link.id) ?? []) {
+      const current = childCountsByTicketId.get(ticketId) ?? { total: 0, checkedIn: 0 };
+      current.checkedIn += Math.max(0, link.child_checked_in_count ?? 0);
+      childCountsByTicketId.set(ticketId, current);
     }
   }
 
@@ -90,6 +108,8 @@ export function buildDoorModeSeatAssignments(
       (left, right) => canonicalPosition.get(left)! - canonicalPosition.get(right)!,
     ),
     isSponsorReservedProjection: sponsorProjectionTicketIds.has(projectedTicketId),
+    childSeatCount: childCountsByTicketId.get(projectedTicketId)?.total ?? 0,
+    childCheckedInCount: childCountsByTicketId.get(projectedTicketId)?.checkedIn ?? 0,
   }));
 }
 
@@ -107,7 +127,7 @@ export async function loadDoorModeSeatAssignments(
 
   const { data: directLinkData, error: directLinkError } = await supabase
     .from("show_reserved_seating_links")
-    .select("id, source_ticket_id, source_show_sponsor_id, customer_name, is_complimentary, source_note")
+    .select("id, source_ticket_id, source_show_sponsor_id, customer_name, is_complimentary, source_note, child_checked_in_count")
     .eq("show_id", showId);
   if (directLinkError) throw directLinkError;
 
@@ -127,7 +147,7 @@ export async function loadDoorModeSeatAssignments(
 
   const { data: assignmentData, error: assignmentError } = await supabase
     .from("show_reserved_seat_assignments")
-    .select("seating_link_id, seat_id")
+    .select("seating_link_id, seat_id, occupant_type")
     .eq("show_id", showId)
     .in("seating_link_id", linkIds);
   if (assignmentError) throw assignmentError;

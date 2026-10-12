@@ -543,6 +543,7 @@ export type McSpecialSegment = {
 export type ReservedSeatingLinkMode = "customer" | "manual" | "imported" | "comp";
 export type ReservedSeatCategory = "paid_reserved" | "comp" | "guest";
 export type ReservedSeatPreference = "customer_select" | "auto_assign";
+export type ReservedSeatOccupantType = "ticketed" | "child_free";
 
 export type ShowReservedSeatingLink = {
   id: string;
@@ -569,6 +570,8 @@ export type ShowReservedSeatingLink = {
   seat_category: ReservedSeatCategory | string;
   seat_preference: ReservedSeatPreference;
   pay_at_door_intent?: boolean;
+  child_seat_limit: number;
+  child_checked_in_count: number;
   created_at: string;
 };
 
@@ -598,6 +601,7 @@ export type ShowReservedSeatAssignment = {
   seat_number: number;
   assignment_type: "customer" | "blocked" | string;
   seat_category: ReservedSeatCategory | string | null;
+  occupant_type: ReservedSeatOccupantType | string;
   notes: string | null;
   created_at: string;
 };

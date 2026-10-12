@@ -1366,8 +1366,7 @@ export default function ShowsDashboardPage() {
         { data: guestProfiles, error: guestProfilesError },
         { data: setlistEntries, error: setlistEntriesError },
         { data: compTickets, error: compTicketsError },
-        { count: reservedSeatsAssigned, error: reservedSeatsAssignedError },
-        { data: reservedLinks, error: reservedLinksError },
+        reservedSummaryResponse,
         { count: sponsorRecordsCount, error: sponsorRecordsCountError },
       ] = await Promise.all([
         supabase
@@ -1386,15 +1385,7 @@ export default function ShowsDashboardPage() {
           .from("show_comp_tickets")
           .select("ticket_count, ticket_type")
           .eq("show_id", nextCurrentShow.id),
-        supabase
-          .from("show_reserved_seat_assignments")
-          .select("id", { count: "exact", head: true })
-          .eq("show_id", nextCurrentShow.id)
-          .eq("assignment_type", "customer"),
-        supabase
-          .from("show_reserved_seating_links")
-          .select("id, ticket_count, is_complimentary, seat_category")
-          .eq("show_id", nextCurrentShow.id),
+        fetch(`/api/shows/${encodeURIComponent(nextCurrentShow.id)}/reserved-seating-summary`),
         supabase
           .from("show_sponsors")
           .select("id", { count: "exact", head: true })
@@ -1415,12 +1406,10 @@ export default function ShowsDashboardPage() {
       if (compTicketsError) {
         throw compTicketsError;
       }
-      if (reservedSeatsAssignedError) {
-        throw reservedSeatsAssignedError;
-      }
-      if (reservedLinksError) {
-        throw reservedLinksError;
-      }
+      const reservedSummary = await reservedSummaryResponse.json() as { success?: boolean; error?: string; reservedSeatsAssigned?: number; reservedLinks?: Array<Pick<ShowReservedSeatingLink, "id" | "ticket_count" | "is_complimentary" | "seat_category">> };
+      if (!reservedSummaryResponse.ok || !reservedSummary.success) throw new Error(reservedSummary.error || "Unable to load reserved seating totals.");
+      const reservedSeatsAssigned = reservedSummary.reservedSeatsAssigned ?? 0;
+      const reservedLinks = reservedSummary.reservedLinks ?? [];
       if (sponsorRecordsCountError) {
         throw sponsorRecordsCountError;
       }

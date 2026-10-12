@@ -39,6 +39,8 @@ export type DoorModeScanLookupResponse =
           admissionLabel: string;
           reservationCategory: "paid_reserved" | "reserved_comp";
           submittedAt: string | null;
+          childSeatCount: number;
+          childCheckedInCount: number;
         };
         ticket: DoorModeScanLookupTicket | null;
       };

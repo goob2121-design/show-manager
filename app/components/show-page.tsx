@@ -108,6 +108,19 @@ import type {
   SongType,
   ViewMode,
 } from "@/lib/types";
+
+async function requestAdminReservedSeating<T>(showId: string, slug: string, body?: Record<string, unknown>) {
+  const endpoint = `/api/admin/shows/${encodeURIComponent(showId)}/reserved-seating`;
+  const response = await fetch(body ? endpoint : `${endpoint}?slug=${encodeURIComponent(slug)}`, body ? {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ slug, ...body }),
+  } : { credentials: "same-origin" });
+  const payload = await response.json().catch(() => null) as ({ success?: boolean; error?: string } & T) | null;
+  if (!response.ok || !payload?.success) throw new Error(payload?.error || "Unable to update reserved seating.");
+  return payload;
+}
 import { buildGuestSongPlaceholderRows } from "@/lib/guest-song-placeholders";
 
 type PendingSubmission = ShowGuestSong & {
@@ -8677,28 +8690,19 @@ export function ShowPage({
 
     let cancelled = false;
     const sponsorTicketShowId = show.id;
+    const sponsorTicketShowSlug = show.slug;
 
     async function loadSponsorTicketSeats() {
       setSponsorTicketErrorMessage(null);
       try {
-        const supabase = createClient();
-        const [{ data: links, error: linksError }, { data: assignments, error: assignmentsError }] = await Promise.all([
-          supabase
-            .from("show_reserved_seating_links")
-            .select("*")
-            .eq("show_id", sponsorTicketShowId),
-          supabase
-            .from("show_reserved_seat_assignments")
-            .select("*")
-            .eq("show_id", sponsorTicketShowId),
-        ]);
-
-        if (linksError) throw linksError;
-        if (assignmentsError) throw assignmentsError;
+        const payload = await requestAdminReservedSeating<{
+          links: ShowReservedSeatingLink[];
+          assignments: ShowReservedSeatAssignment[];
+        }>(sponsorTicketShowId, sponsorTicketShowSlug);
         if (cancelled) return;
 
-        const compLinks = ((links ?? []) as ShowReservedSeatingLink[]).filter((link) => link.is_complimentary || link.seat_category === "comp" || link.seat_category === "guest");
-        const compAssignments = ((assignments ?? []) as ShowReservedSeatAssignment[]).filter((assignment) => assignment.seat_category === "comp" || assignment.seat_category === "guest");
+        const compLinks = payload.links.filter((link) => link.is_complimentary || link.seat_category === "comp" || link.seat_category === "guest");
+        const compAssignments = payload.assignments.filter((assignment) => assignment.seat_category === "comp" || assignment.seat_category === "guest");
         setSponsorTicketReservedLinks(compLinks);
         setSponsorTicketReservedAssignments(compAssignments);
       } catch (error) {
@@ -8896,7 +8900,6 @@ export function ShowPage({
     setSponsorTicketErrorMessage(null);
 
     try {
-      const supabase = createClient();
       let linkId: string | null = null;
       const sourceTicketId = row.id.startsWith("comp-") ? row.id.replace("comp-", "") : null;
       const sourceShowSponsorId = row.id.startsWith("sponsor-") ? row.id.replace("sponsor-", "") : null;
@@ -8922,33 +8925,17 @@ export function ShowPage({
         linkId = matchingLink?.id ?? null;
       }
 
-      if (!linkId) {
-        const { data, error } = await supabase
-          .from("show_reserved_seating_links")
-          .insert({
-            show_id: show.id,
-            customer_name: row.name,
-            email: null,
-            ticket_count: Math.max(1, row.quantity),
-            scan_token: tryGenerateReservationScanToken(),
-            selection_mode: "comp",
-            is_complimentary: true,
-            source_ticket_id: sourceTicketId,
-            source_show_sponsor_id: sourceShowSponsorId,
-            source_note: buildCompCategoryNotes(row.notes, row.category, row.admissionType),
-            seat_category: row.category === "guest" ? "guest" : "comp",
-          })
-          .select("id")
-          .single();
-        if (error) throw error;
-        linkId = data?.id ?? null;
-      } else {
-        const { error } = await supabase
-          .from("show_reserved_seating_links")
-          .update({ ticket_count: Math.max(1, row.quantity), customer_name: row.name, source_ticket_id: sourceTicketId, source_show_sponsor_id: sourceShowSponsorId, source_note: buildCompCategoryNotes(row.notes, row.category, row.admissionType), is_complimentary: true, seat_category: row.category === "guest" ? "guest" : "comp" })
-          .eq("id", linkId);
-        if (error) throw error;
-      }
+      const result = await requestAdminReservedSeating<{ id: string }>(show.id, show.slug, {
+        action: "upsert-comp-link",
+        linkId,
+        customerName: row.name,
+        ticketCount: Math.max(1, row.quantity),
+        sourceTicketId,
+        sourceShowSponsorId,
+        sourceNote: buildCompCategoryNotes(row.notes, row.category, row.admissionType),
+        seatCategory: row.category === "guest" ? "guest" : "comp",
+      });
+      linkId = result.id;
 
       if (!linkId) throw new Error("Unable to open reserved seats for this comp entry.");
       setActiveCompSeatAssignment({ row, linkId });
@@ -9015,19 +9002,15 @@ export function ShowPage({
             .map((assignment) => assignment.seating_link_id!)
           ));
           const nextSourceNote = buildCompCategoryNotes(currentRow?.notes, category, admissionType);
-          const { error } = await supabase
-            .from("show_reserved_seat_assignments")
-            .update({ customer_name: name, seat_category: nextSeatCategory })
-            .in("id", assignmentIds)
-            .eq("show_id", show.id);
-          if (error) throw error;
+          await requestAdminReservedSeating(show.id, show.slug, {
+            action: "update-comp-identity",
+            assignmentIds,
+            linkIds,
+            customerName: name,
+            sourceNote: nextSourceNote,
+            seatCategory: nextSeatCategory,
+          });
           if (linkIds.length > 0) {
-            const { error: linkError } = await supabase
-              .from("show_reserved_seating_links")
-              .update({ customer_name: name, source_note: nextSourceNote, seat_category: nextSeatCategory, is_complimentary: true })
-              .in("id", linkIds)
-              .eq("show_id", show.id);
-            if (linkError) throw linkError;
             setSponsorTicketReservedLinks((currentLinks) => currentLinks.map((link) => linkIds.includes(link.id) ? { ...link, customer_name: name, source_note: nextSourceNote, seat_category: nextSeatCategory, is_complimentary: true } : link));
           }
           setSponsorTicketReservedAssignments((currentAssignments) => currentAssignments.map((assignment) => assignmentIds.includes(assignment.id) ? { ...assignment, customer_name: name, seat_category: nextSeatCategory } : assignment));
@@ -9280,11 +9263,10 @@ export function ShowPage({
         }
       >).map((item) => normalizeShowCompTicket(item));
 
-      const reservedSeatingSync = await syncReservedSeatingLinksForImportedOrders(
-        supabase,
-        show.id,
-        importedEntries,
-      );
+      const reservedSeatingSync = await requestAdminReservedSeating<{ createdCount: number; updatedCount: number; warnings: string[] }>(show.id, show.slug, {
+        action: "sync-imported",
+        ticketIds: importedEntries.map((ticket) => ticket.id),
+      });
 
       setCompTickets((currentItems) => sortShowCompTickets([...currentItems, ...importedEntries]));
       setCompTicketImportPreview([]);
@@ -28363,6 +28345,7 @@ async function syncReservedSeatingLinksForImportedOrders(
         scan_token: tryGenerateReservationScanToken(),
         selection_mode: "imported",
         seat_category: "paid_reserved",
+        child_seat_limit: 3,
         source_ticket_id: ticket.id,
         source_order_id: sourceOrderId,
         source_import_key: sourceImportKey,
@@ -28381,6 +28364,10 @@ async function syncReservedSeatingLinksForImportedOrders(
     }
 
     const updates: Record<string, string | number | null> = { ...baseUpdates };
+
+    if ((matchedLink.child_seat_limit ?? 0) < 3) {
+      updates.child_seat_limit = 3;
+    }
 
     if (shouldUpdateTicketCount) {
       updates.ticket_count = ticket.ticket_count;

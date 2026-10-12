@@ -6,6 +6,7 @@ import { PrintButton } from "@/app/components/print-button";
 import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
 import { PrintStudioExportButton } from "./print-studio-export-button";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import { buildReservedSeatPrintCards } from "@/lib/reserved-seat-print-cards";
 import { buildReservedSeatMapRosterReport } from "@/lib/reserved-seat-map-roster";
 import { RESERVED_SEATING_ROW_LABELS, RESERVED_SEATING_SECTION_LABELS } from "@/lib/reserved-seating";
@@ -1522,7 +1523,7 @@ async function loadDoorGuestList(showId: string) {
 }
 
 async function loadReservedSeatingLinks(showId: string) {
-  const supabase = await createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
   const { data, error } = await supabase
     .from("show_reserved_seating_links")
     .select("*")
@@ -1537,7 +1538,7 @@ async function loadReservedSeatingLinks(showId: string) {
 }
 
 async function loadReservedSeatAssignments(showId: string) {
-  const supabase = await createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
   const { data, error } = await supabase
     .from("show_reserved_seat_assignments")
     .select("*")

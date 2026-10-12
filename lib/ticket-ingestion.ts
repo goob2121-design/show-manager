@@ -166,6 +166,7 @@ export async function syncReservedSeatingLinksForImportedOrders(
           scan_token: tryGenerateReservationScanToken(),
           selection_mode: "imported",
           seat_category: "paid_reserved",
+          child_seat_limit: 3,
           source_ticket_id: ticket.id,
           source_order_id: sourceOrderId,
           source_import_key: sourceImportKey,
@@ -186,6 +187,7 @@ export async function syncReservedSeatingLinksForImportedOrders(
     }
 
     const updates: Record<string, string | number | null> = { ...baseUpdates };
+    if ((matchedLink.child_seat_limit ?? 0) < 3) updates.child_seat_limit = 3;
     if (shouldUpdateTicketCount) updates.ticket_count = ticket.ticket_count;
     updatedRows.push({ id: matchedLink.id, updates });
     updatedCount += 1;

@@ -168,8 +168,6 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
         showSponsorsResult,
         guestsCoreResult,
         guestPhotosResult,
-        linksResult,
-        assignmentsResult,
       ] = await Promise.all([
         supabase.from("shows").select("id, slug, name, show_date").order("show_date", { ascending: false }),
         supabase.from("sponsor_library").select("id, name, sponsor_code").order("name"),
@@ -179,8 +177,6 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
         supabase.from("show_sponsors").select("id, show_id, sponsor_id, comp_ticket_allowance, recognition_notes"),
         supabase.from("guest_profiles").select("show_id, name, short_bio, full_bio").order("created_at", { ascending: true }),
         supabase.from("guest_profiles").select("show_id, photo_url"),
-        supabase.from("show_reserved_seating_links").select("*").eq("is_complimentary", true),
-        supabase.from("show_reserved_seat_assignments").select("*").eq("assignment_type", "customer"),
       ]);
       if (!active) return;
       const coreError = showsCoreResult.error || sponsorsCoreResult.error;
@@ -203,6 +199,14 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
         ((guestPhotosResult.error ? [] : guestPhotosResult.data ?? []) as Array<{ show_id: string; photo_url: string | null }>).map((item) => [item.show_id, item.photo_url]),
       );
 
+      const activeShow = ((showsCoreResult.data ?? []) as Array<{ id: string; slug: string }>).find((item) => item.slug === showSlug);
+      const reservedResponse = activeShow
+        ? await fetch(`/api/admin/shows/${encodeURIComponent(activeShow.id)}/reserved-seating?slug=${encodeURIComponent(showSlug)}`, { credentials: "same-origin" })
+        : null;
+      const reservedPayload = reservedResponse
+        ? await reservedResponse.json().catch(() => null) as { success?: boolean; links?: ShowReservedSeatingLink[]; assignments?: ShowReservedSeatAssignment[] }
+        : null;
+
       const nextSources: PacketSources = {
         shows: ((showsCoreResult.data ?? []) as Array<Pick<SponsorPacketShowSource, "id" | "slug" | "name" | "show_date">>).map((item) => ({
           ...item,
@@ -222,8 +226,8 @@ export function SponsorPacketBuilder({ showSlug }: SponsorPacketBuilderProps) {
           ...item,
           photo_url: guestPhotosByShowId.get(item.show_id) ?? null,
         })),
-        reservedLinks: (linksResult.error ? [] : linksResult.data ?? []) as ShowReservedSeatingLink[],
-        seatAssignments: (assignmentsResult.error ? [] : assignmentsResult.data ?? []) as ShowReservedSeatAssignment[],
+        reservedLinks: (reservedPayload?.links ?? []).filter((link) => link.is_complimentary),
+        seatAssignments: (reservedPayload?.assignments ?? []).filter((assignment) => assignment.assignment_type === "customer"),
       };
       const selectedShow = nextSources.shows.find((item) => item.slug === showSlug) ?? nextSources.shows[0];
       const assignedSponsorId = nextSources.showSponsors.find((item) => item.show_id === selectedShow?.id && item.sponsor_id)?.sponsor_id;

@@ -33,7 +33,7 @@ function createReadOnlyServiceClient() {
 
 type LookupLinkRow = Pick<
   ShowReservedSeatingLink,
-  "id" | "show_id" | "customer_name" | "ticket_count" | "is_complimentary" | "seat_category" | "source_ticket_id" | "submitted_at"
+  "id" | "show_id" | "customer_name" | "ticket_count" | "is_complimentary" | "seat_category" | "source_ticket_id" | "submitted_at" | "child_checked_in_count"
 >;
 
 async function loadLookupTicket(
@@ -135,7 +135,7 @@ export async function POST(request: Request, context: DoorScanLookupRouteContext
 
     const { data: linkData, error: linkError } = await supabase
       .from("show_reserved_seating_links")
-      .select("id, show_id, customer_name, ticket_count, is_complimentary, seat_category, source_ticket_id, submitted_at")
+      .select("id, show_id, customer_name, ticket_count, is_complimentary, seat_category, source_ticket_id, submitted_at, child_checked_in_count")
       .eq("show_id", show.id)
       .eq("scan_token", normalizedToken)
       .maybeSingle();
@@ -149,7 +149,7 @@ export async function POST(request: Request, context: DoorScanLookupRouteContext
     const [{ data: assignmentData, error: assignmentError }, ticket] = await Promise.all([
       supabase
         .from("show_reserved_seat_assignments")
-        .select("seat_id")
+        .select("seat_id, occupant_type")
         .eq("show_id", show.id)
         .eq("seating_link_id", link.id),
       loadLookupTicket(supabase, show.id, link),
@@ -160,6 +160,7 @@ export async function POST(request: Request, context: DoorScanLookupRouteContext
     const seatLabels = formatDoorScanSeatLabels(
       ((assignmentData ?? []) as Array<{ seat_id: string }>).map((assignment) => assignment.seat_id),
     );
+    const childSeatCount = ((assignmentData ?? []) as Array<{ occupant_type?: string }>).filter((assignment) => assignment.occupant_type === "child_free").length;
 
     return NextResponse.json({
       success: true,
@@ -173,6 +174,8 @@ export async function POST(request: Request, context: DoorScanLookupRouteContext
           admissionLabel: admission.admissionLabel,
           reservationCategory: admission.reservationCategory,
           submittedAt: link.submitted_at,
+          childSeatCount,
+          childCheckedInCount: link.child_checked_in_count,
         },
         ticket,
       },

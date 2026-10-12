@@ -121,6 +121,22 @@ test("a duplicate delivery keeps the one link owned by its current ticket", asyn
   assert.deepEqual(result.actions, ["existing_current_ticket"]);
 });
 
+test("an eligible existing paid reservation receives the default child allowance", async () => {
+  const currentLink = link({ source_ticket_id: "ticket_1", child_seat_limit: 0 });
+  const { client, updated } = syncClient([currentLink]);
+  await syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]);
+  assert.equal(updated.length, 1);
+  assert.equal(updated[0].values.child_seat_limit, 3);
+});
+
+test("an administrator-approved higher child allowance is preserved", async () => {
+  const currentLink = link({ source_ticket_id: "ticket_1", child_seat_limit: 7 });
+  const { client, updated } = syncClient([currentLink]);
+  await syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]);
+  assert.equal(updated.length, 1);
+  assert.equal("child_seat_limit" in updated[0].values, false);
+});
+
 test("an unclaimed legacy link may be claimed by exact name and email", () => {
   const legacyLink = link({ selection_mode: "manual" });
   const match = findOwnedOrClaimableReservedSeatingLink([legacyLink], ticket("ticket_2", "order_2", "import_2"));

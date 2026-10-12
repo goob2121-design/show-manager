@@ -4,7 +4,7 @@ import { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath } from "./pa
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import { RESERVED_SEAT_DEFINITIONS, RESERVED_SEATING_VENUE } from "@/lib/reserved-seating";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import type { ShowRecord, ShowReservedSeatAssignment } from "@/lib/types";
 
 export { PUBLIC_AVAILABLE_SEATS_PATH, buildPublicAvailableSeatsPath };
@@ -23,7 +23,7 @@ function formatShowDate(showDate: string | null) {
 }
 
 export async function loadDefaultAvailableSeatsShow() {
-  const supabase = await createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
   const today = new Date().toISOString().slice(0, 10);
 
   const { data: upcomingShows, error: upcomingError } = await supabase
@@ -58,7 +58,7 @@ export async function loadDefaultAvailableSeatsShow() {
 }
 
 export async function loadAvailableSeatsShowBySlug(slug: string) {
-  const supabase = await createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
   const { data, error } = await supabase
     .from("shows")
     .select("id, slug, name, show_date, venue, show_logo_url")
@@ -73,7 +73,7 @@ export async function loadAvailableSeatsShowBySlug(slug: string) {
 }
 
 async function loadSeatAssignments(showId: string) {
-  const supabase = await createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
   const { data, error } = await supabase
     .from("show_reserved_seat_assignments")
     .select("seat_id, assignment_type")
