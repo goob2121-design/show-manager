@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 import { Resend } from "resend";
 import {
   RESERVED_SEAT_EMAIL_EVENT_NAME,
@@ -51,6 +52,11 @@ export type OfficialTicketEmailInput = {
   venueName: string;
   venueAddress: string;
   seatLabels: string[];
+  paidSeatLabels?: string[];
+  childSeatLabels?: string[];
+  isComplimentary?: boolean;
+  updatedConfirmation?: boolean;
+  idempotencyKey?: string;
   ticketCount: number;
   scanToken: string;
   ticketCodeFormat: string | null;
@@ -85,6 +91,9 @@ function formatShowDate(value: string | null) {
 }
 
 export function buildOfficialTicketEmail(input: OfficialTicketEmailInput, logoSrc: string | null = CMMS_EMAIL_LOGO_SRC): ReservedSeatEmailContent {
+  const regularSeats = input.paidSeatLabels ?? input.seatLabels;
+  const childSeats = input.childSeatLabels ?? [];
+  const regularLabel = input.isComplimentary ? "Complimentary Seats" : "Paid Seats";
   const safe = {
     customerName: escapeHtml(input.customerName.trim() || "Guest"),
     eventName: escapeHtml(input.eventName.trim() || RESERVED_SEAT_EMAIL_EVENT_NAME),
@@ -118,16 +127,21 @@ export function buildOfficialTicketEmail(input: OfficialTicketEmailInput, logoSr
     ...(safe.showTime ? [["Time", safe.showTime]] : []),
     ["Venue", safe.venueName],
     ["Address", safe.venueAddress],
+    ...(input.updatedConfirmation ? [["Confirmation", "Updated seating confirmation - your existing entry code remains valid."]] : []),
+    [regularLabel, `${regularSeats.length}: ${escapeHtml(regularSeats.join(", ")) || "None assigned"}`],
+    ["Free Child Seats", `${childSeats.length}: ${escapeHtml(childSeats.join(", ")) || "None selected"}`],
+    ["Total Occupied Seats", String(input.seatLabels.length)],
+    ...(childSeats.length ? [["Family Entry", "Use this same entry code for the paid seats and free children listed here."]] : []),
     ["Reserved Seats", safe.seats],
     ...(input.payAtDoor ? [["Payment", `PAY AT DOOR · ${escapeHtml(formatReservedSeatPayAtDoorDue(input.payAtDoorAmount))}`]] : []),
   ].map(([label, value]) => `<tr><td style="padding:6px 12px 6px 0;color:#64748b;font-size:14px;vertical-align:top;">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:14px;font-weight:600;vertical-align:top;">${value}</td></tr>`).join("");
   const payAtDoorNotice = input.payAtDoor
     ? `<div style="margin:0 0 24px;padding:14px 16px;border:2px solid #b45309;background:#fffbeb;color:#78350f;text-align:center;font-size:16px;font-weight:700;"><span style="display:block;font-size:12px;letter-spacing:.12em;">PAY AT DOOR</span>${escapeHtml(formatReservedSeatPayAtDoorDue(input.payAtDoorAmount))}</div>`
     : "";
-  const subject = `Your Official Tickets - ${input.eventName.trim() || RESERVED_SEAT_EMAIL_EVENT_NAME}`;
+  const subject = `${input.updatedConfirmation ? "Updated Seating Confirmation" : "Your Official Tickets"} - ${input.eventName.trim() || RESERVED_SEAT_EMAIL_EVENT_NAME}`;
   const html = `<!doctype html><html><body style="margin:0;background:#e2e8f0;font-family:Arial,sans-serif;color:#0f172a;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#e2e8f0;"><tr><td align="center" style="padding:24px 12px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:8px;overflow:hidden;"><tr><td align="center" style="background:#071426;padding:24px;">${logoSrc ? `<img src="${escapeHtml(logoSrc)}" alt="Cumberland Mountain Music Show" width="260" style="display:block;width:100%;max-width:260px;height:auto;border:0;">` : `<div style="color:#fbbf24;font-size:20px;font-weight:700;">The Cumberland Mountain Music Show</div>`}</td></tr><tr><td style="padding:32px 28px;"><h1 style="margin:0 0 8px;text-align:center;color:#071426;font-size:28px;line-height:1.2;">Your Seats Are Confirmed</h1><p style="margin:0 0 24px;text-align:center;color:#a36b12;font-size:13px;font-weight:700;">OFFICIAL TICKET</p><p style="margin:0 0 18px;font-size:18px;font-weight:700;color:#071426;">Hi ${safe.customerName},</p><p style="margin:0 0 20px;font-size:16px;line-height:1.6;">Your seats are confirmed.</p><p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Present this QR code or barcode on your phone when you arrive, or print this email.</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;"><tr><td style="padding:18px;"><table role="presentation" cellspacing="0" cellpadding="0">${details}</table></td></tr></table>${payAtDoorNotice}${codeSection.html}<p style="margin:28px 0 6px;text-align:center;color:#071426;font-size:16px;font-weight:700;line-height:1.5;">Most guests simply use their phone at the door.</p><p style="margin:0 0 18px;text-align:center;color:#334155;font-size:14px;line-height:1.6;">Tap &quot;Phone-Friendly Ticket&quot; for the quickest entry. You may also print your ticket if you prefer.</p><table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto 12px;"><tr><td align="center" bgcolor="#d89b2b" style="border-radius:5px;"><a href="${safe.phoneTicketUrl}" style="display:block;width:250px;padding:14px 18px;color:#071426;font-size:15px;font-weight:700;text-decoration:none;">&#128241; Phone-Friendly Ticket</a></td></tr><tr><td height="10"></td></tr><tr><td align="center" style="border:1px solid #0f3b5f;border-radius:5px;"><a href="${safe.printTicketUrl}" style="display:block;width:250px;padding:13px 18px;color:#0f3b5f;font-size:15px;font-weight:700;text-decoration:none;">&#128424;&#65039; Print Ticket</a></td></tr><tr><td height="10"></td></tr><tr><td align="center" style="border:1px solid #64748b;border-radius:5px;"><a href="${safe.viewTicketUrl}" style="display:block;width:250px;padding:13px 18px;color:#334155;font-size:15px;font-weight:700;text-decoration:none;">&#127760; View Standard Ticket</a></td></tr></table></td></tr><tr><td align="center" style="background:#071426;padding:28px 24px;color:#cbd5e1;font-size:13px;line-height:1.8;"><strong style="color:#ffffff;">The Cumberland Mountain Music Show</strong><br>Big-Time Show, Small-Town Hospitality</td></tr></table></td></tr></table></body></html>`;
   const text = [
-    "YOUR SEATS ARE CONFIRMED",
+    input.updatedConfirmation ? "UPDATED SEATING CONFIRMATION - YOUR EXISTING ENTRY CODE REMAINS VALID" : "YOUR SEATS ARE CONFIRMED",
     "",
     `Hi ${input.customerName.trim() || "Guest"},`,
     "",
@@ -138,6 +152,10 @@ export function buildOfficialTicketEmail(input: OfficialTicketEmailInput, logoSr
     ...(input.showTime?.trim() ? [`Time: ${input.showTime.trim()}`] : []),
     `Venue: ${input.venueName}`,
     `Address: ${input.venueAddress}`,
+    `${regularLabel}: ${regularSeats.length} - ${regularSeats.join(", ") || "None assigned"}`,
+    `Free Child Seats: ${childSeats.length} - ${childSeats.join(", ") || "None selected"}`,
+    `Total Occupied Seats: ${input.seatLabels.length}`,
+    ...(childSeats.length ? ["Use this same entry code for the paid seats and free children listed here."] : []),
     `Reserved Seats: ${input.seatLabels.join(" • ")}`,
     ...(input.payAtDoor ? ["", "PAY AT DOOR", formatReservedSeatPayAtDoorDue(input.payAtDoorAmount)] : []),
     "",
@@ -169,7 +187,7 @@ export async function sendOfficialTicketEmail(input: OfficialTicketEmailInput): 
       html: content.html,
       text: content.text,
       attachments: logoAsset ? [logoAsset.attachment, ...ticketCodeAssets.attachments] : ticketCodeAssets.attachments,
-    });
+    }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
     if (error) return { success: false, resendId: null, error: error.message || "Email delivery failed." };
     return { success: true, resendId: data?.id ?? null, error: null };
   } catch (error) {
@@ -194,6 +212,7 @@ export async function deliverOfficialTicketEmail(
   reservationId: string,
   options: {
     requestOrigin?: string;
+    updatedConfirmation?: boolean;
     sender?: (input: OfficialTicketEmailInput) => Promise<ReservedSeatEmailResult>;
   } = {},
 ): Promise<OfficialTicketDeliveryResult> {
@@ -211,7 +230,7 @@ export async function deliverOfficialTicketEmail(
 
   const [{ data: showData, error: showError }, { data: assignmentData, error: assignmentError }, payAtDoorTicket] = await Promise.all([
     supabase.from("shows").select("name,show_date,show_start_time,venue,venue_address,ticket_code_format").eq("id", link.show_id).maybeSingle(),
-    supabase.from("show_reserved_seat_assignments").select("seat_id").eq("seating_link_id", link.id).order("created_at", { ascending: true }),
+    supabase.from("show_reserved_seat_assignments").select("id,seat_id,occupant_type").eq("seating_link_id", link.id).order("created_at", { ascending: true }),
     loadReservedSeatPayAtDoorTicket(supabase, link),
   ]);
   if (showError) throw showError;
@@ -219,7 +238,13 @@ export async function deliverOfficialTicketEmail(
   const show = showData as OfficialTicketShowRow | null;
   if (!show) return { success: false, resendId: null, error: "Show was not found.", reservationId: link.id };
   const seatLabels = sortReservedSeatIds(((assignmentData ?? []) as Array<{ seat_id: string }>).map((item) => item.seat_id)).map(formatReservedSeatLabel);
+  const assignedSeats = (assignmentData ?? []) as Array<{ id: string; seat_id: string; occupant_type?: string }>;
+  const paidSeatLabels = sortReservedSeatIds(assignedSeats.filter((seat) => seat.occupant_type !== "child_free").map((seat) => seat.seat_id)).map(formatReservedSeatLabel);
+  const childSeatLabels = sortReservedSeatIds(assignedSeats.filter((seat) => seat.occupant_type === "child_free").map((seat) => seat.seat_id)).map(formatReservedSeatLabel);
   if (!seatLabels.length) return { success: false, resendId: null, error: "No confirmed seats were found.", reservationId: link.id };
+  if (options.updatedConfirmation && assignedSeats.some((seat) => !seat.id)) {
+    return { success: false, resendId: null, error: "The saved seating version could not be determined.", reservationId: link.id };
+  }
 
   try {
     const customerEmail = link.is_complimentary
@@ -244,6 +269,15 @@ export async function deliverOfficialTicketEmail(
       venueName: show.venue?.trim() || RESERVED_SEATING_VENUE.venueName,
       venueAddress: show.venue_address?.trim() || RESERVED_SEATING_VENUE.venueAddress,
       seatLabels,
+      paidSeatLabels,
+      childSeatLabels,
+      isComplimentary: link.is_complimentary || link.seat_category === "comp" || link.seat_category === "guest",
+      updatedConfirmation: options.updatedConfirmation,
+      // Family-seat replacement creates new row UUIDs, even when returning to an old layout.
+      // Retrying delivery reads the same committed UUIDs and therefore the same key.
+      idempotencyKey: options.updatedConfirmation
+        ? `family-seats/${link.id}/${createHash("sha256").update(JSON.stringify(assignedSeats.map((seat) => seat.id).sort())).digest("hex")}`
+        : undefined,
       ticketCount: link.ticket_count,
       scanToken: link.scan_token,
       ticketCodeFormat: show.ticket_code_format,

@@ -16,7 +16,7 @@ function createServiceRoleSupabaseClient() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { token?: unknown };
+    const body = await request.json() as { token?: unknown; updatedConfirmation?: unknown };
     const token = typeof body.token === "string" ? body.token.trim() : "";
     if (!token) return NextResponse.json({ success: false, error: "Reservation token is required." }, { status: 400 });
 
@@ -41,7 +41,9 @@ export async function POST(request: NextRequest) {
     }
     resendAttempts.set(link.id, now);
 
-    const result = await deliverOfficialTicketEmail(supabase, link.id, { requestOrigin: request.nextUrl.origin });
+    const result = body.updatedConfirmation === true
+      ? await deliverOfficialTicketEmail(supabase, link.id, { requestOrigin: request.nextUrl.origin, updatedConfirmation: true })
+      : await deliverOfficialTicketEmail(supabase, link.id, { requestOrigin: request.nextUrl.origin });
     if (!result.success) {
       return NextResponse.json({ success: false, error: "Your ticket email could not be delivered. Please try again later." }, { status: 502 });
     }

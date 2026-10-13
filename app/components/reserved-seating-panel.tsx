@@ -1471,7 +1471,7 @@ export function ReservedSeatingPanel({
                             {getReservedSeatCategoryLabel(linkSeatCategory)}
                           </span>
                           <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
-                            {link.ticket_count} seat{link.ticket_count === 1 ? "" : "s"}
+                            {link.seatIds.length - link.childSeatIds.length} {link.is_complimentary || linkSeatCategory !== "paid_reserved" ? "comp seats" : "paid seats"} ({link.ticket_count} tickets) / {link.childSeatIds.length} children / {link.seatIds.length} occupied
                           </span>
                           {link.pay_at_door_intent ? (
                             <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] ${payAtDoor?.paidAt ? "border-emerald-300/40 bg-emerald-500/20 text-emerald-100" : "border-amber-300/50 bg-amber-400/20 text-amber-100"}`}>
@@ -1520,7 +1520,7 @@ export function ReservedSeatingPanel({
                           {getReservedSeatCategoryLabel(linkSeatCategory)}
                         </span>
                         <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
-                          {link.ticket_count} seat{link.ticket_count === 1 ? "" : "s"}
+                          {link.seatIds.length - link.childSeatIds.length} {link.is_complimentary || linkSeatCategory !== "paid_reserved" ? "comp seats" : "paid seats"} ({link.ticket_count} tickets) / {link.childSeatIds.length} children / {link.seatIds.length} occupied
                         </span>
                         <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.14em] shadow-sm ${link.seat_preference === "auto_assign" ? "border-fuchsia-300/60 bg-fuchsia-500/25 text-fuchsia-50 shadow-fuchsia-950/30" : "border-white/10 bg-white/[0.05] text-slate-200"}`}>
                           {link.seat_preference === "auto_assign" ? "🤝 Auto Assign Requested" : "Customer Selecting Seats"}

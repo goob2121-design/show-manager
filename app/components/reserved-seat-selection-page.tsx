@@ -76,6 +76,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
   const [isResendingTicketEmail, setIsResendingTicketEmail] = useState(false);
   const [ticketEmailMessage, setTicketEmailMessage] = useState<string | null>(null);
   const [ticketEmailMessageTone, setTicketEmailMessageTone] = useState<"success" | "warning">("success");
+  const [isFamilyConfirmation, setIsFamilyConfirmation] = useState(submittedFamilySeats.childSeatCount > 0);
   const [isPhoneTicketMode, setIsPhoneTicketMode] = useState(false);
   const [seatPreference, setSeatPreference] = useState(seatingLink.seat_preference ?? "customer_select");
   const [isSavingPreference, setIsSavingPreference] = useState(false);
@@ -244,6 +245,10 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
       const normalizedSeatIds = sortReservedSeatIds(payload.data?.seatIds ?? selectedSeatIds);
       setConfirmedSeatIds(normalizedSeatIds);
       setSelectedSeatIds(normalizedSeatIds);
+      setConfirmedPaidSeatIds(normalizedSeatIds);
+      setConfirmedChildSeatIds([]);
+      setFamilyPaidSeatIds(normalizedSeatIds);
+      setFamilyChildSeatIds([]);
       setHasSubmitted(true);
       setMailingListSubscribed(Boolean(payload.data?.mailingListSubscribed));
       setTicketEmailMessageTone(payload.data?.ticketEmailDelivered ? "success" : "warning");
@@ -265,7 +270,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
       const response = await fetch("/api/reserved-seating/ticket-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: seatingLink.selection_token }),
+        body: JSON.stringify({ token: seatingLink.selection_token, updatedConfirmation: isFamilyConfirmation }),
       });
       const payload = await response.json() as { success?: boolean; error?: string; message?: string };
       if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to resend your ticket email.");
@@ -334,14 +339,16 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
           childSeatIds: familyChildSeatIds,
         }),
       });
-      const payload = await response.json() as { success?: boolean; error?: string };
+      const payload = await response.json() as { success?: boolean; error?: string; ticketEmailDelivered?: boolean; ticketEmailMessage?: string };
       if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to update family seats.");
       setConfirmedSeatIds(sortReservedSeatIds([...familyPaidSeatIds, ...familyChildSeatIds]));
+      setSelectedSeatIds(sortReservedSeatIds([...familyPaidSeatIds, ...familyChildSeatIds]));
       setConfirmedPaidSeatIds(sortReservedSeatIds(familyPaidSeatIds));
       setConfirmedChildSeatIds(sortReservedSeatIds(familyChildSeatIds));
+      setIsFamilyConfirmation(true);
       setIsEditingFamilySeats(false);
-      setTicketEmailMessageTone("success");
-      setTicketEmailMessage("Your family seating has been updated. Your existing ticket code remains valid.");
+      setTicketEmailMessageTone(payload.ticketEmailDelivered === false ? "warning" : "success");
+      setTicketEmailMessage(payload.ticketEmailMessage || "Your family seating has been updated. Your existing ticket code remains valid.");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to update family seats.");
     } finally {
@@ -912,6 +919,16 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                 </div>
               ) : null}
               <div className="mt-5 grid gap-3">
+                {canManageChildSeats ? (
+                  <>
+                    <button type="button" onClick={() => { setShowSuccessModal(false); beginFamilySeatChanges(); }} className="min-h-12 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-500">
+                      Add Free Child Seats
+                    </button>
+                    <button type="button" onClick={() => setShowSuccessModal(false)} className="rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10">
+                      Continue Without Children
+                    </button>
+                  </>
+                ) : null}
                 <button
                   type="button"
                   onClick={openPhoneTicket}
