@@ -571,6 +571,7 @@ export type ShowReservedSeatingLink = {
   seat_preference: ReservedSeatPreference;
   pay_at_door_intent?: boolean;
   child_seat_limit: number;
+  child_seat_limit_admin_override: boolean;
   child_checked_in_count: number;
   created_at: string;
 };

@@ -187,7 +187,6 @@ export async function syncReservedSeatingLinksForImportedOrders(
     }
 
     const updates: Record<string, string | number | null> = { ...baseUpdates };
-    if ((matchedLink.child_seat_limit ?? 0) < 3) updates.child_seat_limit = 3;
     if (shouldUpdateTicketCount) updates.ticket_count = ticket.ticket_count;
     updatedRows.push({ id: matchedLink.id, updates });
     updatedCount += 1;
@@ -229,6 +228,18 @@ export async function syncReservedSeatingLinksForImportedOrders(
   for (const row of updatedRows) {
     const { error } = await supabase.from("show_reserved_seating_links").update(row.updates).eq("id", row.id);
     if (error) throw error;
+  }
+
+  for (const reservationId of new Set(linkIds)) {
+    const { data, error } = await supabase.rpc("initialize_reserved_child_seat_allowance", {
+      p_show_id: showId,
+      p_reservation_id: reservationId,
+    });
+    if (error) throw error;
+    const status = data?.[0]?.result_status;
+    if (status !== "INITIALIZED" && status !== "PRESERVED") {
+      throw new Error(`Unable to initialize reserved child-seat allowance: ${status ?? "UNKNOWN"}`);
+    }
   }
 
   return { createdCount, updatedCount, warnings, linkIds, actions };

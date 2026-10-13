@@ -33,10 +33,18 @@ function ticket(id: string, orderId: string, importKey: string) {
   };
 }
 
-function syncClient(existingLinks: ShowReservedSeatingLink[]) {
+function syncClient(existingLinks: ShowReservedSeatingLink[], options: {
+  rpcStatus?: string;
+  rpcError?: { code: string; message: string };
+} = {}) {
   const inserted: Array<Record<string, unknown>> = [];
   const updated: Array<{ id: string; values: Record<string, unknown> }> = [];
+  const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const client = {
+    async rpc(name: string, args: Record<string, unknown>) {
+      rpcCalls.push({ name, args });
+      return { data: options.rpcError ? null : [{ result_status: options.rpcStatus ?? "PRESERVED" }], error: options.rpcError ?? null };
+    },
     from(table: string) {
       if (table === "show_reserved_seating_links") {
         return {
@@ -48,6 +56,7 @@ function syncClient(existingLinks: ShowReservedSeatingLink[]) {
             return { select: async () => ({ data: rows.map((_, index) => ({ id: `new_link_${index + 1}` })), error: null }) };
           },
           update(values: Record<string, unknown>) {
+            assert.equal("child_seat_limit" in values, false, "Protected limits must use the RPC");
             return {
               eq: async (_column: string, id: string) => {
                 updated.push({ id, values });
@@ -68,7 +77,7 @@ function syncClient(existingLinks: ShowReservedSeatingLink[]) {
       };
     },
   } as unknown as SupabaseClient;
-  return { client, inserted, updated };
+  return { client, inserted, updated, rpcCalls };
 }
 
 test("same purchaser buying twice receives two distinct owned links", async () => {
@@ -81,6 +90,7 @@ test("same purchaser buying twice receives two distinct owned links", async () =
 
   assert.equal(inserted.length, 1);
   assert.equal(inserted[0].source_ticket_id, "ticket_2");
+  assert.equal(inserted[0].child_seat_limit, 3);
   assert.equal(updated.length, 0);
   assert.deepEqual(result.linkIds, ["new_link_1"]);
   assert.deepEqual(result.actions, ["created"]);
@@ -123,10 +133,13 @@ test("a duplicate delivery keeps the one link owned by its current ticket", asyn
 
 test("an eligible existing paid reservation receives the default child allowance", async () => {
   const currentLink = link({ source_ticket_id: "ticket_1", child_seat_limit: 0 });
-  const { client, updated } = syncClient([currentLink]);
+  const { client, updated, rpcCalls } = syncClient([currentLink]);
   await syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]);
   assert.equal(updated.length, 1);
-  assert.equal(updated[0].values.child_seat_limit, 3);
+  assert.equal("child_seat_limit" in updated[0].values, false);
+  assert.deepEqual(rpcCalls, [{ name: "initialize_reserved_child_seat_allowance", args: {
+    p_show_id: "show_1", p_reservation_id: "link_1",
+  } }]);
 });
 
 test("an administrator-approved higher child allowance is preserved", async () => {
@@ -135,6 +148,31 @@ test("an administrator-approved higher child allowance is preserved", async () =
   await syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]);
   assert.equal(updated.length, 1);
   assert.equal("child_seat_limit" in updated[0].values, false);
+});
+
+test("an intentionally reduced allowance is delegated to the guarded RPC", async () => {
+  const currentLink = link({ source_ticket_id: "ticket_1", child_seat_limit: 1, child_seat_limit_admin_override: true });
+  const { client, rpcCalls } = syncClient([currentLink]);
+  await syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]);
+  assert.equal(currentLink.child_seat_limit, 1);
+  assert.equal(rpcCalls.length, 1);
+});
+
+test("allowance RPC failures are not swallowed", async () => {
+  const rpcError = { code: "42501", message: "permission denied" };
+  const { client } = syncClient([link({ source_ticket_id: "ticket_1" })], { rpcError });
+  await assert.rejects(
+    syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]),
+    (error: unknown) => error === rpcError,
+  );
+});
+
+test("ineligible allowance RPC results fail synchronization explicitly", async () => {
+  const { client } = syncClient([link({ source_ticket_id: "ticket_1" })], { rpcStatus: "NOT_ELIGIBLE" });
+  await assert.rejects(
+    syncReservedSeatingLinksForImportedOrders(client, "show_1", [ticket("ticket_1", "order_1", "import_1")]),
+    /Unable to initialize reserved child-seat allowance: NOT_ELIGIBLE/,
+  );
 });
 
 test("an unclaimed legacy link may be claimed by exact name and email", () => {
@@ -154,6 +192,7 @@ test("concurrent sync calls resolve to one canonical reserved link", async () =>
   });
 
   const client = {
+    async rpc() { return { data: [{ result_status: "PRESERVED" }], error: null }; },
     from(table: string) {
       if (table === "show_reserved_seat_assignments") {
         return {
