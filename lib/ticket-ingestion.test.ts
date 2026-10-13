@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ShowReservedSeatingLink } from "@/lib/types";
+import { checkInAdmissionLabel } from "@/lib/check-in-ticket-classification";
 import {
   findOwnedOrClaimableReservedSeatingLink,
+  SQUARE_RESERVED_TICKET_IMPORT_NOTE,
   syncReservedSeatingLinksForImportedOrders,
 } from "@/lib/ticket-ingestion";
 
@@ -32,6 +34,18 @@ function ticket(id: string, orderId: string, importKey: string) {
     import_key: importKey,
   };
 }
+
+test("Square reserved imports use the canonical reserved admission marker", () => {
+  assert.equal(
+    checkInAdmissionLabel("paid_online", SQUARE_RESERVED_TICKET_IMPORT_NOTE),
+    "Paid Reserved",
+  );
+  assert.doesNotMatch(SQUARE_RESERVED_TICKET_IMPORT_NOTE, /sandbox|phase 1/i);
+});
+
+test("paid online tickets without the reserved marker remain general admission", () => {
+  assert.equal(checkInAdmissionLabel("paid_online", "Imported from another sales channel."), "Paid General Admission");
+});
 
 function syncClient(existingLinks: ShowReservedSeatingLink[], options: {
   rpcStatus?: string;

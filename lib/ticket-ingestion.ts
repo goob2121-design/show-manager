@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { tryGenerateReservationScanToken } from "@/lib/reservation-scan-tokens";
 import type { ShowCompTicket, ShowReservedSeatingLink } from "@/lib/types";
 
+export const SQUARE_RESERVED_TICKET_IMPORT_NOTE = "[Admission Type: reserved] Imported from Square.";
+
 export type ExternalTicketIngestionStatus =
   | "imported"
   | "duplicate"
@@ -365,7 +367,7 @@ export async function ingestExternalTicketSale(
     ticket_type: "paid_online",
     order_id: input.orderId,
     import_key: importKey,
-    notes: "Imported from Square Sandbox webhook. Purchaser email not sent in Phase 1.",
+    notes: SQUARE_RESERVED_TICKET_IMPORT_NOTE,
     checked_in: false,
     checked_in_count: 0,
     external_source: input.source,
