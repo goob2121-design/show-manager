@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
+import { buildReservationAdmissionSummary } from "@/lib/reservation-admission-display";
 
 type PhoneTicketModeProps = {
   guestName: string;
@@ -10,7 +11,8 @@ type PhoneTicketModeProps = {
   showTime: string | null;
   venueName: string;
   seatLabels: string[];
-  ticketCount: number;
+  paidAdmissionCount: number;
+  freeChildAdmissionCount: number;
   scanToken: string | null;
   ticketCodeFormat: string | null;
   onBack: () => void;
@@ -23,7 +25,8 @@ export function PhoneTicketMode({
   showTime,
   venueName,
   seatLabels,
-  ticketCount,
+  paidAdmissionCount,
+  freeChildAdmissionCount,
   scanToken,
   ticketCodeFormat,
   onBack,
@@ -56,14 +59,27 @@ export function PhoneTicketMode({
     }
   }
 
+  const admissionSummary = buildReservationAdmissionSummary(
+    paidAdmissionCount,
+    freeChildAdmissionCount,
+  );
   const detailRows = [
     ["Guest", guestName],
     ["Event", eventName],
     ["Date", showDate],
     ...(showTime?.trim() ? [["Time", showTime.trim()]] : []),
     ["Venue", venueName],
-    ["Seats", seatLabels.join(", ")],
-    ["Ticket Quantity", String(ticketCount)],
+    ...(admissionSummary.hasFreeChildren
+      ? [
+          ["Paid Admissions", String(admissionSummary.paidAdmissions)],
+          ["Free Children (10 & Under)", String(admissionSummary.freeChildAdmissions)],
+          ["Total Guests", String(admissionSummary.totalGuests)],
+          ["Reserved Seats", seatLabels.join(", ")],
+        ]
+      : [
+          ["Seats", seatLabels.join(", ")],
+          ["Ticket Quantity", String(admissionSummary.paidAdmissions)],
+        ]),
   ];
 
   return (
@@ -86,9 +102,7 @@ export function PhoneTicketMode({
 
           <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-3 text-center">
             <p className="font-bold text-amber-100">
-              {ticketCount === 1
-                ? "One code covers the ticket in this reservation."
-                : `One code covers all ${ticketCount} tickets in this reservation.`}
+              {admissionSummary.codeMessage}
             </p>
             <p className="mt-1 text-sm text-amber-50">For best scanning, turn your screen brightness up.</p>
           </div>

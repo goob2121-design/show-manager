@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PhoneTicketMode } from "@/app/components/phone-ticket-mode";
 import { ReservationTicketCode } from "@/app/components/reservation-ticket-code";
+import { buildReservationAdmissionSummary } from "@/lib/reservation-admission-display";
 import { ReservedSeatMap } from "@/app/components/reserved-seat-map";
 import type { ReservedSeatMapSeatState } from "@/app/components/reserved-seat-map";
 import {
@@ -94,6 +95,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
   const [confirmedChildSeatIds, setConfirmedChildSeatIds] = useState<string[]>(sortReservedSeatIds(submittedFamilySeats.childSeatIds));
   const isAlreadySubmitted = hasSubmitted;
   const [freeChildCount, setFreeChildCount] = useState(0);
+  const [isKidsSectionExpanded, setIsKidsSectionExpanded] = useState(submittedFamilySeats.childSeatCount > 0);
   const [showKidsInfo, setShowKidsInfo] = useState(false);
   const combinedSelection = childSeatsEnabled && familySelectionEligible && !isAlreadySubmitted && linkAssignments.length === 0;
   const selectionLimit = seatingLink.ticket_count + (combinedSelection ? freeChildCount : 0);
@@ -403,6 +405,10 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
     : seatingLink.ticket_count === 1
     ? "One code covers the ticket in this reservation."
     : `One code covers all ${seatingLink.ticket_count} tickets in this reservation.`;
+  const admissionSummary = buildReservationAdmissionSummary(
+    seatingLink.ticket_count,
+    confirmedChildSeatIds.length,
+  );
 
   if (seatPreference === "auto_assign" && linkAssignments.length === 0 && !isAlreadySubmitted) {
     return (
@@ -593,7 +599,8 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
             showTime={show.show_start_time}
             venueName={showVenueName}
             seatLabels={confirmedSeatIds.map((seatId) => formatReservedSeatLabel(seatId))}
-            ticketCount={seatingLink.ticket_count}
+            paidAdmissionCount={admissionSummary.paidAdmissions}
+            freeChildAdmissionCount={admissionSummary.freeChildAdmissions}
             scanToken={seatingLink.scan_token}
             ticketCodeFormat={show.ticket_code_format}
             onBack={closePhoneTicket}
@@ -691,6 +698,19 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                 </div>
               )}
 
+              {combinedSelection ? (
+                <button
+                  type="button"
+                  aria-expanded={isKidsSectionExpanded}
+                  aria-controls="free-child-seat-options"
+                  onClick={() => setIsKidsSectionExpanded((isExpanded) => !isExpanded)}
+                  className="mt-4 hidden w-full items-center justify-between gap-3 rounded-xl border border-amber-200/50 bg-amber-400 px-4 py-3 text-left text-sm font-black text-slate-950 shadow-[0_8px_24px_rgba(251,191,36,0.16)] transition hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 xl:flex"
+                >
+                  <span>Bringing Kids 10 &amp; Under?</span>
+                  <span aria-hidden="true">{isKidsSectionExpanded ? "−" : "+"}</span>
+                </button>
+              ) : null}
+
 
               {errorMessage ? (
                 <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
@@ -765,7 +785,19 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
 
             <div className="order-1 w-full max-w-full overflow-hidden sm:order-2 xl:order-1">
               {combinedSelection ? (
-                <section className="mb-4 rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4">
+                <button
+                  type="button"
+                  aria-expanded={isKidsSectionExpanded}
+                  aria-controls="free-child-seat-options"
+                  onClick={() => setIsKidsSectionExpanded((isExpanded) => !isExpanded)}
+                  className="mb-4 flex w-full items-center justify-between gap-3 rounded-xl border border-amber-200/50 bg-amber-400 px-4 py-3 text-left text-sm font-black text-slate-950 shadow-[0_8px_24px_rgba(251,191,36,0.16)] transition hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 xl:hidden"
+                >
+                  <span>Bringing Kids 10 &amp; Under?</span>
+                  <span aria-hidden="true">{isKidsSectionExpanded ? "−" : "+"}</span>
+                </button>
+              ) : null}
+              {combinedSelection && isKidsSectionExpanded ? (
+                <section id="free-child-seat-options" className="mb-4 rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4">
                   <h2 className="text-lg font-bold text-white">Select Your Family&apos;s Seats Together</h2>
                   <p className="mt-2 text-sm text-slate-200">Children ages 10 and under receive free admission. Choose how many children are coming, then select all your seats on the chart.</p>
                   <label className="mt-3 block text-sm font-semibold text-white">Free children
@@ -1043,8 +1075,25 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                 </div>
               </div>
 
+              {admissionSummary.hasFreeChildren ? (
+                <div className="ticket-print-details mt-6">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em]">Paid Admissions</p>
+                    <p className="mt-1 text-lg">{admissionSummary.paidAdmissions}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em]">Free Children (10 &amp; Under)</p>
+                    <p className="mt-1 text-lg">{admissionSummary.freeChildAdmissions}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em]">Total Guests</p>
+                    <p className="mt-1 text-lg">{admissionSummary.totalGuests}</p>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="ticket-print-seats mt-6">
-                <p className="text-xs font-bold uppercase tracking-[0.18em]">Selected Seats</p>
+                <p className="text-xs font-bold uppercase tracking-[0.18em]">Reserved Seats</p>
                 <div className="mt-3 space-y-3">
                   {confirmedSeatIds.map((seatId) => {
                     const details = parseSeatDetails(seatId);
@@ -1061,11 +1110,12 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
               </div>
 
               <div className="ticket-print-code mt-6">
+                <p className="mb-3 text-center text-base font-bold">{admissionSummary.codeMessage}</p>
                 <ReservationTicketCode
                   scanToken={seatingLink.scan_token}
                   format={show.ticket_code_format}
                   purchaserName={seatingLink.customer_name}
-                  ticketCount={seatingLink.ticket_count}
+                  ticketCount={admissionSummary.hasFreeChildren ? undefined : seatingLink.ticket_count}
                   seatLabels={confirmedSeatIds.map((seatId) => formatReservedSeatLabel(seatId))}
                   printable
                 />
