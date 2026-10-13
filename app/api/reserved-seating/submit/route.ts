@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { isReservedChildSeatsEnabled } from "@/lib/reserved-child-seats";
 import { deliverOfficialTicketEmail } from "@/lib/email/official-ticket-email";
 import { splitMailingListFullName, subscribeMailingListContact } from "@/lib/mailing-list-subscription";
-import { RESERVED_SEAT_DEFINITIONS, RESERVED_SEATING_VENUE, formatReservedSeatLabel, getReservedSeatDefinition, sortReservedSeatIds } from "@/lib/reserved-seating";
+import { RESERVED_SEAT_DEFINITIONS, RESERVED_SEATING_VENUE, sortReservedSeatIds } from "@/lib/reserved-seating";
 import type { ShowRecord, ShowReservedSeatingLink } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -14,6 +15,8 @@ type SubmitReservedSeatsRequestBody = {
   token?: unknown;
   seatIds?: unknown;
   mailingListOptIn?: unknown;
+  confirmFamily?: unknown;
+  childSeatIds?: unknown;
 };
 
 function createServiceRoleSupabaseClient() {
@@ -88,6 +91,8 @@ async function sendReservedSeatingAdminNotification(payload: {
   showDateTime: string;
   venueName: string;
   adminUrl: string | null;
+  childSeatIds?: string[];
+  idempotencyKey?: string;
 }) {
   try {
     if (!process.env.RESEND_API_KEY) {
@@ -117,6 +122,7 @@ async function sendReservedSeatingAdminNotification(payload: {
         <p><strong>Show:</strong><br />${escapedShowDateTime}</p>
         <p><strong>Customer email:</strong><br />${escapedCustomerEmail ?? "Not provided"}</p>
         <p><strong>Seat count:</strong><br />${payload.ticketCount}</p>
+        ${payload.childSeatIds ? `<p><strong>Paid seats:</strong> ${payload.ticketCount}<br /><strong>Free child seats:</strong> ${payload.childSeatIds.length}<br /><strong>Total occupied seats:</strong> ${payload.seatIds.length}<br /><strong>Children's seats:</strong> ${escapeHtml(payload.childSeatIds.join(", ")) || "None"}</p>` : ""}
         <p><strong>Venue:</strong><br />${escapedVenueName}</p>
         ${escapedAdminUrl ? `<p><strong>Admin Reserved Seating:</strong><br /><a href="${escapedAdminUrl}">${escapedAdminUrl}</a></p>` : ""}
       </div>
@@ -127,7 +133,7 @@ async function sendReservedSeatingAdminNotification(payload: {
       to: process.env.NOTIFY_EMAIL,
       subject,
       html,
-    });
+    }, payload.idempotencyKey ? { idempotencyKey: payload.idempotencyKey } : undefined);
 
     if (error) {
       console.error("Reserved seating admin notification failed while sending with Resend.", error);
@@ -173,87 +179,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Reserved seating link not found." }, { status: 404 });
     }
 
-    if (typedSeatingLink.submitted_at) {
-      return NextResponse.json({ success: false, error: "This reserved seating link has already been used." }, { status: 409 });
+    const combined = body.confirmFamily === true;
+    let childSeatIds: string[] = [];
+    let submittedAt = new Date().toISOString();
+    if (combined) {
+      if (!isReservedChildSeatsEnabled()) return NextResponse.json({ success: false, error: "Family seating is not available." }, { status: 403 });
+      if (!Array.isArray(body.childSeatIds) || body.childSeatIds.some((id) => typeof id !== "string")) {
+        return NextResponse.json({ success: false, error: "Invalid children's seats." }, { status: 400 });
+      }
+      childSeatIds = sortReservedSeatIds(body.childSeatIds as string[]);
     }
-
-    if (uniqueSeatIds.length > typedSeatingLink.ticket_count) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `You may only reserve up to ${typedSeatingLink.ticket_count} seat${typedSeatingLink.ticket_count === 1 ? "" : "s"}.`,
-        },
-        { status: 400 },
-      );
-    }
-
-    const { data: existingAssignments, error: existingAssignmentsError } = await supabase
-      .from("show_reserved_seat_assignments")
-      .select("seat_id, seating_link_id, assignment_type")
-      .eq("show_id", typedSeatingLink.show_id)
-      .in("seat_id", uniqueSeatIds);
-
-    if (existingAssignmentsError) {
-      return NextResponse.json({ success: false, error: existingAssignmentsError.message }, { status: 500 });
-    }
-
-    const blockedAssignment = (existingAssignments ?? []).find((assignment) => assignment.assignment_type === "blocked");
-    if (blockedAssignment) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `${formatReservedSeatLabel(blockedAssignment.seat_id ?? "")} is unavailable.`,
-        },
-        { status: 409 },
-      );
-    }
-
-    const conflictingAssignment = (existingAssignments ?? []).find(
-      (assignment) => assignment.assignment_type !== "blocked" && assignment.seating_link_id !== typedSeatingLink.id,
-    );
-
-    if (conflictingAssignment) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `${formatReservedSeatLabel(conflictingAssignment.seat_id ?? "")} is no longer available.`,
-        },
-        { status: 409 },
-      );
-    }
-
-    const resolvedSeatCategory = typedSeatingLink.seat_category?.trim() || (typedSeatingLink.is_complimentary ? "comp" : "paid_reserved");
-
-    const assignmentRows = uniqueSeatIds.map((seatId) => {
-      const definition = getReservedSeatDefinition(seatId);
-      return {
-        show_id: typedSeatingLink.show_id,
-        seating_link_id: typedSeatingLink.id,
-        customer_name: typedSeatingLink.customer_name,
-        email: typedSeatingLink.email,
-        seat_id: seatId,
-        section: definition?.section ?? seatId.slice(0, 1),
-        row_label: definition?.rowLabel ?? seatId.slice(2, 3),
-        seat_number: definition?.seatNumber ?? 0,
-        assignment_type: "customer",
-        seat_category: resolvedSeatCategory,
-      };
+    // Both RPCs lock the same reservation before inspecting or writing assignments.
+    const { data, error } = await supabase.rpc(combined ? "confirm_reserved_family_seats" : "confirm_reserved_seats", {
+      p_selection_token: token, p_paid_seat_ids: seatIds, ...(combined ? { p_child_seat_ids: childSeatIds } : {}),
     });
-
-    const { error: insertError } = await supabase.from("show_reserved_seat_assignments").insert(assignmentRows);
-
-    if (insertError) {
-      return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+    if (error) return NextResponse.json({ success: false, error: "Unable to confirm seats. Please try again or contact the show." }, { status: 503 });
+    const result = data?.[0];
+    if (!result || !["CONFIRMED", "ALREADY_CONFIRMED"].includes(result.result_status)) {
+      return NextResponse.json({ success: false, error: `Seats could not be confirmed (${result?.result_status || "UNKNOWN"}). Please review your selection.` }, { status: 409 });
     }
-
-    const submittedAt = new Date().toISOString();
-    const { error: updateError } = await supabase
-      .from("show_reserved_seating_links")
-      .update({ submitted_at: submittedAt, sent_at: typedSeatingLink.sent_at ?? submittedAt, selection_mode: "customer" })
-      .eq("id", typedSeatingLink.id);
-
-    if (updateError) {
-      return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
+    submittedAt = result.submitted_at;
+    if (result.result_status === "ALREADY_CONFIRMED") {
+      return NextResponse.json({ success: true, data: {
+        seatIds: sortReservedSeatIds([...seatIds, ...childSeatIds]), paidSeatIds: seatIds, childSeatIds,
+        submittedAt, ticketEmailMessage: "Your reservation was already confirmed. No additional emails were sent.",
+      } });
     }
 
     let mailingListSubscribed = false;
@@ -278,7 +228,10 @@ export async function POST(request: NextRequest) {
     let ticketEmailDelivered = false;
     let ticketEmailMessage: string | null = null;
     try {
-      const ticketEmailResult = await deliverOfficialTicketEmail(supabase, typedSeatingLink.id, { requestOrigin: request.nextUrl.origin });
+      const ticketEmailResult = await deliverOfficialTicketEmail(supabase, typedSeatingLink.id, {
+        requestOrigin: request.nextUrl.origin,
+        idempotencyKey: `family-initial/customer/${typedSeatingLink.id}/${submittedAt}`,
+      });
       ticketEmailDelivered = ticketEmailResult.success;
       if (!ticketEmailResult.success) {
         ticketEmailMessage = "Your seats are confirmed, but we could not deliver the ticket email automatically. You can send it again from this page.";
@@ -305,7 +258,9 @@ export async function POST(request: NextRequest) {
     await sendReservedSeatingAdminNotification({
       customerName: typedSeatingLink.customer_name,
       customerEmail: typedSeatingLink.email,
-      seatIds: uniqueSeatIds,
+      seatIds: sortReservedSeatIds([...uniqueSeatIds, ...childSeatIds]),
+      childSeatIds: combined ? childSeatIds : undefined,
+      idempotencyKey: `family-initial/admin/${typedSeatingLink.id}/${submittedAt}`,
       ticketCount: typedSeatingLink.ticket_count,
       showName: typedShow?.name?.trim() || "Cumberland Mountain Music Show",
       showDateTime: formatShowDateTime(typedShow?.show_date ?? null, typedShow?.show_start_time ?? null),
@@ -316,7 +271,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        seatIds: uniqueSeatIds,
+        seatIds: sortReservedSeatIds([...uniqueSeatIds, ...childSeatIds]),
+        paidSeatIds: uniqueSeatIds,
+        childSeatIds,
         submittedAt,
         ticketEmailDelivered,
         ticketEmailMessage,

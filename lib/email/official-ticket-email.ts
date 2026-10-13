@@ -213,6 +213,7 @@ export async function deliverOfficialTicketEmail(
   options: {
     requestOrigin?: string;
     updatedConfirmation?: boolean;
+    idempotencyKey?: string;
     sender?: (input: OfficialTicketEmailInput) => Promise<ReservedSeatEmailResult>;
   } = {},
 ): Promise<OfficialTicketDeliveryResult> {
@@ -277,7 +278,7 @@ export async function deliverOfficialTicketEmail(
       // Retrying delivery reads the same committed UUIDs and therefore the same key.
       idempotencyKey: options.updatedConfirmation
         ? `family-seats/${link.id}/${createHash("sha256").update(JSON.stringify(assignedSeats.map((seat) => seat.id).sort())).digest("hex")}`
-        : undefined,
+        : options.idempotencyKey,
       ticketCount: link.ticket_count,
       scanToken: link.scan_token,
       ticketCodeFormat: show.ticket_code_format,

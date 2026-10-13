@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { getAdminSessionCookieName, verifyAdminSessionCookieValue } from "@/lib/admin-session";
 import { createClient } from "@supabase/supabase-js";
 import { RESERVED_SEAT_DEFINITIONS, sortReservedSeatIds } from "@/lib/reserved-seating";
 import { getReservedFamilySeatUpdateError, isReservedChildSeatsEnabled } from "@/lib/reserved-child-seats";
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json() as { token?: unknown; paidSeatIds?: unknown; childSeatIds?: unknown };
+    const body = await request.json() as { token?: unknown; paidSeatIds?: unknown; childSeatIds?: unknown; adminFamilyEditing?: unknown };
     const token = typeof body.token === "string" ? body.token.trim() : "";
     const paidSeatIds = seatIds(body.paidSeatIds);
     const childSeatIds = seatIds(body.childSeatIds);
@@ -37,9 +39,18 @@ export async function POST(request: Request) {
 
     const supabase = serviceClient();
     const { data: reservation, error: reservationError } = await supabase.from("show_reserved_seating_links")
-      .select("id,child_seat_limit").eq("selection_token", token).maybeSingle();
+      .select("id,show_id,child_seat_limit").eq("selection_token", token).maybeSingle();
     if (reservationError) throw reservationError;
     if (!reservation) return NextResponse.json({ success: false, error: "This reservation link was not found." }, { status: 404 });
+    if (body.adminFamilyEditing === true) {
+      const { data: show, error: showError } = await supabase.from("shows").select("slug")
+        .eq("id", reservation.show_id).maybeSingle();
+      if (showError) throw showError;
+      const store = await cookies();
+      if (!show?.slug || !verifyAdminSessionCookieValue(show.slug, store.get(getAdminSessionCookieName(show.slug))?.value)) {
+        return NextResponse.json({ success: false, error: "Admin access is required." }, { status: 401 });
+      }
+    }
     const { data: previousSeats, error: previousSeatsError } = await supabase.from("show_reserved_seat_assignments")
       .select("seat_id,occupant_type").eq("seating_link_id", reservation.id);
     if (previousSeatsError) throw previousSeatsError;

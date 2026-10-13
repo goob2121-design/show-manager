@@ -34,11 +34,15 @@ test("official ticket email reuses entry-code rendering and contains ticket deta
 });
 test("automatic delivery is attempted only after reservation commit and cannot turn success into failure", async () => {
   const source = await readFile(submitRouteUrl, "utf8");
-  const commitIndex = source.indexOf(".update({ submitted_at: submittedAt");
-  const commitErrorIndex = source.indexOf("if (updateError)");
+  const commitIndex = source.indexOf('await supabase.rpc(combined ? "confirm_reserved_family_seats" : "confirm_reserved_seats"');
+  const commitErrorIndex = source.indexOf("if (error)", commitIndex);
   const deliveryIndex = source.indexOf("await deliverOfficialTicketEmail", commitErrorIndex);
   const successIndex = source.indexOf("success: true", deliveryIndex);
   assert.ok(commitIndex >= 0 && commitErrorIndex > commitIndex && deliveryIndex > commitErrorIndex && successIndex > deliveryIndex);
+  const resultGuardIndex = source.indexOf('["CONFIRMED", "ALREADY_CONFIRMED"].includes(result.result_status)', commitErrorIndex);
+  const duplicateGuardIndex = source.indexOf('result.result_status === "ALREADY_CONFIRMED"', resultGuardIndex);
+  assert.ok(resultGuardIndex > commitErrorIndex && duplicateGuardIndex > resultGuardIndex && duplicateGuardIndex < deliveryIndex);
+  assert.doesNotMatch(source, /\.insert\(|\.update\(/);
   assert.match(source, /try \{\s*const ticketEmailResult = await deliverOfficialTicketEmail/);
   assert.match(source, /Your seats are confirmed, but we could not deliver/);
 });

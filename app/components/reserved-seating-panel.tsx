@@ -877,7 +877,7 @@ export function ReservedSeatingPanel({
       });
       const payload = await response.json() as { success?: boolean; error?: string };
       if (!response.ok || !payload.success) throw new Error(payload.error || "Unable to approve free children's seats.");
-      setStatusMessage(`${link.customer_name} approved for up to ${childSeatLimit} free children's seats. Open their link to assign or move the family.`);
+      setStatusMessage(`${link.customer_name} approved for up to ${childSeatLimit} free children's seats. Use Edit Family Seats to assign or move the family.`);
       await loadReservedSeating();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Unable to approve free children's seats."));
@@ -1774,6 +1774,10 @@ export function ReservedSeatingPanel({
                         {isManualAssigning ? "Stop Manual Assign" : "Manual Assign Seats"}
                       </button>
                       {!link.is_complimentary && link.seat_category === "paid_reserved" ? (
+                        <>
+                        {link.submitted_at ? (
+                          <button type="button" onClick={() => window.open(`${getCustomerLinkUrl(link.selection_token)}?adminFamily=1`, "_blank", "noopener,noreferrer")} className="rounded-xl border border-emerald-300/30 bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/25">Edit Family Seats</button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => void handleApproveChildSeats(link)}
@@ -1782,6 +1786,7 @@ export function ReservedSeatingPanel({
                         >
                           {activeActionId === `child-limit-${link.id}` ? "Saving..." : `Approve Children (${link.child_seat_limit ?? 0})`}
                         </button>
+                        </>
                       ) : null}
                       <button
                         type="button"

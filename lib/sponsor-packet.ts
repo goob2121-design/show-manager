@@ -138,7 +138,7 @@ Enclosed in your Sponsor Packet is information about the upcoming show, our feat
 
 We truly appreciate your support and look forward to seeing you at the upcoming Cumberland Mountain Music Show. Thank you for helping make another successful season possible. We are honored to have you as part of the CMMS family.`;
 export const DEFAULT_VENUE_NAME = "Lincoln Memorial University — Cumberland Gap Convention Center";
-export const DEFAULT_VENUE_ADDRESS = "601 Colwyn Avenue\nCumberland Gap, TN 37724";
+export const DEFAULT_VENUE_ADDRESS = "601 Colwyn St, Cumberland Gap, TN 37724";
 export const DEFAULT_SPONSOR_PACKET_SECTIONS: Record<SponsorPacketSectionKey, boolean> = { showInformation: true, specialGuest: true, complimentaryTickets: true, reservedSeating: true, venueDirections: true, bandInformation: true, sponsorRecognition: true, contactInformation: true };
 export const DEFAULT_SPONSOR_RECOGNITION = "As one of our valued sponsors, your business will be recognized through our event program, website, social media, and live announcements during the Cumberland Mountain Music Show. We sincerely appreciate your support of live music in our community.";
 
