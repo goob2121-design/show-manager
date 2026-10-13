@@ -69,15 +69,31 @@ function buildReservedSeatingCustomerMatchKey(name: string, email: string | null
   return [normalizeLookupValue(name) || "unknown-buyer", normalizeLookupValue(email) || "no-email"].join("::");
 }
 
-function isUnclaimedReservedSeatingLink(link: ShowReservedSeatingLink) {
+type LegacyLinkUsageEvidence = {
+  assignedLinkIds?: ReadonlySet<string>;
+  emailHistoryLinkIds?: ReadonlySet<string>;
+};
+
+function isUnusedLegacyReservedSeatingLink(
+  link: ShowReservedSeatingLink,
+  evidence: LegacyLinkUsageEvidence,
+) {
   return !normalizeOptionalField(link.source_ticket_id)
     && !normalizeOptionalField(link.source_order_id)
-    && !normalizeOptionalField(link.source_import_key);
+    && !normalizeOptionalField(link.source_import_key)
+    && !normalizeOptionalField(link.sent_at)
+    && !normalizeOptionalField(link.resend_email_id)
+    && Math.max(0, link.email_attempt_count ?? 0) === 0
+    && !normalizeOptionalField(link.last_email_attempt_at)
+    && !normalizeOptionalField(link.submitted_at)
+    && !evidence.assignedLinkIds?.has(link.id)
+    && !evidence.emailHistoryLinkIds?.has(link.id);
 }
 
 export function findOwnedOrClaimableReservedSeatingLink(
   links: ShowReservedSeatingLink[],
   ticket: TicketLike,
+  evidence: LegacyLinkUsageEvidence = {},
 ) {
   const sourceOrderId = normalizeOptionalField(ticket.order_id);
   const sourceImportKey = normalizeOptionalField(ticket.import_key);
@@ -95,7 +111,7 @@ export function findOwnedOrClaimableReservedSeatingLink(
 
   const customerMatchKey = buildReservedSeatingCustomerMatchKey(ticket.guest_name, ticket.email);
   const legacyLink = links.find(
-    (link) => isUnclaimedReservedSeatingLink(link)
+    (link) => isUnusedLegacyReservedSeatingLink(link, evidence)
       && buildReservedSeatingCustomerMatchKey(link.customer_name, link.email) === customerMatchKey,
   );
   return legacyLink ? { link: legacyLink, action: "claimed_legacy" as const } : null;
@@ -110,22 +126,37 @@ export async function syncReservedSeatingLinksForImportedOrders(
   showId: string,
   importedTickets: TicketLike[],
 ): Promise<ReservedSeatingSyncResult> {
-  const [{ data: existingLinks, error: existingLinksError }, { data: existingAssignments, error: existingAssignmentsError }] = await Promise.all([
+  const [
+    { data: existingLinks, error: existingLinksError },
+    { data: existingAssignments, error: existingAssignmentsError },
+    { data: existingEmailDeliveries, error: existingEmailDeliveriesError },
+  ] = await Promise.all([
     supabase.from("show_reserved_seating_links").select("*").eq("show_id", showId),
     supabase
       .from("show_reserved_seat_assignments")
       .select("seating_link_id")
       .eq("show_id", showId)
       .not("seating_link_id", "is", null),
+    supabase
+      .from("reserved_seat_email_deliveries")
+      .select("reserved_seating_link_id")
+      .eq("show_id", showId)
+      .not("reserved_seating_link_id", "is", null),
   ]);
 
   if (existingLinksError) throw existingLinksError;
   if (existingAssignmentsError) throw existingAssignmentsError;
+  if (existingEmailDeliveriesError) throw existingEmailDeliveriesError;
 
   const links = ((existingLinks ?? []) as ShowReservedSeatingLink[]).map((link) => ({ ...link }));
   const selectedLinkIds = new Set(
     ((existingAssignments ?? []) as Array<{ seating_link_id: string | null }>)
       .map((item) => item.seating_link_id)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const emailHistoryLinkIds = new Set(
+    ((existingEmailDeliveries ?? []) as Array<{ reserved_seating_link_id: string | null }>)
+      .map((item) => item.reserved_seating_link_id)
       .filter((value): value is string => Boolean(value)),
   );
 
@@ -143,7 +174,10 @@ export async function syncReservedSeatingLinksForImportedOrders(
   for (const ticket of importedTickets) {
     const sourceOrderId = normalizeOptionalField(ticket.order_id);
     const sourceImportKey = normalizeOptionalField(ticket.import_key);
-    const match = findOwnedOrClaimableReservedSeatingLink(links, ticket);
+    const match = findOwnedOrClaimableReservedSeatingLink(links, ticket, {
+      assignedLinkIds: selectedLinkIds,
+      emailHistoryLinkIds,
+    });
     const matchedLink = match?.link;
 
     const baseUpdates: Record<string, string | number | null> = {

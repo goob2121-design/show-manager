@@ -36,6 +36,8 @@ function ticket(id: string, orderId: string, importKey: string) {
 function syncClient(existingLinks: ShowReservedSeatingLink[], options: {
   rpcStatus?: string;
   rpcError?: { code: string; message: string };
+  assignedLinkIds?: string[];
+  emailHistoryLinkIds?: string[];
 } = {}) {
   const inserted: Array<Record<string, unknown>> = [];
   const updated: Array<{ id: string; values: Record<string, unknown> }> = [];
@@ -66,11 +68,14 @@ function syncClient(existingLinks: ShowReservedSeatingLink[], options: {
           },
         };
       }
+      const rows = table === "show_reserved_seat_assignments"
+        ? (options.assignedLinkIds ?? []).map((seatingLinkId) => ({ seating_link_id: seatingLinkId }))
+        : (options.emailHistoryLinkIds ?? []).map((seatingLinkId) => ({ reserved_seating_link_id: seatingLinkId }));
       return {
         select() {
           return {
             eq() {
-              return { not: async () => ({ data: [], error: null }) };
+              return { not: async () => ({ data: rows, error: null }) };
             },
           };
         },
@@ -116,6 +121,24 @@ test("a link owned by an older ticket is never reassigned", () => {
 test("matching order identifiers cannot reassign a different ticket owner", () => {
   const conflictingLink = link({ source_ticket_id: "ticket_1", source_order_id: "order_2", source_import_key: "import_2" });
   assert.equal(findOwnedOrClaimableReservedSeatingLink([conflictingLink], ticket("ticket_2", "order_2", "import_2")), null);
+});
+
+test("exact order and import identity still matches an emailed unowned link", () => {
+  const exactImportLink = link({
+    source_order_id: "order_2",
+    source_import_key: "import_2",
+    sent_at: "2026-10-01T12:00:00.000Z",
+    resend_email_id: "email_existing_purchase",
+    email_attempt_count: 1,
+  });
+
+  const match = findOwnedOrClaimableReservedSeatingLink(
+    [exactImportLink],
+    ticket("ticket_2", "order_2", "import_2"),
+  );
+
+  assert.equal(match?.link.id, exactImportLink.id);
+  assert.equal(match?.action, "existing_current_ticket");
 });
 
 test("a duplicate delivery keeps the one link owned by its current ticket", async () => {
@@ -182,6 +205,60 @@ test("an unclaimed legacy link may be claimed by exact name and email", () => {
   assert.equal(match?.action, "claimed_legacy");
 });
 
+test("a previously emailed same-customer legacy link is not claimed", async () => {
+  const emailedLink = link({
+    selection_mode: "manual",
+    sent_at: "2026-10-01T12:00:00.000Z",
+    resend_email_id: "email_older_test",
+    email_attempt_count: 1,
+    last_email_attempt_at: "2026-10-01T12:00:00.000Z",
+  });
+  const { client, inserted, updated } = syncClient([emailedLink]);
+
+  const result = await syncReservedSeatingLinksForImportedOrders(client, "show_1", [
+    ticket("ticket_2", "order_2", "import_2"),
+  ]);
+
+  assert.equal(updated.length, 0);
+  assert.equal(inserted.length, 1);
+  assert.notEqual(inserted[0].id, emailedLink.id);
+  assert.equal(inserted[0].source_ticket_id, "ticket_2");
+  assert.equal("sent_at" in inserted[0], false);
+  assert.equal("resend_email_id" in inserted[0], false);
+  assert.deepEqual(result.actions, ["created"]);
+});
+
+test("a submitted or seated same-customer legacy link is not claimed", async () => {
+  const submittedLink = link({ selection_mode: "manual", submitted_at: "2026-10-02T12:00:00.000Z" });
+  const seatedLink = link({ id: "link_2", selection_mode: "manual" });
+  const { client, inserted, updated } = syncClient([submittedLink, seatedLink], {
+    assignedLinkIds: [seatedLink.id],
+  });
+
+  const result = await syncReservedSeatingLinksForImportedOrders(client, "show_1", [
+    ticket("ticket_2", "order_2", "import_2"),
+  ]);
+
+  assert.equal(updated.length, 0);
+  assert.equal(inserted.length, 1);
+  assert.deepEqual(result.actions, ["created"]);
+});
+
+test("a same-customer legacy link with delivery history is not claimed", async () => {
+  const legacyLink = link({ selection_mode: "manual" });
+  const { client, inserted, updated } = syncClient([legacyLink], {
+    emailHistoryLinkIds: [legacyLink.id],
+  });
+
+  const result = await syncReservedSeatingLinksForImportedOrders(client, "show_1", [
+    ticket("ticket_2", "order_2", "import_2"),
+  ]);
+
+  assert.equal(updated.length, 0);
+  assert.equal(inserted.length, 1);
+  assert.deepEqual(result.actions, ["created"]);
+});
+
 test("concurrent sync calls resolve to one canonical reserved link", async () => {
   const links: Array<Record<string, unknown>> = [];
   const insertedTokens: string[] = [];
@@ -194,7 +271,7 @@ test("concurrent sync calls resolve to one canonical reserved link", async () =>
   const client = {
     async rpc() { return { data: [{ result_status: "PRESERVED" }], error: null }; },
     from(table: string) {
-      if (table === "show_reserved_seat_assignments") {
+      if (table === "show_reserved_seat_assignments" || table === "reserved_seat_email_deliveries") {
         return {
           select() {
             return { eq() { return { not: async () => ({ data: [], error: null }) }; } };
@@ -281,7 +358,7 @@ test("unexpected reserved-link insert errors are not swallowed", async () => {
   const unexpectedError = { code: "42501", message: "permission denied", details: null, hint: null };
   const client = {
     from(table: string) {
-      if (table === "show_reserved_seat_assignments") {
+      if (table === "show_reserved_seat_assignments" || table === "reserved_seat_email_deliveries") {
         return { select() { return { eq() { return { not: async () => ({ data: [], error: null }) }; } }; } };
       }
       return {
@@ -306,7 +383,7 @@ test("a same-code conflict from any other unique constraint is not swallowed", a
   };
   const client = {
     from(table: string) {
-      if (table === "show_reserved_seat_assignments") {
+      if (table === "show_reserved_seat_assignments" || table === "reserved_seat_email_deliveries") {
         return { select() { return { eq() { return { not: async () => ({ data: [], error: null }) }; } }; } };
       }
       return {
