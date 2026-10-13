@@ -668,6 +668,17 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Customer</p>
                 <p className="mt-2 text-base font-semibold text-white">{seatingLink.customer_name}</p>
                 {seatingLink.email?.trim() ? <p className="mt-1 text-sm text-slate-300">{seatingLink.email}</p> : null}
+                {!isAlreadySubmitted && linkAssignments.length === 0 ? (
+                  <label className="mt-3 flex min-h-11 cursor-pointer items-start gap-3 border-t border-white/10 pt-3 text-left text-sm leading-5 text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={mailingListOptIn}
+                      onChange={(event) => setMailingListOptIn(event.target.checked)}
+                      className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-500"
+                    />
+                    <span>Email me about upcoming shows and special offers.</span>
+                  </label>
+                ) : null}
               </div>
 
               {payAtDoorTicket?.isPayAtDoor ? (
@@ -853,15 +864,6 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                   <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-300">If you&apos;d rather not choose your seats online, we&apos;re happy to take care of it for you.</p>
                   <p className="mx-auto mt-2 max-w-3xl text-sm leading-6 text-slate-300">Your advance ticket purchase already guarantees your reserved seats. We&apos;ll choose the best available seats for your party, keep everyone together whenever possible, and email your tickets with your assigned seat numbers—so all you have to do is show up and enjoy the show!</p>
                     </div>
-                  <label className="mx-auto mt-4 flex min-h-12 max-w-2xl cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left text-sm leading-6 text-slate-200">
-                    <input
-                      type="checkbox"
-                      checked={mailingListOptIn}
-                      onChange={(event) => setMailingListOptIn(event.target.checked)}
-                      className="mt-1 h-5 w-5 shrink-0 accent-emerald-500"
-                    />
-                    <span>Keep me updated about upcoming Cumberland Mountain Music Shows, special announcements, and exclusive discounts.</span>
-                  </label>
                   <button type="button" onClick={() => void saveSeatPreference("auto_assign")} disabled={isSavingPreference} className="mt-4 rounded-xl bg-amber-400 px-4 py-2.5 font-bold text-[#071426] hover:bg-amber-300 disabled:opacity-60">{isSavingPreference ? "Saving..." : "🎟️ Choose My Seats for Me"}</button>
                   </div>
                 </section>
@@ -920,7 +922,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                   onChange={(event) => setMailingListOptIn(event.target.checked)}
                   className="mt-1 h-5 w-5 shrink-0 accent-emerald-500"
                 />
-                <span>Keep me updated about upcoming Cumberland Mountain Music Shows, special announcements, and exclusive discounts.</span>
+                <span>Email me about upcoming shows and special offers.</span>
               </label>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
