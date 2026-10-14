@@ -6,11 +6,13 @@ const phoneModeUrl = new URL("./phone-ticket-mode.tsx", import.meta.url);
 const ticketCodeUrl = new URL("./reservation-ticket-code.tsx", import.meta.url);
 const ticketPageUrl = new URL("./reserved-seat-selection-page.tsx", import.meta.url);
 const routeUrl = new URL("../reserved-seating/[token]/page.tsx", import.meta.url);
+const admissionDisplayUrl = new URL("../../lib/reservation-admission-display.ts", import.meta.url);
 
 test("Phone Ticket Mode reuses the reservation scan token and displays required ticket details", async () => {
-  const [phone, page] = await Promise.all([
+  const [phone, page, admissionDisplay] = await Promise.all([
     readFile(phoneModeUrl, "utf8"),
     readFile(ticketPageUrl, "utf8"),
+    readFile(admissionDisplayUrl, "utf8"),
   ]);
 
   assert.match(page, /scanToken=\{seatingLink\.scan_token\}/);
@@ -19,7 +21,8 @@ test("Phone Ticket Mode reuses the reservation scan token and displays required 
   for (const label of ["Guest", "Event", "Date", "Time", "Venue", "Seats", "Ticket Quantity"]) {
     assert.ok(phone.includes(`"${label}"`));
   }
-  assert.match(phone, /One code covers all \$\{ticketCount\} tickets in this reservation/);
+  assert.match(phone, /\{admissionSummary\.codeMessage\}/);
+  assert.match(admissionDisplay, /codeMessage: `One code admits \$\{guestLabel\} in this reservation\.`/);
   assert.match(phone, /For best scanning, turn your screen brightness up/);
   assert.match(phone, /take a screenshot of this ticket/);
 });
@@ -63,9 +66,10 @@ test("confirmation reuses safe phone query handling and correct ticket-count wor
 
 test("ticket actions remain success-only and independent of email-delivery outcome", async () => {
   const page = await readFile(ticketPageUrl, "utf8");
+  const normalizedPage = page.replace(/\r\n/g, "\n");
 
-  const successBranch = page.indexOf(') : (\n                <div className="mt-4 space-y-3">');
-  const firstPhoneAction = page.indexOf("Open Phone-Friendly Ticket");
+  const successBranch = normalizedPage.indexOf(') : (\n                <div className="mt-4 space-y-3">');
+  const firstPhoneAction = normalizedPage.indexOf("Open Phone-Friendly Ticket");
   assert.ok(successBranch >= 0 && firstPhoneAction > successBranch);
   assert.match(page, /setHasSubmitted\(true\)[\s\S]*setTicketEmailMessageTone/);
   assert.match(page, /ticketEmailDelivered \? "success" : "warning"/);
@@ -109,4 +113,12 @@ test("ticket route reads display time without changing reservation data", async 
 
   assert.match(route, /show_start_time/);
   assert.doesNotMatch(route, /\.update\(|\.insert\(|\.delete\(/);
+});
+
+test("expanding free child-seat options smoothly scrolls the panel into view", async () => {
+  const page = await readFile(ticketPageUrl, "utf8");
+
+  assert.match(page, /function toggleKidsSection\(\)/);
+  assert.match(page, /document\.getElementById\("free-child-seat-options"\)\?\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/);
+  assert.equal((page.match(/onClick=\{toggleKidsSection\}/g) ?? []).length, 2);
 });

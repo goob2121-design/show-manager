@@ -106,6 +106,16 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
   const displayedChildSeatIds = isEditingFamilySeats ? familyChildSeatIds : confirmedChildSeatIds;
   const displayedFamilySeatIds = sortReservedSeatIds([...displayedPaidSeatIds, ...displayedChildSeatIds]);
 
+  function toggleKidsSection() {
+    const shouldExpand = !isKidsSectionExpanded;
+    setIsKidsSectionExpanded(shouldExpand);
+    if (shouldExpand) {
+      window.requestAnimationFrame(() => {
+        document.getElementById("free-child-seat-options")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }
+
   useEffect(() => {
     const syncPhoneMode = () => {
       const params = new URLSearchParams(window.location.search);
@@ -714,7 +724,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                   type="button"
                   aria-expanded={isKidsSectionExpanded}
                   aria-controls="free-child-seat-options"
-                  onClick={() => setIsKidsSectionExpanded((isExpanded) => !isExpanded)}
+                  onClick={toggleKidsSection}
                   className="mt-4 hidden w-full items-center justify-between gap-3 rounded-xl border border-amber-200/50 bg-amber-400 px-4 py-3 text-left text-sm font-black text-slate-950 shadow-[0_8px_24px_rgba(251,191,36,0.16)] transition hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 xl:flex"
                 >
                   <span>Bringing Kids 10 &amp; Under?</span>
@@ -800,7 +810,7 @@ export function ReservedSeatSelectionPage({ show, seatingLink, assignments, payA
                   type="button"
                   aria-expanded={isKidsSectionExpanded}
                   aria-controls="free-child-seat-options"
-                  onClick={() => setIsKidsSectionExpanded((isExpanded) => !isExpanded)}
+                  onClick={toggleKidsSection}
                   className="mb-4 flex w-full items-center justify-between gap-3 rounded-xl border border-amber-200/50 bg-amber-400 px-4 py-3 text-left text-sm font-black text-slate-950 shadow-[0_8px_24px_rgba(251,191,36,0.16)] transition hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 xl:hidden"
                 >
                   <span>Bringing Kids 10 &amp; Under?</span>
