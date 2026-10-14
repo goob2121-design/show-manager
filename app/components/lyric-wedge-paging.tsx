@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createWedgePageReset, resetWedgePosition } from "@/lib/lyric-wedge";
 import type { WedgeSong } from "./lyric-wedge";
@@ -11,6 +11,7 @@ import { splitLyricSections } from "./footswitch-lyric-paging";
 import { applyDocumentSnap } from "./footswitch-document-snap";
 import { adjustWedgeFont, adjustWedgeSpacing, useWedgeSettings } from "./lyric-wedge-settings";
 import { useWedgeLyricSync } from "./lyric-sync-integration";
+import { createEnhancedFootswitchScrolling, FOOTSWITCH_SCROLL_SPEEDS } from "./enhanced-footswitch-scrolling";
 
 export function LyricWedgePaging({ song, setupControls, fullscreen, connection, status, showId }: {
   song: WedgeSong | null; setupControls: ReactNode; fullscreen: boolean; connection: string; status?: string; showId?: string;
@@ -21,6 +22,18 @@ export function LyricWedgePaging({ song, setupControls, fullscreen, connection, 
   const sync = useWedgeLyricSync(showId, song, () => setDisplayActive(true));
   const [history, setHistory] = useState<PagingMeasurement[]>([]);
   const songId = song?.id;
+  const enhancedScroll = useRef<ReturnType<typeof createEnhancedFootswitchScrolling> | null>(null);
+  const enhancedActive = loaded && displayActive && !status && Boolean(song?.lyrics?.trim())
+    && settings.enhancedFootswitchScrolling && !sync.following;
+  // Cancel before paint when a different song or positional sync takes ownership.
+  useLayoutEffect(() => {
+    if (!enhancedActive) return;
+    const controller = createEnhancedFootswitchScrolling(window, document, {
+      enabled: true, speed: settings.footswitchScrollSpeed, inactivityMs: settings.footswitchInactivityMs,
+    });
+    enhancedScroll.current = controller;
+    return () => { controller.destroy(); enhancedScroll.current = null; };
+  }, [enhancedActive, songId, song?.lyrics, fullscreen, settings.footswitchScrollSpeed, settings.footswitchInactivityMs]);
   const reset = useMemo(() => createWedgePageReset(songId), [songId]);
   const config = useMemo<SmartPagingConfig>(() => ({ sample: "realistic", source: "stageflow",
     songId: song?.id, title: song?.title, songKey: song?.key, preferredSize: settings.preferredSize, lineSpacing: settings.lineSpacing,
@@ -37,6 +50,7 @@ export function LyricWedgePaging({ song, setupControls, fullscreen, connection, 
     if (loaded && displayActive && song && !song.lyrics?.trim()) reset.ready(song.id, () => resetWedgePosition(window));
   }, [loaded, displayActive, song, reset]);
   const setup = () => {
+    enhancedScroll.current?.stop();
     flushSync(() => setDisplayActive(false));
     // Explicit setup navigation, never pedal-driven or a paging correction.
     resetWedgePosition(window);
@@ -48,6 +62,14 @@ export function LyricWedgePaging({ song, setupControls, fullscreen, connection, 
   </main>;
   if (!displayActive) return <SmartLyricPagingSetup config={config} history={history}
     onReturn={start} returnLabel="Return to Wedge Lyrics" onStart={start} startLabel="OPEN WEDGE LYRICS"
+    experimentControls={<fieldset className="mt-4 rounded-xl border p-3">
+      <label className="flex min-h-11 items-center gap-2 font-bold"><input type="checkbox" checked={settings.enhancedFootswitchScrolling} onChange={(event) => setSettings((current) => ({ ...current, enhancedFootswitchScrolling: event.target.checked }))} className="h-5 w-5" />Enhanced Footswitch Scrolling</label>
+      {settings.enhancedFootswitchScrolling && <div className="mt-2 flex flex-wrap items-center gap-4">
+        <label className="font-semibold">Scroll Speed <select aria-label="Footswitch Scroll Speed" value={settings.footswitchScrollSpeed} onChange={(event) => setSettings((current) => ({ ...current, footswitchScrollSpeed: Number(event.target.value) }))} className="min-h-11 rounded border border-stone-300 bg-white px-2 text-stone-950 dark:border-white/20 dark:bg-slate-800 dark:text-white">{FOOTSWITCH_SCROLL_SPEEDS.map((speed) => <option key={speed.pixelsPerSecond} value={speed.pixelsPerSecond}>{speed.label}</option>)}</select></label>
+        <label className="font-semibold">Stop After Inactivity <input aria-label="Footswitch Inactivity Timeout" type="range" min={80} max={300} step={20} value={settings.footswitchInactivityMs} onChange={(event) => setSettings((current) => ({ ...current, footswitchInactivityMs: Number(event.target.value) }))} className="min-h-11 align-middle" /> <output>{settings.footswitchInactivityMs} ms</output></label>
+      </div>}
+      {settings.enhancedFootswitchScrolling && sync.following && <p role="status" className="mt-2 text-sm text-amber-600 dark:text-amber-200">Enhanced scrolling paused: following the leader&apos;s lyric position.</p>}
+    </fieldset>}
     typographyControls={<div className="mt-4 space-y-3">
       <div className="flex flex-wrap items-center gap-3" role="group" aria-label="Font Size">
         <span className="font-bold">Font Size</span>
@@ -79,7 +101,7 @@ export function LyricWedgePaging({ song, setupControls, fullscreen, connection, 
     <p role="status" className="mt-8 text-2xl">No lyrics available for this song.</p>
   </main>;
   return <>
-    {sync.status && <p role="status" className="pointer-events-none fixed bottom-2 left-2 z-20 rounded bg-black/90 px-2 py-1 text-xs text-white">{sync.following ? "Follow the Leader" : "Wedge Flow"} · Lyric Sync: {sync.status}</p>}
+    {sync.status && <p role="status" className="pointer-events-none fixed bottom-2 left-2 z-20 rounded bg-black/90 px-2 py-1 text-xs text-white">{sync.following ? "Follow the Leader" : "Wedge Flow"} · Lyric Sync: {sync.status}{settings.enhancedFootswitchScrolling && sync.following && <span className="block text-amber-200">Enhanced scrolling paused: following the leader&apos;s lyric position.</span>}</p>}
     <SmartLyricPagingDisplay key={song.id} config={config} lyricText={song.lyrics}
       onReturn={setup} onCalibrate={setup} onMeasurement={record} />
     {connection !== "connected" && <p role="status" className="pointer-events-none fixed bottom-2 right-2 z-20 rounded bg-black/90 px-2 py-1 text-xs text-white">{connection === "disconnected" ? "Disconnected — keeping last song" : "Connecting…"}</p>}

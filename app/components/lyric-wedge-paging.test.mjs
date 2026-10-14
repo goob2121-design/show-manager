@@ -30,6 +30,8 @@ function hooks() {
     },
     useMemo(fn, deps) { const i = index++; if (changed(slots[i], deps)) slots[i] = { value: fn(), deps }; return slots[i].value; },
     useCallback(fn, deps) { return react.useMemo(() => fn, deps); },
+    useRef(initial) { const i = index++; if (!slots[i]) slots[i] = { value: { current: initial } }; return slots[i].value; },
+    useLayoutEffect(fn, deps) { react.useEffect(fn, deps); },
     useEffect(fn, deps) {
       const i = index++;
       if (changed(slots[i], deps)) { const previous = slots[i]; slots[i] = { deps }; pending.push(() => { previous?.cleanup?.(); slots[i].cleanup = fn(); }); }
@@ -45,12 +47,20 @@ function nodes(value, result = []) {
 }
 function harness() {
   const runtime = hooks(), scrolls = [];
+  const controllers = [], sync = { status: "", following: false };
   const prefs = { settings: storageApi.parseWedgeSettings(null), loaded: true, orientation: "portrait", storageUnavailable: false };
   prefs.setSettings = (fn) => { prefs.settings = fn(prefs.settings); };
   const { LyricWedgePaging } = compile(read("./lyric-wedge-paging.tsx"), {
     react: runtime.react, "react-dom": { flushSync: (fn) => fn() }, "@/lib/lyric-wedge": wedgeHelpers,
     "./lyric-wedge-settings": { ...storageApi, useWedgeSettings: () => prefs }, "./footswitch-diagnostic-settings": profiles,
-    "./lyric-sync-integration": { useWedgeLyricSync: () => ({ status: "", following: false }) },
+    "./lyric-sync-integration": { useWedgeLyricSync: (_showId, _song, reveal) => { sync.reveal = reveal; return sync; } },
+    "./enhanced-footswitch-scrolling": {
+      FOOTSWITCH_SCROLL_SPEEDS: [{ label: "Slow", pixelsPerSecond: 100 }, { label: "Medium", pixelsPerSecond: 200 }, { label: "Fast", pixelsPerSecond: 350 }, { label: "Extra Fast", pixelsPerSecond: 500 }],
+      createEnhancedFootswitchScrolling: (_page, _doc, options) => {
+        const controller = { options, stopped: 0, destroyed: 0, stop() { this.stopped++; }, destroy() { this.destroyed++; } };
+        controllers.push(controller); return controller;
+      },
+    },
     "./footswitch-lyric-paging": paging, "./footswitch-document-snap": { applyDocumentSnap: (_doc, mode) => { assert.equal(mode, "off"); return () => {}; } },
     "./footswitch-smart-paging-display": { SmartLyricPagingDisplay: function Display() {} },
     "./footswitch-smart-paging-test": { SmartLyricPagingSetup: function Setup() {} },
@@ -60,8 +70,68 @@ function harness() {
   const render = () => runtime.render(() => LyricWedgePaging(props));
   const display = (view) => nodes(view).find((node) => node.type.name === "Display");
   const measurement = (view) => ({ config: display(view).props.config, pageCount: 2, timestamp: "now", layout: {}, alignment: {} });
-  return { render, props, prefs, scrolls, display, measurement };
+  return { render, props, prefs, scrolls, display, measurement, controllers, sync, destroy: runtime.destroy };
 }
+
+test("enhanced wedge scrolling defaults off and setup controls preserve typography and local profiles", () => {
+  const h = harness(); let view = h.render();
+  assert.equal(h.controllers.length, 0);
+  h.display(view).props.onCalibrate(); view = h.render();
+  const controls = () => nodes(h.render().props.experimentControls);
+  controls().find(node => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: true } });
+  controls().find(node => node.type === "select").props.onChange({ target: { value: "350" } });
+  controls().find(node => node.type === "input" && node.props.type === "range").props.onChange({ target: { value: "240" } });
+  assert.equal(h.controllers.length, 0, "Setup never intercepts keyboard input");
+  assert.equal(h.prefs.settings.preferredSize, 56);
+  assert.equal(h.prefs.settings.portraitCalibration, -100);
+  h.render().props.onStart(); h.render();
+  assert.deepEqual({ ...h.controllers[0].options }, { enabled: true, speed: 350, inactivityMs: 240 });
+  h.destroy(); assert.equal(h.controllers[0].destroyed, 1);
+});
+
+test("positional following cancels Enhanced input while song following and independent scrolling remain available", () => {
+  const h = harness(); h.prefs.settings.enhancedFootswitchScrolling = true;
+  let view = h.render(); assert.equal(h.controllers.length, 1);
+  h.props.song = { ...h.props.song, id: "leader-next-song" };
+  view = h.render();
+  assert.equal(h.controllers[0].destroyed, 1);
+  assert.equal(h.controllers.length, 2);
+  assert.equal(h.display(view).props.config.songId, "leader-next-song");
+  h.sync.following = true; h.sync.status = "connected";
+  view = h.render();
+  assert.equal(h.controllers[1].destroyed, 1);
+  assert.equal(h.controllers.length, 2);
+  assert.ok(nodes(view).some(node => node.props.children?.includes?.("Enhanced scrolling paused")));
+  assert.equal(h.prefs.settings.enhancedFootswitchScrolling, true, "Temporary pause never changes the preference");
+  h.sync.following = false; h.render();
+  assert.equal(h.controllers.length, 3);
+  h.destroy();
+});
+
+test("controller cleanup covers setup, missing lyrics, loading, fullscreen changes and disabling the experiment", () => {
+  for (const interrupt of [h => { h.props.fullscreen = true; }, h => { h.props.song = { ...h.props.song, lyrics: null }; },
+    h => { h.prefs.loaded = false; }, h => { h.props.status = "Loading"; }, h => { h.prefs.settings.enhancedFootswitchScrolling = false; }]) {
+    const h = harness(); h.prefs.settings.enhancedFootswitchScrolling = true; h.render();
+    interrupt(h); h.render(); assert.equal(h.controllers[0].destroyed, 1);
+    h.destroy();
+  }
+  const h = harness(); h.prefs.settings.enhancedFootswitchScrolling = true;
+  h.display(h.render()).props.onCalibrate();
+  assert.equal(h.controllers[0].stopped, 1, "Stop before navigating to setup");
+  h.render(); assert.equal(h.controllers[0].destroyed, 1);
+  h.sync.reveal(); h.render(); assert.equal(h.controllers.length, 2, "Existing automatic reveal still opens the wedge");
+  h.destroy(); assert.equal(h.controllers[1].destroyed, 1);
+});
+
+test("enhanced wedge preferences round-trip under the wedge key without affecting main Smart Lyrics", () => {
+  const values = new Map([[profiles.FOOTSWITCH_SETTINGS_KEY, "main-preferences"]]);
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  const preferences = { ...storageApi.readWedgeSettings(storage), enhancedFootswitchScrolling: true,
+    footswitchScrollSpeed: 500, footswitchInactivityMs: 300, fullscreenPortraitCalibration: -175 };
+  storageApi.writeWedgeSettings(storage, preferences);
+  assert.deepEqual({ ...storageApi.readWedgeSettings(storage) }, preferences);
+  assert.equal(values.get(profiles.FOOTSWITCH_SETTINGS_KEY), "main-preferences");
+});
 
 test("shared paginated display receives original song and metadata without setup content or an auto-close wrapper", () => {
   const h = harness(), view = h.render(), display = h.display(view);
