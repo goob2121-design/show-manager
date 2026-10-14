@@ -9,11 +9,15 @@ export type DiagnosticSettings = {
   fullscreenPortraitCalibrated: boolean; fullscreenLandscapeCalibrated: boolean;
   source: "sample" | "stageflow"; sample: "realistic" | "overflow"; songId: string;
   footswitchReturnToSetlist: boolean;
+  enhancedFootswitchScrolling: boolean;
+  footswitchScrollSpeed: number;
+  footswitchInactivityMs: number;
 };
 export function defaultDiagnosticSettings(): DiagnosticSettings {
   return { preferredSize: 56, portraitCalibration: -100, landscapeCalibration: 0,
     portraitCalibrated: false, landscapeCalibrated: false, fullscreenPortraitCalibration: -100, fullscreenLandscapeCalibration: 0,
-    fullscreenPortraitCalibrated: false, fullscreenLandscapeCalibrated: false, source: "sample", sample: "realistic", songId: "", footswitchReturnToSetlist: false };
+    fullscreenPortraitCalibrated: false, fullscreenLandscapeCalibrated: false, source: "sample", sample: "realistic", songId: "", footswitchReturnToSetlist: false,
+    enhancedFootswitchScrolling: false, footswitchScrollSpeed: 200, footswitchInactivityMs: 180 };
 }
 export function parseDiagnosticSettings(raw: string | null): DiagnosticSettings {
   const defaults = defaultDiagnosticSettings();
@@ -32,7 +36,12 @@ export function parseDiagnosticSettings(raw: string | null): DiagnosticSettings 
       fullscreenLandscapeCalibrated: value.fullscreenLandscapeCalibrated === true && calibration(value.fullscreenLandscapeCalibration, NaN) === value.fullscreenLandscapeCalibration,
       source: value.source === "stageflow" ? "stageflow" : "sample", sample: value.sample === "overflow" ? "overflow" : "realistic",
       songId: typeof value.songId === "string" && value.songId.length <= 200 ? value.songId : "",
-      footswitchReturnToSetlist: value.footswitchReturnToSetlist === true };
+      footswitchReturnToSetlist: value.footswitchReturnToSetlist === true,
+      enhancedFootswitchScrolling: value.enhancedFootswitchScrolling === true,
+      footswitchScrollSpeed: [100, 200, 350, 500].includes(value.footswitchScrollSpeed) ? value.footswitchScrollSpeed : defaults.footswitchScrollSpeed,
+      footswitchInactivityMs: typeof value.footswitchInactivityMs === "number" && Number.isInteger(value.footswitchInactivityMs)
+        && value.footswitchInactivityMs >= 80 && value.footswitchInactivityMs <= 300 && value.footswitchInactivityMs % 20 === 0
+        ? value.footswitchInactivityMs : defaults.footswitchInactivityMs };
   } catch { return defaults; }
 }
 export function readDiagnosticSettings(storage: Pick<Storage, "getItem">): DiagnosticSettings {

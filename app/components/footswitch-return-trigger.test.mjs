@@ -121,7 +121,7 @@ test("standalone wrapper appends end message and document trigger zone after unc
   const standalone = readFileSync(new URL("./footswitch-smart-paging-test.tsx", import.meta.url), "utf8");
   assert.match(standalone, /\[returnTestEnabled, setReturnTestEnabled\] = useState\(false\)/);
   assert.match(standalone, /returnTestEnabled \? FootswitchReturnTestDisplay : SmartLyricPagingDisplay/);
-  assert.match(readFileSync(new URL("./live-smart-lyrics.tsx", import.meta.url), "utf8"), /settings\.footswitchReturnToSetlist\s*\?/);
+  assert.match(readFileSync(new URL("./live-smart-lyrics.tsx", import.meta.url), "utf8"), /settings\.footswitchReturnToSetlist && !settings\.enhancedFootswitchScrolling\s*\?/);
 });
 
 test("Live callback closes once only after observer trigger, callback updates do not restart observation, and diagnostic never closes", () => {

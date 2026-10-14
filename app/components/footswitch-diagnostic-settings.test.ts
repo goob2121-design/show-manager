@@ -2,6 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 const settings = await import(new URL("./footswitch-diagnostic-settings.ts", import.meta.url).href) as typeof import("./footswitch-diagnostic-settings");
 
+test("enhanced scrolling defaults off, validates bounds and preserves calibrated profiles", () => {
+  const original = settings.parseDiagnosticSettings(JSON.stringify({ portraitCalibration: -175, fullscreenLandscapeCalibration: 25 }));
+  assert.equal(original.enhancedFootswitchScrolling, false);
+  assert.equal(original.footswitchScrollSpeed, 200);
+  assert.equal(original.footswitchInactivityMs, 180);
+  const enhanced = settings.parseDiagnosticSettings(JSON.stringify({ ...original, enhancedFootswitchScrolling: true, footswitchScrollSpeed: 500, footswitchInactivityMs: 300 }));
+  assert.equal(enhanced.enhancedFootswitchScrolling, true);
+  assert.equal(enhanced.footswitchScrollSpeed, 500);
+  assert.equal(enhanced.footswitchInactivityMs, 300);
+  assert.equal(enhanced.portraitCalibration, -175);
+  assert.equal(enhanced.fullscreenLandscapeCalibration, 25);
+  const invalid = settings.parseDiagnosticSettings(JSON.stringify({ enhancedFootswitchScrolling: "true", footswitchScrollSpeed: 9999, footswitchInactivityMs: 5000 }));
+  assert.equal(invalid.enhancedFootswitchScrolling, false);
+  assert.equal(invalid.footswitchScrollSpeed, 200);
+  assert.equal(invalid.footswitchInactivityMs, 180);
+});
+
 test("fresh preferences match the working portrait configuration and landscape remains independent", () => {
   const defaults = settings.defaultDiagnosticSettings();
   assert.equal(defaults.preferredSize, 56);

@@ -29,7 +29,7 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
   const status = { active: false, label: "Ready", message: "Tap to attempt fullscreen" };
   const states = [], memos = [];
   let index = 0, memoIndex = 0;
-  const react = { ...require("react"), useEffect: () => {}, useCallback: (fn) => fn,
+  const react = { ...require("react"), useEffect: () => {}, useCallback: (fn) => fn, useRef: () => ({ current: null }),
     useState: (initial) => { const i = index++; if (!(i in states)) states[i] = initial; return [states[i], (next) => { states[i] = typeof next === "function" ? next(states[i]) : next; }]; },
     useMemo: (fn, deps) => { const i = memoIndex++; if (!memos[i] || deps.some((value, j) => value !== memos[i].deps[j])) memos[i] = { value: fn(), deps }; return memos[i].value; } };
   const { LiveSmartLyrics } = compile(source, {
@@ -41,6 +41,7 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
     "./footswitch-return-test-display": { FootswitchReturnTestDisplay: function ReturnDisplay() {} },
     "./footswitch-smart-paging-test": { SmartLyricPagingSetup: function Setup() {} },
     "./footswitch-document-snap": { applyDocumentSnap: () => {} },
+    "./enhanced-footswitch-scrolling": compile(readFileSync(new URL("./enhanced-footswitch-scrolling.ts", import.meta.url), "utf8"), {}),
     "./footswitch-lyric-paging": { splitLyricSections: (lyrics) => lyrics.split(/\n\n/) },
   });
   let song = { id: "live-entry", title: "Long title & special é", key: "G", performanceFlow: "Banjo Kick, Mando, Guitar/Fiddle, Banjo Outro", lyrics: "VERSE 1\r\n[G] Original!\r\n\r\nCHORUS\r\nAgain" };
@@ -107,7 +108,7 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
   // The persisted opt-in selects the same proven wrapper and the same Close path.
   nodes(render()).find((node) => node.type.name === "Display").props.onCalibrate();
   setup = render();
-  const toggle = nodes(setup.props.experimentControls).find((node) => node.type === "input");
+  const toggle = nodes(setup.props.experimentControls).find((node) => node.type === "input" && node.props.checked === settings.footswitchReturnToSetlist && node.props.disabled === false);
   assert.equal(toggle.props.checked, false);
   toggle.props.onChange({ target: { checked: true } });
   assert.equal(settingsApi.readDiagnosticSettings({ getItem: (key) => saved.get(key) }).footswitchReturnToSetlist, true);
@@ -125,6 +126,12 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
     assert.equal(exits, before + Number(shouldExit));
     assert.equal(song.id, "next");
   }
+  settings = { ...settings, enhancedFootswitchScrolling: true };
+  assert.ok(!nodes(render()).some((node) => node.type.name === "ReturnDisplay"), "Enhanced pulses cannot trigger automatic Return to Setlist");
+  assert.ok(nodes(render()).some((node) => node.type.name === "Display"));
+  assert.equal(settings.footswitchReturnToSetlist, true, "Pausing auto-return preserves its saved preference");
+  settings = { ...settings, enhancedFootswitchScrolling: false };
+  assert.ok(nodes(render()).some((node) => node.type.name === "ReturnDisplay"));
 });
 
 test("Live integration preserves the legacy modal, disables its timers and lock, and retains native scrolling", () => {
