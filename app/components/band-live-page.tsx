@@ -2028,6 +2028,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               <HomeIcon />
               Back
             </Link>
+            <Link
+              href={`/band/${encodeURIComponent(showSlug)}/lyrics-follow`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+            >
+              Open Wedge Lyrics
+            </Link>
             <button
               type="button"
               onClick={toggleWakeLock}
@@ -2110,6 +2118,14 @@ export function BandLivePage({ showSlug }: { showSlug: string }) {
               >
                 <HomeIcon />
                 Back
+              </Link>
+              <Link
+                href={`/band/${encodeURIComponent(showSlug)}/lyrics-follow`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/10 sm:text-sm"
+              >
+                Open Wedge Lyrics
               </Link>
               <button
                 type="button"
