@@ -153,6 +153,11 @@ test("semantic page mapping preserves Unicode offsets across different font and 
   layout.alignWedgeLyrics(doc, page, { ...position, characterOffset: 0 });
   assert.ok(moves[0].top > 0); // Backward mapping also resolves to the first page.
   assert.equal(layout.lyricTargetPage(doc, { ...position, section: 99 }), null);
+  const rotatedDoc = { ...doc, scrollingElement: { scrollHeight: 4000, clientHeight: 800 },
+    querySelectorAll: () => [{ dataset: { lyricSection: "1", lyricLine: "0", lyricOffset: "0" }, textContent: "rotated lyrics",
+      closest: () => ({ getAttribute: () => "1200", getBoundingClientRect: () => { throw Error("Rotated rectangles must not drive sync"); } }) }] };
+  layout.alignWedgeLyrics(rotatedDoc, page, { section: 1, originalLine: 0, characterOffset: 0 });
+  assert.equal(moves.at(-1).top, 1200);
 });
 test("shared display adds only data attributes; original Close/Auto-Close path and band subscription remain intact", () => {
   const display = read("./footswitch-smart-paging-display.tsx"), live = read("./live-smart-lyrics.tsx"), band = read("./band-live-page.tsx");

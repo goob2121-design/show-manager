@@ -63,6 +63,7 @@ function harness() {
     },
     "./footswitch-lyric-paging": paging, "./footswitch-document-snap": { applyDocumentSnap: (_doc, mode) => { assert.equal(mode, "off"); return () => {}; } },
     "./footswitch-smart-paging-display": { SmartLyricPagingDisplay: function Display() {} },
+    "./wedge-rotated-lyrics": { WedgeRotatedLyrics: function RotatedDisplay() {} },
     "./footswitch-smart-paging-test": { SmartLyricPagingSetup: function Setup() {} },
   }, { document: {}, window: { scrollTo: (options) => scrolls.push(options) } });
   const props = { song: { id: "entry-a", title: "Original Title", key: "G", lyrics: "VERSE\r\n  [G] Exact, / words\r\n\r\nCHORUS\nAgain" },
@@ -79,7 +80,7 @@ test("enhanced wedge scrolling defaults off and setup controls preserve typograp
   h.display(view).props.onCalibrate(); view = h.render();
   const controls = () => nodes(h.render().props.experimentControls);
   controls().find(node => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: true } });
-  controls().find(node => node.type === "select").props.onChange({ target: { value: "350" } });
+  controls().find(node => node.props["aria-label"] === "Footswitch Scroll Speed").props.onChange({ target: { value: "350" } });
   controls().find(node => node.type === "input" && node.props.type === "range").props.onChange({ target: { value: "240" } });
   assert.equal(h.controllers.length, 0, "Setup never intercepts keyboard input");
   assert.equal(h.prefs.settings.preferredSize, 56);
@@ -131,6 +132,40 @@ test("enhanced wedge preferences round-trip under the wedge key without affectin
   storageApi.writeWedgeSettings(storage, preferences);
   assert.deepEqual({ ...storageApi.readWedgeSettings(storage) }, preferences);
   assert.equal(values.get(profiles.FOOTSWITCH_SETTINGS_KEY), "main-preferences");
+});
+
+test("rotation is isolated, persists separately, and Normal restores original rendering and calibration", () => {
+  const h = harness();
+  assert.equal(h.prefs.settings.rotation, "normal");
+  h.prefs.settings.fullscreenPortraitCalibration = -175;
+  h.prefs.settings.enhancedFootswitchScrolling = true;
+  h.props.fullscreen = true;
+  h.display(h.render()).props.onCalibrate();
+  let setup = h.render();
+  nodes(setup.props.experimentControls).find(node => node.props["aria-label"] === "Wedge Display Rotation").props.onChange({ target: { value: "clockwise" } });
+  setup = h.render(); assert.equal(setup.props.config.calibration, 0);
+  setup.props.onConfig({ ...setup.props.config, calibration: -50 });
+  assert.equal(h.prefs.settings.fullscreenPortraitCalibration, -175);
+  h.render().props.onStart();
+  let view = h.render(), rotated = nodes(view).find(node => node.type.name === "RotatedDisplay");
+  assert.equal(h.display(view), undefined);
+  assert.equal(rotated.props.rotation, "clockwise");
+  assert.equal(rotated.props.config.calibration, -50);
+  h.props.song = { ...h.props.song, id: "next-song" };
+  rotated = nodes(h.render()).find(node => node.type.name === "RotatedDisplay");
+  assert.equal(rotated.key, "next-song:clockwise");
+  rotated.props.onCalibrate(); setup = h.render();
+  nodes(setup.props.experimentControls).find(node => node.props["aria-label"] === "Wedge Display Rotation").props.onChange({ target: { value: "counterclockwise" } });
+  assert.equal(h.render().props.config.calibration, 0);
+  h.prefs.settings = { ...h.prefs.settings, rotation: "normal" };
+  setup = h.render(); assert.equal(setup.props.config.calibration, -175);
+  setup.props.onStart(); view = h.render();
+  assert.ok(h.display(view)); assert.ok(!nodes(view).some(node => node.type.name === "RotatedDisplay"));
+  let saved;
+  storageApi.writeWedgeSettings({ setItem: (_key, value) => { saved = value; } }, h.prefs.settings);
+  assert.equal(storageApi.parseWedgeSettings(saved).rotatedCalibration["clockwise:fullscreen:portrait"], -50);
+  assert.equal(storageApi.parseWedgeSettings(saved).fullscreenPortraitCalibration, -175);
+  h.destroy();
 });
 
 test("shared paginated display receives original song and metadata without setup content or an auto-close wrapper", () => {

@@ -37,7 +37,10 @@ export function alignWedgeLyrics(doc: Document, page: Window, position: Semantic
   const target = lyricTargetPage(doc, position); if (!target) return false;
   const root = doc.scrollingElement;
   const maximum = root ? Math.max(0, root.scrollHeight - root.clientHeight) : Infinity;
-  const top = Math.min(maximum, Math.max(0, page.scrollY + target.getBoundingClientRect().top - headerBottom(doc)));
+  const rotatedTop = target.getAttribute?.("data-wedge-scroll-top");
+  const logicalTop = rotatedTop != null && Number.isFinite(Number(rotatedTop)) ? Number(rotatedTop)
+    : page.scrollY + target.getBoundingClientRect().top - headerBottom(doc);
+  const top = Math.min(maximum, Math.max(0, logicalTop));
   if (Math.abs(page.scrollY - top) > 1) page.scrollTo({ top, behavior: "instant" });
   return true;
 }
