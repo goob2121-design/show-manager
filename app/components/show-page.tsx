@@ -9,6 +9,7 @@ import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { ShowPersonnelPanel } from "@/app/components/show-personnel-panel";
 import { SongEditorPanel } from "@/app/components/song-editor-panel";
+import { PrintSongCatalogButton } from "@/app/components/print-song-catalog-button";
 import { SponsorLibraryProfileFields } from "@/app/components/sponsor-library-profile-fields";
 import { SponsorRsvpAdminPanel } from "@/app/components/sponsor-rsvp-admin-panel";
 import { CmmsReturnMailingLabelActions, SponsorMailingLabelBulkAction, SponsorMailingLabelButton } from "@/app/components/sponsor-mailing-label-actions";
@@ -27811,6 +27812,7 @@ The official show setlist is shown first in its live order. Practice-only rehear
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Song Library</h2>
+              <PrintSongCatalogButton />
               <p className="text-sm text-stone-600">
                 Reusable songs collected from past band and admin submissions.
               </p>
