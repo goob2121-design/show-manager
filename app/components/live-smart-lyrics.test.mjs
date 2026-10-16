@@ -23,9 +23,9 @@ function nodes(value, result = []) {
 test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration, Resume and Close", () => {
   const settingsApi = compile(readFileSync(new URL("./footswitch-diagnostic-settings.ts", import.meta.url), "utf8"), {});
   let settings = settingsApi.parseDiagnosticSettings(JSON.stringify({ preferredSize: 56, portraitCalibration: -90,
-    fullscreenPortraitCalibration: -175, fullscreenLandscapeCalibration: 25, source: "stageflow", songId: "diagnostic-selection" }));
+    fullscreenPortraitCalibration: -175, fullscreenLandscapeCalibration: 25, source: "stageflow", songId: "diagnostic-selection", enhancedFootswitchScrolling: true }));
   const saved = new Map();
-  let orientation = "portrait", loaded = true, closed = false, requests = 0, exits = 0, exitFullscreenOnClose = true;
+  let orientation = "portrait", loaded = true, closed = false, requests = 0, exits = 0, exitFullscreenOnClose = true, returnToLibrary = false;
   const status = { active: false, label: "Ready", message: "Tap to attempt fullscreen" };
   const states = [], memos = [];
   let index = 0, memoIndex = 0;
@@ -45,7 +45,7 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
     "./footswitch-lyric-paging": { splitLyricSections: (lyrics) => lyrics.split(/\n\n/) },
   });
   let song = { id: "live-entry", title: "Long title & special é", key: "G", performanceFlow: "Banjo Kick, Mando, Guitar/Fiddle, Banjo Outro", lyrics: "VERSE 1\r\n[G] Original!\r\n\r\nCHORUS\r\nAgain" };
-  const render = () => { index = memoIndex = 0; return LiveSmartLyrics({ song, exitFullscreenOnClose, fullscreen: { status, request: () => { requests++; }, close: () => { assert.equal(closed, true); exits++; } }, onClose: () => { closed = true; } }); };
+  const render = () => { index = memoIndex = 0; return LiveSmartLyrics({ song, exitFullscreenOnClose, returnToLibrary, fullscreen: { status, request: () => { requests++; }, close: () => { assert.equal(closed, true); exits++; } }, onClose: () => { closed = true; } }); };
   let view = render();
   let display = nodes(view).find((node) => node.type.name === "Display");
   assert.equal(display.props.lyricText, song.lyrics);
@@ -70,6 +70,8 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
   assert.equal(status.active, true);
   assert.equal(exits, 0);
   assert.equal(setup.props.returnLabel, "Back to Live Mode");
+  assert.equal(nodes(setup.props.experimentControls).find(node => node.type === "input" && node.props.disabled === undefined).props.checked, false, "Saved enhanced opt-in does not override the native session default");
+  assert.equal(settings.enhancedFootswitchScrolling, true, "Opening a viewer does not overwrite the saved flag");
   assert.equal(setup.props.startLabel, "RESUME LYRICS IN FULLSCREEN");
   setup.props.onConfig({ ...setup.props.config, calibration: -300 });
   setup = render();
@@ -126,12 +128,28 @@ test("Live lyrics reuse saved profiles, original songs, fullscreen, calibration,
     assert.equal(exits, before + Number(shouldExit));
     assert.equal(song.id, "next");
   }
-  settings = { ...settings, enhancedFootswitchScrolling: true };
+  nodes(render()).find(node => node.type.name === "ReturnDisplay").props.onCalibrate();
+  setup = render();
+  nodes(setup.props.experimentControls).find(node => node.type === "input" && node.props.disabled === undefined).props.onChange({ target: { checked: true } });
+  setup = render(); setup.props.onStart();
   assert.ok(!nodes(render()).some((node) => node.type.name === "ReturnDisplay"), "Enhanced pulses cannot trigger automatic Return to Setlist");
   assert.ok(nodes(render()).some((node) => node.type.name === "Display"));
   assert.equal(settings.footswitchReturnToSetlist, true, "Pausing auto-return preserves its saved preference");
-  settings = { ...settings, enhancedFootswitchScrolling: false };
+  nodes(render()).find(node => node.type.name === "Display").props.onCalibrate();
+  setup = render();
+  nodes(setup.props.experimentControls).find(node => node.type === "input" && node.props.disabled === undefined).props.onChange({ target: { checked: false } });
+  setup = render(); setup.props.onStart();
   assert.ok(nodes(render()).some((node) => node.type.name === "ReturnDisplay"));
+  returnToLibrary = true;
+  settings = { ...settings, footswitchReturnToSetlist: false };
+  let library = nodes(render()).find(node => node.type.name === "ReturnDisplay");
+  assert.equal(library.props.returnDestination, "Music Library");
+  assert.equal(library.props.onReturn, library.props.onTrigger);
+  library.props.onCalibrate(); setup = render();
+  assert.equal(setup.props.returnLabel, "Back to Music Library");
+  setup.props.onStart();
+  assert.equal(settings.footswitchReturnToSetlist, false, "Library return does not enable the Live Mode saved preference");
+  assert.equal(settings.enhancedFootswitchScrolling, true, "Session toggles do not rewrite the saved enhanced preference");
 });
 
 test("Live integration preserves the legacy modal, disables its timers and lock, and retains native scrolling", () => {

@@ -9,6 +9,7 @@ import { readAdminAccess, subscribeToAdminAccess } from "@/app/components/admin-
 import { AdminQuickNav } from "@/app/components/admin-quick-nav";
 import { ShowPersonnelPanel } from "@/app/components/show-personnel-panel";
 import { SongEditorPanel } from "@/app/components/song-editor-panel";
+import { useLibrarySmartLyrics } from "@/app/components/library-smart-lyrics";
 import { PrintSongCatalogButton } from "@/app/components/print-song-catalog-button";
 import { SponsorLibraryProfileFields } from "@/app/components/sponsor-library-profile-fields";
 import { SponsorRsvpAdminPanel } from "@/app/components/sponsor-rsvp-admin-panel";
@@ -6649,6 +6650,7 @@ export function ShowPage({
   const [selectedRehearsalGuestSongId, setSelectedRehearsalGuestSongId] = useState("");
   const [manualRehearsalTitle, setManualRehearsalTitle] = useState("");
   const [songLibrarySearchQuery, setSongLibrarySearchQuery] = useState("");
+  const librarySmartLyrics = useLibrarySmartLyrics();
   const [rehearsalLibrarySearchQuery, setRehearsalLibrarySearchQuery] = useState("");
   const [activeRehearsalAddSongType, setActiveRehearsalAddSongType] = useState<"library" | "guest" | "manual">("library");
   const [activeRehearsalMode, setActiveRehearsalMode] = useState<"practice" | "edit">("practice");
@@ -17620,6 +17622,8 @@ function handleMcScriptChange(event: ChangeEvent<HTMLTextAreaElement>) {
   const activeGuestTabLabel =
     guestTabItems.find((tab) => tab.key === activeGuestTab)?.label ?? "Welcome";
 
+  if (librarySmartLyrics.viewer) return librarySmartLyrics.viewer;
+
   if (isLoading) {
     return (
       <main className="min-h-screen bg-stone-100 px-4 py-10 text-stone-900 sm:px-6 lg:px-8">
@@ -27812,6 +27816,7 @@ The official show setlist is shown first in its live order. Practice-only rehear
           <section className="print-hidden flex flex-col gap-4 border-t border-stone-200 pt-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Song Library</h2>
+              <Link href="/songs" className="text-sm font-semibold text-emerald-700 underline">Open standalone Music Library</Link>
               <PrintSongCatalogButton />
               <p className="text-sm text-stone-600">
                 Reusable songs collected from past band and admin submissions.
@@ -28009,6 +28014,12 @@ The official show setlist is shown first in its live order. Practice-only rehear
                               >
                                 {openLibraryLyricsSongId === song.id ? "Hide Lyrics" : "View Lyrics"}
                               </button>
+                              <button
+                                id={`library-smart-lyrics-${song.id}`}
+                                type="button"
+                                onClick={() => librarySmartLyrics.open({ id: song.id, title: song.title, lyrics: song.lyrics, key: song.song_key, performanceFlow: song.default_performance_flow ?? song.performance_flow }, `library-smart-lyrics-${song.id}`)}
+                                className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                              >Smart Lyrics</button>
                               <button
                                 type="button"
                                 onClick={() => handlePrintLibrarySong(song)}

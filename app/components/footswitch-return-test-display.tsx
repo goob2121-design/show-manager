@@ -5,7 +5,7 @@ import { SmartLyricPagingDisplay } from "./footswitch-smart-paging-display";
 import { observeReturnTrigger, type ReturnTriggerSnapshot } from "./footswitch-return-trigger";
 
 // Diagnostic mode never closes. Live Mode opts in with its existing Close callback.
-export function FootswitchReturnTestDisplay({ onTrigger, ...props }: ComponentProps<typeof SmartLyricPagingDisplay> & { onTrigger?: () => void }) {
+export function FootswitchReturnTestDisplay({ onTrigger, returnDestination = "Setlist", ...props }: ComponentProps<typeof SmartLyricPagingDisplay> & { onTrigger?: () => void; returnDestination?: "Setlist" | "Music Library" }) {
   const zone = useRef<HTMLDivElement>(null);
   const trigger = useRef(onTrigger);
   const handled = useRef(false);
@@ -26,11 +26,11 @@ export function FootswitchReturnTestDisplay({ onTrigger, ...props }: ComponentPr
     <SmartLyricPagingDisplay {...props} />
     <div className="bg-slate-950 px-6 py-5 text-center text-white" aria-label="End of song">
       <p className="font-bold">END OF SONG</p>
-      <p className="mt-1 text-sm">↓ PRESS AGAIN TO RETURN TO SETLIST</p>
-      <p className="mt-2 text-xs text-white/60">{onTrigger ? "Footswitch Return to Setlist is enabled." : "Experiment only — the viewer will stay open."}</p>
+      <p className="mt-1 text-sm">↓ PRESS AGAIN TO RETURN TO {returnDestination.toUpperCase()}</p>
+      <p className="mt-2 text-xs text-white/60">{onTrigger ? `Footswitch Return to ${returnDestination} is enabled.` : "Experiment only — the viewer will stay open."}</p>
     </div>
     <div ref={zone} data-footswitch-return-zone className="min-h-screen bg-slate-950 px-6 py-8 text-center text-white" style={{ minHeight: "100dvh" }}>
-      <p role="status" className="text-xl font-bold">{onTrigger ? "Return to Setlist" : snapshot?.triggered ? "RETURN TO SETLIST TRIGGER DETECTED" : "Return-to-setlist scroll test zone"}</p>
+      <p role="status" className="text-xl font-bold">{onTrigger ? `Return to ${returnDestination}` : snapshot?.triggered ? "RETURN TO SETLIST TRIGGER DETECTED" : "Return-to-setlist scroll test zone"}</p>
       <p className="mt-3 text-sm">{onTrigger ? "Use the footswitch or × Close to return." : "This test never closes lyrics. Use × Close to leave."}</p>
       {!onTrigger && <aside aria-label="Return to setlist experiment diagnostics" className="mx-auto mt-5 max-w-md rounded-lg border border-white/20 p-3 text-left font-mono text-sm text-white">
         <p>Scroll: {snapshot ? `${snapshot.scrollY.toFixed(1)}px` : "Waiting"}</p>
